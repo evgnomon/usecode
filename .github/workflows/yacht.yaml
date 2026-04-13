@@ -25,7 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Make CI
-        run: chmod +x ./ci-run.sh && ./ci-run.sh
+        run: make ci
         env:
           VAULT_FILE: ${{ secrets.VAULT_FILE }}
           VAULT_PASS: ${{ secrets.VAULT_PASS }}

@@ -16,3 +16,4 @@ stuff
 
 .claude
 .ansible
+.ci.env.mk
