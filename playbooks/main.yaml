@@ -1,0 +1,17 @@
+- name: Build
+  hosts: localhost
+  gather_facts: false
+  collections:
+    - evgnomon.catamaran
+  roles:
+    - role: z_secrets
+    - role: z_defaults
+    - role: z_build
+
+- name: Publish Galaxy Collection
+  hosts: localhost
+  gather_facts: false
+  collections:
+    - evgnomon.catamaran
+  roles:
+    - role: z_galaxy_col

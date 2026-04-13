@@ -1,0 +1,51 @@
+site_name: bitframe
+repo_url: https://github.com/evgnomon/bitframe
+site_url: https://evgnomon.github.io/bitframe
+site_description: A Python library for reading and processing CSV files with decimal precision
+site_author: Hamed Ghasemzadeh
+edit_uri: edit/main/docs/
+repo_name: evgnomon/bitframe
+
+nav:
+  - Home: index.md
+  - Modules: modules.md
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [.]
+
+theme:
+  name: material
+  feature:
+    tabs: true
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: white
+      accent: deep orange
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: deep orange
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  icon:
+    repo: fontawesome/brands/github
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/evgnomon/bitframe
+
+markdown_extensions:
+  - toc:
+      permalink: true
+  - pymdownx.arithmatex:
+      generic: true

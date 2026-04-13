@@ -1,0 +1,24 @@
+Month    , Item                          , Amount
+January  , Net Profit                    ,  50_000
+January  , Depreciation                  ,   5000
+January  , Cash from Customers           ,  80000
+January  , Paid to Suppliers             , -40000
+January  , Salaries                      , -30000
+January  , Bought Equipment              , -15000
+         ,                               ,
+# Cash Flow Statement for February
+
+February , Net Profit                    ,  60000
+February , Depreciation                  ,   5000
+February , Cash from Customers           ,  90000
+February , Paid to Suppliers             , -45000
+February , Salaries                      , -32000
+February , New Bank Loan                 ,  50000
+         ,                               ,
+March    , Net Profit                    ,  55000
+March    , Depreciation                  ,   5000
+March    , Cash from Customers           ,  85000
+March    , Paid to Suppliers             , -42000
+March    , Salaries                      , -31000
+March    , Paid Dividends                , -10000
+December , Net Profit                    ,  70000

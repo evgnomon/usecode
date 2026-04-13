@@ -1,34 +1,32 @@
-name: Yacht
-
+name: Make
 on:
+  workflow_dispatch:
   push:
     branches:
       - '*'
     tags:
-      - "*"
-  delete:
-    branches:
       - '*'
-      - '!main'
-
+  delete:
+ 
 jobs:
-  yacht:
+  ci:
     runs-on: ubuntu-latest
+    if: >-
+      (github.event_name == 'push') ||
+      (github.event_name == 'workflow_dispatch') ||
+      (github.event_name == 'delete' &&
+       github.event.ref_type == 'branch' &&
+       github.event.ref != 'main')
     container:
       image: ghcr.io/evgnomon/barge:main
     permissions:
-      contents: write
+      contents: read
       packages: write
     steps:
-    - uses: actions/checkout@v6
-    - name: Extract branch name
-      shell: bash
-      run: echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_OUTPUT
-      id: extract_branch
-    - name: Run Playbook
-      uses: evgnomon/yacht@main
-      with:
-        vault: ${{ secrets.VAULT_FILE }}
-        vault_pass: ${{ secrets.VAULT_PASS }}
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        inventory: playbooks/${{ steps.extract_branch.outputs.branch }}_inventory.yaml
+      - uses: actions/checkout@v4
+      - name: Make CI
+        run: chmod +x ./ci-run.sh && ./ci-run.sh
+        env:
+          VAULT_FILE: ${{ secrets.VAULT_FILE }}
+          VAULT_PASS: ${{ secrets.VAULT_PASS }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
