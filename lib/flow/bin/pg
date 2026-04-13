@@ -1,0 +1,1668 @@
+#!/usr/bin/env python3
+
+import json
+import os
+import subprocess
+import sys
+from datetime import date, datetime
+from decimal import Decimal
+
+import click
+import psycopg2
+import psycopg2.extras
+import psycopg2.sql
+
+
+def find_pg_config():
+    """Search for .pg.json starting from cwd and walking up to /."""
+    d = os.path.abspath(os.getcwd())
+    while True:
+        candidate = os.path.join(d, ".pg.json")
+        if os.path.isfile(candidate):
+            with open(candidate, "r") as f:
+                return json.load(f)
+        parent = os.path.dirname(d)
+        if parent == d:
+            break
+        d = parent
+    return {}
+
+
+_pg_config = find_pg_config()
+
+CONTAINER_NAME = _pg_config.get("container", "pg1")
+NETWORK_NAME = _pg_config.get("network", "pgnet")
+PG_IMAGE = _pg_config.get("image", "docker.io/library/postgres:17")
+PG_PASSWORD = _pg_config.get("password", "t6drtfyig7")
+PG_USER = _pg_config.get("user", "admin")
+PG_PORT = _pg_config.get("port", 5432)
+PG_HOST = _pg_config.get("host", "localhost")
+PG_DATABASE = _pg_config.get("database", "postgres")
+PG_DATA_DIR = _pg_config.get("data_dir", os.path.expanduser("~/.local/share/pg/data"))
+
+
+def network_exists(name: str) -> bool:
+    result = subprocess.run(
+        ["podman", "network", "exists", name],
+        capture_output=True,
+    )
+    return result.returncode == 0
+
+
+def create_network(name: str) -> bool:
+    result = subprocess.run(
+        ["podman", "network", "create", name],
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
+
+
+def ensure_network(name: str) -> bool:
+    if network_exists(name):
+        return True
+    click.echo(f"Network '{name}' does not exist. Creating...", err=True)
+    if create_network(name):
+        click.echo(f"Network '{name}' created successfully.", err=True)
+        return True
+    else:
+        click.echo(f"Error: Failed to create network '{name}'.", err=True)
+        return False
+
+
+def container_exists(name: str):
+    result = subprocess.run(
+        ["podman", "ps", "-a", "--filter", f"name=^{name}$", "--format", "{{.State}}"],
+        capture_output=True,
+        text=True,
+    )
+    state = result.stdout.strip()
+    return state if state else None
+
+
+def start_container(name: str) -> bool:
+    result = subprocess.run(
+        ["podman", "start", name],
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
+
+
+def stop_container(name: str) -> bool:
+    result = subprocess.run(
+        ["podman", "stop", name],
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
+
+
+def remove_container(name: str) -> bool:
+    result = subprocess.run(
+        ["podman", "rm", "-f", name],
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
+
+
+def get_connection(dbname=None):
+    """Create and return a PostgreSQL connection using .pg.json, env overrides, or defaults."""
+    try:
+        conn = psycopg2.connect(
+            host=os.getenv("PGHOST", PG_HOST),
+            port=os.getenv("PGPORT", str(PG_PORT)),
+            user=os.getenv("PGUSER", PG_USER),
+            password=os.getenv("PGPASSWORD", PG_PASSWORD),
+            dbname=dbname or os.getenv("PGDATABASE", PG_DATABASE),
+            cursor_factory=psycopg2.extras.RealDictCursor,
+        )
+        return conn
+    except psycopg2.OperationalError as e:
+        click.echo(f"Connection failed: {e}", err=True)
+        sys.exit(1)
+
+
+def json_serializer(obj):
+    """JSON serializer for objects not serializable by default json code."""
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    if isinstance(obj, Decimal):
+        return float(obj)
+    if isinstance(obj, bytes):
+        return obj.hex()
+    raise TypeError(f"Type {type(obj)} not serializable")
+
+
+def print_results(rows):
+    """Pretty-print query results."""
+    if not rows:
+        click.echo("No rows returned.", err=True)
+        return
+
+    # Get column names
+    headers = rows[0].keys()
+    # Get column widths
+    widths = {col: len(col) for col in headers}
+    for row in rows:
+        for col in headers:
+            widths[col] = max(
+                widths[col], len(str(row[col]) if row[col] is not None else "NULL")
+            )
+
+    # Print header
+    click.echo(" | ".join(f"{col:<{widths[col]}}" for col in headers))
+    click.echo("-|-".join("-" * widths[col] for col in headers))
+
+    # Print rows
+    for row in rows:
+        click.echo(
+            " | ".join(
+                f"{str(row[col]) if row[col] is not None else 'NULL':<{widths[col]}}"
+                for col in headers
+            )
+        )
+
+
+@click.group(invoke_without_command=True)
+@click.pass_context
+def cli(ctx):
+    """PostgreSQL CLI tool with interactive mode and table commands."""
+    ctx.ensure_object(dict)
+    if ctx.invoked_subcommand is None:
+        if not sys.stdin.isatty():
+            ctx.obj["conn"] = get_connection()
+            ctx.invoke(query)
+            return
+        else:
+            click.echo(ctx.get_help(), err=True)
+            return
+    if ctx.invoked_subcommand not in ("kickstart", "db", "schema"):
+        ctx.obj["conn"] = get_connection()
+
+
+@cli.command()
+@click.option(
+    "--name",
+    "-n",
+    default=CONTAINER_NAME,
+    help=f"Container name (default: {CONTAINER_NAME})",
+)
+@click.option(
+    "--port", "-p", default=PG_PORT, type=int, help=f"Host port (default: {PG_PORT})"
+)
+@click.option(
+    "--image", default=PG_IMAGE, help=f"PostgreSQL image (default: {PG_IMAGE})"
+)
+@click.option(
+    "--data-dir", default=PG_DATA_DIR, help=f"Data directory (default: {PG_DATA_DIR})"
+)
+@click.option(
+    "--network", default=NETWORK_NAME, help=f"Podman network (default: {NETWORK_NAME})"
+)
+@click.option(
+    "--pull/--no-pull", default=True, help="Pull image before starting (default: pull)"
+)
+@click.option("--force", is_flag=True, help="Remove existing container and start fresh")
+def kickstart(name, port, image, data_dir, network, pull, force):
+    """Start a PostgreSQL instance using podman."""
+    state = container_exists(name)
+
+    if state and not force:
+        if state == "running":
+            click.echo(f"Container '{name}' is already running.", err=True)
+            return
+        click.echo(f"Container '{name}' exists (state: {state}). Starting...", err=True)
+        if start_container(name):
+            click.echo(f"Container '{name}' started.", err=True)
+        else:
+            click.echo(f"Error: Failed to start container '{name}'.", err=True)
+            sys.exit(1)
+        return
+
+    if state and force:
+        click.echo(f"Removing existing container '{name}'...", err=True)
+        remove_container(name)
+
+    if not ensure_network(network):
+        sys.exit(1)
+
+    if pull:
+        click.echo(f"Pulling image {image}...", err=True)
+        subprocess.run(["podman", "pull", image], capture_output=True)
+
+    os.makedirs(data_dir, exist_ok=True)
+
+    podman_args = [
+        "podman",
+        "run",
+        "-d",
+        "--name",
+        name,
+        "--hostname",
+        name,
+        "--network",
+        network,
+        "--restart",
+        "unless-stopped",
+        "-p",
+        f"{port}:5432",
+        "-v",
+        f"{data_dir}:/var/lib/postgresql/data",
+        "-e",
+        f"POSTGRES_PASSWORD={PG_PASSWORD}",
+        "-e",
+        f"POSTGRES_USER={PG_USER}",
+        image,
+    ]
+
+    click.echo(f"Starting PostgreSQL container '{name}' on port {port}...", err=True)
+    result = subprocess.run(podman_args, capture_output=True, text=True)
+
+    if result.returncode != 0:
+        click.echo(f"Error starting container: {result.stderr.strip()}", err=True)
+        sys.exit(1)
+
+    click.echo(f"PostgreSQL container '{name}' started successfully.", err=True)
+    click.echo(f"\nQuick commands:", err=True)
+    click.echo(f"  Logs   : podman logs -f {name}", err=True)
+    click.echo(f"  Stop   : podman stop {name}", err=True)
+    click.echo(f"  Remove : podman rm -f {name}", err=True)
+    click.echo(f"  Connect: psql -h localhost -p {port} -U {PG_USER}", err=True)
+
+
+@cli.group()
+def tab():
+    """Commands related to tables."""
+    pass
+
+
+@tab.command(name="list")
+@click.option(
+    "--database",
+    "-d",
+    default=PG_DATABASE,
+    help=f"Database name (default: {PG_DATABASE})",
+)
+@click.option("--schema", "-s", default="public", help="Schema name (default: public)")
+@click.pass_context
+def tab_list(ctx, database, schema):
+    """List all tables in a schema."""
+    conn = get_connection(dbname=database)
+    cur = conn.cursor()
+
+    query = """
+    SELECT tablename
+    FROM pg_tables
+    WHERE schemaname = %s
+    ORDER BY tablename;
+    """
+
+    try:
+        cur.execute(query, (schema,))
+        rows = cur.fetchall()
+        if rows:
+            click.echo(f"Tables in {database}.{schema}:", err=True)
+            for row in rows:
+                click.echo(f"  • {row['tablename']}", err=True)
+        else:
+            click.echo(f"No tables found in {database}.{schema}.", err=True)
+    except psycopg2.Error as e:
+        click.echo(f"Error: {e}", err=True)
+    finally:
+        cur.close()
+        conn.close()
+
+
+@tab.command(name="add")
+@click.argument("name")
+@click.option(
+    "--database", "-d", default=None, help="Database name (default: from config)"
+)
+@click.option("--schema", "-s", default="public", help="Schema name (default: public)")
+@click.pass_context
+def tables_add(ctx, name, database, schema):
+    """Create a new table with an auto-increment bigint primary key."""
+    conn = get_connection(dbname=database) if database else ctx.obj["conn"]
+    cur = conn.cursor()
+
+    qualified = f"{psycopg2.sql.Identifier(schema).as_string(conn)}.{psycopg2.sql.Identifier(name).as_string(conn)}"
+
+    try:
+        cur.execute(
+            f"CREATE TABLE IF NOT EXISTS {qualified} (id BIGSERIAL PRIMARY KEY)"
+        )
+        conn.commit()
+        click.echo(f"Table '{schema}.{name}' created.", err=True)
+    except psycopg2.Error as e:
+        conn.rollback()
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    finally:
+        cur.close()
+        if database:
+            conn.close()
+
+
+@tab.command(name="drop")
+@click.argument("name")
+@click.option(
+    "--database", "-d", default=None, help="Database name (default: from config)"
+)
+@click.option("--schema", "-s", default="public", help="Schema name (default: public)")
+@click.pass_context
+def tables_drop(ctx, name, database, schema):
+    """Drop a table."""
+    conn = get_connection(dbname=database) if database else ctx.obj["conn"]
+    cur = conn.cursor()
+
+    qualified = f"{psycopg2.sql.Identifier(schema).as_string(conn)}.{psycopg2.sql.Identifier(name).as_string(conn)}"
+
+    try:
+        cur.execute(f"DROP TABLE IF EXISTS {qualified}")
+        conn.commit()
+        click.echo(f"Table '{schema}.{name}' dropped.", err=True)
+    except psycopg2.Error as e:
+        conn.rollback()
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    finally:
+        cur.close()
+        if database:
+            conn.close()
+
+
+@tab.command(name="rename")
+@click.argument("old_name")
+@click.argument("new_name")
+@click.option(
+    "--database", "-d", default=None, help="Database name (default: from config)"
+)
+@click.option("--schema", "-s", default="public", help="Schema name (default: public)")
+@click.pass_context
+def tables_rename(ctx, old_name, new_name, database, schema):
+    """Rename a table."""
+    conn = get_connection(dbname=database) if database else ctx.obj["conn"]
+    cur = conn.cursor()
+
+    qualified_old = f"{psycopg2.sql.Identifier(schema).as_string(conn)}.{psycopg2.sql.Identifier(old_name).as_string(conn)}"
+    id_new = psycopg2.sql.Identifier(new_name).as_string(conn)
+
+    try:
+        # Check if already in desired state (new_name exists, old_name does not)
+        cur.execute(
+            "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema = %s AND table_name = %s)",
+            (schema, new_name),
+        )
+        new_exists = cur.fetchone()["exists"]
+        cur.execute(
+            "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema = %s AND table_name = %s)",
+            (schema, old_name),
+        )
+        old_exists = cur.fetchone()["exists"]
+
+        if new_exists and not old_exists:
+            click.echo(
+                f"Table '{schema}.{new_name}' already exists. Nothing to do.", err=True
+            )
+            return
+
+        cur.execute(f"ALTER TABLE {qualified_old} RENAME TO {id_new}")
+
+        # Rename associated sequences (e.g., old_name_id_seq -> new_name_id_seq)
+        cur.execute(
+            """
+            SELECT s.relname AS seq_name
+            FROM pg_class s
+            JOIN pg_namespace n ON n.oid = s.relnamespace
+            JOIN pg_depend d ON d.objid = s.oid
+            JOIN pg_class t ON t.oid = d.refobjid
+            WHERE s.relkind = 'S'
+              AND n.nspname = %s
+              AND t.relname = %s
+              AND d.deptype = 'a';
+            """,
+            (schema, new_name),
+        )
+        for row in cur.fetchall():
+            old_seq = row["seq_name"]
+            # Replace old table name prefix with new table name prefix
+            if old_seq.startswith(f"{old_name}_"):
+                new_seq = f"{new_name}_{old_seq[len(old_name) + 1 :]}"
+                old_seq_id = psycopg2.sql.Identifier(old_seq).as_string(conn)
+                new_seq_id = psycopg2.sql.Identifier(new_seq).as_string(conn)
+                cur.execute(
+                    f"ALTER SEQUENCE {psycopg2.sql.Identifier(schema).as_string(conn)}.{old_seq_id} RENAME TO {new_seq_id}"
+                )
+                click.echo(f"Sequence '{old_seq}' renamed to '{new_seq}'.", err=True)
+
+        conn.commit()
+        click.echo(
+            f"Table '{schema}.{old_name}' renamed to '{schema}.{new_name}'.", err=True
+        )
+    except psycopg2.Error as e:
+        conn.rollback()
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    finally:
+        cur.close()
+        if database:
+            conn.close()
+
+
+@tab.command(name="copy")
+@click.argument("source")
+@click.argument("destination")
+@click.option(
+    "--database", "-d", default=None, help="Database name (default: from config)"
+)
+@click.option("--schema", "-s", default="public", help="Schema name (default: public)")
+@click.option("--data/--no-data", default=True, help="Copy data as well (default: yes)")
+@click.pass_context
+def tables_copy(ctx, source, destination, database, schema, data):
+    """Copy a table structure (and optionally data) to a new table."""
+    conn = get_connection(dbname=database) if database else ctx.obj["conn"]
+    cur = conn.cursor()
+
+    qualified_src = f"{psycopg2.sql.Identifier(schema).as_string(conn)}.{psycopg2.sql.Identifier(source).as_string(conn)}"
+    qualified_dst = f"{psycopg2.sql.Identifier(schema).as_string(conn)}.{psycopg2.sql.Identifier(destination).as_string(conn)}"
+
+    try:
+        # Check if destination table already exists
+        cur.execute(
+            "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema = %s AND table_name = %s)",
+            (schema, destination),
+        )
+        if cur.fetchone()["exists"]:
+            click.echo(
+                f"Table '{schema}.{destination}' already exists. Nothing to do.",
+                err=True,
+            )
+            return
+
+        if data:
+            cur.execute(f"CREATE TABLE {qualified_dst} AS TABLE {qualified_src}")
+        else:
+            cur.execute(
+                f"CREATE TABLE {qualified_dst} AS TABLE {qualified_src} WITH NO DATA"
+            )
+        conn.commit()
+        label = "with data" if data else "structure only"
+        click.echo(
+            f"Table '{schema}.{source}' copied to '{schema}.{destination}' ({label}).",
+            err=True,
+        )
+    except psycopg2.Error as e:
+        conn.rollback()
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    finally:
+        cur.close()
+        if database:
+            conn.close()
+
+
+def _resolve_column_type(type_name, is_float, is_double, is_long, is_unsigned, fixed):
+    """Map a JSON-style type name to a PostgreSQL type."""
+    if type_name == "number":
+        if fixed is not None:
+            return f"NUMERIC(38,{fixed})"
+        if is_double:
+            return "DOUBLE PRECISION"
+        if is_float:
+            return "REAL"
+        if is_long:
+            return "BIGINT"
+        if is_unsigned:
+            return "INTEGER"
+        return "INTEGER"
+    type_map = {
+        "string": "TEXT",
+        "bool": "BOOLEAN",
+        "jsonb": "JSONB",
+    }
+    pg_type = type_map.get(type_name)
+    if pg_type is None:
+        click.echo(
+            f"Error: Unknown type '{type_name}'. Use: string, number, bool, jsonb",
+            err=True,
+        )
+        sys.exit(1)
+    return pg_type
+
+
+@cli.group()
+def col():
+    """Commands to add, drop, and rename columns on a table."""
+    pass
+
+
+@col.command(name="list")
+@click.argument("table")
+@click.option(
+    "--database", "-d", default=None, help="Database name (default: from config)"
+)
+@click.option("--schema", "-s", default="public", help="Schema name (default: public)")
+@click.pass_context
+def column_list(ctx, table, database, schema):
+    """List all columns of a table."""
+    conn = get_connection(dbname=database) if database else ctx.obj["conn"]
+    cur = conn.cursor()
+
+    query = """
+    SELECT column_name, data_type, is_nullable, column_default
+    FROM information_schema.columns
+    WHERE table_schema = %s AND table_name = %s
+    ORDER BY ordinal_position;
+    """
+
+    try:
+        cur.execute(query, (schema, table))
+        rows = cur.fetchall()
+        if rows:
+            click.echo(f"Columns in {schema}.{table}:", err=True)
+            for row in rows:
+                nullable = "nullable" if row["is_nullable"] == "YES" else "not null"
+                default = (
+                    f" default={row['column_default']}" if row["column_default"] else ""
+                )
+                click.echo(
+                    f"  • {row['column_name']} ({row['data_type']}, {nullable}{default})",
+                    err=True,
+                )
+        else:
+            click.echo(f"No columns found for {schema}.{table}.", err=True)
+    except psycopg2.Error as e:
+        click.echo(f"Error: {e}", err=True)
+    finally:
+        cur.close()
+        if database:
+            conn.close()
+
+
+@col.command(name="add")
+@click.argument("table")
+@click.argument("col_name")
+@click.argument("col_type", type=click.Choice(["string", "number", "bool", "jsonb"]))
+@click.option("--nullable", is_flag=True, help="Allow NULL values")
+@click.option(
+    "--float", "is_float", is_flag=True, help="Use 4-byte float (REAL) for number type"
+)
+@click.option(
+    "--double",
+    "is_double",
+    is_flag=True,
+    help="Use 8-byte float (DOUBLE PRECISION) for number type",
+)
+@click.option(
+    "--long",
+    "is_long",
+    is_flag=True,
+    help="Use 8-byte integer (BIGINT) for number type",
+)
+@click.option(
+    "--unsigned",
+    "is_unsigned",
+    is_flag=True,
+    help="Use unsigned (adds CHECK >= 0 constraint)",
+)
+@click.option(
+    "--fixed",
+    type=int,
+    default=None,
+    help="Use fixed-point decimal with N fractional digits (NUMERIC)",
+)
+@click.option(
+    "--default",
+    "default_value",
+    default=None,
+    help="Default value (SQL literal or expression)",
+)
+@click.option(
+    "--database", "-d", default=None, help="Database name (default: from config)"
+)
+@click.option("--schema", "-s", default="public", help="Schema name (default: public)")
+@click.pass_context
+def column_add(
+    ctx,
+    table,
+    col_name,
+    col_type,
+    nullable,
+    is_float,
+    is_double,
+    is_long,
+    is_unsigned,
+    fixed,
+    default_value,
+    database,
+    schema,
+):
+    """Add a column to a table. Numbers default to INTEGER (4-byte signed)."""
+    conn = get_connection(dbname=database) if database else ctx.obj["conn"]
+    cur = conn.cursor()
+
+    pg_type = _resolve_column_type(
+        col_type, is_float, is_double, is_long, is_unsigned, fixed
+    )
+    qualified = f"{psycopg2.sql.Identifier(schema).as_string(conn)}.{psycopg2.sql.Identifier(table).as_string(conn)}"
+    col_id = psycopg2.sql.Identifier(col_name).as_string(conn)
+    null_clause = "" if nullable else " NOT NULL"
+    default_clause = f" DEFAULT {default_value}" if default_value else ""
+
+    try:
+        cur.execute(
+            f"ALTER TABLE {qualified} ADD COLUMN IF NOT EXISTS {col_id} {pg_type}{null_clause}{default_clause}"
+        )
+        if is_unsigned and col_type == "number":
+            # Check if constraint already exists
+            constraint_name = f"{col_name}_unsigned"
+            cur.execute(
+                "SELECT EXISTS(SELECT 1 FROM information_schema.table_constraints WHERE table_schema = %s AND table_name = %s AND constraint_name = %s)",
+                (schema, table, constraint_name),
+            )
+            if not cur.fetchone()["exists"]:
+                cur.execute(
+                    f"ALTER TABLE {qualified} ADD CONSTRAINT {psycopg2.sql.Identifier(constraint_name).as_string(conn)} CHECK ({col_id} >= 0)"
+                )
+        conn.commit()
+        label = pg_type.lower()
+        if is_unsigned:
+            label = f"unsigned {label}"
+        if nullable:
+            label += " (nullable)"
+        click.echo(
+            f"Column '{col_name}' ({label}) added to '{schema}.{table}'.", err=True
+        )
+    except psycopg2.Error as e:
+        conn.rollback()
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    finally:
+        cur.close()
+        if database:
+            conn.close()
+
+
+@col.command(name="drop")
+@click.argument("table")
+@click.argument("col_name")
+@click.option(
+    "--database", "-d", default=None, help="Database name (default: from config)"
+)
+@click.option("--schema", "-s", default="public", help="Schema name (default: public)")
+@click.pass_context
+def column_drop(ctx, table, col_name, database, schema):
+    """Drop a column from a table."""
+    conn = get_connection(dbname=database) if database else ctx.obj["conn"]
+    cur = conn.cursor()
+
+    qualified = f"{psycopg2.sql.Identifier(schema).as_string(conn)}.{psycopg2.sql.Identifier(table).as_string(conn)}"
+    col_id = psycopg2.sql.Identifier(col_name).as_string(conn)
+
+    try:
+        cur.execute(f"ALTER TABLE {qualified} DROP COLUMN IF EXISTS {col_id}")
+        conn.commit()
+        click.echo(f"Column '{col_name}' dropped from '{schema}.{table}'.", err=True)
+    except psycopg2.Error as e:
+        conn.rollback()
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    finally:
+        cur.close()
+        if database:
+            conn.close()
+
+
+@col.command(name="rename")
+@click.argument("table")
+@click.argument("old_name")
+@click.argument("new_name")
+@click.option(
+    "--database", "-d", default=None, help="Database name (default: from config)"
+)
+@click.option("--schema", "-s", default="public", help="Schema name (default: public)")
+@click.pass_context
+def column_rename(ctx, table, old_name, new_name, database, schema):
+    """Rename a column on a table."""
+    conn = get_connection(dbname=database) if database else ctx.obj["conn"]
+    cur = conn.cursor()
+
+    qualified = f"{psycopg2.sql.Identifier(schema).as_string(conn)}.{psycopg2.sql.Identifier(table).as_string(conn)}"
+    old_id = psycopg2.sql.Identifier(old_name).as_string(conn)
+    new_id = psycopg2.sql.Identifier(new_name).as_string(conn)
+
+    try:
+        # Check if already in desired state (new column exists, old does not)
+        cur.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_schema = %s AND table_name = %s AND column_name IN (%s, %s)",
+            (schema, table, old_name, new_name),
+        )
+        existing = {row["column_name"] for row in cur.fetchall()}
+        if new_name in existing and old_name not in existing:
+            click.echo(
+                f"Column '{new_name}' already exists on '{schema}.{table}'. Nothing to do.",
+                err=True,
+            )
+            return
+
+        cur.execute(f"ALTER TABLE {qualified} RENAME COLUMN {old_id} TO {new_id}")
+        conn.commit()
+        click.echo(
+            f"Column '{old_name}' renamed to '{new_name}' on '{schema}.{table}'.",
+            err=True,
+        )
+    except psycopg2.Error as e:
+        conn.rollback()
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    finally:
+        cur.close()
+        if database:
+            conn.close()
+
+
+@cli.group()
+def idx():
+    """Commands to add, drop, and list indexes on a table."""
+    pass
+
+
+@idx.command(name="list")
+@click.argument("table")
+@click.option(
+    "--database", "-d", default=None, help="Database name (default: from config)"
+)
+@click.option("--schema", "-s", default="public", help="Schema name (default: public)")
+@click.pass_context
+def index_list(ctx, table, database, schema):
+    """List all indexes on a table."""
+    conn = get_connection(dbname=database) if database else ctx.obj["conn"]
+    cur = conn.cursor()
+
+    try:
+        cur.execute(
+            """
+            SELECT indexname, indexdef
+            FROM pg_indexes
+            WHERE schemaname = %s AND tablename = %s
+            ORDER BY indexname;
+            """,
+            (schema, table),
+        )
+        rows = cur.fetchall()
+        if rows:
+            click.echo(f"Indexes on {schema}.{table}:", err=True)
+            for row in rows:
+                click.echo(f"  • {row['indexname']}", err=True)
+                click.echo(f"    {row['indexdef']}", err=True)
+        else:
+            click.echo(f"No indexes found on {schema}.{table}.", err=True)
+    except psycopg2.Error as e:
+        click.echo(f"Error: {e}", err=True)
+    finally:
+        cur.close()
+        if database:
+            conn.close()
+
+
+@idx.command(name="add")
+@click.argument("table")
+@click.argument("columns", nargs=-1, required=True)
+@click.option(
+    "--gin/--no-gin",
+    default=None,
+    help="Force GIN index on/off (default: auto-detect from column type)",
+)
+@click.option(
+    "--unique",
+    "is_unique",
+    is_flag=True,
+    help="Create a UNIQUE constraint instead of an index",
+)
+@click.option(
+    "--name",
+    "-n",
+    default=None,
+    help="Custom index/constraint name (default: auto-generated)",
+)
+@click.option(
+    "--database", "-d", default=None, help="Database name (default: from config)"
+)
+@click.option("--schema", "-s", default="public", help="Schema name (default: public)")
+@click.pass_context
+def index_add(ctx, table, columns, gin, is_unique, name, database, schema):
+    """Add an index or unique constraint to a table.
+
+    For JSONB columns, GIN is used automatically unless --no-gin is passed.
+
+    Examples:
+
+      pg idx add resources kind                    # btree index on kind
+
+      pg idx add resources kind namespace           # composite btree index
+
+      pg idx add resources labels                   # GIN index (auto-detected from jsonb)
+
+      pg idx add resources api_version kind name namespace --unique  # unique constraint
+    """
+    conn = get_connection(dbname=database) if database else ctx.obj["conn"]
+    cur = conn.cursor()
+
+    qualified = f"{psycopg2.sql.Identifier(schema).as_string(conn)}.{psycopg2.sql.Identifier(table).as_string(conn)}"
+    col_ids = [psycopg2.sql.Identifier(c).as_string(conn) for c in columns]
+
+    # Auto-detect GIN when not explicitly set
+    if gin is None and not is_unique:
+        cur.execute(
+            """
+            SELECT column_name, udt_name
+            FROM information_schema.columns
+            WHERE table_schema = %s AND table_name = %s
+              AND column_name = ANY(%s)
+            """,
+            (schema, table, list(columns)),
+        )
+        col_types = {row["column_name"]: row["udt_name"] for row in cur.fetchall()}
+        gin = all(col_types.get(c) == "jsonb" for c in columns)
+
+    if name is None:
+        if is_unique:
+            name = f"{table}_unique_{'_'.join(columns)}"
+        else:
+            name = f"idx_{table}_{'_'.join(columns)}"
+
+    name_id = psycopg2.sql.Identifier(name).as_string(conn)
+
+    try:
+        if is_unique:
+            cur.execute("SELECT 1 FROM pg_constraint WHERE conname = %s", (name,))
+            if cur.fetchone():
+                click.echo(
+                    f"Unique constraint '{name}' already exists on '{schema}.{table}', skipping.",
+                    err=True,
+                )
+                return
+            cols_str = ", ".join(col_ids)
+            cur.execute(
+                f"ALTER TABLE {qualified} ADD CONSTRAINT {name_id} UNIQUE ({cols_str})"
+            )
+            conn.commit()
+            click.echo(
+                f"Unique constraint '{name}' added to '{schema}.{table}' on ({', '.join(columns)}).",
+                err=True,
+            )
+        else:
+            cols_str = ", ".join(col_ids)
+            using = "USING gin" if gin else ""
+            cur.execute(
+                f"CREATE INDEX IF NOT EXISTS {name_id} ON {qualified} {using}({cols_str})"
+            )
+            conn.commit()
+            idx_type = "GIN index" if gin else "Index"
+            click.echo(
+                f"{idx_type} '{name}' created on '{schema}.{table}' ({', '.join(columns)}).",
+                err=True,
+            )
+    except psycopg2.errors.DuplicateObject:
+        conn.rollback()
+        click.echo(f"Constraint or index '{name}' already exists, skipping.", err=True)
+    except psycopg2.Error as e:
+        conn.rollback()
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    finally:
+        cur.close()
+        if database:
+            conn.close()
+
+
+@idx.command(name="drop")
+@click.argument("name")
+@click.option(
+    "--database", "-d", default=None, help="Database name (default: from config)"
+)
+@click.option("--schema", "-s", default="public", help="Schema name (default: public)")
+@click.pass_context
+def index_drop(ctx, name, database, schema):
+    """Drop an index by name."""
+    conn = get_connection(dbname=database) if database else ctx.obj["conn"]
+    cur = conn.cursor()
+
+    qualified = f"{psycopg2.sql.Identifier(schema).as_string(conn)}.{psycopg2.sql.Identifier(name).as_string(conn)}"
+
+    try:
+        cur.execute(f"DROP INDEX IF EXISTS {qualified}")
+        conn.commit()
+        click.echo(f"Index '{name}' dropped.", err=True)
+    except psycopg2.Error as e:
+        conn.rollback()
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    finally:
+        cur.close()
+        if database:
+            conn.close()
+
+
+@cli.group()
+def row():
+    """Commands to operate on table rows."""
+    pass
+
+
+@row.command(name="rm")
+@click.argument("table")
+@click.argument("id", type=int, required=False, default=None)
+@click.option("--all", "all_rows", is_flag=True, help="Delete all rows in the table.")
+@click.option(
+    "--database", "-d", default=None, help="Database name (default: from config)"
+)
+@click.option("--schema", "-s", default="public", help="Schema name (default: public)")
+@click.pass_context
+def row_rm(ctx, table, id, all_rows, database, schema):
+    """Remove a row by id from a table, or all rows with --all."""
+    if id is None and not all_rows:
+        click.echo("Error: provide an id or use --all to delete all rows.", err=True)
+        sys.exit(1)
+    if id is not None and all_rows:
+        click.echo("Error: cannot specify both an id and --all.", err=True)
+        sys.exit(1)
+
+    conn = get_connection(dbname=database) if database else ctx.obj["conn"]
+    cur = conn.cursor()
+
+    qualified = f"{psycopg2.sql.Identifier(schema).as_string(conn)}.{psycopg2.sql.Identifier(table).as_string(conn)}"
+
+    try:
+        if all_rows:
+            cur.execute(f"DELETE FROM {qualified}")
+            conn.commit()
+            click.echo(
+                f"Deleted {cur.rowcount} row(s) from '{schema}.{table}'.", err=True
+            )
+        else:
+            cur.execute(f"DELETE FROM {qualified} WHERE id = %s", (id,))
+            conn.commit()
+            click.echo(
+                f"Deleted {cur.rowcount} row(s) from '{schema}.{table}' where id={id}.",
+                err=True,
+            )
+    except psycopg2.Error as e:
+        conn.rollback()
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    finally:
+        cur.close()
+        if database:
+            conn.close()
+
+
+@row.command(name="list")
+@click.argument("table")
+@click.option(
+    "--database", "-d", default=None, help="Database name (default: from config)"
+)
+@click.option("--schema", "-s", default="public", help="Schema name (default: public)")
+@click.option(
+    "--limit", "-l", default=100, type=int, help="Maximum rows to return (default: 100)"
+)
+@click.pass_context
+def row_list(ctx, table, database, schema, limit):
+    """List rows of a table."""
+    conn = get_connection(dbname=database) if database else ctx.obj["conn"]
+    cur = conn.cursor()
+
+    qualified = psycopg2.sql.SQL("{}.{}").format(
+        psycopg2.sql.Identifier(schema),
+        psycopg2.sql.Identifier(table),
+    )
+
+    try:
+        cur.execute(
+            psycopg2.sql.SQL("SELECT * FROM {} LIMIT %s").format(qualified),
+            (limit,),
+        )
+        rows = cur.fetchall()
+        print(json.dumps([dict(r) for r in rows], default=json_serializer))
+    except psycopg2.Error as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    finally:
+        cur.close()
+        if database:
+            conn.close()
+
+
+@cli.command()
+@click.argument("dbname", default=PG_DATABASE)
+@click.pass_context
+def schema(ctx, dbname):
+    """List all schemas in a database."""
+    conn = get_connection(dbname=dbname)
+    cur = conn.cursor()
+
+    query = """
+    SELECT schema_name, schema_owner
+    FROM information_schema.schemata
+    ORDER BY schema_name;
+    """
+
+    try:
+        cur.execute(query)
+        rows = cur.fetchall()
+        if rows:
+            click.echo(f"Schemas in {dbname}:", err=True)
+            for row in rows:
+                click.echo(
+                    f"  • {row['schema_name']} (owner: {row['schema_owner']})", err=True
+                )
+        else:
+            click.echo("No schemas found.", err=True)
+    except psycopg2.Error as e:
+        click.echo(f"Error: {e}", err=True)
+    finally:
+        cur.close()
+        conn.close()
+
+
+@cli.command()
+@click.option(
+    "--database",
+    "-d",
+    default=PG_DATABASE,
+    help=f"Database name (default: {PG_DATABASE})",
+)
+@click.option("--schema", "-s", default="public", help="Schema name (default: public)")
+@click.pass_context
+def dump(ctx, database, schema):
+    """Dump SQL DDL statements to recreate database schema and tables (no data)."""
+    conn = get_connection(dbname=database)
+    cur = conn.cursor()
+
+    output = []
+
+    try:
+        # Add header comment
+        output.append(f"-- PostgreSQL schema dump for {database}.{schema}")
+        output.append(f"-- Generated by pg.py")
+        output.append("")
+
+        # Create schema if not public
+        if schema != "public":
+            output.append(f"CREATE SCHEMA IF NOT EXISTS {schema};")
+            output.append("")
+
+        # Get all sequences
+        cur.execute(
+            """
+            SELECT sequence_name, data_type, start_value, minimum_value,
+                   maximum_value, increment, cycle_option
+            FROM information_schema.sequences
+            WHERE sequence_schema = %s
+            ORDER BY sequence_name;
+        """,
+            (schema,),
+        )
+        sequences = cur.fetchall()
+
+        if sequences:
+            output.append("-- Sequences")
+            for seq in sequences:
+                seq_name = seq["sequence_name"]
+                cycle = "CYCLE" if seq["cycle_option"] == "YES" else "NO CYCLE"
+                output.append(f"CREATE SEQUENCE {schema}.{seq_name}")
+                output.append(f"    INCREMENT BY {seq['increment']}")
+                output.append(f"    MINVALUE {seq['minimum_value']}")
+                output.append(f"    MAXVALUE {seq['maximum_value']}")
+                output.append(f"    START WITH {seq['start_value']}")
+                output.append(f"    {cycle};")
+                output.append("")
+
+        # Get all tables
+        cur.execute(
+            """
+            SELECT tablename
+            FROM pg_tables
+            WHERE schemaname = %s
+            ORDER BY tablename;
+        """,
+            (schema,),
+        )
+        tables_list = cur.fetchall()
+
+        if tables_list:
+            output.append("-- Tables")
+            output.append("")
+
+        for table_row in tables_list:
+            table_name = table_row["tablename"]
+            output.append(f"CREATE TABLE {schema}.{table_name} (")
+
+            # Get columns
+            cur.execute(
+                """
+                SELECT column_name, data_type, character_maximum_length,
+                       numeric_precision, numeric_scale, is_nullable,
+                       column_default, udt_name
+                FROM information_schema.columns
+                WHERE table_schema = %s AND table_name = %s
+                ORDER BY ordinal_position;
+            """,
+                (schema, table_name),
+            )
+            columns = cur.fetchall()
+
+            column_defs = []
+            for col in columns:
+                col_name = col["column_name"]
+                data_type = col["data_type"]
+                udt_name = col["udt_name"]
+
+                # Handle special types
+                if data_type == "ARRAY":
+                    # Get base type from udt_name (e.g., _int4 -> integer[])
+                    base_type = udt_name.lstrip("_")
+                    type_str = f"{base_type}[]"
+                elif data_type == "USER-DEFINED":
+                    type_str = udt_name
+                elif data_type in ("character varying", "varchar"):
+                    max_len = col["character_maximum_length"]
+                    type_str = f"varchar({max_len})" if max_len else "varchar"
+                elif data_type == "character":
+                    max_len = col["character_maximum_length"]
+                    type_str = f"char({max_len})" if max_len else "char"
+                elif data_type == "numeric":
+                    prec = col["numeric_precision"]
+                    scale = col["numeric_scale"]
+                    if prec and scale:
+                        type_str = f"numeric({prec},{scale})"
+                    elif prec:
+                        type_str = f"numeric({prec})"
+                    else:
+                        type_str = "numeric"
+                else:
+                    type_str = data_type
+
+                col_def = f"    {col_name} {type_str}"
+
+                if col["column_default"]:
+                    col_def += f" DEFAULT {col['column_default']}"
+
+                if col["is_nullable"] == "NO":
+                    col_def += " NOT NULL"
+
+                column_defs.append(col_def)
+
+            # Get primary key
+            cur.execute(
+                """
+                SELECT kcu.column_name
+                FROM information_schema.table_constraints tc
+                JOIN information_schema.key_column_usage kcu
+                    ON tc.constraint_name = kcu.constraint_name
+                    AND tc.table_schema = kcu.table_schema
+                WHERE tc.constraint_type = 'PRIMARY KEY'
+                    AND tc.table_schema = %s
+                    AND tc.table_name = %s
+                ORDER BY kcu.ordinal_position;
+            """,
+                (schema, table_name),
+            )
+            pk_cols = [row["column_name"] for row in cur.fetchall()]
+
+            if pk_cols:
+                column_defs.append(f"    PRIMARY KEY ({', '.join(pk_cols)})")
+
+            # Get unique constraints
+            cur.execute(
+                """
+                SELECT tc.constraint_name, array_agg(kcu.column_name ORDER BY kcu.ordinal_position) as columns
+                FROM information_schema.table_constraints tc
+                JOIN information_schema.key_column_usage kcu
+                    ON tc.constraint_name = kcu.constraint_name
+                    AND tc.table_schema = kcu.table_schema
+                WHERE tc.constraint_type = 'UNIQUE'
+                    AND tc.table_schema = %s
+                    AND tc.table_name = %s
+                GROUP BY tc.constraint_name;
+            """,
+                (schema, table_name),
+            )
+            unique_constraints = cur.fetchall()
+
+            for uc in unique_constraints:
+                cols = uc["columns"]
+                if isinstance(cols, str):
+                    cols = cols.strip("{}").split(",")
+                column_defs.append(f"    UNIQUE ({', '.join(cols)})")
+
+            # Get foreign keys
+            cur.execute(
+                """
+                SELECT
+                    tc.constraint_name,
+                    kcu.column_name,
+                    ccu.table_schema AS foreign_table_schema,
+                    ccu.table_name AS foreign_table_name,
+                    ccu.column_name AS foreign_column_name,
+                    rc.update_rule,
+                    rc.delete_rule
+                FROM information_schema.table_constraints tc
+                JOIN information_schema.key_column_usage kcu
+                    ON tc.constraint_name = kcu.constraint_name
+                    AND tc.table_schema = kcu.table_schema
+                JOIN information_schema.constraint_column_usage ccu
+                    ON ccu.constraint_name = tc.constraint_name
+                    AND ccu.table_schema = tc.table_schema
+                JOIN information_schema.referential_constraints rc
+                    ON rc.constraint_name = tc.constraint_name
+                    AND rc.constraint_schema = tc.table_schema
+                WHERE tc.constraint_type = 'FOREIGN KEY'
+                    AND tc.table_schema = %s
+                    AND tc.table_name = %s;
+            """,
+                (schema, table_name),
+            )
+            fks = cur.fetchall()
+
+            for fk in fks:
+                fk_def = f"    FOREIGN KEY ({fk['column_name']}) REFERENCES {fk['foreign_table_schema']}.{fk['foreign_table_name']}({fk['foreign_column_name']})"
+                if fk["delete_rule"] != "NO ACTION":
+                    fk_def += f" ON DELETE {fk['delete_rule']}"
+                if fk["update_rule"] != "NO ACTION":
+                    fk_def += f" ON UPDATE {fk['update_rule']}"
+                column_defs.append(fk_def)
+
+            # Get check constraints
+            cur.execute(
+                """
+                SELECT cc.constraint_name, cc.check_clause
+                FROM information_schema.check_constraints cc
+                JOIN information_schema.table_constraints tc
+                    ON cc.constraint_name = tc.constraint_name
+                    AND cc.constraint_schema = tc.table_schema
+                WHERE tc.table_schema = %s
+                    AND tc.table_name = %s
+                    AND tc.constraint_type = 'CHECK'
+                    AND cc.constraint_name NOT LIKE '%%_not_null';
+            """,
+                (schema, table_name),
+            )
+            checks = cur.fetchall()
+
+            for check in checks:
+                column_defs.append(f"    CHECK ({check['check_clause']})")
+
+            output.append(",\n".join(column_defs))
+            output.append(");")
+            output.append("")
+
+        # Get indexes (non-primary key, non-unique constraint)
+        cur.execute(
+            """
+            SELECT indexname, indexdef
+            FROM pg_indexes
+            WHERE schemaname = %s
+                AND indexname NOT IN (
+                    SELECT constraint_name
+                    FROM information_schema.table_constraints
+                    WHERE table_schema = %s
+                        AND constraint_type IN ('PRIMARY KEY', 'UNIQUE')
+                )
+            ORDER BY tablename, indexname;
+        """,
+            (schema, schema),
+        )
+        indexes = cur.fetchall()
+
+        if indexes:
+            output.append("-- Indexes")
+            for idx in indexes:
+                output.append(f"{idx['indexdef']};")
+            output.append("")
+
+        # Print to stdout
+        click.echo("\n".join(output))
+
+    except psycopg2.Error as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    finally:
+        cur.close()
+        conn.close()
+
+
+@cli.command()
+@click.argument("sql_path", type=click.Path(exists=True), required=False, default=None)
+@click.option(
+    "--database",
+    "-d",
+    default=None,
+    help="Database name (default: from env or postgres)",
+)
+@click.option(
+    "--format",
+    "-f",
+    "output_format",
+    type=click.Choice(["json", "table"]),
+    default="json",
+    help="Output format (default: json)",
+)
+@click.pass_context
+def query(ctx, sql_path, database, output_format):
+    """Execute a SQL file, directory of SQL files, or SQL from stdin.
+
+    If path is a file, returns the query result array.
+    If path is a directory, returns JSON with file paths as keys and result arrays as values.
+    If no path is given, reads SQL from stdin.
+    """
+    if sql_path is None and sys.stdin.isatty():
+        click.echo("Error: No SQL path provided and no input on stdin.", err=True)
+        sys.exit(1)
+
+    conn = get_connection(dbname=database) if database else ctx.obj["conn"]
+    cur = conn.cursor()
+
+    try:
+        if sql_path is not None and os.path.isdir(sql_path):
+            # Directory mode: batch execute all .sql files
+            results = {}
+            sql_files = sorted([f for f in os.listdir(sql_path) if f.endswith(".sql")])
+
+            for sql_file in sql_files:
+                file_path = os.path.join(sql_path, sql_file)
+                try:
+                    with open(file_path, "r") as f:
+                        sql = f.read()
+                    cur.execute(sql)
+                    if cur.description:
+                        results[sql_file] = cur.fetchall()
+                    else:
+                        conn.commit()
+                        results[sql_file] = {
+                            "status": "success",
+                            "rows_affected": cur.rowcount,
+                        }
+                except psycopg2.Error as e:
+                    conn.rollback()
+                    results[sql_file] = {"error": str(e)}
+                except Exception as e:
+                    conn.rollback()
+                    results[sql_file] = {"error": str(e)}
+
+            click.echo(json.dumps(results, default=json_serializer, indent=2))
+        else:
+            # File or stdin mode: single query
+            if sql_path is not None:
+                with open(sql_path, "r") as f:
+                    sql = f.read()
+            else:
+                sql = sys.stdin.read()
+
+            cur.execute(sql)
+
+            if cur.description:  # SELECT or other query returning rows
+                rows = cur.fetchall()
+                if output_format == "json":
+                    click.echo(json.dumps(rows, default=json_serializer, indent=2))
+                else:
+                    print_results(rows)
+            else:
+                conn.commit()
+                click.echo(
+                    json.dumps(
+                        {"status": "success", "rows_affected": cur.rowcount}, indent=2
+                    )
+                )
+
+    except psycopg2.Error as e:
+        click.echo(json.dumps({"error": str(e)}), err=True)
+        sys.exit(1)
+    except Exception as e:
+        click.echo(json.dumps({"error": str(e)}), err=True)
+        sys.exit(1)
+    finally:
+        cur.close()
+        if database:
+            conn.close()
+
+
+@cli.group()
+def db():
+    """Commands related to databases."""
+    pass
+
+
+@db.command(name="list")
+@click.pass_context
+def database_list(ctx):
+    """List all databases in the PostgreSQL server."""
+    conn = get_connection()
+    cur = conn.cursor()
+
+    query = """
+    SELECT datname, pg_catalog.pg_get_userbyid(datdba) as owner,
+           pg_catalog.pg_encoding_to_char(encoding) as encoding
+    FROM pg_catalog.pg_database
+    WHERE datistemplate = false
+    ORDER BY datname;
+    """
+
+    try:
+        cur.execute(query)
+        rows = cur.fetchall()
+        if rows:
+            click.echo("Databases:", err=True)
+            for row in rows:
+                click.echo(
+                    f"  • {row['datname']} (owner: {row['owner']}, encoding: {row['encoding']})",
+                    err=True,
+                )
+        else:
+            click.echo("No databases found.", err=True)
+    except psycopg2.Error as e:
+        click.echo(f"Error: {e}", err=True)
+    finally:
+        cur.close()
+
+
+@db.command(name="add")
+@click.argument("name")
+@click.pass_context
+def database_add(ctx, name):
+    """Create a new database."""
+    conn = get_connection(dbname="postgres")
+    conn.autocommit = True
+    cur = conn.cursor()
+
+    try:
+        # Check if database already exists
+        cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (name,))
+        if cur.fetchone():
+            click.echo(f"Database '{name}' already exists.", err=True)
+            return
+        cur.execute(f"CREATE DATABASE {psycopg2.sql.Identifier(name).as_string(conn)}")
+        click.echo(f"Database '{name}' created successfully.", err=True)
+    except psycopg2.Error as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    finally:
+        cur.close()
+
+
+@db.command(name="drop")
+@click.argument("name")
+@click.option(
+    "--force", is_flag=True, help="Terminate active connections before dropping"
+)
+@click.pass_context
+def database_drop(ctx, name, force):
+    """Drop a database."""
+    conn = get_connection(dbname="postgres")
+    conn.autocommit = True
+    cur = conn.cursor()
+
+    try:
+        if force:
+            cur.execute(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = %s AND pid <> pg_backend_pid()",
+                (name,),
+            )
+        cur.execute(
+            f"DROP DATABASE IF EXISTS {psycopg2.sql.Identifier(name).as_string(conn)}"
+        )
+        click.echo(f"Database '{name}' dropped.", err=True)
+    except psycopg2.Error as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    finally:
+        cur.close()
+
+
+@db.command(name="save")
+@click.argument("name")
+@click.option(
+    "--output",
+    "-o",
+    default=None,
+    help="Output file path (default: <name>.sql.gz)",
+)
+@click.pass_context
+def database_save(ctx, name, output):
+    """Save (dump) a database to a compressed file using pg_dump."""
+    if output is None:
+        output = f"{name}.sql.gz"
+
+    env = os.environ.copy()
+    env["PGPASSWORD"] = os.getenv("PGPASSWORD", PG_PASSWORD)
+
+    dump_cmd = [
+        "pg_dump",
+        "-h",
+        os.getenv("PGHOST", PG_HOST),
+        "-p",
+        str(os.getenv("PGPORT", PG_PORT)),
+        "-U",
+        os.getenv("PGUSER", PG_USER),
+        "-d",
+        name,
+    ]
+
+    try:
+        with open(output, "wb") as f:
+            dump_proc = subprocess.Popen(dump_cmd, stdout=subprocess.PIPE, env=env)
+            gzip_proc = subprocess.Popen(["gzip"], stdin=dump_proc.stdout, stdout=f)
+            dump_proc.stdout.close()
+            gzip_proc.communicate()
+            dump_proc.wait()
+
+            if dump_proc.returncode != 0:
+                click.echo(
+                    f"Error: pg_dump failed with exit code {dump_proc.returncode}",
+                    err=True,
+                )
+                sys.exit(1)
+
+        click.echo(f"Database '{name}' saved to '{output}'.", err=True)
+    except FileNotFoundError:
+        click.echo(
+            "Error: pg_dump or gzip not found. Ensure they are installed.", err=True
+        )
+        sys.exit(1)
+
+
+@db.command(name="restore")
+@click.argument("input_file", type=click.Path(exists=True))
+@click.option(
+    "--name",
+    "-n",
+    default=None,
+    help="Database name (default: inferred from filename, e.g. hamed.sql.gz -> hamed)",
+)
+@click.option(
+    "--create/--no-create",
+    default=True,
+    help="Create the database before restoring (default: create)",
+)
+@click.pass_context
+def database_restore(ctx, input_file, name, create):
+    """Restore a database from a compressed dump file.
+
+    The database name is inferred from the filename (e.g. hamed.sql.gz -> hamed),
+    or can be specified with --name.
+    """
+    if name is None:
+        basename = os.path.basename(input_file)
+        name = basename.split(".")[0]
+        if not name:
+            click.echo(
+                "Error: Could not infer database name from filename. Use --name.",
+                err=True,
+            )
+            sys.exit(1)
+
+    conn = get_connection(dbname="postgres")
+
+    if create:
+        conn.autocommit = True
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                f"CREATE DATABASE {psycopg2.sql.Identifier(name).as_string(conn)}"
+            )
+            click.echo(f"Database '{name}' created.", err=True)
+        except psycopg2.errors.DuplicateDatabase:
+            click.echo(
+                f"Database '{name}' already exists, restoring into it.", err=True
+            )
+        except psycopg2.Error as e:
+            click.echo(f"Error creating database: {e}", err=True)
+            sys.exit(1)
+        finally:
+            cur.close()
+
+    env = os.environ.copy()
+    env["PGPASSWORD"] = os.getenv("PGPASSWORD", PG_PASSWORD)
+
+    psql_cmd = [
+        "psql",
+        "-h",
+        os.getenv("PGHOST", PG_HOST),
+        "-p",
+        str(os.getenv("PGPORT", PG_PORT)),
+        "-U",
+        os.getenv("PGUSER", PG_USER),
+        "-d",
+        name,
+    ]
+
+    try:
+        with open(input_file, "rb") as f:
+            gunzip_proc = subprocess.Popen(
+                ["gunzip", "-c"], stdin=f, stdout=subprocess.PIPE
+            )
+            psql_proc = subprocess.Popen(
+                psql_cmd,
+                stdin=gunzip_proc.stdout,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=env,
+            )
+            gunzip_proc.stdout.close()
+            _, stderr = psql_proc.communicate()
+            gunzip_proc.wait()
+
+            if psql_proc.returncode != 0:
+                click.echo(f"Error: psql failed: {stderr.decode().strip()}", err=True)
+                sys.exit(1)
+
+        click.echo(f"Database '{name}' restored from '{input_file}'.", err=True)
+    except FileNotFoundError as e:
+        click.echo(f"Error: {e}. Ensure gunzip and psql are installed.", err=True)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    cli()
