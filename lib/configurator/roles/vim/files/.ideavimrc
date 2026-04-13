@@ -1,0 +1,90 @@
+" IdeaVim core behavior (Vim-like defaults)
+set nocompatible
+set exrc
+set secure
+set encoding=utf-8
+set autowrite
+set ignorecase
+set smartcase
+set mouse=a
+set signcolumn=yes
+set scrolloff=0
+set noswapfile
+set nowritebackup
+set nobackup
+set number
+set relativenumber
+set cursorline
+set incsearch
+set hlsearch
+set showmatch
+set backspace=indent,eol,start
+set background=dark
+set belloff=all
+set tabstop=2
+set shiftwidth=2
+set smarttab
+set autoindent
+set expandtab
+set completeopt=preview,menuone,popup
+set clipboard+=unnamedplus
+
+" Leader and keymaps
+let mapleader = ","
+
+" File navigation (fzf equivalents)
+nnoremap <C-p> :action RecentFiles<CR>
+nnoremap <leader>o :action GotoFile<CR>
+nnoremap <leader>t :action GotoSymbol<CR>
+nnoremap <leader>f :action FindInPath<CR>
+nnoremap <leader>7 :action FileStructurePopup<CR>
+nnoremap <S-F3> :action GotoSymbol<CR>
+
+" Window management
+nnoremap <F10> :action UnsplitAll<CR>
+nnoremap <leader>x :action ActivateProjectToolWindow<CR>
+
+" Code actions / commands
+nnoremap <C-a> :action GotoAction<CR>
+nnoremap <leader>. :action ShowIntentionActions<CR>
+nnoremap <leader>i :action OptimizeImports<CR>
+
+" Documentation
+nnoremap <leader>q :action QuickJavaDoc<CR>
+
+" GoTo code navigation
+nmap <leader>g :action GotoDeclaration<CR>
+nmap gt :action GotoTypeDeclaration<CR>
+nmap gi :action GotoImplementation<CR>
+nmap <leader>3 :action FindUsages<CR>
+
+" Diagnostics
+nmap <F8> :action GotoNextError<CR>
+nmap <S-F8> :action GotoPreviousError<CR>
+
+" Refactoring
+nmap <S-F6> :action RenameElement<CR>
+
+" Formatting
+nnoremap <C-l> :action ReformatCode<CR>
+
+" Run test at caret
+nnoremap <C-k><C-r> :action RunClass<CR>
+
+" Copy/paste with system clipboard
+map <leader>v "+p
+map <leader>c "+y
+
+" Copy path / location
+map <leader>kp :action CopyAbsolutePath<CR>
+nmap <leader>8 :action CopyReference<CR>
+
+" Next item in tool window (like :cn)
+map ]l :action GotoNextError<CR>
+
+" Optional movement discipline
+noremap <Up> <Nop>
+noremap <Down> <Nop>
+noremap <Left> <Nop>
+noremap <Right> <Nop>
+

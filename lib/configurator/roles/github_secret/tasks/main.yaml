@@ -1,0 +1,17 @@
+- name: Install a Python Package
+  ansible.builtin.pip:
+    name: pynacl
+    state: present
+
+- name: Set a GitHub secret
+  github_encrypt:
+    owner: '{{ item.owner_name }}'
+    repo: '{{ item.repo_name }}'
+    token: '{{ github_pat }}'
+    secret: '{{ item.secret_value if "secret_value" in item
+                else (lookup("pipe", "cat " + item.secret_file) if "secret_file" in item else omit)
+    }}'
+    secret_name: '{{ item.secret_name }}'
+    state: '{{ item.state | default ("present") }}'
+  with_items: '{{ repo_secrets }}'
+  no_log: true

@@ -1,0 +1,17 @@
+---
+- name: Set variables
+  hosts: localhost
+  gather_facts: true
+  tasks:
+    - name: Include setup variables
+      include_tasks: "tasks/setup_vars.yaml"
+  tags:
+    - always
+
+- name: Terminal role
+  hosts: localhost
+  roles:
+    - role: terminal
+    - python
+  environment:
+    PATH: "{{ custom_path }}"

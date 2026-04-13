@@ -1,0 +1,19 @@
+---
+- file:
+    state: directory
+    path: "{{ user_fonts_dir }}"
+  tags:
+    - fonts
+
+- name: Install all TTF fonts from blueprint cache
+  shell: |
+    find {{ blueprint_home }} -name "*.ttf" -type f -exec cp {} "{{ user_fonts_dir }}" \;
+  tags:
+    - fonts
+
+- name: Update GNOME font cache
+  shell: fc-cache -f -v
+  when:
+    - ansible_facts['os_family'] == "Debian"
+  tags:
+    - fonts

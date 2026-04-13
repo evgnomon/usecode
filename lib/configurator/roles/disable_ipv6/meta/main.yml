@@ -1,0 +1,25 @@
+---
+galaxy_info:
+  author: blueprint
+  description: Configure system to disable IPv6 via sysctl
+  company: blueprint
+  license: MIT
+  min_ansible_version: "2.9"
+  platforms:
+    - name: Debian
+      versions:
+        - all
+    - name: Ubuntu
+      versions:
+        - all
+    - name: EL  # Enterprise Linux (RHEL, CentOS, etc.)
+      versions:
+        - all
+    - name: Fedora
+      versions:
+        - all
+  galaxy_tags:
+    - networking
+    - ipv6
+    - sysctl
+    - system

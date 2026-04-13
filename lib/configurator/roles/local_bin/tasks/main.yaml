@@ -1,0 +1,6 @@
+---
+- name: Ensure ~/.local/bin directory exists
+  file:
+    path: "{{ local_bin_path }}"
+    state: directory
+    mode: '0755'

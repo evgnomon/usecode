@@ -1,0 +1,17 @@
+- name: Gather OS specific variables
+  include_vars: "{{ item }}"
+  with_first_found: &archs-ansible-files
+    - "vars/{{ ansible_facts['distribution'] }}-{{ ansible_facts['distribution_major_version']}}.yaml"
+    - "vars/{{ ansible_facts['distribution'] }}.yaml"
+    - "vars/{{ ansible_facts['os_family']}}.yaml"
+  tags:
+    - always
+
+- name: Include Docker tasks
+  include_tasks: "{{ item }}"
+  with_first_found:
+    - "tasks/{{ ansible_facts['distribution'] }}-{{ ansible_facts['distribution_major_version']}}.yaml"
+    - "tasks/{{ ansible_facts['distribution'] }}.yaml"
+    - "tasks/{{ ansible_facts['os_family']}}.yaml"
+  tags:
+    - always

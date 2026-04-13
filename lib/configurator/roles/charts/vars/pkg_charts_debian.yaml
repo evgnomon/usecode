@@ -1,0 +1,187 @@
+---
+pkg_templates_debian:
+  idea:
+    os: &pkg_templates_idea_os >-
+      {{
+        {
+          'Debian': 'tar.gz',
+        }[ansible_facts['os_family']] | default('')
+      }}
+    arch: &pkg_templates_idea_arch >-
+      {{
+        {
+          'x86_64': '',
+          'aarch64': '-aarch64'
+        }[ansible_facts['architecture']] | default('')
+      }}
+  java:
+    os: &pkg_templates_java_os >-
+      {{
+        {
+          'Debian': 'linux',
+        }[ansible_facts['os_family']] | default('')
+      }}
+    arch: &pkg_templates_java_arch >-
+      {{
+        {
+          'x86_64': 'x64',
+          'aarch64': 'aarch64'
+        }[ansible_facts['architecture']] | default('')
+      }}
+  zig:
+    os: &pkg_templates_zig_os >-
+      {{
+        {
+          'Debian': 'linux',
+        }[ansible_facts['os_family']] | default('')
+      }}
+    arch: &pkg_templates_zig_arch >-
+      {{
+        {
+          'x86_64': 'x86_64',
+          'aarch64': 'aarch64'
+        }[ansible_facts['architecture']] | default('')
+      }}
+
+pkg_debian:
+  charts:
+    - name: idea
+      version: "{{ pkg_versions.idea.version }}"
+      template: &template_idea
+        os: *pkg_templates_idea_os
+        arch: *pkg_templates_idea_arch
+        url: https://download.jetbrains.com/%(name)s/%(name)sIC-%(version)s{{ pkg_templates_debian.idea.arch }}.{{ pkg_templates_debian.idea.os }}
+        ext: &ext_targz tar.gz
+        inflate: &inflate_targz tar -C %(dest)s -xzvf %(src)s
+        creates: idea-IC-{{ pkg_versions.idea.version_full }}/bin/idea
+      bins:
+        - name: idea
+          src: &bins_idea_src idea-IC-{{ pkg_versions.idea.version_full }}/bin/idea
+    - name: rider
+      version: "{{ pkg_versions.rider.version }}"
+      template: &template_rider
+        os: *pkg_templates_idea_os
+        arch: *pkg_templates_idea_arch
+        url: https://download.jetbrains.com/%(name)s/JetBrains.Rider-%(version)s.tar.gz
+        ext: *ext_targz
+        inflate: *inflate_targz
+        creates: "JetBrains Rider-{{ pkg_versions.rider.version }}/bin/rider"
+      bins:
+        - name: rider
+          src: &bins_rider_src "JetBrains Rider-{{ pkg_versions.rider.version }}/bin/rider"
+
+    - name: OpenJDK
+      version: "{{ pkg_versions.java.version }}_{{ pkg_versions.java.build }}"
+      template: &template_java
+        os: *pkg_templates_java_os
+        arch: *pkg_templates_java_arch
+        url: https://github.com/adoptium/temurin21-binaries/releases/download/jdk-{{ pkg_versions.java.version }}+{{ pkg_versions.java.build }}/%(name)s{{ pkg_versions.java.version.split('.')[0] }}U-jdk_{{ pkg_templates_debian.java.arch }}_{{ pkg_templates_debian.java.os }}_hotspot_%(version)s.tar.gz
+        ext: *ext_targz
+        inflate: *inflate_targz
+        creates: "{{ pkg_versions.java.version }}+{{ pkg_versions.java.build }}/bin/java"
+      bins:
+        - name: rmiregistry
+          src: "jdk-{{ pkg_versions.java.version }}+{{ pkg_versions.java.build }}/bin/rmiregistry"
+        - name: jarsigner
+          src: "jdk-{{ pkg_versions.java.version }}+{{ pkg_versions.java.build }}/bin/jarsigner"
+        - name: javadoc
+          src: "jdk-{{ pkg_versions.java.version }}+{{ pkg_versions.java.build }}/bin/javadoc"
+        - name: jconsole
+          src: "jdk-{{ pkg_versions.java.version }}+{{ pkg_versions.java.build }}/bin/jconsole"
+        - name: jdeps
+          src: "jdk-{{ pkg_versions.java.version }}+{{ pkg_versions.java.build }}/bin/jdeps"
+        - name: jimage
+          src: "jdk-{{ pkg_versions.java.version }}+{{ pkg_versions.java.build }}/bin/jimage"
+        - name: jmap
+          src: "jdk-{{ pkg_versions.java.version }}+{{ pkg_versions.java.build }}/bin/jmap"
+        - name: jps
+          src: "jdk-{{ pkg_versions.java.version }}+{{ pkg_versions.java.build }}/bin/jps"
+        - name: jstack
+          src: "jdk-{{ pkg_versions.java.version }}+{{ pkg_versions.java.build }}/bin/jstack"
+        - name: jwebserver
+          src: "jdk-{{ pkg_versions.java.version }}+{{ pkg_versions.java.build }}/bin/jwebserver"
+        - name: serialver
+          src: "jdk-{{ pkg_versions.java.version }}+{{ pkg_versions.java.build }}/bin/serialver"
+        - name: javap
+          src: "jdk-{{ pkg_versions.java.version }}+{{ pkg_versions.java.build }}/bin/javap"
+        - name: jdb
+          src: "jdk-{{ pkg_versions.java.version }}+{{ pkg_versions.java.build }}/bin/jdb"
+        - name: jfr
+          src: "jdk-{{ pkg_versions.java.version }}+{{ pkg_versions.java.build }}/bin/jfr"
+        - name: jinfo
+          src: "jdk-{{ pkg_versions.java.version }}+{{ pkg_versions.java.build }}/bin/jinfo"
+        - name: jmod
+          src: "jdk-{{ pkg_versions.java.version }}+{{ pkg_versions.java.build }}/bin/jmod"
+        - name: jrunscript
+          src: "jdk-{{ pkg_versions.java.version }}+{{ pkg_versions.java.build }}/bin/jrunscript"
+        - name: jstat
+          src: "jdk-{{ pkg_versions.java.version }}+{{ pkg_versions.java.build }}/bin/jstat"
+        - name: keytool
+          src: "jdk-{{ pkg_versions.java.version }}+{{ pkg_versions.java.build }}/bin/keytool"
+        - name: java
+          src: "jdk-{{ pkg_versions.java.version }}+{{ pkg_versions.java.build }}/bin/java"
+        - name: jar
+          src: "jdk-{{ pkg_versions.java.version }}+{{ pkg_versions.java.build }}/bin/jar"
+        - name: javac
+          src: "jdk-{{ pkg_versions.java.version }}+{{ pkg_versions.java.build }}/bin/javac"
+
+    - name: zig
+      version: "{{ pkg_versions.zig.version }}"
+      template: &template_zig
+        os: *pkg_templates_zig_os
+        arch: *pkg_templates_zig_arch
+        url: https://ziglang.org/builds/zig-{{ pkg_templates_debian.zig.arch }}-{{ pkg_templates_debian.zig.os }}-%(version)s.tar.xz
+        ext: &ext_tarxz tar.xz
+        inflate: &inflate_tarxz tar -C %(dest)s -xJf %(src)s
+        creates: "zig-{{ pkg_templates_debian.zig.arch }}-{{ pkg_templates_debian.zig.os }}-{{ pkg_versions.zig.version }}/zig"
+      bins:
+        - name: zig
+          src: &bins_zig_src "zig-{{ pkg_templates_debian.zig.arch }}-{{ pkg_templates_debian.zig.os }}-{{ pkg_versions.zig.version }}/zig"
+    - name: zig14
+      version: "{{ pkg_versions.zig14.version }}"
+      template:
+        os: *pkg_templates_zig_os
+        arch: *pkg_templates_zig_arch
+        url: https://ziglang.org/download/%(version)s/zig-{{ pkg_templates_debian.zig.arch }}-{{ pkg_templates_debian.zig.os }}-{{ pkg_versions.zig14.version }}.tar.xz
+        ext: *ext_tarxz
+        inflate: *inflate_tarxz
+        creates: "zig-{{ pkg_templates_debian.zig.arch }}-{{ pkg_templates_debian.zig.os }}-{{ pkg_versions.zig14.version }}/zig"
+      bins:
+        - name: zig14
+          src: "zig-{{ pkg_templates_debian.zig.arch }}-{{ pkg_templates_debian.zig.os }}-{{ pkg_versions.zig14.version }}/zig"
+
+    - name: zig15
+      version: "{{ pkg_versions.zig15.version }}"
+      template:
+        os: *pkg_templates_zig_os
+        arch: *pkg_templates_zig_arch
+        url: https://ziglang.org/download/%(version)s/zig-{{ pkg_templates_debian.zig.arch }}-{{ pkg_templates_debian.zig.os }}-{{ pkg_versions.zig15.version }}.tar.xz
+        ext: *ext_tarxz
+        inflate: *inflate_tarxz
+        creates: "zig-{{ pkg_templates_debian.zig.arch }}-{{ pkg_templates_debian.zig.os }}-{{ pkg_versions.zig15.version }}/zig"
+      bins:
+        - name: zig15
+          src: "zig-{{ pkg_templates_debian.zig.arch }}-{{ pkg_templates_debian.zig.os }}-{{ pkg_versions.zig15.version }}/zig"
+
+    - name: kotlin
+      version: "{{ pkg_versions.kotlin.version }}"
+      template:
+        os: *pkg_templates_java_os
+        arch: *pkg_templates_java_arch
+        url: "https://github.com/JetBrains/kotlin/releases/download/v{{ pkg_versions.kotlin.version }}/kotlin-compiler-{{ pkg_versions.kotlin.version }}.zip"
+        ext: zip
+        inflate: unzip -o %(src)s -d %(dest)s
+        creates: "kotlinc/bin/kotlin"
+      bins:
+        - name: kotlinc
+          src: "kotlinc/bin/kotlinc"
+        - name: kapt
+          src: "kotlinc/bin/kapt" 
+        - name: kotlin-compiler
+          src: "kotlinc/bin/kotlin-compiler"
+        - name: kotlinc-js
+          src: "kotlinc/bin/kotlinc-js"
+        - name: kotlinc-jvm
+          src: "kotlinc/bin/kotlinc-jvm"
+        - name: kotlin
+          src: "kotlinc/bin/kotlin"

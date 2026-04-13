@@ -1,0 +1,11 @@
+configs/mitmproxy
+configs/c.kdbx
+/.vimrc
+/tags
+/.vim
+/.ctags
+/.python-version
+/.secrets.yaml
+/*.bundle
+/.run
+/.claude

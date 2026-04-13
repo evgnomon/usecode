@@ -1,0 +1,15 @@
+---
+- name: Include Charts
+  hosts: 
+    - all
+    - localhost
+  gather_facts: false
+  roles:
+    - charts
+  tags:
+    - always
+
+- name: Update GitHub secrets
+  hosts: localhost
+  roles:
+    - name: github_secret

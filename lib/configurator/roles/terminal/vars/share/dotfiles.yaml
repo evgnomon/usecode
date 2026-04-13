@@ -1,0 +1,29 @@
+---
+dotfiles:
+  - .config/containers/registries.conf
+  - .config/hcloud/cli.sh
+  - .gitignore_global
+  - .gitconfig
+  - .ctags
+  - .cargo/config.toml
+  - .gnupg/gpg.conf
+  - .gnupg/scdaemon.conf
+  - .eget.toml
+  - .ctags.d/javascript.ctags
+  - .bashrc
+  - .inputrc
+  - .profile
+  - .bash_aliases
+  - claude/settings.json:.claude/settings.json
+
+root_dotfiles:
+  - .bashrc
+  - .inputrc
+  - .profile
+  - .bash_aliases
+
+dotdirs:
+  - dest: .claude/skills
+    src: "src/github.com/{{ blueprint_user }}/agents/claude/skills"
+  - dest: .claude/agents
+    src: "src/github.com/{{ blueprint_user }}/agents/claude/agents"

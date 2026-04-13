@@ -1,0 +1,81 @@
+---
+apt_packages:
+  share:
+    - build-essential  # Meta-package for compiling C/C++ programs (gcc, g++, libc-dev, make)
+    - make  # Build automation tool for compiling programs from Makefiles
+    - cmake  # Cross-platform build system generator for modern C/C++ projects
+    - gcc  # GNU C Compiler for compiling C programs
+    - libssl-dev  # OpenSSL development libraries for building programs with SSL/TLS support
+    - libffi-dev  # Foreign Function Interface library for calling C code from high-level languages
+    - libncurses5-dev  # Terminal UI library development files for building text-based interfaces
+    - zlib1g  # Compression library runtime for gzip/deflate operations
+    - zlib1g-dev  # Compression library development files for building programs with compression
+    - libreadline-dev  # Line-editing library for interactive command-line input with history
+    - libbz2-dev  # Bzip2 compression library development files for building compression tools
+    - libsqlite3-dev  # SQLite database library development files for embedded database applications
+    - tk-dev  # Tk GUI toolkit development files for building graphical applications
+    - liblzma-dev  # XZ compression library development files for high-ratio compression
+    - rsync  # Fast incremental file transfer tool for syncing files and backups
+    - libedit-dev  # Alternative line-editing library with BSD license compatibility
+    - gettext  # Internationalization and localization tools for multi-language support
+    - libclang-dev  # Clang compiler libraries for building tools that parse C/C++ code
+    - ncurses-dev  # Terminal handling library development files for text UI applications
+    - libpcre2-dev  # Perl-compatible regex library for pattern matching in applications
+    - libx11-dev  # X Window System client library for building X11 GUI applications
+    - libxtst-dev  # X11 testing extension library for simulating keyboard/mouse input
+    - libxt-dev  # X11 Toolkit Intrinsics library for building X11 widget-based GUIs
+    - libsm-dev  # X11 Session Management library for managing application sessions
+    - libxpm-dev  # X11 pixmap library for handling XPM image format in X applications
+    - jq  # Command-line JSON processor for parsing and manipulating JSON data
+    - ca-certificates  # Common CA certificates for validating SSL/TLS connections
+    - curl  # Command-line HTTP client for downloading files and testing APIs
+    - gnupg2  # GNU Privacy Guard for encryption, signing, and key management
+    - unzip  # Archive extraction utility for decompressing ZIP files
+    - apt-transport-https  # APT HTTPS support for securely downloading packages over TLS
+    - lsb-release  # Linux Standard Base version reporting tool for distribution detection
+    - libpam-yubico  # PAM module for YubiKey OTP authentication at login
+    - tree  # Directory structure visualization tool for recursive file listings
+    - qemu-system-x86  # x86/x86_64 system emulator for running virtual machines
+    - pinentry-tty  # PIN entry dialog for GPG in terminal environments
+    - libpcsclite-dev  # PC/SC smart card library development files for card reader applications
+    - swig  # Interface generator for connecting C/C++ with scripting languages
+    - pcscd  # PC/SC smart card daemon for managing smart card readers
+    - ykcs11  # YubiKey PKCS#11 module for using YubiKey with cryptographic applications
+    - yubioath-desktop  # YubiKey OATH desktop application for managing TOTP/HOTP codes
+    - heif-gdk-pixbuf  # HEIF/HEIC image format support for viewing modern image formats
+    - scdaemon  # Smart card daemon for GPG to communicate with hardware tokens
+    - zip  # Archive compression utility for creating ZIP files
+    - flex # Lexical analyzer generator for building compilers and interpreters
+    - bison # Parser generator for building compilers and interpreters
+    - net-tools  # Legacy networking utilities (ifconfig, netstat, route) for network debugging
+    - dmidecode  # DMI/SMBIOS decoder for reading hardware information from BIOS
+    - htop # Interactive process viewer for monitoring system resources with mouse support
+    - mdns-scan  # Multicast DNS scanner for discovering services on local network
+    - dotnet-sdk-9.0 # .NET SDK for building and running .NET applications
+    - dotnet-sdk-10.0 # .NET SDK for building and running .NET applications
+    - exuberant-ctags  # Code indexing tool for navigating source code in editors
+    - podman  # Daemonless container engine as Docker alternative for running containers
+    - packer # Tool for creating machine images for multiple platforms from a single source
+    - brave-browser  # Privacy-focused web browser with built-in ad blocking
+    - libisofs-dev # Library for creating ISO 9660 filesystem images
+    - libisoburn-dev # Library for burning ISO 9660 filesystem images to optical media
+    - libburn-dev # Library for writing data to optical media (CD/DVD/Blu-ray)
+    - clangd # Language server for C/C++ based on Clang for IDE integration
+    - reprepro # Tool for managing local APT package repositories
+    - clang-format # Code formatting tool for C/C++ based on Clang
+    - ntfs-3g # NTFS filesystem driver for read/write access to NTFS partitions
+    - uuid-runtime # Utilities for generating and managing UUIDs
+    - dh-virtualenv # Tool for creating Python virtualenvs as Debian packages
+    - gnumeric # Spreadsheet application for data analysis and visualization
+    - foot # Fast and minimal Wayland terminal emulator for modern Linux desktops
+    - mplayer # Command-line media player for playing audio and video files in terminal
+    - ugrep # Ultra-fast grep alternative with TUI and PCRE support for searching text in files
+    - libnss3-tools # Tools for managing NSS databases and certificates for secure communication
+    - skopeo # Tool for inspecting and copying container images between registries and local storage
+
+  ubuntu:
+    - mysql-client  # MySQL database client tools for connecting to MySQL servers
+    - libpam-u2f  # PAM module for FIDO U2F/FIDO2 hardware authentication keys
+  debian:
+    - qemu-system  # Generic QEMU system emulator meta-package for all architectures
+    # - virtiofsd

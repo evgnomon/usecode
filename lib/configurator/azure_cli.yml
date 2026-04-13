@@ -1,0 +1,16 @@
+---
+- name: Set variables
+  hosts: localhost
+  gather_facts: true
+  tasks:
+    - name: Include setup variables
+      include_tasks: "tasks/setup_vars.yaml"
+  tags:
+    - always
+
+- name: Azure Cli role for Debian family
+  hosts: localhost
+  roles:
+    - role: azure_cli
+  environment:
+    PATH: "{{ custom_path }}"

@@ -1,0 +1,49 @@
+---
+- name: Create destination directory
+  file:
+    path: "{{ path }}"
+    state: directory
+  with_items:
+    - "{{ package_dest }}"
+  loop_control:
+    loop_var: path
+  tags:
+    - pkg
+
+- name: Create source directory for package
+  file:
+    path: "{{ path | dirname }}"
+    state: directory
+  with_items:
+    - "{{ package_src }}"
+  loop_control:
+    loop_var: path
+  tags:
+    - pkg
+
+- name: Download package
+  command:
+    cmd: |
+      curl --proto '=https' --tlsv1.2 -sSLf {{ package.template.url | format( version = package.version, name = package.name ) }} -o '{{ package_src }}'
+    creates: "{{ package_src }}"
+  tags:
+    - pkg
+
+- name: Inflate package
+  shell: "{{ package.template.inflate | format( src =  package_src, dest = package_dest, name = package.name) }}"
+  args:
+    creates: "{{ package_dest }}/{{ package.template.creates }}"
+  when:
+    - '"inflate" in package.template'
+  tags:
+    - pkg
+
+- name: Link bins
+  file:
+    src: "{{ package_dest }}/{{ item.src  | format( version = package.version, name = package.name, target = item.target | default(item.name) ) }}"
+    dest: "{{ local_bin_path }}/{{ item.name }}"
+    state: link
+    force: true
+  with_items: "{{ package.bins | default([])}}"
+  tags:
+    - pkg

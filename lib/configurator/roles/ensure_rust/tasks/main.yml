@@ -1,0 +1,15 @@
+---
+- name: Add rust-analyzer component
+  command: rustup component add rust-analyzer
+  register: rust_analyzer_install
+  changed_when: "'is up to date' not in rust_analyzer_install.stdout"
+  failed_when: rust_analyzer_install.rc != 0
+
+- name: Verify rust-analyzer installation
+  command: rustup component list --installed
+  register: rust_components
+  changed_when: false
+
+- name: Display installed rust components
+  debug:
+    msg: "Installed Rust components include rust-analyzer: {{ 'rust-analyzer' in rust_components.stdout }}"

@@ -1,0 +1,16 @@
+---
+galaxy_info:
+  author: evgnomon
+  description: Ensures ~/.local/bin directory exists
+  company:
+  license: MIT
+  min_ansible_version: "2.9"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - all
+    - name: Debian
+      versions:
+        - all
+
+dependencies: []

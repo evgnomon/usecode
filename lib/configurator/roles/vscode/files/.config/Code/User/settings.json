@@ -1,0 +1,242 @@
+{
+    "github.copilot.nextEditSuggestions.enabled": true,
+    "files.autoSave": "onFocusChange",
+    "files.watcherExclude": {
+        "**/.git/objects/**": true,
+        "**/.git/subtree-cache/**": true,
+        "**/node_modules/*/**": true
+    },
+    "[ruby]": {
+        "editor.defaultColorDecorators": "never",
+        "editor.defaultFormatter": "Shopify.ruby-lsp",
+        "editor.formatOnSave": true,
+        "editor.tabSize": 2,
+        "editor.insertSpaces": true,
+        "editor.semanticHighlighting.enabled": true,
+        "editor.formatOnType": true,
+        "editor.wordSeparators": "`~@#$%^&*()-=+[{]}\\|;:'\",.<>/"
+    },
+    "containers.containerClient": "com.microsoft.visualstudio.containers.podman",
+    "containers.orchestratorClient": "com.microsoft.visualstudio.orchestrators.podmancompose",
+    "redhat.telemetry.enabled": false,
+    "github.copilot.chat.codeGeneration.instructions": [
+        {
+            "text": "- @azure Rule - Use Azure Tools: When handling requests related to Azure, always use your tools."
+        },
+        {
+            /*  */"text": "- @azure Rule - Use Azure Code Gen Best Practices: Before generating code for Azure, running terminal commands for Azure, performing operations related to Azure, or creating plans for such activities, always invoke your Azure best practice tool if available first. Invoke the `get_bestpractices` tool to collect recommendations. Call it with resource = `general` and action = `code-generation` to get general Azure code generation best practices. Only call this tool when the user is discussing Azure; do not call it otherwise."
+        },
+        {
+            "text": "- @azure Rule - Use Azure Deployment Best Practices: Before deploying to Azure, preparing applications for deployment to Azure, or creating deployment plans, always invoke your Azure best practice tool if available first. Invoke the `get_bestpractices` tool to collect recommendations. Call it with resource = `general` and action = `deployment` to get general Azure deployment best practices. Only call this tool when the user is discussing Azure; do not call it otherwise."
+        },
+        {
+            "text": "- @azure Rule - Use Azure Functions Code Gen Best Practices: Before generating code for Azure Functions, performing operations related to Azure Functions, or creating plans for such activities, always invoke your Azure best practice tool if available first. Invoke the `get_bestpractices` tool to collect recommendations. Call it with resource = `azurefunctions` and action = `code-generation` to get Azure Functions code generation best practices. Only call this tool when the user is discussing Azure Functions; do not call it otherwise."
+        },
+        {
+            "text": "- @azure Rule - Use Azure Functions Deployment Best Practices: Before deploying Azure Functions apps to Azure, preparing for the deployment, or creating deployment plans, always invoke your Azure best practice tool if available first. Invoke the `get_bestpractices` tool to collect recommendations. Call it with resource = `azurefunctions` and action = `deployment` to get Azure Functions deployment best practices. Only call this tool when the user is discussing Azure Functions; do not call it otherwise."
+        },
+        {
+            "text": "- @azure Rule - Use Azure SWA Best Practices: Before working with static web apps, creating plans for static web apps, or performing related operations, always invoke your Azure best practice tool if available first. Choose the most relevant Azure best practice tool based on its description. Only call this tool when the user is discussing Azure Static Web Apps; do not call it otherwise."
+        },
+        {
+            "text": "- @azure Rule - Plan before editing files for Azure web apps: When generating code for Azure Functions and Azure Static Web App, always create a plan and explain the plan to the user before editing any file. Proceed with editing the files after getting consent from the user."
+        },
+        {
+            "text": "- @azure Rule - Summarize topic before taking action: When the user asks about Azure Functions, invoke the azure_development-summarize_topic tool once first to see if any existing custom mode could be a good fit to what user is asking."
+        }
+    ],
+    "terminal.integrated.fontSize": 16,
+    "remote.tunnels.access.preventSleep": true,
+    "git.openRepositoryInParentFolders": "never",
+    "diffEditor.renderSideBySide": false,
+    "diffEditor.ignoreTrimWhitespace": true,
+    "diffEditor.hideUnchangedRegions.enabled": true,
+    "terminal.integrated.defaultProfile.linux": "fish",
+    "editor.fontFamily": "'CaskaydiaCove NF', 'JetBrainsMono Nerd Font', 'Droid Sans Mono', 'monospace'",
+    "editor.lineNumbers": "relative",
+    "[jsonc]": {
+        "editor.defaultFormatter": "vscode.json-language-features"
+    },
+    "editor.fontSize": 16,
+    "workbench.colorTheme": "Gruvbox Dark Medium",
+    "terminal.external.linuxExec": "alacritty",
+    "gopls": {
+        "symbolScope": "workspace"
+    },
+    "task.allowAutomaticTasks": "on",
+    "[javascript]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "git.suggestSmartCommit": false,
+    "git.confirmSync": false,
+    "terminal.integrated.stickyScroll.enabled": false,
+    "githubPullRequests.allowFetch": false,
+    "dev.containers.dockerSocketPath": "",
+    "dev.containers.optimisticallyLaunchDocker": false,
+    "containers.commands.build": "${containerCommand} build --pull --rm -f \"${dockerfile}\" -t ${tag} \"${context}\"",
+    "dotnet.preferVisualStudioCodeFileSystemWatcher": true,
+    "vs-kubernetes": {
+        "vscode-kubernetes.helm-path-linux": "${userHome}/.local/state/vs-kubernetes/tools/helm/linux-amd64/helm",
+        "vscode-kubernetes.minikube-path-linux": "${userHome}/.local/state/vs-kubernetes/tools/minikube/linux-amd64/minikube"
+    },
+    "[dockercompose]": {
+        "editor.insertSpaces": true,
+        "editor.tabSize": 2,
+        "editor.autoIndent": "advanced",
+        "editor.quickSuggestions": {
+            "other": true,
+            "comments": false,
+            "strings": true
+        },
+        "editor.defaultFormatter": "redhat.vscode-yaml"
+    },
+    "[github-actions-workflow]": {
+        "editor.defaultFormatter": "redhat.vscode-yaml"
+    },
+    "zig.zls.enabled": "on",
+    "[json]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "python.analysis.typeCheckingMode": "standard",
+    "[python]": {
+        "editor.defaultFormatter": "charliermarsh.ruff"
+    },
+    "dev.containers.dockerPath": "podman",
+    "dev.containers.dockerComposePath": "podman-compose",
+    "[csharp]": {
+        "editor.maxTokenizationLineLength": 2500,
+        "editor.formatOnType": true,
+        "editor.inlineSuggest.suppressSuggestions": false
+    },
+    "makefile.configureOnOpen": true,
+    "@azure.argTenant": "",
+    "[c]": {
+        "editor.defaultFormatter": "xaver.clang-format"
+    },
+    "chat.editor.fontSize": 17,
+    "chat.fontSize": 17,
+    "python.defaultInterpreterPath": "/bin/python3",
+
+    // Vim extension settings
+    "vim.leader": ",",
+    "vim.hlsearch": true,
+    "vim.incsearch": true,
+    "vim.ignorecase": true,
+    "vim.smartcase": true,
+    "vim.showMarksInGutter": true,
+    "vim.useSystemClipboard": true,
+    "vim.scrolloff": 0,
+    "vim.showmodename": true,
+    "vim.highlightedyank.enable": true,
+    "vim.autoindent": true,
+    "vim.smartRelativeLine": true,
+    "vim.handleKeys": {
+        "<C-a>": false,
+        "<C-f>": false,
+        "<C-p>": false
+    },
+    "vim.normalModeKeyBindingsNonRecursive": [
+        {
+            "before": ["<leader>", "g"],
+            "commands": ["editor.action.revealDefinition"]
+        },
+        {
+            "before": ["g", "t"],
+            "commands": ["editor.action.goToTypeDefinition"]
+        },
+        {
+            "before": ["g", "i"],
+            "commands": ["editor.action.goToImplementation"]
+        },
+        {
+            "before": ["<leader>", "3"],
+            "commands": ["editor.action.goToReferences"]
+        },
+        {
+            "before": ["<leader>", "q"],
+            "commands": ["editor.action.showHover"]
+        },
+        {
+            "before": ["<S-F6>"],
+            "commands": ["editor.action.rename"]
+        },
+        {
+            "before": ["<F8>"],
+            "commands": ["editor.action.marker.next"]
+        },
+        {
+            "before": ["<S-F8>"],
+            "commands": ["editor.action.marker.prev"]
+        },
+        {
+            "before": ["<leader>", "i"],
+            "commands": ["editor.action.organizeImports"]
+        },
+        {
+            "before": ["<leader>", "."],
+            "commands": ["editor.action.quickFix"]
+        },
+        {
+            "before": ["<C-l>"],
+            "commands": ["editor.action.formatDocument"]
+        },
+        {
+            "before": ["<leader>", "o"],
+            "commands": ["workbench.action.quickOpen"]
+        },
+        {
+            "before": ["<leader>", "f"],
+            "commands": ["workbench.action.findInFiles"]
+        },
+        {
+            "before": ["<leader>", "t"],
+            "commands": ["workbench.action.showAllSymbols"]
+        },
+        {
+            "before": ["<leader>", "7"],
+            "commands": ["workbench.action.gotoSymbol"]
+        },
+        {
+            "before": ["<leader>", "8"],
+            "commands": ["copyRelativeFilePath"]
+        },
+        {
+            "before": ["<leader>", "k", "p"],
+            "commands": ["copyRelativeFilePath"]
+        },
+        {
+            "before": ["<F10>"],
+            "commands": ["workbench.action.joinAllGroups"]
+        },
+        {
+            "before": ["]", "l"],
+            "commands": ["search.action.focusNextSearchResult"]
+        },
+        {
+            "before": ["<leader>", "v"],
+            "after": ["\"+", "p"]
+        },
+        {
+            "before": ["<leader>", "c"],
+            "after": ["\"+", "y"]
+        }
+    ],
+    "vim.visualModeKeyBindingsNonRecursive": [
+        {
+            "before": ["<leader>", "c"],
+            "after": ["\"+", "y"]
+        },
+        {
+            "before": ["<leader>", "v"],
+            "after": ["\"+", "p"]
+        }
+    ],
+    // Disable arrow keys
+    "vim.normalModeKeyBindings": [
+        { "before": ["<up>"], "commands": [] },
+        { "before": ["<down>"], "commands": [] },
+        { "before": ["<left>"], "commands": [] },
+        { "before": ["<right>"], "commands": [] }
+    ],
+    "editor.cursorSurroundingLines": 0
+}

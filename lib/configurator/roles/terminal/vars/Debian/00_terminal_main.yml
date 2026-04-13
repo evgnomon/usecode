@@ -1,0 +1,3 @@
+---
+user_fonts_dir: "{{ ansible_facts['env']['HOME'] }}/.fonts"
+pinentry_bin: /usr/bin/pinentry

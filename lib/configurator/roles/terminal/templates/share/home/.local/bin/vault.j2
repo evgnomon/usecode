@@ -1,0 +1,39 @@
+#!/bin/sh
+
+SECRETS_DIR="{{ blueprint_config_dir }}/secrets"
+GPG_KEY={{ gpg.get('key', '') if gpg is defined else '' }}
+
+export EDITOR=vi
+
+# Function for encryption
+encrypt_file() {
+     if [ -z "$1" ]; then
+         echo "Please provide a file to encrypt and the recipient's key identifier."
+         exit 1
+     fi
+     if [ -n "$2" ]; then
+       GPG_KEY="$2"
+     fi
+     mkdir -p $SECRETS_DIR
+     cat - | gpg -e -r "$GPG_KEY" --armor > "$SECRETS_DIR/$1.asc"
+}
+
+ # Function for decryption
+decrypt_file() {
+    if [ -z "$1" ]; then
+        echo "Please provide a file to decrypt."
+        exit 1
+    fi
+    gpg --quiet -d "$SECRETS_DIR/${1%}.asc"
+}
+
+# Check arguments
+if [ "$1" = "-e" ]; then
+    encrypt_file "$2" "$3"
+elif [ "$1" = "-d" ]; then
+    decrypt_file "$2"
+else
+    echo "Usage: $0 [-e|-d] [file] [recipient's key identifier for encryption]"
+    exit 1
+fi
+

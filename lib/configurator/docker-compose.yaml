@@ -1,0 +1,9 @@
+version: '3'
+services:
+  blueprint:
+    build: .
+    volumes:
+      - cache:/home/nouser/.cache/blueprint
+
+volumes:
+  cache:

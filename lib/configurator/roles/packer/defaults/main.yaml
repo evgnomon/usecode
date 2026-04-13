@@ -1,0 +1,3 @@
+packer_plugins:
+  - github.com/hashicorp/ansible
+  - github.com/hashicorp/qemu

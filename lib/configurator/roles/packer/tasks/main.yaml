@@ -1,0 +1,5 @@
+---
+- command: packer plugins install {{ item }}
+  loop: "{{ packer_plugins }}"
+  tags:
+    - packer

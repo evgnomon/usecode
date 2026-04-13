@@ -1,0 +1,19 @@
+---
+- name: Find all files in flow bin directories
+  find:
+    paths: "{{ blueprint_user_home }}/src/github.com/evgnomon/flow"
+    file_type: file
+    recurse: yes
+  register: flow_files
+  tags:
+    - install_flow
+
+- name: Link flow files to ~/.local/bin
+  file:
+    src: "{{ item.path }}"
+    dest: "{{ local_bin_path }}/{{ item.path | basename }}"
+    state: link
+    force: yes
+  loop: "{{ flow_files.files | selectattr('path', 'search', '/bin/') | list }}"
+  tags:
+    - install_flow

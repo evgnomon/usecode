@@ -1,0 +1,22 @@
+---
+- name: Ensure /etc/apt/keyrings directory exists
+  file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: '0755'
+
+- name: Install Docker packages using Apt
+  become: true
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+    name: "{{ docker_apt_packages }}"
+    state: present
+  tags:
+    - docker
+
+- name: Create docker group
+  group:
+    name: docker
+    state: present
+  become: true

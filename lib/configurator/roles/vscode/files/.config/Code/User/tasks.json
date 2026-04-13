@@ -1,0 +1,10 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "echo user task",
+            "type": "shell",
+            "command": "echo Hello"
+        }
+    ]
+}

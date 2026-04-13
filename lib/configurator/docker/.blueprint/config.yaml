@@ -1,0 +1,18 @@
+---
+profiles:
+  main:
+    username: nouser
+    useremail: nouser@example.com
+    fullname: No User
+    blue_code: zygote
+    gpg_key: 9376C029DB0A0AD24A1CD57E3BAF1978F224E30F
+  work:
+    username: nouser
+    useremail: nouser@example.com
+    fullname: No User
+    blue_code: zygote
+    gpg_key: C8A88FE1E0E6754882BFE7F5E9CA36424DECE2BC
+
+git_repos:
+  - url: ssh://git@github.com/evgnomon/evgnomon.github.io.git
+    prefix: &prefix_home_src "{{ ansible_facts['env']['HOME'] }}/src"

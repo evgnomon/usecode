@@ -1,0 +1,41 @@
+[user]
+	name = Hamed Ghasemzadeh
+
+[core]
+	autocrlf = input
+	excludesfile = ~/.gitignore_global
+
+[diff]
+  tool = vimdiff
+  colorMoved = default
+
+[merge]
+	tool = vimdiff
+  conflictstyle = diff3
+
+[http]
+	cookiefile = ~/.gitcookies
+
+[color "diff-highlight"]
+  oldNormal = red
+  oldHighlight = red 52
+  newNormal = green
+  newHighlight = green 22
+
+[alias]
+	co = checkout
+	s = status
+  b = branch
+  p = push
+  i = diff --staged --color-words
+  d = diff --color-words
+  c = commit
+  l = log --oneline --graph --decorate --all
+  st = !git diff --stat
+  reflog = reflog --date=relative
+
+[pull]
+  rebase = false
+
+[init]
+	defaultBranch = main

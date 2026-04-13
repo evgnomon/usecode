@@ -1,0 +1,36 @@
+#!/bin/bash
+DOMAIN_NAME=$1
+
+if [ -z "$DOMAIN_NAME" ]; then
+  echo "Usage: $0 <name>"
+  exit 1
+fi
+
+DST_IMAGE=/var/lib/libvirt/images/$DOMAIN_NAME.bin
+
+# Check if domain exists
+if sudo virsh list --all | grep -q "$DOMAIN_NAME"; then
+  echo "Removing domain: $DOMAIN_NAME"
+
+  # Stop the domain if it's running
+  if sudo virsh list --state-running | grep -q "$DOMAIN_NAME"; then
+    echo "Stopping domain: $DOMAIN_NAME"
+    sudo virsh destroy $DOMAIN_NAME
+  fi
+
+  # Undefine the domain
+  sudo virsh undefine $DOMAIN_NAME
+else
+  echo "Domain $DOMAIN_NAME not found"
+fi
+
+# Remove the disk image if it exists
+if [ -f "$DST_IMAGE" ]; then
+  echo "Removing disk image: $DST_IMAGE"
+  sudo rm -f $DST_IMAGE
+else
+  echo "Disk image $DST_IMAGE not found"
+fi
+
+sudo virsh list
+sudo -k

@@ -1,0 +1,55 @@
+---
+- name: Install packages for Debian family
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Include pkg role for all packages
+      with_items: "{{ pkg.charts }}"
+      include_role:
+        name: pkg
+      loop_control:
+        loop_var: package
+      tags:
+        - pkg
+      when:
+        - ansible_facts['os_family'] in pkg_versions.get(package.name, {}).get('os_families', [ansible_facts['os_family']])
+        - pkg_versions.get(package.name, {}).get('dev_container', true) or not dev_container | default(false)
+
+    - name: Include pkg role for Debian specific packages
+      with_items: "{{ pkg_debian.charts }}"
+      when:
+        - ansible_facts['os_family'] in pkg_versions.get(package.name, {}).get('os_families', [ansible_facts['os_family']])
+        - pkg_versions.get(package.name, {}).get('dev_container', true) or not dev_container | default(false)
+
+      include_role:
+        name: pkg
+      loop_control:
+        loop_var: package
+      tags:
+        - pkg
+
+- name: Localhost roles for Debian family
+  gather_facts: false
+  hosts: localhost
+  roles:
+    - install_flow
+    - terminal
+    - vscode
+    - docker
+    - disable_ipv6
+    - remove-gnome-packages
+    - packer
+  environment:
+    PATH: "{{ custom_path }}"
+    LD_LIBRARY_PATH: "{{ ansible_facts['env']['HOME'] }}/.pyenv/versions/3.12.0/lib/"
+
+- name: Install ZLS language server
+  gather_facts: false
+  hosts: localhost
+  roles:
+    - ensure_zls
+  environment:
+    PATH: "{{ custom_path }}"
+    LD_LIBRARY_PATH: "{{ ansible_facts['env']['HOME'] }}/.pyenv/versions/3.12.0/lib/"
+  tags:
+    - zls

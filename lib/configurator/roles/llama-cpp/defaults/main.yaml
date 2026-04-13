@@ -1,0 +1,5 @@
+llama_cpp_repo: "https://github.com/ggerganov/llama.cpp"
+llama_cpp_org_dir: "{{ lookup('env', 'HOME') }}/src/github.com/ggml-org"
+llama_cpp_dir: "{{ llama_cpp_org_dir }}/llama.cpp"
+llama_cpp_build_dir: "{{ llama_cpp_dir }}/build"
+llama_bin_link_dir: "{{ local_bin_path }}"

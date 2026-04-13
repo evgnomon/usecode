@@ -1,0 +1,16 @@
+---
+- name: Set variables
+  hosts: localhost
+  gather_facts: true
+  tasks:
+    - name: Include setup variables
+      include_tasks: "tasks/setup_vars.yaml"
+  tags:
+    - always
+
+- name: Zygote role
+  hosts: localhost
+  roles:
+    - role: terminal
+  environment:
+    PATH: "{{ custom_path }}"

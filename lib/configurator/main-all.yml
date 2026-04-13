@@ -1,0 +1,70 @@
+- name: Install Pip packages
+  gather_facts: false
+  hosts:
+    - all
+    - localhost    
+  roles:
+    - python
+
+- name: Install Eget packages
+  gather_facts: false
+  hosts: 
+    - all
+    - localhost
+  roles:
+    - eget
+  tags:
+    - eget
+
+
+- name: Install Rust packages
+  gather_facts: false
+  hosts: 
+    - all
+    - localhost
+  roles:
+    - ensure_rust
+  tags:
+    - rust
+
+- name: Install C# Language Server
+  gather_facts: false
+  hosts: 
+    - all
+    - localhost
+  roles:
+    - ensure_csharp_ls
+  tags:
+    - cs
+
+- name: Install Goose CLI
+  gather_facts: false
+  hosts: 
+    - all
+    - localhost
+  roles:
+    - goose
+  tags:
+    - goose
+
+- name: vim role
+  hosts: 
+    - all
+    - localhost
+  strategy: free
+  gather_facts: false
+  roles:
+    - vim
+  tags:
+    - vim
+  environment:
+    PATH: "{{ custom_path }}"
+    LD_LIBRARY_PATH: "{{ ansible_facts['env']['HOME'] }}/.pyenv/versions/3.12.0/lib/"
+
+- name: Install package roles
+  gather_facts: false
+  hosts:
+    - all
+    - localhost
+  roles:
+    - digitalocean_galaxy_collection

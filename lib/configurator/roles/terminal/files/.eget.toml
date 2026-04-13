@@ -1,0 +1,7 @@
+[global]
+target = "~/.local/bin"
+show_hash = true
+
+["junegunn/fzf"]
+upgrade_only = true
+target = "~/.local/bin/fzf"

@@ -1,0 +1,25 @@
+---
+- file:
+    state: directory
+    path: "{{ target }}/{{ item.path | replace('.j2', '') | dirname }}"
+  become: "{{ (target in ['/etc', '/root']) | bool }}"
+  tags:
+    - always
+
+- template:
+    src: "{{ item.src }}"
+    dest: "{{ target }}/{{ item.path | replace('.j2', '') }}"
+  become: "{{ (target in ['/etc', '/root']) | bool }}"
+  when:
+    - item.path[-3:] == '.j2'
+  tags:
+    - always
+
+- copy:
+    src: "{{ item.src }}"
+    dest: "{{ target }}/{{ item.path }}"
+  become: "{{ (target in ['/etc', '/root']) | bool }}"
+  when:
+    - item.path[-3:] != '.j2'
+  tags:
+    - always

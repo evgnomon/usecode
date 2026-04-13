@@ -1,0 +1,441 @@
+---
+pkg_templates:
+  node:
+    os: &pkg_templates_node_os >-
+      {{
+        {
+            'Debian': 'linux'
+        }[ansible_facts['os_family']] | default('')
+      }}
+    arch: &pkg_templates_node_arch >-
+      {{
+        {
+          'x86_64': 'x64',
+          'aarch64': 'arm64',
+          'i386': 'x86'
+        }[ansible_facts['architecture']] | default('')
+      }}
+  go:
+    os: &pkg_templates_go_os >-
+      {{
+        {
+          'Debian': 'linux'
+        }[ansible_facts['os_family']] | default('')
+      }}
+    arch: &pkg_templates_go_arch >-
+      {{
+        {
+          'x86_64': 'amd64',
+          'aarch64': 'arm64',
+          'i386': '386'
+        }[ansible_facts['architecture']] | default('')
+      }}
+  rustup:
+    os: &pkg_templates_rustup_os >-
+      {{
+        {
+          'Debian': 'unknown-linux-gnu'
+        }[ansible_facts['os_family']] | default('')
+      }}
+    arch: &pkg_templates_rustup_arch >-
+      {{
+        {
+          'x86_64': 'x86_64',
+          'aarch64': 'aarch64'
+        }[ansible_facts['architecture']] | default('')
+      }}
+  fzf:
+    ext: &pkg_templates_fzf_ext >-
+      {{
+        {
+          'Debian': 'tar.gz'
+        }[ansible_facts['os_family']] | default('zip')
+      }}
+    inflate: &pkg_templates_fzf_inflate >-
+      {{
+        {
+          'Debian': 'tar -C %(dest)s -xzvf %(src)s'
+        }[ansible_facts['os_family']] | default('unzip -o -d %(dest)s %(src)s')
+      }}
+  cmake:
+    os: &pkg_templates_cmake_os >-
+      {{
+        {
+          'Debian': 'linux'
+        }[ansible_facts['os_family']] | default('')
+      }}
+    arch: &pkg_templates_cmake_arch >-
+      {{
+        {
+          'x86_64': 'amd64',
+          'aarch64': 'aarch64',
+          'i386': 'i386'
+        }[ansible_facts['architecture']] | default('')
+      }}
+    osarch: &pkg_templates_cmake_osarch >-
+      {{
+        {
+          'Debian': {
+            'x86_64': 'linux-x86_64',
+            'aarch64': 'linux-aarch64'
+          }
+        }[ansible_facts['os_family']][ansible_facts['architecture']] | default('')
+      }}
+
+    ext: >-
+      {{
+        {
+          'Debian': 'tar.gz'
+        }[ansible_facts['os_family']] | default('')
+      }}
+
+    inflate: >-
+      {{
+        {
+          'Debian': 'tar -C %(dest)s -xzvf %(src)s'
+        }[ansible_facts['os_family']] | default('')
+      }}
+  bazelisk:
+    osarch: &pkg_templates_bazelisk_osarch >-
+      {{
+        {
+          'Debian': {
+            'x86_64': 'linux-amd64',
+            'aarch64': 'linux-arm64'
+          }
+        }[ansible_facts['os_family']][ansible_facts['architecture']] | default('')
+      }}
+  mysql:
+    ext: &pkg_templates_mysql_ext >-
+      {{
+        {
+          'Debian': 'tar.xz',
+        }[ansible_facts['os_family']] | default('')
+      }}
+    inflate: &pkg_templates_mysql_inflate >-
+      {{
+        {
+          'Debian': 'tar -C %(dest)s -xJvf %(src)s',
+        }[ansible_facts['os_family']] | default('')
+      }}
+  ollama:
+    osarch: >-
+      {{
+        {
+          'Debian': {
+            'x86_64': 'linux-amd64',
+            'aarch64': 'linux-arm64'
+          },
+        }[ansible_facts['os_family']][ansible_facts['architecture']] | default('')
+      }}
+
+
+pkg:
+  charts:
+    - name: node
+      archs: &archs-node
+        - architecture: x86_64
+          os_family: Debian
+        - architecture: aarch64
+          os_family: Debian
+      version: 14.1.0
+      template: &node_tempalte
+        os: *pkg_templates_node_os
+        arch: *pkg_templates_node_arch
+        url: https://nodejs.org/dist/v%(version)s/node-v%(version)s-{{ pkg_templates.node.os }}-{{ pkg_templates.node.arch }}.tar.gz
+        ext: &ext_targz tar.gz
+        inflate: &inflate_targz tar -C %(dest)s -xzvf %(src)s
+        creates: "*/bin/node"
+      bins:
+        - name: node14
+          target: node
+          src: &bin_src_bin "%(name)s-v%(version)s-{{ pkg_templates.node.os }}-{{ pkg_templates.node.arch }}/bin/%(target)s"
+        - name: npm14
+          target: npm
+          src: *bin_src_bin
+        - name: corepack14
+          target: corepack
+          src: *bin_src_bin
+        - name: npx14
+          target: npx
+          src: *bin_src_bin
+
+    - name: node
+      archs: *archs-node
+      version: "{{ pkg_versions.node.version }}"
+      template: *node_tempalte
+      bins:
+        - name: node
+          src: *bin_src_bin
+        - name: corepack
+          src: *bin_src_bin
+        - name: npx
+          src: *bin_src_bin
+        - name: npm
+          src: *bin_src_bin
+        - name: claude
+          src: *bin_src_bin
+        - name: copilot
+          src: *bin_src_bin
+        - name: tsx
+          src: *bin_src_bin
+        - name: prettier
+          src: *bin_src_bin
+        - name: bash-language-server
+          src: *bin_src_bin
+        - name: concurrently
+          src: *bin_src_bin
+        - name: amp
+          src: *bin_src_bin
+        - name: yarn # Required by gruvbox
+          src: *bin_src_bin
+        - name: cn
+          src: *bin_src_bin
+        - name: gemini
+          src: *bin_src_bin
+        - name: func
+          src: *bin_src_bin
+        - name: sass
+          src: *bin_src_bin
+
+    - name: go
+      archs: *archs-node
+      version: 1.20.13
+      template: &template_go
+        os: *pkg_templates_go_os
+        arch: *pkg_templates_go_arch
+        url: https://go.dev/dl/go%(version)s.{{ pkg_templates.go.os }}-{{ pkg_templates.go.arch }}.tar.gz
+        ext: *ext_targz
+        inflate: *inflate_targz
+        creates: go/bin/go
+      bins:
+        - name: go20
+          src: &bins_go_src go/bin/go
+        - name: gofmt20
+          src: &bins_go_fmt go/bin/gofmt
+
+    - name: go
+      archs: *archs-node
+      version: "{{ pkg_versions.go.version }}"
+      template: *template_go
+      bins:
+        - name: go
+          src: *bins_go_src
+        - name: gofmt
+          src: *bins_go_fmt
+
+    - name: fzf
+      version: "{{ pkg_versions.fzf.version }}"
+      template: &template_fzf
+        os: *pkg_templates_go_os
+        arch: *pkg_templates_go_arch
+        url: https://github.com/junegunn/%(name)s/releases/download/v%(version)s/%(name)s-%(version)s-{{ pkg_templates.go.os }}_{{ pkg_templates.go.arch }}.{{ pkg_templates.fzf.ext }}
+        inflate: "{{ pkg_templates.fzf.inflate }}"
+        ext: "{{ pkg_templates.fzf.ext }}"
+        creates: fzf
+      bins:
+        - name: fzf
+          src: fzf
+
+    - name: jetbrains-mono
+      version: "{{ pkg_versions.nerdfonts.version }}"
+      template:
+        os: all
+        arch: share
+        url: https://github.com/ryanoasis/nerd-fonts/releases/download/v%(version)s/JetBrainsMono.zip
+        inflate: &inflate_unzip unzip -o -d %(dest)s %(src)s
+        ext: &ext_zip zip
+        creates: JetBrainsMonoNerdFontMono-*.ttf
+
+    - name: firamono
+      version: "{{ pkg_versions.nerdfonts.version }}"
+      template:
+        os: all
+        arch: share
+        url: https://github.com/ryanoasis/nerd-fonts/releases/download/v%(version)s/FiraMono.zip
+        inflate: *inflate_unzip
+        ext: *ext_zip
+        creates: FiraMonoNerdFontMono-*.ttf
+
+    - name: cascadia-mono
+      version: "{{ pkg_versions.nerdfonts.version }}"
+      template:
+        os: all
+        arch: share
+        url: https://github.com/ryanoasis/nerd-fonts/releases/download/v%(version)s/CascadiaMono.zip
+        inflate: *inflate_unzip
+        ext: *ext_zip
+        creates: CaskaydiaMonoNerdFontMono-*.ttf
+
+    - name: cascadia-code
+      version: "{{ pkg_versions.nerdfonts.version }}"
+      template:
+        os: all
+        arch: share
+        url: https://github.com/ryanoasis/nerd-fonts/releases/download/v%(version)s/CascadiaCode.zip
+        inflate: *inflate_unzip
+        ext: *ext_zip
+        creates: CaskaydiaCodeNerdFontCode-*.ttf
+
+    - name: rustup-init
+      version: latest
+      template:
+        os: *pkg_templates_rustup_os
+        arch: *pkg_templates_rustup_arch
+        url: https://static.rust-lang.org/rustup/dist/{{ pkg_templates.rustup.arch }}-{{ pkg_templates.rustup.os }}/rustup-init
+        inflate: |
+          chmod u+x '%(src)s'
+          RUSTUP_INIT_SKIP_PATH_CHECK=yes %(src)s -y
+        creates: nothing
+
+    - name: scala
+      version: "{{ pkg_versions.scala.version }}"
+      template:
+        os: *pkg_templates_go_os
+        arch: *pkg_templates_go_arch
+        url: https://github.com/scala/scala3/releases/download/%(version)s/scala3-%(version)s.tar.gz
+        ext: *ext_targz
+        inflate: *inflate_targz
+        creates: scala3-3.4.1/bin/scala
+      bins:
+        - name: scala
+          src: scala3-{{ pkg_versions.scala.version }}/bin/scala
+        - name: scalac
+          src: scala3-{{ pkg_versions.scala.version }}/bin/scalac
+        - name: scaladoc
+          src: scala3-{{ pkg_versions.scala.version }}/bin/scaladoc
+
+    - name: sbt
+      version: "{{ pkg_versions.sbt.version }}"
+      template:
+        os: *pkg_templates_go_os
+        arch: *pkg_templates_go_arch
+        url: https://github.com/sbt/sbt/releases/download/v%(version)s/sbt-%(version)s.tgz
+        ext: *ext_targz
+        inflate: *inflate_targz
+        creates: sbt/bin/sbt
+      bins:
+        - name: sbt
+          src: sbt/bin/sbt
+
+    - name: maven
+      version: "{{ pkg_versions.maven.version }}"
+      template:
+        os: *pkg_templates_go_os
+        arch: *pkg_templates_go_arch
+        url: https://dlcdn.apache.org/maven/maven-3/%(version)s/binaries/apache-maven-%(version)s-bin.tar.gz
+        ext: *ext_targz
+        inflate: *inflate_targz
+        creates: apache-maven-{{ pkg_versions.maven.version }}/bin/mvn
+      bins:
+        - name: mvn
+          src: apache-maven-{{ pkg_versions.maven.version }}/bin/mvn
+
+    - name: gradle
+      version: "{{ pkg_versions.gradle.version }}"
+      template:
+        os: *pkg_templates_go_os
+        arch: *pkg_templates_go_arch
+        url: https://services.gradle.org/distributions/gradle-%(version)s-bin.zip
+        ext: *ext_zip
+        inflate: *inflate_unzip
+        creates: gradle-{{ pkg_versions.gradle.version }}/bin/gradle
+      bins:
+        - name: gradle
+          src: gradle-{{ pkg_versions.gradle.version }}/bin/gradle
+
+    - name: opentofu
+      version: "{{ pkg_versions.tofu.version }}"
+      template:
+        os: *pkg_templates_go_os
+        arch: *pkg_templates_go_arch
+        url: 'https://github.com/opentofu/opentofu/releases/download/v%(version)s/tofu_%(version)s_{{ pkg_templates.go.os }}_{{ pkg_templates.go.arch }}.tar.gz'
+        ext: *ext_targz
+        inflate: *inflate_targz
+        creates: tofu
+      bins:
+        - name: tofu
+          src: tofu
+
+    - name: cmake
+      version: "{{ pkg_versions.cmake.version }}"
+      template:
+        os: *pkg_templates_cmake_os
+        arch: *pkg_templates_cmake_arch
+        url: https://github.com/Kitware/CMake/releases/download/v%(version)s/cmake-%(version)s-{{ pkg_templates.cmake.osarch }}.{{ pkg_templates.cmake.ext }}
+        ext: "{{ pkg_templates.cmake.ext }}"
+        inflate: "{{ pkg_templates.cmake.inflate }}"
+        creates: cmake-{{ pkg_versions.cmake.version }}-{{ pkg_templates.cmake.osarch }}/bin/cmake
+      bins:
+        - name: cmake
+          src: cmake-{{ pkg_versions.cmake.version }}-{{ pkg_templates.cmake.osarch }}/bin/cmake
+        - name: ctest
+          src: cmake-{{ pkg_versions.cmake.version }}-{{ pkg_templates.cmake.osarch }}/bin/ctest
+        - name: cpack
+          src: cmake-{{ pkg_versions.cmake.version }}-{{ pkg_templates.cmake.osarch }}/bin/cpack
+        - name: ccmake
+          src: cmake-{{ pkg_versions.cmake.version }}-{{ pkg_templates.cmake.osarch }}/bin/ccmake
+
+    - name: bazelisk
+      version: "{{ pkg_versions.bazelisk.version }}"
+      template:
+        os: *pkg_templates_go_os
+        arch: *pkg_templates_go_arch
+        url: https://github.com/bazelbuild/bazelisk/releases/download/v%(version)s/bazelisk-{{ pkg_templates.bazelisk.osarch }}
+        inflate: &inflate_bin |
+          chmod u+x '%(src)s'
+          mv '%(src)s' '%(dest)s'
+        creates: bazelisk_{{ pkg_versions.bazelisk.version }}.bin
+      bins:
+        - name: bazelisk
+          src: bazelisk_{{ pkg_versions.bazelisk.version }}.bin
+        - name: bazel
+          src: bazelisk_{{ pkg_versions.bazelisk.version }}.bin
+
+    - name: kubectl
+      version: "{{ pkg_versions.kubectl.version }}"
+      template:
+        os: *pkg_templates_go_os
+        arch: *pkg_templates_go_arch
+        url: https://dl.k8s.io/release/v%(version)s/bin/linux/{{ pkg_templates.go.arch }}/kubectl
+        inflate: *inflate_bin
+        creates: kubectl_{{ pkg_versions.bazelisk.version }}.bin
+      bins:
+        - name: kubectl
+          src: kubectl_{{ pkg_versions.kubectl.version }}.bin
+
+    - name: debian
+      version: "{{ pkg_versions.debian.version }}"
+      template:
+        os: *pkg_templates_go_os
+        arch: *pkg_templates_go_arch
+        url: https://cloud.debian.org/images/cloud/{{ pkg_versions.debian.release }}/{{ pkg_versions.debian.build }}/debian-%(version)s-generic-{{ pkg_templates.go.arch }}-{{ pkg_versions.debian.build }}.qcow2
+        creates: debian_{{ pkg_versions.debian.version }}.bin
+        inflate: &inflate_image |
+          mv '%(src)s' '%(dest)s'
+
+    - name: mysql
+      version: "{{ pkg_versions.mysql.version }}"
+      template:
+        os: *pkg_templates_rustup_os
+        arch: *pkg_templates_rustup_arch
+        url: https://dev.mysql.com/get/Downloads/MySQL-{{ pkg_versions.mysql.major }}/mysql-%(version)s-{{ pkg_versions.mysql.os[(ansible_facts['os_family'] | lower )] }}-{{ pkg_templates.rustup.arch }}.{{ pkg_templates.mysql.ext }}
+        ext: "{{ pkg_templates.mysql.ext }}"
+        inflate: "{{ pkg_templates.mysql.inflate }}"
+        creates: mysql-{{ pkg_versions.mysql.version }}-{{ pkg_versions.mysql.os[(ansible_facts['os_family'] | lower )] }}-{{ pkg_templates.rustup.arch }}/bin/mysql
+      bins:
+        - name: mysql
+          src: mysql-{{ pkg_versions.mysql.version }}-{{ pkg_versions.mysql.os[(ansible_facts['os_family'] | lower )] }}-{{ pkg_templates.rustup.arch }}/bin/mysql
+
+    - name: ollama
+      version: "{{ pkg_versions.ollama.version }}"
+      template:
+        os: *pkg_templates_rustup_os
+        arch: *pkg_templates_rustup_arch
+        url: https://github.com/ollama/ollama/releases/download/v{{ pkg_versions.ollama.version }}/ollama-{{ pkg_templates.ollama.osarch }}.tgz
+        ext: tgz
+        inflate: *inflate_targz
+        creates: bin/ollama
+      bins:
+        - name: ollama
+          src: bin/ollama

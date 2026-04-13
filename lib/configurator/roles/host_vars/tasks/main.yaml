@@ -1,0 +1,9 @@
+- include_vars: "{{ item }}"
+  with_first_found:
+    - "vars/{{ ansible_facts['distribution'] }}-{{ ansible_facts['distribution_major_version'] }}.yaml"
+    - "vars/{{ ansible_facts['distribution'] }}.yaml"
+    - "vars/{{ ansible_facts['os_family']}}.yaml"
+
+- include_vars: "{{ item }}"
+  with_first_found:
+    - "vars/main.yaml"

@@ -1,0 +1,28 @@
+#!/bin/bash
+DOMAIN_NAME=$1
+
+if [ -z "$DOMAIN_NAME" ]; then
+  echo "Usage: $0 <name>"
+  exit 1
+fi
+
+SRC_IMAGE={{ blueprint_home }}/debian/linux_{{ { 'x86_64': 'amd64', 'aarch64': 'arm64', 'i386': '386' }[ansible_facts['architecture']] | default('') }}/debian_{{ pkg_versions.debian.version }}/debian_{{ pkg_versions.debian.version }}.bin
+DST_IMAGE=/var/lib/libvirt/images/$DOMAIN_NAME.bin
+
+sudo cp $SRC_IMAGE $DST_IMAGE
+
+sudo virsh net-autostart default
+sudo virt-install \
+  --name $DOMAIN_NAME\
+  --memory 1024 \
+  --vcpus 2 \
+  --disk path=$DST_IMAGE,format=qcow2 \
+  --cloud-init user-data={{ blueprint_config_dir }}/configs/kvm/cloud-init-user-data.yaml \
+  --import \
+  --os-variant debian11 \
+  --network network=default \
+  --noautoconsole
+
+sudo virsh list
+sudo virsh domifaddr $DOMAIN_NAME
+sudo -k

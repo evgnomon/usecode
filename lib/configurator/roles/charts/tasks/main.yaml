@@ -1,0 +1,11 @@
+- name: Gather min facts
+  setup:
+    gather_subset:
+      - min
+
+- name: Read Blueprint config file
+  include_vars: "{{ blueprint_config_file }}"
+  when: blueprint_config_file_exists
+
+- name: Include setup variables
+  include_tasks: "setup_vars.yaml"

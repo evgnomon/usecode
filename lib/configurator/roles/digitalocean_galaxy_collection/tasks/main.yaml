@@ -1,0 +1,4 @@
+---
+- command: ansible-galaxy collection install digitalocean.cloud
+  tags: digitalocean
+

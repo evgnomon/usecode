@@ -1,0 +1,6 @@
+---
+- name: Install using Eget
+  command: eget --to "{{ local_bin_path }}/{{ item.get("to") }}" {{ item.archs[(ansible_facts['os_family'] | lower )] if 'archs' in item else '' }} {{ item.name }}
+  with_items: "{{ eget_packages }}"
+  tags:
+    - eget

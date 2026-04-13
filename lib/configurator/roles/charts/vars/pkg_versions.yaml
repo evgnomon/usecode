@@ -1,0 +1,90 @@
+---
+pkg_versions:
+  java:
+    version: 21.0.6
+    build: 7
+    os_families: ["Debian"]
+  idea:
+    version_full: 252.26199.169
+    version: 2025.2.2
+    os_families: ["Debian"]
+
+    dev_container: false
+  rider:
+    version: 2025.2.2
+    os_families: ["Debian"]
+
+    dev_container: false
+  fzf:
+    version: 0.60.3
+    os_families: ["Debian"]
+  nerdfonts:
+    version: 3.4.0
+    os_families: ["Debian"]
+
+    dev_container: false
+  go:
+    version: 1.24.0
+    os_families: ["Debian"]
+  node:
+    version: 24.14.1
+    os_families: ["Debian"]
+  scala:
+    version: 3.5.1
+    os_families: ["Debian"]
+  sbt:
+    version: 1.10.10
+    os_families: ["Debian"]
+  maven:
+    version: 3.9.12
+    os_families: ["Debian"]
+  gradle:
+    version: 8.13
+    os_families: ["Debian"]
+  cmake:
+    version: 4.2.1
+    os_families: ["Debian"]
+  bazelisk:
+    version: 1.22.0
+    os_families: ["Debian"]
+  tofu:
+    version: 1.9.1
+    os_families: ["Debian"]
+  debian:
+    release: trixie
+    version: 13
+    build: 20250924-2245
+    os_families: ["Debian"]
+
+    dev_container: false
+  docker:
+    version: 184744
+    os_families: ["Debian"]
+
+    dev_container: false
+  mysql:
+    version: 8.0.41
+    major: 8.0
+    os_families: ["Debian"]
+    os:
+      debian: linux-glibc2.28
+  ollama:
+    version: 0.11.10
+    os_families: ["Debian"]
+
+    dev_container: false
+  kubectl:
+    version: 1.33.1
+    os_families: ["Debian"]
+  zig:
+    version: 0.16.0-dev.2736+3b515fbed
+    os_families: ["Debian"]
+  zig14:
+    version: 0.14.1
+    os_families: ["Debian"]
+  zig15:
+    version: 0.15.2
+    os_families: ["Debian"]
+  kotlin:
+    version: 2.3.20
+    os_families: ["Debian"]

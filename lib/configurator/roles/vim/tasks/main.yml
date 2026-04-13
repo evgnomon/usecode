@@ -1,0 +1,51 @@
+---
+- name: Checkout vim repo
+  git:
+    dest: "{{ ansible_facts['env']['HOME'] }}/src/github.com/vim/vim"
+    repo: "https://github.com/vim/vim.git"
+  tags:
+    - vim
+
+- name: Install vim
+  script: install-{{ ansible_facts['os_family'] }}.sh
+  args:
+    chdir: "{{ ansible_facts['env']['HOME'] }}/src/github.com/vim/vim"
+    executable: "bash"
+  tags:
+    - vim
+
+- name: Install vim plug
+  shell: |
+    curl -fLo {{ vimfiles }}/autoload/plug.vim --create-dirs \
+    https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
+  args:
+    creates: "{{ vimfiles }}/autoload/plug.vim"
+  vars:
+    vimfiles: "{{ blueprint_user_home }}/.vim"
+  tags:
+    - vim
+
+- name: Symlink Vim config files
+  ansible.builtin.file:
+    src: "{{ role_path }}/files/{{ item }}"
+    dest: "{{ blueprint_user_home }}/{{ item }}"
+    state: link
+    force: true
+  loop:
+    - .vimrc
+    - .ideavimrc
+  tags:
+    - dotfiles
+    - vim
+
+- name: Coc configs
+  ansible.builtin.file:
+    src: "{{ role_path }}/files/{{ item }}"
+    dest: "{{ blueprint_user_home }}/.vim/{{ item }}"
+    state: link
+    force: true
+  loop:
+    - coc-settings.json
+  tags:
+    - dotfiles
+    - vim

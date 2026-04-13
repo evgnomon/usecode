@@ -1,0 +1,18 @@
+- name: Install Microsoft Repo
+  become: true
+  shell: |
+    curl https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /etc/apt/trusted.gpg.d/microsoft.gpg
+    echo "deb [arch=amd64] https://packages.microsoft.com/repos/microsoft-ubuntu-$(lsb_release -cs)-prod $(lsb_release -cs) main" > /etc/apt/sources.list.d/dotnetdev.list
+    echo "deb [arch=amd64] https://packages.microsoft.com/repos/azure-cli/ {{ ansible_facts['distribution_release'] }} main" > /etc/apt/sources.list.d/azure.list
+  tags:
+    always
+
+- name: Install Microsoft VS Code Repository
+  become: true
+  shell: |
+    curl -sSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /etc/apt/trusted.gpg.d/vscode.gpg
+    echo "deb [arch=amd64] https://packages.microsoft.com/repos/code stable main" > /etc/apt/sources.list.d/vscode.list
+  args:
+    creates: /etc/apt/sources.list.d/vscode.list
+  tags:
+    - always

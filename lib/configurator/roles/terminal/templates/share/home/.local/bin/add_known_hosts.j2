@@ -1,0 +1,55 @@
+#!/bin/bash
+
+# Script to scan SSH host keys and add them as trusted hosts
+
+set -e
+
+HOSTS=(
+{% for i in (known_hosts if known_hosts is defined else []) -%}
+  "{{ i.name }}"
+{% endfor %}
+)
+
+SSH_PORT=${SSH_PORT:-22}
+KNOWN_HOSTS_FILE="${HOME}/.ssh/known_hosts"
+
+echo "Scanning SSH host keys for ${\#HOSTS[@]} hosts..."
+
+# Create .ssh directory if it doesn't exist
+mkdir -p ~/.ssh
+
+# Backup existing known_hosts if it exists
+if [[ -f "$KNOWN_HOSTS_FILE" ]]; then
+    echo "Backing up existing known_hosts to ${KNOWN_HOSTS_FILE}.backup"
+    cp "$KNOWN_HOSTS_FILE" "${KNOWN_HOSTS_FILE}.backup"
+fi
+
+# Remove existing host keys for all hosts
+echo "Removing existing host keys..."
+for host in "${HOSTS[@]}"; do
+    if [[ -f "$KNOWN_HOSTS_FILE" ]]; then
+        ssh-keygen -R "$host" 2>/dev/null || true
+        echo "✓ Removed existing keys for $host"
+    fi
+done
+
+echo ""
+
+# Scan each host and add to known_hosts
+for host in "${HOSTS[@]}"; do
+    echo "Scanning $host:$SSH_PORT..."
+    
+    # Use ssh-keyscan to get the host key
+    if ssh-keyscan -p "$SSH_PORT" -t rsa,ecdsa,ed25519 "$host" 2>/dev/null >> "$KNOWN_HOSTS_FILE"; then
+        echo "✓ Added host key for $host"
+    else
+        echo "✗ Failed to scan $host (host may be unreachable)"
+    fi
+done
+
+echo ""
+echo "Host key scanning complete!"
+echo "Keys have been added to: $KNOWN_HOSTS_FILE"
+echo ""
+echo "You can verify the keys with:"
+echo "ssh-keygen -H -F <hostname>"

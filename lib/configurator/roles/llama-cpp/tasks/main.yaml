@@ -1,0 +1,63 @@
+---
+- name: Install build dependencies (Debian/Ubuntu)
+  apt:
+    name: [git, cmake, make, gcc, g++, libopenblas-dev]
+    state: present
+    update_cache: true
+  become: true
+
+- name: Create build directory
+  file:
+    path: "{{ llama_cpp_org_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Clone llama.cpp repository
+  git:
+    repo: "{{ llama_cpp_repo }}"
+    dest: "{{ llama_cpp_dir }}"
+    depth: 1
+    update: true
+
+- name: Create build directory
+  file:
+    path: "{{ llama_cpp_build_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Configure with CMake
+  command: cmake .. -DCMAKE_BUILD_TYPE=Release
+  args:
+    chdir: "{{ llama_cpp_build_dir }}"
+  changed_when: true
+
+- name: Build llama.cpp
+  shell: cmake --build . --config Release -j$(nproc)
+  args:
+    chdir: "{{ llama_cpp_build_dir }}"
+  changed_when: true
+
+- name: Find compiled binaries
+  find:
+    paths: "{{ llama_cpp_build_dir }}/bin"
+    patterns: "llama-*"
+    file_type: file
+  register: llama_binaries
+
+- name: Symlink binaries to ~/.local/bin
+  file:
+    src: "{{ item.path }}"
+    dest: "{{ llama_bin_link_dir }}/{{ item.path | basename }}"
+    state: link
+    force: true
+  loop: "{{ llama_binaries.files }}"
+
+- name: Verify installation
+  command: "{{ llama_bin_link_dir }}/llama-cli --version"
+  register: llama_version
+  changed_when: false
+  failed_when: false
+
+- name: Print version
+  debug:
+    msg: "llama.cpp installed: {{ llama_version.stdout }}"

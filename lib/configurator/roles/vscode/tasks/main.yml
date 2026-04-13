@@ -1,0 +1,24 @@
+---
+- name: Include shared Vars
+  include_vars:
+    dir: vars/share
+  tags:
+    - always
+
+- name: Link VS Code dotfiles
+  ansible.builtin.file:
+    src: "{{ role_path }}/files/{{ item }}"
+    dest: "{{ ansible_facts['env']['HOME'] }}/{{ item }}"
+    state: link
+    force: true
+  loop: "{{ vscode_dotfiles }}"
+  tags:
+    - dotfiles
+    - vscode
+
+- name: Install VS Code extensions
+  ansible.builtin.shell: xargs -L 1 code --install-extension < {{ role_path }}/files/.config/Code/extensions.txt
+  args:
+    executable: /bin/bash
+  tags:
+    - vscode

@@ -1,0 +1,338 @@
+---
+- name: Include shared Vars
+  include_vars:
+    dir: vars/share
+  tags:
+    - always
+
+- name: Include OS Family Vars
+  include_vars:
+    dir: vars/{{ ansible_facts['os_family']}}
+  tags:
+    - always
+
+- name: Inflate shared template configs in user home
+  include_tasks: j2_inflate.yaml
+  vars:
+    target: "{{ blueprint_user_home }}"
+  when: item.state == 'file'
+  with_filetree: ../templates/share/home
+  tags:
+    - dotfiles
+
+- name: Inflate bashrc.d templates in root home
+  include_tasks: j2_inflate.yaml
+  vars:
+    target: /root
+  when:
+    - item.state == 'file'
+    - item.path is match('.bashrc.d/')
+  with_filetree: ../templates/share/home
+  tags:
+    - dotfiles
+
+- name: Inflate template configs in etc for Debian
+  include_tasks: j2_inflate.yaml
+  vars:
+    target: /etc
+  when:
+    - item.state == 'file'
+    - ansible_facts['os_family'] == "Debian"
+  with_filetree: ../templates/{{ ansible_facts['distribution'] }}/etc
+  tags:
+    - dotfiles
+
+- name: Apply sysctl settings
+  become: true
+  ansible.builtin.command: /usr/sbin/sysctl -p
+  when: ansible_facts['os_family'] == "Debian"
+  tags:
+    - dotfiles
+
+- name: Check profile picture exists
+  stat:
+    path: "{{ ansible_facts['env']['HOME'] }}/.ssh/.face"
+  register: face_file_stat
+
+- name: Set Gnome avatar
+  shell: cp {{ ansible_facts['env']['HOME'] }}/.ssh/.face {{ ansible_facts['env']['HOME'] }}/.face
+  args:
+    creates: "{{ ansible_facts['env']['HOME'] }}/.face"
+  when:
+    - ansible_facts['os_family'] == "Debian"
+    - face_file_stat.stat.exists
+
+- name: Set app switcher to current workspace only
+  command: gsettings set org.gnome.shell.app-switcher current-workspace-only true
+  when:
+    - ansible_facts['os_family'] == "Debian"
+  tags:
+    - dotfiles
+
+- name: Include distro tasks
+  include_tasks: main-{{ ansible_facts['distribution'] }}.yaml
+  when: ansible_facts['os_family'] == "Debian"
+  tags:
+    - always
+
+- name: Install packages using Apt
+  become: true
+  ansible.builtin.apt:
+    update_cache: true
+    name: "{{ apt_packages.share }}"
+    state: present
+  when: ansible_facts['os_family'] == "Debian"
+  tags:
+    - apt
+
+- name: Install packages using Apt for specific distribution
+  become: true
+  ansible.builtin.apt:
+    name: "{{ apt_packages[dict_item] }}"
+    state: present
+  when:
+    - ansible_facts['os_family'] == "Debian"
+    - dict_item in apt_packages
+  vars:
+    dict_item: "{{ ansible_facts['distribution'] | lower }}"
+  tags:
+    - apt
+
+- name: Install user packages using Apt
+  become: true
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+    name: "{{ user_apt_packages.get('share', []) }}"
+    state: present
+  when:
+    - ansible_facts['os_family'] == "Debian"
+    - user_apt_packages is defined
+  tags:
+    - apt
+
+- name: Install user packages using Apt for specific distribution
+  become: true
+  ansible.builtin.apt:
+    name: "{{ user_apt_packages.get(dict_item, []) }}"
+    state: present
+  when:
+    - ansible_facts['os_family'] == "Debian"
+    - user_apt_packages is defined
+    - dict_item in user_apt_packages
+  vars:
+    dict_item: "{{ ansible_facts['distribution'] | lower }}"
+  tags:
+    - apt
+
+- name: Upgrade all Apt packages
+  become: true
+  ansible.builtin.apt:
+    upgrade: full
+    update_cache: true
+    cache_valid_time: 3600
+  when: ansible_facts['os_family'] == "Debian"
+  tags:
+    - never
+    - upgrade
+    - apt
+
+- name: auto-remove Apt packages
+  become: true
+  ansible.builtin.apt:
+    autoremove: true
+  when: ansible_facts['os_family'] == "Debian"
+  tags:
+    - never
+    - autoremove
+    - upgrade
+
+- name: Install common Cargo packages
+  ansible.builtin.command:
+    cmd: "{{ cargo_cmd }} install {{ item }}"
+  loop: "{{ common_cargo_packages | default ([]) }}"
+  when:
+    - common_cargo_packages is defined and common_cargo_packages | length > 0
+  tags:
+    - cargo
+
+- name: Install OS specific Cargo packages
+  ansible.builtin.command:
+    cmd: "{{ cargo_cmd }} install {{ item }}"
+  loop: "{{ cargo_packages | default ([]) }}"
+  when:
+    - cargo_packages is defined and cargo_packages | length > 0
+  tags:
+    - cargo
+
+- name: Ensure ~/.bashrc.d directory exists
+  ansible.builtin.file:
+    path: "{{ ansible_facts['env']['HOME'] }}/.bashrc.d"
+    state: directory
+    mode: '0755'
+  tags:
+    - dotfiles
+
+- name: Ensure /root/.bashrc.d directory exists
+  become: true
+  ansible.builtin.file:
+    path: /root/.bashrc.d
+    state: directory
+    mode: '0755'
+  tags:
+    - dotfiles
+
+- name: Ensure parent directories exist for dotfiles
+  ansible.builtin.file:
+    path: "{{ ansible_facts['env']['HOME'] }}/{{ _dst | dirname }}"
+    state: directory
+  vars:
+    _parts: "{{ item.split(':') }}"
+    _dst: "{{ _parts[1] | default(_parts[0]) }}"
+  loop: "{{ dotfiles }}"
+  when: "(_dst | dirname) != ''"
+  tags:
+    - dotfiles
+
+- name: Link dotfiles
+  ansible.builtin.file:
+    src: "{{ role_path }}/files/{{ _src }}"
+    dest: "{{ ansible_facts['env']['HOME'] }}/{{ _dst }}"
+    state: link
+    force: true
+  vars:
+    _parts: "{{ item.split(':') }}"
+    _src: "{{ _parts[0] }}"
+    _dst: "{{ _parts[1] | default(_parts[0]) }}"
+  loop: "{{ dotfiles }}"
+  tags:
+    - dotfiles
+
+- name: Link dotfiles for root
+  become: true
+  ansible.builtin.file:
+    src: "{{ role_path }}/files/{{ item }}"
+    dest: "/root/{{ item }}"
+    state: link
+    force: true
+  loop: "{{ root_dotfiles }}"
+  tags:
+    - dotfiles
+
+- name: Ensure parent directories exist for dotdirs
+  ansible.builtin.file:
+    path: "{{ _dotdir_dest | dirname }}"
+    state: directory
+  vars:
+    _home: "{{ ansible_facts['env']['HOME'] }}"
+    _dotdir_dest: "{{ item.dest if item.dest.startswith('/') else _home + '/' + item.dest }}"
+  loop: "{{ dotdirs | default([]) }}"
+  tags:
+    - dotfiles
+
+- name: Link dotdirs
+  ansible.builtin.file:
+    src: "{{ _dotdir_src }}"
+    dest: "{{ _dotdir_dest }}"
+    state: link
+    force: true
+  vars:
+    _home: "{{ ansible_facts['env']['HOME'] }}"
+    _dotdir_src: "{{ item.src if item.src.startswith('/') else _home + '/' + item.src }}"
+    _dotdir_dest: "{{ item.dest if item.dest.startswith('/') else _home + '/' + item.dest }}"
+  loop: "{{ dotdirs | default([]) }}"
+  tags:
+    - dotfiles
+
+- name: Change file ownership, group and permissions for gnupg
+  ansible.builtin.file:
+    path: "{{ ansible_facts['env']['HOME'] }}/.gnupg"
+    mode: '0700'
+  tags:
+    - dotfiles
+
+- name: Install fonts
+  include_tasks: fonts_install.yaml
+  tags:
+    - fonts
+
+- name: Install common Go packages
+  command: go install {{ item }}
+  environment:
+    CGO_ENABLED: "1"
+  with_items: "{{ common_go_packages }}"
+  tags:
+    - go
+
+- name: Install common Go packages for Debian
+  command: go install {{ item }}
+  environment:
+    CGO_ENABLED: "1"
+  with_items: "{{ debian_go_packages }}"
+  when:
+    - ansible_facts['os_family'] == "Debian"
+    - debian_go_packages is defined and debian_go_packages is iterable
+    - debian_go_packages | length > 0
+  tags:
+    - go
+
+- name: Install common Node packages
+  command: npm install -g {{ item }}
+  with_items: "{{ common_node_packages }}"
+  tags:
+    - node
+
+- name: Clone Git repos
+  shell: |
+    mkdir -p '{{ repo_dest_dir }}'
+    git clone {{ item.url }} '{{ repo_dest }}'
+  args:
+    creates: "{{ repo_dest }}/.git"
+  vars: &git_repos_vars
+    repo_hostname: "{{ item.url | urlsplit('hostname') }}"
+    repo_path: "{{ item.url | urlsplit('path') | split('/') }}"
+    repo_name: "{{ repo_path | last | regex_replace('\\.git$', '') }}"
+    repo_parent: "{{ repo_path[1] }}"
+    repo_prefix: "{{ item.prefix | default(ansible_facts['env']['HOME'] + '/src') }}"
+    repo_rel_dest: "{{ repo_parent }}/{{ repo_name }}"
+    repo_dest_default: "{{ repo_prefix }}/{{ repo_hostname }}/{{ item.rewrite | default( repo_rel_dest ) }}"
+    repo_dest: "{{ item.dest | default ( repo_dest_default ) }}"
+    repo_dest_dir: "{{ repo_dest | dirname }}"
+    user_profile_key: "{{ item.profile | default('main') }}"
+    user_profile: "{{ profiles[user_profile_key] if profiles is defined else {} }}"
+    bundle_file: '{{ repo_dest_dir }}/{{ repo_name }}.bundle'
+  with_items: "{{ git_repos + common_git_repos }}"
+  ignore_errors: true
+  tags:
+    - git
+
+- name: Fetch Git repos
+  shell: |
+    git -C '{{ repo_dest }}' fetch --all
+  vars: *git_repos_vars
+  with_items: "{{ git_repos + common_git_repos }}"
+  tags:
+    - git_fetch
+    - never
+
+- name: Config git profiles
+  shell: |
+    git -C '{{ repo_dest }}' config user.email '{{ user_profile.useremail }}'
+    git -C '{{ repo_dest }}' config user.name '{{ user_profile.fullname | default(user_profile.username) }}'
+    git -C '{{ repo_dest }}' config user.signingKey '{{ user_profile.gpg_key }}'
+    git -C '{{ repo_dest }}' config commit.gpgsign true
+    git -C '{{ repo_dest }}' config tag.gpgSign true
+    {% if user_profile.get("git_sign_format") %}
+    git -C '{{ repo_dest }}' config gpg.format '{{ user_profile.git_sign_format }}'
+    {% else %}
+    git -C '{{ repo_dest }}' config --unset gpg.format
+    {% endif %}
+    git -C '{{ repo_dest }}' config gpg.ssh.allowedSignersFile '{{ user_profile.allowed_signers_file | default (ansible_facts['env']['HOME'] + "/.ssh/allowed_signers") }}'
+  vars: *git_repos_vars
+  with_items: "{{ git_repos + common_git_repos }}"
+  when:
+    - blueprint_config_file_exists
+  ignore_errors: true
+  tags:
+    - git
+

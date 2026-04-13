@@ -1,0 +1,13 @@
+---
+blueprint_user_home: "{{ ansible_facts['env']['HOME'] }}"
+blueprint_home: "{{ blueprint_user_home }}/.cache/blueprint"
+path_components:
+  - "{{ blueprint_user_home }}/go/bin"
+  - "{{ blueprint_user_home }}/.cargo/bin"
+  - "{{ local_bin_path }}"
+  - "{{ blueprint_user_home }}/.pyenv/shims"
+  - "/usr/local/bin"
+  - "/usr/bin"
+custom_path: "{{ path_components | join(':') }}:$PATH"
+
+cargo_packages: []

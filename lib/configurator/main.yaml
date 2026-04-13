@@ -1,0 +1,17 @@
+---
+- name: Include Charts
+  hosts:
+    - localhost
+    - all
+  gather_facts: false
+  roles:
+    - charts
+  tags:
+    - always
+
+- name: import playboook for Debian family
+  import_playbook: main-Debian.yml
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Import playbook for all platforms
+  import_playbook: main-all.yml

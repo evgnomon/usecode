@@ -1,0 +1,36 @@
+---
+- name: Check if zls is already installed
+  stat:
+    path: "{{ zls_bin }}"
+  register: zls_binary
+
+- name: Clone zigtools/zls repository
+  git:
+    repo: https://github.com/zigtools/zls.git
+    dest: "{{ zls_repo }}"
+    version: master
+    force: yes
+    update: yes
+
+- name: Build zls
+  command: zig build -Doptimize=ReleaseSafe
+  args:
+    chdir: "{{ zls_repo }}"
+  when: not zls_binary.stat.exists
+
+- name: Install zls binary to ~/.local/bin
+  copy:
+    src: "{{ zls_bin_output }}"
+    dest: "{{ zls_bin }}"
+    mode: '0755'
+    remote_src: yes
+  when: not zls_binary.stat.exists
+
+- name: Verify zls installation
+  command: "{{ zls_bin }} --version"
+  register: zls_version
+  changed_when: false
+
+- name: Display zls version
+  debug:
+    msg: "zls version: {{ zls_version.stdout }}"
