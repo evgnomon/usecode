@@ -1,0 +1,12 @@
+#!/bin/bash
+
+VERSION=$(cat pyproject.toml | yj -t | jq -r ".tool.poetry.version")
+PROJECT_NAME=$(cat pyproject.toml | yj -t | jq -r ".tool.poetry.name")
+
+poetry build
+pip install dist/$PROJECT_NAME-$VERSION.tar.gz
+
+cd ansible_collections/$USER/$PROJECT_NAME
+  ansible-galaxy collection build --force
+  ansible-galaxy collection install $USER-$PROJECT_NAME-$VERSION.tar.gz --force
+cd -

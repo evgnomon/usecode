@@ -1,0 +1,1002 @@
+#!/usr/bin/env python3
+"""
+Process Runner - FastAPI Server & CLI Client
+
+A tool for running processes and managing their outputs.
+- Run arbitrary commands asynchronously
+- Save stdout/stderr to organized file structure
+- List and filter runs by tenant, namespace, and job name
+- Retrieve output files for each run
+
+Usage:
+    Server: python process_runner.py serve [--host HOST] [--port PORT]
+    CLI:    python process_runner.py <command> [OPTIONS]
+"""
+
+import asyncio
+import getpass
+import json
+import os
+import shutil
+import socket
+import ssl
+import sys
+import time
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Optional
+
+import click
+import requests
+import uvicorn
+from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi.responses import FileResponse, PlainTextResponse
+from pydantic import BaseModel, Field
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Configuration
+# ═══════════════════════════════════════════════════════════════════════════════
+
+BASE_OUTPUT_DIR = Path("/var/z")
+DEFAULT_HOST = "127.0.0.1"
+DEFAULT_PORT = 8000
+SERVER_CERT_DIR = Path("/etc/x509")
+CLIENT_CERT_DIR = Path.home() / ".x509"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FastAPI Application
+# ═══════════════════════════════════════════════════════════════════════════════
+
+app = FastAPI(
+    title="Process Runner API",
+    description="Run processes and manage their outputs",
+    version="1.0.0",
+)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Pydantic Models
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class RunRequest(BaseModel):
+    tenant_name: str = Field(..., description="Tenant identifier")
+    namespace: str = Field(..., description="Namespace for grouping jobs")
+    job_name: str = Field(..., description="Name of the job")
+    command: str = Field(..., description="Command to execute")
+    args: list[str] = Field(default_factory=list, description="Command arguments")
+    env: dict[str, str] = Field(
+        default_factory=dict, description="Environment variables"
+    )
+    working_dir: Optional[str] = Field(
+        None, description="Working directory for the process"
+    )
+
+
+class RunResponse(BaseModel):
+    run_id: str
+    tenant_name: str
+    namespace: str
+    job_name: str
+    status: str
+    output_dir: str
+    created_at: str
+
+
+class RunStatus(BaseModel):
+    run_id: str
+    tenant_name: str
+    namespace: str
+    job_name: str
+    status: str
+    exit_code: Optional[int]
+    started_at: str
+    finished_at: Optional[str]
+    output_dir: str
+
+
+class RunListItem(BaseModel):
+    run_id: str
+    status: str
+    created_at: str
+    exit_code: Optional[int]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# In-memory run tracking (in production, use a database)
+# ─────────────────────────────────────────────────────────────────────────────
+
+runs_db: dict[str, dict] = {}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helper Functions
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def get_run_dir(tenant_name: str, namespace: str, job_name: str, run_id: str) -> Path:
+    """Get the output directory for a specific run."""
+    return BASE_OUTPUT_DIR / tenant_name / namespace / job_name / run_id
+
+
+def sanitize_path_component(component: str) -> str:
+    """Sanitize path components to prevent directory traversal."""
+    return component.replace("/", "_").replace("\\", "_").replace("..", "_")
+
+
+async def execute_process(
+    run_id: str,
+    tenant_name: str,
+    namespace: str,
+    job_name: str,
+    command: str,
+    args: list[str],
+    output_dir: Path,
+    env: dict[str, str],
+    working_dir: Optional[str],
+):
+    """Execute a process and capture stdout/stderr to files."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    stdout_path = output_dir / "stdout.log"
+    stderr_path = output_dir / "stderr.log"
+    metadata_path = output_dir / "metadata.txt"
+
+    runs_db[run_id]["status"] = "running"
+    runs_db[run_id]["started_at"] = datetime.now(timezone.utc).isoformat()
+
+    workd_env = {
+        "WORKD_RUN_ID": run_id,
+        "WORKD_TENANT_NAME": tenant_name,
+        "WORKD_NAMESPACE": namespace,
+        "WORKD_JOB_NAME": job_name,
+        "WORKD_OUTPUT_DIR": str(output_dir),
+        "WORKD_STDOUT_PATH": str(stdout_path),
+        "WORKD_STDERR_PATH": str(stderr_path),
+    }
+    process_env = {**os.environ, **workd_env, **env}
+
+    try:
+        with (
+            open(stdout_path, "w") as stdout_file,
+            open(stderr_path, "w") as stderr_file,
+        ):
+            process = await asyncio.create_subprocess_exec(
+                command,
+                *args,
+                stdout=stdout_file,
+                stderr=stderr_file,
+                env=process_env,
+                cwd=working_dir,
+            )
+            exit_code = await process.wait()
+
+        runs_db[run_id]["status"] = "completed" if exit_code == 0 else "failed"
+        runs_db[run_id]["exit_code"] = exit_code
+        runs_db[run_id]["finished_at"] = datetime.now(timezone.utc).isoformat()
+
+        with open(metadata_path, "w") as f:
+            f.write(f"run_id: {run_id}\n")
+            f.write(f"command: {command} {' '.join(args)}\n")
+            f.write(f"exit_code: {exit_code}\n")
+            f.write(f"started_at: {runs_db[run_id]['started_at']}\n")
+            f.write(f"finished_at: {runs_db[run_id]['finished_at']}\n")
+
+    except Exception as e:
+        runs_db[run_id]["status"] = "error"
+        runs_db[run_id]["error"] = str(e)
+        runs_db[run_id]["finished_at"] = datetime.now(timezone.utc).isoformat()
+
+        with open(stderr_path, "a") as f:
+            f.write(f"\n[SYSTEM ERROR]: {str(e)}\n")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# API Endpoints
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@app.post("/runs", response_model=RunResponse, status_code=202)
+async def create_run(request: RunRequest, background_tasks: BackgroundTasks):
+    """Start a new process run."""
+    tenant = sanitize_path_component(request.tenant_name)
+    namespace = sanitize_path_component(request.namespace)
+    job_name = sanitize_path_component(request.job_name)
+    run_id = str(uuid.uuid4())
+
+    output_dir = get_run_dir(tenant, namespace, job_name, run_id)
+
+    run_info = {
+        "run_id": run_id,
+        "tenant_name": tenant,
+        "namespace": namespace,
+        "job_name": job_name,
+        "command": request.command,
+        "args": request.args,
+        "status": "pending",
+        "exit_code": None,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "started_at": None,
+        "finished_at": None,
+        "output_dir": str(output_dir),
+    }
+    runs_db[run_id] = run_info
+
+    background_tasks.add_task(
+        execute_process,
+        run_id,
+        tenant,
+        namespace,
+        job_name,
+        request.command,
+        request.args,
+        output_dir,
+        request.env,
+        request.working_dir,
+    )
+
+    return RunResponse(
+        run_id=run_id,
+        tenant_name=tenant,
+        namespace=namespace,
+        job_name=job_name,
+        status="pending",
+        output_dir=str(output_dir),
+        created_at=run_info["created_at"],
+    )
+
+
+@app.get("/runs", response_model=list[RunListItem])
+async def list_all_runs(
+    tenant_name: Optional[str] = None,
+    namespace: Optional[str] = None,
+    job_name: Optional[str] = None,
+):
+    """List all runs, optionally filtered by tenant, namespace, and/or job name."""
+    results = []
+    for run_id, run_info in runs_db.items():
+        if tenant_name and run_info["tenant_name"] != tenant_name:
+            continue
+        if namespace and run_info["namespace"] != namespace:
+            continue
+        if job_name and run_info["job_name"] != job_name:
+            continue
+
+        results.append(
+            RunListItem(
+                run_id=run_id,
+                status=run_info["status"],
+                created_at=run_info["created_at"],
+                exit_code=run_info.get("exit_code"),
+            )
+        )
+
+    return sorted(results, key=lambda x: x.created_at, reverse=True)
+
+
+@app.get("/tenants/{tenant_name}/namespaces/{namespace}/jobs/{job_name}/runs")
+async def list_job_runs(
+    tenant_name: str, namespace: str, job_name: str
+) -> list[RunListItem]:
+    """List all runs for a specific job."""
+    tenant = sanitize_path_component(tenant_name)
+    ns = sanitize_path_component(namespace)
+    job = sanitize_path_component(job_name)
+
+    results = []
+    for run_id, run_info in runs_db.items():
+        if (
+            run_info["tenant_name"] == tenant
+            and run_info["namespace"] == ns
+            and run_info["job_name"] == job
+        ):
+            results.append(
+                RunListItem(
+                    run_id=run_id,
+                    status=run_info["status"],
+                    created_at=run_info["created_at"],
+                    exit_code=run_info.get("exit_code"),
+                )
+            )
+
+    return sorted(results, key=lambda x: x.created_at, reverse=True)
+
+
+@app.get("/runs/{run_id}", response_model=RunStatus)
+async def get_run_status(run_id: str):
+    """Get the status of a specific run."""
+    if run_id not in runs_db:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    run_info = runs_db[run_id]
+    return RunStatus(
+        run_id=run_id,
+        tenant_name=run_info["tenant_name"],
+        namespace=run_info["namespace"],
+        job_name=run_info["job_name"],
+        status=run_info["status"],
+        exit_code=run_info.get("exit_code"),
+        started_at=run_info.get("started_at") or run_info["created_at"],
+        finished_at=run_info.get("finished_at"),
+        output_dir=run_info["output_dir"],
+    )
+
+
+@app.get("/runs/{run_id}/stdout", response_class=PlainTextResponse)
+async def get_stdout(run_id: str):
+    """Get stdout output for a run."""
+    if run_id not in runs_db:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    run_info = runs_db[run_id]
+    stdout_path = Path(run_info["output_dir"]) / "stdout.log"
+
+    if not stdout_path.exists():
+        if run_info["status"] == "pending":
+            return "Process has not started yet"
+        raise HTTPException(status_code=404, detail="stdout.log not found")
+
+    return stdout_path.read_text()
+
+
+@app.get("/runs/{run_id}/stderr", response_class=PlainTextResponse)
+async def get_stderr(run_id: str):
+    """Get stderr output for a run."""
+    if run_id not in runs_db:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    run_info = runs_db[run_id]
+    stderr_path = Path(run_info["output_dir"]) / "stderr.log"
+
+    if not stderr_path.exists():
+        if run_info["status"] == "pending":
+            return "Process has not started yet"
+        raise HTTPException(status_code=404, detail="stderr.log not found")
+
+    return stderr_path.read_text()
+
+
+@app.delete("/runs/{run_id}")
+async def delete_run(run_id: str):
+    """Delete a run and its output files."""
+    if run_id not in runs_db:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    run_info = runs_db[run_id]
+
+    if run_info["status"] == "running":
+        raise HTTPException(status_code=400, detail="Cannot delete a running process")
+
+    output_dir = Path(run_info["output_dir"])
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
+
+    del runs_db[run_id]
+    return {"message": "Run deleted", "run_id": run_id}
+
+
+@app.post("/clear")
+async def clear_old_runs(
+    tenant_name: Optional[str] = None,
+    namespace: Optional[str] = None,
+    job_name: Optional[str] = None,
+):
+    """Delete all runs except the latest for each job."""
+    # Group runs by (tenant, namespace, job_name)
+    groups: dict[tuple[str, str, str], list[dict]] = {}
+    for run_id, run_info in runs_db.items():
+        if tenant_name and run_info["tenant_name"] != tenant_name:
+            continue
+        if namespace and run_info["namespace"] != namespace:
+            continue
+        if job_name and run_info["job_name"] != job_name:
+            continue
+        key = (run_info["tenant_name"], run_info["namespace"], run_info["job_name"])
+        groups.setdefault(key, []).append(run_info)
+
+    deleted = []
+    skipped = []
+    for key, runs in groups.items():
+        sorted_runs = sorted(runs, key=lambda r: r["created_at"], reverse=True)
+        for run_info in sorted_runs[1:]:
+            rid = run_info["run_id"]
+            if run_info["status"] == "running":
+                skipped.append(rid)
+                continue
+            output_dir = Path(run_info["output_dir"])
+            if output_dir.exists():
+                shutil.rmtree(output_dir)
+            del runs_db[rid]
+            deleted.append(rid)
+
+    return {"deleted": deleted, "skipped": skipped}
+
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint."""
+    return {"status": "healthy", "active_runs": len(runs_db)}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CLI Client
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class APIClient:
+    """HTTPS client for the Process Runner API with mutual TLS."""
+
+    def __init__(
+        self,
+        base_url: str,
+        client_cert: Path,
+        client_key: Path,
+        ca_cert: Path,
+    ):
+        self.base_url = base_url.rstrip("/")
+        self.session = requests.Session()
+        self.session.cert = (str(client_cert), str(client_key))
+        self.session.verify = str(ca_cert)
+
+    def post(self, path: str, data: dict) -> dict:
+        resp = self.session.post(f"{self.base_url}{path}", json=data)
+        resp.raise_for_status()
+        return resp.json()
+
+    def get(self, path: str) -> requests.Response:
+        resp = self.session.get(f"{self.base_url}{path}")
+        resp.raise_for_status()
+        return resp
+
+    def delete(self, path: str) -> dict:
+        resp = self.session.delete(f"{self.base_url}{path}")
+        resp.raise_for_status()
+        return resp.json()
+
+
+pass_client = click.make_pass_decorator(APIClient)
+
+
+@click.group()
+@click.option(
+    "--url",
+    "-u",
+    default=f"https://localhost:{DEFAULT_PORT}",
+    envvar="PROCESS_RUNNER_URL",
+    help="Base URL of the Process Runner API",
+)
+@click.option(
+    "--client-name",
+    default=None,
+    envvar="WORKD_CLIENT_NAME",
+    help="Client name for certificate lookup (default: current user)",
+)
+@click.option(
+    "--ca",
+    "ca_cert",
+    default=None,
+    envvar="WORKD_CA_CERT",
+    help="CA certificate path (default: ~/.x509/ca.pub)",
+)
+@click.pass_context
+def cli(ctx, url: str, client_name: Optional[str], ca_cert: Optional[str]):
+    """Process Runner - Run and manage processes via API."""
+    name = client_name or getpass.getuser()
+    cert_dir = CLIENT_CERT_DIR
+
+    client_cert = cert_dir / f"{name}.pub"
+    client_key = cert_dir / f"{name}.key"
+    ca_path = Path(ca_cert) if ca_cert else (cert_dir / "ca.pub")
+
+    missing = []
+    if not client_cert.exists():
+        missing.append(f"client cert: {client_cert}")
+    if not client_key.exists():
+        missing.append(f"client key:  {client_key}")
+    if not ca_path.exists():
+        missing.append(f"CA cert:     {ca_path}")
+    if missing:
+        for m in missing:
+            click.echo(f"Error: missing {m}", err=True)
+        sys.exit(1)
+
+    ctx.obj = APIClient(url, client_cert, client_key, ca_path)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Server Command
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@cli.command("serve")
+@click.option("--host", "-h", default=DEFAULT_HOST, help="Host to bind to")
+@click.option("--port", "-p", default=DEFAULT_PORT, type=int, help="Port to bind to")
+@click.option("--reload", is_flag=True, help="Enable auto-reload")
+@click.option(
+    "--server-name",
+    default=None,
+    envvar="WORKD_SERVER_NAME",
+    help="Server name for certificate lookup (default: hostname)",
+)
+def serve_command(host: str, port: int, reload: bool, server_name: Optional[str]):
+    """Start the Process Runner API server (HTTPS with mutual TLS)."""
+    name = server_name or socket.gethostname()
+    cert_dir = SERVER_CERT_DIR
+
+    ssl_certfile = cert_dir / f"{name}.pub"
+    ssl_keyfile = cert_dir / f"{name}.key"
+    ssl_ca_certs = cert_dir / "ca.pub"
+
+    missing = []
+    if not ssl_certfile.exists():
+        missing.append(f"server cert: {ssl_certfile}")
+    if not ssl_keyfile.exists():
+        missing.append(f"server key:  {ssl_keyfile}")
+    if not ssl_ca_certs.exists():
+        missing.append(f"CA cert:     {ssl_ca_certs}")
+    if missing:
+        for m in missing:
+            click.echo(f"Error: missing {m}", err=True)
+        sys.exit(1)
+
+    click.echo(f"Starting server on https://{host}:{port}")
+    click.echo(f"Server cert: {ssl_certfile}")
+    click.echo(f"CA cert:     {ssl_ca_certs}")
+
+    uvicorn.run(
+        app,
+        host=host,
+        port=port,
+        reload=reload,
+        ssl_keyfile=str(ssl_keyfile),
+        ssl_certfile=str(ssl_certfile),
+        ssl_ca_certs=str(ssl_ca_certs),
+        ssl_cert_reqs=ssl.CERT_REQUIRED,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Run Command
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@cli.command(
+    "run",
+    context_settings=dict(
+        ignore_unknown_options=True,
+        allow_interspersed_args=False,
+    ),
+)
+@click.option("--tenant", "-t", default="system", help="Tenant name")
+@click.option("--namespace", "-n", default="main", help="Namespace")
+@click.option("--job", "-j", required=True, help="Job name")
+@click.option("--env", "-e", multiple=True, help="Environment variables (KEY=VALUE)")
+@click.option("--workdir", "-w", help="Working directory")
+@click.option("--wait", is_flag=True, help="Wait for the process to complete")
+@click.option("--follow", "-f", is_flag=True, help="Wait and stream stdout when done")
+@click.argument("cmd_args", nargs=-1, type=click.UNPROCESSED)
+@pass_client
+def run_command(
+    client: APIClient,
+    tenant: str,
+    namespace: str,
+    job: str,
+    env: tuple,
+    workdir: Optional[str],
+    wait: bool,
+    follow: bool,
+    cmd_args: tuple,
+):
+    """
+    Run a command.
+
+    Options must come before the command. Everything after the options
+    is passed as the command and its arguments.
+
+    \b
+    Examples:
+        workd run -j hello -t acme ps -aux
+        workd run -j backup -t acme -n prod pg_dump mydb --wait
+        workd run -j hello echo "Hello World" -f
+    """
+    if not cmd_args:
+        raise click.UsageError("Missing command to run.")
+
+    command = cmd_args[0]
+    args = list(cmd_args[1:])
+
+    env_dict = {}
+    for e in env:
+        if "=" in e:
+            k, v = e.split("=", 1)
+            env_dict[k] = v
+
+    payload = {
+        "tenant_name": tenant,
+        "namespace": namespace,
+        "job_name": job,
+        "command": command,
+        "args": args,
+        "env": env_dict,
+    }
+    if workdir:
+        payload["working_dir"] = workdir
+
+    result = client.post("/runs", payload)
+    run_id = result["run_id"]
+
+    click.echo(f"Started run: {click.style(run_id, fg='green')}")
+    click.echo(f"Status: {result['status']}")
+    click.echo(f"Output dir: {result['output_dir']}")
+
+    if wait or follow:
+        click.echo("\nWaiting for completion...", nl=False)
+        while True:
+            status = client.get(f"/runs/{run_id}").json()
+            if status["status"] in ("completed", "failed", "error"):
+                break
+            click.echo(".", nl=False)
+            time.sleep(0.5)
+
+        click.echo()
+        exit_code = status.get("exit_code", "N/A")
+        status_color = "green" if status["status"] == "completed" else "red"
+        click.echo(f"Status: {click.style(status['status'], fg=status_color)}")
+        click.echo(f"Exit code: {exit_code}")
+
+        if follow:
+            click.echo("\n--- stdout ---")
+            stdout = client.get(f"/runs/{run_id}/stdout").text
+            click.echo(stdout)
+
+            stderr = client.get(f"/runs/{run_id}/stderr").text
+            if stderr.strip():
+                click.echo("\n--- stderr ---")
+                click.echo(stderr)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# List Command
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@cli.command("list")
+@click.option("--tenant", "-t", default="system", help="Filter by tenant")
+@click.option("--namespace", "-n", default="main", help="Filter by namespace")
+@click.option("--job", "-j", help="Filter by job name")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+@pass_client
+def list_runs(
+    client: APIClient,
+    tenant: Optional[str],
+    namespace: Optional[str],
+    job: Optional[str],
+    as_json: bool,
+):
+    """List all runs with optional filters."""
+    params = []
+    if tenant:
+        params.append(f"tenant_name={tenant}")
+    if namespace:
+        params.append(f"namespace={namespace}")
+    if job:
+        params.append(f"job_name={job}")
+
+    query = "?" + "&".join(params) if params else ""
+    result = client.get(f"/runs{query}").json()
+
+    if as_json:
+        click.echo(json.dumps(result, indent=2))
+        return
+
+    if not result:
+        click.echo("No runs found.")
+        return
+
+    click.echo(f"{'RUN ID':<40} {'STATUS':<12} {'EXIT':<6} {'CREATED'}")
+    click.echo("-" * 80)
+    for run in result:
+        status = run["status"]
+        status_color = {"completed": "green", "failed": "red", "running": "yellow"}.get(
+            status, "white"
+        )
+        exit_code = run.get("exit_code") if run.get("exit_code") is not None else "-"
+        click.echo(
+            f"{run['run_id']:<40} "
+            f"{click.style(status, fg=status_color):<21} "
+            f"{str(exit_code):<6} "
+            f"{run['created_at']}"
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Status Command
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@cli.command("status")
+@click.argument("job_name")
+@click.option(
+    "--uuid", "run_id", default=None, help="Look up by run UUID instead of job name"
+)
+@click.option("--tenant", "-t", default="system", help="Filter by tenant")
+@click.option("--namespace", "-n", default="main", help="Filter by namespace")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+@pass_client
+def get_status(
+    client: APIClient,
+    job_name: str,
+    run_id: Optional[str],
+    tenant: Optional[str],
+    namespace: Optional[str],
+    as_json: bool,
+):
+    """Get status of a run by job name (latest run) or --uuid."""
+    if run_id:
+        result = client.get(f"/runs/{run_id}").json()
+    else:
+        params = [f"job_name={job_name}"]
+        if tenant:
+            params.append(f"tenant_name={tenant}")
+        if namespace:
+            params.append(f"namespace={namespace}")
+        query = "?" + "&".join(params)
+        runs = client.get(f"/runs{query}").json()
+        if not runs:
+            click.echo(f"No runs found for job '{job_name}'.")
+            raise SystemExit(1)
+        result = client.get(f"/runs/{runs[0]['run_id']}").json()
+
+    if as_json:
+        click.echo(json.dumps(result, indent=2))
+        return
+
+    status_color = {"completed": "green", "failed": "red", "running": "yellow"}.get(
+        result["status"], "white"
+    )
+
+    click.echo(f"Run ID:     {result['run_id']}")
+    click.echo(f"Tenant:     {result['tenant_name']}")
+    click.echo(f"Namespace:  {result['namespace']}")
+    click.echo(f"Job:        {result['job_name']}")
+    click.echo(f"Status:     {click.style(result['status'], fg=status_color)}")
+    click.echo(f"Exit Code:  {result.get('exit_code', 'N/A')}")
+    click.echo(f"Started:    {result.get('started_at', 'N/A')}")
+    click.echo(f"Finished:   {result.get('finished_at', 'N/A')}")
+    click.echo(f"Output Dir: {result['output_dir']}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Output Commands
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _resolve_run_id(
+    client: APIClient, job_name: str, tenant: Optional[str], namespace: Optional[str]
+) -> str:
+    """Resolve a job name to the latest run ID."""
+    params = [f"job_name={job_name}"]
+    if tenant:
+        params.append(f"tenant_name={tenant}")
+    if namespace:
+        params.append(f"namespace={namespace}")
+    query = "?" + "&".join(params)
+    runs = client.get(f"/runs{query}").json()
+    if not runs:
+        click.echo(f"No runs found for job '{job_name}'.")
+        raise SystemExit(1)
+    return runs[0]["run_id"]
+
+
+@cli.command("stdout")
+@click.argument("job_name")
+@click.option(
+    "--uuid", "run_id", default=None, help="Look up by run UUID instead of job name"
+)
+@click.option("--tenant", "-t", default="system", help="Filter by tenant")
+@click.option("--namespace", "-n", default="main", help="Filter by namespace")
+@pass_client
+def get_stdout_cmd(
+    client: APIClient,
+    job_name: str,
+    run_id: Optional[str],
+    tenant: Optional[str],
+    namespace: Optional[str],
+):
+    """Get stdout output for a run by job name (latest run) or --uuid."""
+    if not run_id:
+        run_id = _resolve_run_id(client, job_name, tenant, namespace)
+    result = client.get(f"/runs/{run_id}/stdout").text
+    click.echo(result)
+
+
+@cli.command("stderr")
+@click.argument("job_name")
+@click.option(
+    "--uuid", "run_id", default=None, help="Look up by run UUID instead of job name"
+)
+@click.option("--tenant", "-t", default="system", help="Filter by tenant")
+@click.option("--namespace", "-n", default="main", help="Filter by namespace")
+@pass_client
+def get_stderr_cmd(
+    client: APIClient,
+    job_name: str,
+    run_id: Optional[str],
+    tenant: Optional[str],
+    namespace: Optional[str],
+):
+    """Get stderr output for a run by job name (latest run) or --uuid."""
+    if not run_id:
+        run_id = _resolve_run_id(client, job_name, tenant, namespace)
+    result = client.get(f"/runs/{run_id}/stderr").text
+    click.echo(result)
+
+
+@cli.command("logs")
+@click.argument("job_name")
+@click.option(
+    "--uuid", "run_id", default=None, help="Look up by run UUID instead of job name"
+)
+@click.option("--tenant", "-t", default="system", help="Filter by tenant")
+@click.option("--namespace", "-n", default="main", help="Filter by namespace")
+@click.option("--stdout-only", is_flag=True, help="Show only stdout")
+@click.option("--stderr-only", is_flag=True, help="Show only stderr")
+@pass_client
+def get_logs(
+    client: APIClient,
+    job_name: str,
+    run_id: Optional[str],
+    tenant: Optional[str],
+    namespace: Optional[str],
+    stdout_only: bool,
+    stderr_only: bool,
+):
+    """Get combined logs (stdout and stderr) for a run by job name (latest run) or --uuid."""
+    if not run_id:
+        run_id = _resolve_run_id(client, job_name, tenant, namespace)
+
+    if not stderr_only:
+        stdout = client.get(f"/runs/{run_id}/stdout").text
+        if stdout.strip():
+            click.echo(click.style("=== STDOUT ===", fg="green"))
+            click.echo(stdout)
+
+    if not stdout_only:
+        stderr = client.get(f"/runs/{run_id}/stderr").text
+        if stderr.strip():
+            click.echo(click.style("=== STDERR ===", fg="red"))
+            click.echo(stderr)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Delete Command
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@cli.command("delete")
+@click.argument("job_name")
+@click.option(
+    "--uuid",
+    "run_id",
+    default=None,
+    help="Delete a specific run by UUID instead of all runs for the job",
+)
+@click.option("--tenant", "-t", default="system", help="Filter by tenant")
+@click.option("--namespace", "-n", default="main", help="Filter by namespace")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
+@pass_client
+def delete_run(
+    client: APIClient,
+    job_name: str,
+    run_id: Optional[str],
+    tenant: Optional[str],
+    namespace: Optional[str],
+    yes: bool,
+):
+    """Delete runs for a job, or a specific run with --uuid."""
+    if run_id:
+        if not yes:
+            click.confirm(f"Delete run {run_id}?", abort=True)
+        result = client.delete(f"/runs/{run_id}")
+        click.echo(f"Deleted: {result['run_id']}")
+    else:
+        params = [f"job_name={job_name}"]
+        if tenant:
+            params.append(f"tenant_name={tenant}")
+        if namespace:
+            params.append(f"namespace={namespace}")
+        query = "?" + "&".join(params)
+        runs = client.get(f"/runs{query}").json()
+        if not runs:
+            click.echo(f"No runs found for job '{job_name}'.")
+            raise SystemExit(1)
+
+        if not yes:
+            click.echo(f"Found {len(runs)} run(s) for job '{job_name}':")
+            for r in runs:
+                click.echo(f"  {r['run_id']}  {r['status']}")
+            click.confirm("Delete all?", abort=True)
+
+        deleted = []
+        skipped = []
+        for r in runs:
+            try:
+                client.delete(f"/runs/{r['run_id']}")
+                deleted.append(r["run_id"])
+                click.echo(f"Deleted: {r['run_id']}")
+            except requests.HTTPError as e:
+                skipped.append(r["run_id"])
+                click.echo(f"Skipped: {r['run_id']} ({e.response.status_code})")
+
+        click.echo(f"\n{len(deleted)} deleted, {len(skipped)} skipped.")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Health Command
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@cli.command("clear")
+@click.argument("job_name", required=False, default=None)
+@click.option("--tenant", "-t", default="system", help="Filter by tenant")
+@click.option("--namespace", "-n", default="main", help="Filter by namespace")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
+@pass_client
+def clear_runs(
+    client: APIClient,
+    job_name: Optional[str],
+    tenant: Optional[str],
+    namespace: Optional[str],
+    yes: bool,
+):
+    """Delete all runs except the latest run for each job.
+
+    Optionally provide JOB_NAME to clear only that job's old runs.
+    """
+    if not yes:
+        if job_name:
+            click.confirm(
+                f"Delete all runs except the latest for job '{job_name}'?", abort=True
+            )
+        else:
+            click.confirm("Delete all runs except the latest for each job?", abort=True)
+
+    params = []
+    if job_name:
+        params.append(f"job_name={job_name}")
+    if tenant:
+        params.append(f"tenant_name={tenant}")
+    if namespace:
+        params.append(f"namespace={namespace}")
+    query = "?" + "&".join(params) if params else ""
+
+    result = client.post(f"/clear{query}", {})
+    deleted = result["deleted"]
+    skipped = result["skipped"]
+
+    for rid in deleted:
+        click.echo(f"Deleted: {rid}")
+    for rid in skipped:
+        click.echo(f"Skipped (running): {rid}")
+
+    click.echo(f"\n{len(deleted)} deleted, {len(skipped)} skipped.")
+
+
+@cli.command("health")
+@pass_client
+def health_check(client: APIClient):
+    """Check API health status."""
+    result = client.get("/health").json()
+    click.echo(f"Status: {click.style(result['status'], fg='green')}")
+    click.echo(f"Active runs: {result['active_runs']}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Entry Point
+# ═══════════════════════════════════════════════════════════════════════════════
+
+if __name__ == "__main__":
+    cli()

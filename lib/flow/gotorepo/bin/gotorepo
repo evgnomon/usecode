@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+url=$(git remote get-url origin 2>/dev/null) || { echo "Not a git repository or no origin remote" >&2; exit 1; }
+
+# Convert SSH URL to HTTPS
+url="${url%.git}"
+if [[ "$url" == git@* ]]; then
+  url="https://${url#git@}"
+  url="${url/:://}"
+elif [[ "$url" == ssh://* ]]; then
+  url="${url#ssh://}"
+  url="${url#*@}"
+  url="https://$url"
+fi
+
+fzurls "$url"

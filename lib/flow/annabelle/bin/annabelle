@@ -1,0 +1,199 @@
+#!/usr/bin/env python3
+"""
+annabelle — Run local script + optional file uploads on multiple remote servers via SSH/SCP
+
+Examples:
+  annabelle server1 server2 myscript.sh
+  annabelle server1 server2 -f data.csv myscript.sh
+  annabelle srv1 srv2 -f file1.txt -f file2.conf
+  annabelle host1 -f config.yaml:/etc/myapp/config.yaml setup.sh
+"""
+
+import argparse
+import subprocess
+import sys
+from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import List, Optional, Tuple
+
+
+def scp_upload(
+    server: str, local_path: Path, remote_path: Optional[str] = None
+) -> Tuple[str, int, str, str]:
+    """Upload one file to one server using scp"""
+    if remote_path is None:
+        remote_path = f"~/.annabelle/{local_path.name}"
+
+    try:
+        # Ensure remote directory exists
+        remote_dir = str(Path(remote_path).parent)
+        if remote_dir and remote_dir != ".":
+            # Replace ~ with $HOME for proper expansion inside double quotes
+            if remote_dir.startswith("~"):
+                remote_dir = "$HOME" + remote_dir[1:]
+            mkdir_result = subprocess.run(
+                ["ssh", "-q", server, f'mkdir -p "{remote_dir}"'],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if mkdir_result.returncode != 0:
+                return server, mkdir_result.returncode, "", mkdir_result.stderr
+
+        cmd = ["scp", "-q", str(local_path), f"{server}:{remote_path}"]
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        return server, result.returncode, result.stdout, result.stderr
+    except Exception as e:
+        return server, 1, "", f"Exception during scp: {str(e)}"
+
+
+def run_script(server: str, script_content: str) -> Tuple[str, int, str, str]:
+    """Execute script content remotely via ssh bash -s"""
+    try:
+        result = subprocess.run(
+            ["ssh", "-q", server, "bash -s"],
+            input=script_content,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        return server, result.returncode, result.stdout, result.stderr
+    except Exception as e:
+        return server, 1, "", f"Exception during ssh: {str(e)}"
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Run a local script (and optionally upload files first) on multiple remote servers",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
+    parser.add_argument(
+        "targets",
+        nargs="*",
+        metavar="SERVER [SCRIPT]",
+        help="Server(s) followed by optional script file",
+    )
+    parser.add_argument(
+        "-f",
+        "--file",
+        action="append",
+        dest="upload_files",
+        metavar="SRC[:DST]",
+        help="File to upload (src:dst format, dst defaults to ~/.annabelle/filename)",
+    )
+    parser.add_argument(
+        "-p",
+        "--parallel",
+        type=int,
+        default=5,
+        help="Maximum number of concurrent connections (default: 5)",
+    )
+
+    # Use parse_known_args to handle positionals mixed with options
+    args, remaining = parser.parse_known_args()
+    # Merge any remaining positional arguments into targets
+    args.targets = args.targets + remaining
+
+    if not args.targets and not args.upload_files:
+        parser.print_help()
+        return 1
+
+    # ── Determine servers and optional script ──────────────────────────────
+    servers: List[str] = []
+    script_path: Optional[str] = None
+
+    if args.targets:
+        last_arg = args.targets[-1]
+        # Heuristic: last argument is likely script if it exists locally
+        if Path(last_arg).is_file():
+            servers = args.targets[:-1]
+            script_path = last_arg
+        else:
+            servers = args.targets
+
+    if not servers:
+        print("Error: No servers specified", file=sys.stderr)
+        return 1
+
+    # ── Prepare uploads ────────────────────────────────────────────────────
+    files_to_upload = args.upload_files or []
+    overall_exit = 0
+
+    if files_to_upload:
+        print("Uploading files...\n")
+        upload_futures = {}  # future -> local filename
+
+        with ThreadPoolExecutor(max_workers=args.parallel) as executor:
+            for spec in files_to_upload:
+                if ":" in spec:
+                    src, dst = spec.split(":", 1)
+                else:
+                    src, dst = spec, None
+                local = Path(src)
+                if not local.is_file():
+                    print(f"Error: Cannot read file: {src}", file=sys.stderr)
+                    overall_exit = 1
+                    continue
+
+                for srv in servers:
+                    future = executor.submit(scp_upload, srv, local, dst)
+                    upload_futures[future] = src
+
+            for future in as_completed(upload_futures):
+                local_name = upload_futures[future]
+                server, rc, _, err = future.result()
+                status = "OK" if rc == 0 else "FAILED"
+                print(f"  [{server}] {local_name:<20} → {status}", end="")
+                if rc != 0 and err.strip():
+                    print(f"  ({err.strip()})", file=sys.stderr)
+                else:
+                    print()
+        print()
+
+        if overall_exit:
+            print("Some uploads failed → continuing anyway\n", file=sys.stderr)
+
+    # ── Run script if provided ─────────────────────────────────────────────
+    if script_path:
+        try:
+            script_content = Path(script_path).read_text(encoding="utf-8")
+        except Exception as e:
+            print(f"Error reading script {script_path}: {e}", file=sys.stderr)
+            return 1
+
+        print(f"Executing {Path(script_path).name} on {len(servers)} server(s)...\n")
+
+        run_futures = {}
+
+        with ThreadPoolExecutor(max_workers=args.parallel) as executor:
+            for srv in servers:
+                run_futures[executor.submit(run_script, srv, script_content)] = srv
+
+            for future in as_completed(run_futures):
+                server = run_futures[future]
+                srv, rc, out, err = future.result()
+
+                print(f"{'═' * 10} {server} {'═' * 10}")
+                if out.strip():
+                    print(out, end="")
+                if err.strip():
+                    print(err, file=sys.stderr, end="")
+                if rc != 0:
+                    print(f"[exit {rc}]", file=sys.stderr)
+                    overall_exit = max(overall_exit, rc)
+                print()
+
+    if overall_exit:
+        print(f"\nFinished with errors (exit {overall_exit})", file=sys.stderr)
+
+    return overall_exit
+
+
+if __name__ == "__main__":
+    sys.exit(main())

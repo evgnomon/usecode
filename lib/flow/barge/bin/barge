@@ -1,0 +1,3 @@
+#!/bin/sh
+
+docker run -it --rm -v.:/github/workspace --workdir /github/workspace barge

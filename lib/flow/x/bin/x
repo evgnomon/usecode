@@ -1,0 +1,7 @@
+#!/bin/sh
+
+sudo -v
+cd "$HOME/src/github.com/$USER/blueprint"
+  ansible-playbook -K -i inventory.py  main.yaml -e "ansible_python_interpreter=$(which python3)" "$@"
+cd - > /dev/null
+sudo -K

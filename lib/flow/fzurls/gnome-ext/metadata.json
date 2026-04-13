@@ -1,0 +1,7 @@
+{
+  "uuid": "fzurls-focus@org.evgnomon",
+  "name": "FzURLs Focus",
+  "description": "Move new Brave browser windows to the active workspace",
+  "shell-version": ["48"],
+  "version": 1
+}

@@ -1,0 +1,23 @@
+#!/bin/bash
+export EDITOR=vi
+VAULT_ADDR=$1
+
+SECRET_FILE=$HOME/.config/blueprint/secrets/secrets.yaml
+if [ ! -z "$1" ]; then
+  SECRET_FILE=$HOME/.config/blueprint/secrets/$1.yaml
+fi
+
+VAULT_FILE=vault
+if [ ! -z "$1" ]; then
+  VAULT_FILE=$1.vault
+fi
+
+if [ ! -f $HOME/.config/blueprint/secrets/$VAULT_FILE.asc ]; then
+  cat /dev/random | tr -dc 'a-zA-Z0-9' | fold -w 64 | head -n 1 | vault -e $VAULT_FILE
+fi
+
+if [ ! -f $SECRET_FILE ]; then
+  ANSIBLE_VAULT_PASSWORD_FILE=<(vault -d $VAULT_FILE) ansible-vault create $SECRET_FILE
+else
+  ANSIBLE_VAULT_PASSWORD_FILE=<(vault -d $VAULT_FILE) ansible-vault edit $SECRET_FILE
+fi

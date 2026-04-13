@@ -1,0 +1,3 @@
+#!/bin/bash
+export DIGITALOCEAN_ACCESS_TOKEN=$(getsecret $(repofqn) | jq -r '.doctl.prod')
+doctl "$@"

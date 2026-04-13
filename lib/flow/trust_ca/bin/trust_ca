@@ -1,0 +1,304 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ACTION="add"
+if [ "${1:-}" = "--remove" ]; then
+    ACTION="remove"
+    shift
+elif [ "${1:-}" = "--list" ]; then
+    ACTION="list"
+    shift
+fi
+
+show_usage() {
+    echo "Usage: trust_ca [--remove|--list] <host:port>"
+    echo "       trust_ca --list"
+    echo ""
+    echo "Examples:"
+    echo "  trust_ca cr.main.sys.local.zygote.run:8443"
+    echo "  trust_ca --remove cr.main.sys.local.zygote.run:8443"
+    echo "  trust_ca --list                  # list all custom-trusted CAs"
+    echo "  trust_ca --list example.com:443  # list only CAs for this host"
+}
+
+print_cert_info() {
+    local file="$1"
+    local store="$2"
+    local modified
+    modified=$(stat -c '%y' "$file" 2>/dev/null | cut -d. -f1)
+    echo "  Store:    $store"
+    echo "  File:     $file"
+    echo "  Modified: $modified"
+
+    # Parse each cert in the file (may be a bundle)
+    local tmpdir
+    tmpdir=$(mktemp -d /tmp/trust-ca-list-XXXXXX)
+    csplit -z -f "$tmpdir/c-" -b "%02d.pem" "$file" '/-----BEGIN CERTIFICATE-----/' '{*}' 2>/dev/null || true
+    for cf in "$tmpdir"/c-*.pem; do
+        [ -s "$cf" ] || continue
+        local subj issuer notbefore notafter
+        subj=$(openssl x509 -in "$cf" -noout -subject 2>/dev/null || echo "  (unknown)")
+        issuer=$(openssl x509 -in "$cf" -noout -issuer 2>/dev/null || echo "  (unknown)")
+        notbefore=$(openssl x509 -in "$cf" -noout -startdate 2>/dev/null | sed 's/notBefore=//')
+        notafter=$(openssl x509 -in "$cf" -noout -enddate 2>/dev/null | sed 's/notAfter=//')
+        echo "  ---"
+        echo "  $subj"
+        echo "  $issuer"
+        echo "  Valid: $notbefore — $notafter"
+    done
+    rm -rf "$tmpdir"
+    echo ""
+}
+
+list_certs() {
+    local filter="${1:-}"
+    local found=0
+
+    echo "=== System CA Trust Store ==="
+    echo "    /usr/local/share/ca-certificates/"
+    echo ""
+    for f in /usr/local/share/ca-certificates/*.crt; do
+        [ -f "$f" ] || continue
+        local basename
+        basename=$(basename "$f")
+        if [ -n "$filter" ] && [[ "$basename" != *"$filter"* ]]; then
+            continue
+        fi
+        print_cert_info "$f" "system"
+        found=1
+    done
+    if [ "$found" -eq 0 ]; then
+        echo "  (none)"
+        echo ""
+    fi
+
+    found=0
+    echo "=== Container Runtime (Podman/Skopeo) ==="
+    echo "    /etc/containers/certs.d/"
+    echo ""
+    for d in /etc/containers/certs.d/*/; do
+        [ -d "$d" ] || continue
+        local registry_name
+        registry_name=$(basename "$d")
+        if [ -n "$filter" ] && [[ "$registry_name" != *"$filter"* ]]; then
+            continue
+        fi
+        local ca_file="${d}ca.crt"
+        if [ -f "$ca_file" ]; then
+            echo "  Registry: $registry_name"
+            print_cert_info "$ca_file" "container"
+            found=1
+        fi
+    done
+    if [ "$found" -eq 0 ]; then
+        echo "  (none)"
+        echo ""
+    fi
+
+    found=0
+    echo "=== NSS Database (Brave/Chrome) ==="
+    echo "    ~/.pki/nssdb"
+    echo ""
+    if command -v certutil &>/dev/null && [ -d "$HOME/.pki/nssdb" ]; then
+        local nss_output
+        nss_output=$(certutil -d sql:"$HOME/.pki/nssdb" -L 2>/dev/null || true)
+        if [ -n "$filter" ]; then
+            local filter_nss="${filter//./-}"
+            nss_output=$(echo "$nss_output" | grep -i "$filter_nss" || true)
+        fi
+        if [ -n "$nss_output" ]; then
+            echo "$nss_output" | while IFS= read -r line; do
+                echo "  $line"
+            done
+            echo ""
+
+            # Show detailed info for matching certs
+            certutil -d sql:"$HOME/.pki/nssdb" -L 2>/dev/null | tail -n +5 | while IFS= read -r line; do
+                [ -z "$line" ] && continue
+                local nick
+                nick=$(echo "$line" | sed 's/\s*[a-zA-Z,]*\s*$//' | sed 's/\s*$//')
+                [ -z "$nick" ] && continue
+                if [ -n "$filter" ]; then
+                    local filter_nss="${filter//./-}"
+                    echo "$nick" | grep -qi "$filter_nss" || continue
+                fi
+                local detail
+                detail=$(certutil -d sql:"$HOME/.pki/nssdb" -L -n "$nick" 2>/dev/null | grep -E "Subject:|Issuer:|Not Before:|Not After" || true)
+                if [ -n "$detail" ]; then
+                    echo "  [$nick]"
+                    echo "$detail" | while IFS= read -r dline; do
+                        echo "    $dline"
+                    done
+                    echo ""
+                fi
+            done
+            found=1
+        fi
+    fi
+    if [ "$found" -eq 0 ]; then
+        if ! command -v certutil &>/dev/null; then
+            echo "  (certutil not found — install libnss3-tools)"
+        else
+            echo "  (none)"
+        fi
+        echo ""
+    fi
+}
+
+# --- List ---
+if [ "$ACTION" = "list" ]; then
+    FILTER=""
+    if [ $# -ge 1 ]; then
+        REGISTRY="$1"
+        HOST="${REGISTRY%%:*}"
+        FILTER="$HOST"
+    fi
+    list_certs "$FILTER"
+    exit 0
+fi
+
+# --- Add / Remove require a host:port argument ---
+if [ $# -ne 1 ]; then
+    show_usage
+    exit 1
+fi
+
+REGISTRY="$1"
+HOST="${REGISTRY%%:*}"
+CERT_NAME="${HOST//./-}"
+
+# --- Remove ---
+if [ "$ACTION" = "remove" ]; then
+    echo "Removing certificates for $REGISTRY ..."
+
+    # 1. System trust store
+    echo ""
+    echo "==> Removing from system CA trust store ..."
+    sudo rm -f "/usr/local/share/ca-certificates/${CERT_NAME}.crt"
+    sudo update-ca-certificates
+
+    # 2. Podman / Skopeo
+    echo ""
+    echo "==> Removing from container runtime trust store ..."
+    sudo rm -rf "/etc/containers/certs.d/${REGISTRY}"
+
+    # 3. NSS database (Brave / Chrome)
+    echo ""
+    if command -v certutil &>/dev/null; then
+        echo "==> Removing from NSS database (Brave/Chrome) ..."
+        # Collect matching nicknames first, then remove them
+        NICKS=()
+        while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            nick=$(echo "$line" | sed 's/\s*[a-zA-Z,]*\s*$//' | sed 's/\s*$//')
+            [ -z "$nick" ] && continue
+            if [[ "$nick" == "${CERT_NAME}" ]] || [[ "$nick" == "${CERT_NAME}"-* ]]; then
+                NICKS+=("$nick")
+            fi
+        done < <(certutil -d sql:"$HOME/.pki/nssdb" -L 2>/dev/null | tail -n +5)
+        for nick in "${NICKS[@]}"; do
+            echo "  Removing: $nick"
+            certutil -d sql:"$HOME/.pki/nssdb" -D -n "$nick" 2>/dev/null || true
+        done
+    else
+        echo "==> Skipping NSS database (certutil not found)"
+    fi
+
+    echo ""
+    echo "Done. Restart Brave/Chrome for browser changes to take effect."
+    exit 0
+fi
+
+# --- Add ---
+TMPDIR="$(mktemp -d /tmp/trust-ca-XXXXXX)"
+trap 'rm -rf "$TMPDIR"' EXIT
+
+echo "Fetching certificate chain from $REGISTRY ..."
+FULL_CHAIN="$TMPDIR/full-chain.pem"
+openssl s_client -connect "$REGISTRY" -servername "$HOST" -showcerts </dev/null 2>/dev/null \
+    | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' > "$FULL_CHAIN"
+
+if [ ! -s "$FULL_CHAIN" ]; then
+    echo "Error: failed to retrieve certificate from $REGISTRY"
+    exit 1
+fi
+
+# Split chain into individual certs and keep only CA certs (skip the leaf)
+csplit -z -f "$TMPDIR/cert-" -b "%02d.pem" "$FULL_CHAIN" '/-----BEGIN CERTIFICATE-----/' '{*}' 2>/dev/null
+
+CA_CERT="$TMPDIR/ca-bundle.pem"
+: > "$CA_CERT"
+CERT_COUNT=0
+for CERT_FILE in "$TMPDIR"/cert-*.pem; do
+    [ -s "$CERT_FILE" ] || continue
+    SUBJECT=$(openssl x509 -in "$CERT_FILE" -noout -subject 2>/dev/null || true)
+    ISSUER=$(openssl x509 -in "$CERT_FILE" -noout -issuer 2>/dev/null || true)
+    IS_CA=$(openssl x509 -in "$CERT_FILE" -noout -text 2>/dev/null | grep -c "CA:TRUE" || true)
+
+    if [ "$IS_CA" -gt 0 ]; then
+        echo "  Found CA: $SUBJECT"
+        echo "            $ISSUER"
+        cat "$CERT_FILE" >> "$CA_CERT"
+        CERT_COUNT=$((CERT_COUNT + 1))
+    else
+        echo "  Skipping leaf: $SUBJECT"
+    fi
+done
+
+# If no CA certs found in chain, take everything except the first (leaf) cert
+if [ "$CERT_COUNT" -eq 0 ]; then
+    echo "  No CA:TRUE certs found, using all non-leaf certs from chain..."
+    FIRST=1
+    for CERT_FILE in "$TMPDIR"/cert-*.pem; do
+        [ -s "$CERT_FILE" ] || continue
+        if [ "$FIRST" -eq 1 ]; then
+            FIRST=0
+            continue
+        fi
+        cat "$CERT_FILE" >> "$CA_CERT"
+        CERT_COUNT=$((CERT_COUNT + 1))
+    done
+fi
+
+if [ ! -s "$CA_CERT" ]; then
+    echo "Error: could not extract any CA certificates from the chain"
+    exit 1
+fi
+
+echo ""
+echo "Extracted $CERT_COUNT CA certificate(s)."
+
+# 1. System trust store
+echo ""
+echo "==> Adding to system CA trust store ..."
+sudo cp "$CA_CERT" "/usr/local/share/ca-certificates/${CERT_NAME}.crt"
+sudo update-ca-certificates
+
+# 2. Podman / Skopeo
+echo ""
+echo "==> Adding to container runtime trust store ..."
+CONTAINER_CERT_DIR="/etc/containers/certs.d/${REGISTRY}"
+sudo mkdir -p "$CONTAINER_CERT_DIR"
+sudo cp "$CA_CERT" "${CONTAINER_CERT_DIR}/ca.crt"
+
+# 3. NSS database (Brave / Chrome)
+echo ""
+if command -v certutil &>/dev/null; then
+    echo "==> Adding to NSS database (Brave/Chrome) ..."
+    mkdir -p "$HOME/.pki/nssdb"
+    # Add each CA cert separately to NSS
+    I=0
+    for CERT_FILE in "$TMPDIR"/cert-*.pem; do
+        [ -s "$CERT_FILE" ] || continue
+        IS_CA=$(openssl x509 -in "$CERT_FILE" -noout -text 2>/dev/null | grep -c "CA:TRUE" || true)
+        if [ "$IS_CA" -gt 0 ]; then
+            certutil -d sql:"$HOME/.pki/nssdb" -A -t "CT,C,C" -n "${CERT_NAME}-${I}" -i "$CERT_FILE"
+            I=$((I + 1))
+        fi
+    done
+else
+    echo "==> Skipping NSS database (certutil not found — install libnss3-tools)"
+fi
+
+echo ""
+echo "Done. Restart Brave/Chrome for browser changes to take effect."

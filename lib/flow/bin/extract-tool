@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Extract a tool from evgnomon/flow into its own repo at evgnomon/<tool>
+#
+# Usage: extract-tool <tool-name>
+#   e.g.: extract-tool fzurls
+#
+# What it does:
+#   1. Uses git subtree split to extract the tool's history into a branch
+#   2. Creates a new repo at ../../../evgnomon/<tool> (sibling to flow)
+#   3. Pulls the split branch into the new repo
+#   4. Removes the tool directory from flow
+
+FLOW_DIR="$(cd "$(dirname "$0")" && pwd)"
+BASE_DIR="$(dirname "$FLOW_DIR")"  # .../evgnomon/
+ZM_DIR="${BASE_DIR}/zm"
+LICENSE_FILE="${ZM_DIR}/COPYING"
+
+usage() {
+    echo "Usage: $0 <tool-name> [--dry-run]"
+    echo ""
+    echo "Extract a tool from evgnomon/flow into evgnomon/<tool>"
+    echo ""
+    echo "Options:"
+    echo "  --dry-run   Show what would be done without making changes"
+    exit 1
+}
+
+if [[ $# -lt 1 ]]; then
+    usage
+fi
+
+TOOL="$1"
+DRY_RUN=false
+if [[ "${2:-}" == "--dry-run" ]]; then
+    DRY_RUN=true
+fi
+
+TOOL_DIR="${FLOW_DIR}/${TOOL}"
+TARGET_DIR="${BASE_DIR}/${TOOL}"
+
+if [[ ! -d "$TOOL_DIR" ]]; then
+    echo "Error: tool directory not found: ${TOOL_DIR}"
+    exit 1
+fi
+
+if [[ ! -f "$LICENSE_FILE" ]]; then
+    echo "Error: license file not found: ${LICENSE_FILE}"
+    echo "Clone evgnomon/zm first."
+    exit 1
+fi
+
+if [[ -d "$TARGET_DIR" ]]; then
+    echo "Error: target directory already exists: ${TARGET_DIR}"
+    exit 1
+fi
+
+SPLIT_BRANCH="split-${TOOL}"
+
+echo "==> Extracting '${TOOL}' from flow"
+echo "    Source:  ${TOOL_DIR}"
+echo "    Target:  ${TARGET_DIR}"
+echo ""
+
+if $DRY_RUN; then
+    echo "[dry-run] Would run: git subtree split -P ${TOOL} -b ${SPLIT_BRANCH}"
+    echo "[dry-run] Would create repo at: ${TARGET_DIR}"
+    echo "[dry-run] Would pull split branch into new repo"
+    echo "[dry-run] Would copy license from ${LICENSE_FILE}"
+    echo "[dry-run] Would remove ${TOOL_DIR} from flow and commit"
+    exit 0
+fi
+
+# Step 1: Create the new repo
+echo "==> Creating new repo at ${TARGET_DIR}..."
+mkdir -p "$TARGET_DIR"
+cd "$TARGET_DIR"
+git init
+
+# Step 2: Configure git identity and signing
+echo "==> Configuring git with set_git_conf..."
+"${HOME}/.local/bin/set_git_conf" --public "$TARGET_DIR"
+
+# Step 3: Try subtree split to preserve history, fall back to copy
+echo "==> Splitting subtree for '${TOOL}'..."
+cd "$FLOW_DIR"
+if git subtree split -P "$TOOL" -b "$SPLIT_BRANCH" 2>/dev/null; then
+    echo "==> Pulling split history..."
+    cd "$TARGET_DIR"
+    git pull "$FLOW_DIR" "$SPLIT_BRANCH"
+
+    # Clean up the split branch
+    cd "$FLOW_DIR"
+    git branch -D "$SPLIT_BRANCH"
+else
+    echo "==> subtree split failed (path type changed in history), copying current files..."
+    cp -a "${TOOL_DIR}/." "$TARGET_DIR"
+    cd "$TARGET_DIR"
+    git add -A
+    git commit -m "Import ${TOOL} from evgnomon/flow"
+fi
+
+# Step 4: Add the license from evgnomon/zm
+echo "==> Adding license from ${LICENSE_FILE}..."
+cp "$LICENSE_FILE" "${TARGET_DIR}/COPYING"
+cd "$TARGET_DIR"
+git add COPYING
+git commit -m "Add HGL license"
+
+# Step 5: Symlink bin files to ~/.local/bin
+echo "==> Linking bin files to ~/.local/bin..."
+if [[ -d "${TARGET_DIR}/bin" ]]; then
+    for bin_file in "${TARGET_DIR}/bin/"*; do
+        [[ -f "$bin_file" ]] || continue
+        bin_name="$(basename "$bin_file")"
+        ln -sf "$bin_file" "${HOME}/.local/bin/${bin_name}"
+        echo "    ${HOME}/.local/bin/${bin_name} -> ${bin_file}"
+    done
+fi
+
+# Step 6: Remove the tool from flow (last step)
+echo "==> Removing '${TOOL}' from flow..."
+cd "$FLOW_DIR"
+git rm -rf "$TOOL"
+git commit -m "Extract ${TOOL} into its own repo"
+git push origin main
+
+echo ""
+echo "Done! '${TOOL}' is now at: ${TARGET_DIR}"

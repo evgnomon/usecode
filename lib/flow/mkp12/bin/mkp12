@@ -1,0 +1,11 @@
+#!/bin/sh
+
+if [ "$#" -ne 1 ]; then
+    echo "Usage: $0 <keyname>"
+    exit 1
+fi
+
+KEYNAME=$1
+KEY_PATH=$HOME/.config/zygote/certs/functions/$KEYNAME
+CA_CERT_PATH=$HOME/.config/zygote/certs/ca/ca_cert.pem
+openssl pkcs12 -export -out $KEY_PATH/${KEYNAME}_cert.p12 -inkey $KEY_PATH/${KEYNAME}_key.pem -in $KEY_PATH/${KEYNAME}_cert.pem -certfile $CA_CERT_PATH

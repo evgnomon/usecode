@@ -1,0 +1,12 @@
+#!/bin/bash
+
+CERT_DIR=/var/lib/zygote/certs
+ssh controller.zygote -t sudo cat $CERT_DIR/ca/ca_cert.pem > ca_cert.pem
+
+for i in {1..2}; do
+    mkdir -p $HOME/.config/zygote/certs/functions/user_$i.zygote
+    ssh controller.zygote -t sudo cat $CERT_DIR/functions/user_$i.zygote/user_$i.zygote_cert.pem > $HOME/.config/zygote/certs/functions/user_$i.zygote/user_$i.zygote_cert.pem
+    ssh controller.zygote -t sudo cat $CERT_DIR/functions/user_$i.zygote/user_$i.zygote_key.pem  > $HOME/.config/zygote/certs/functions/user_$i.zygote/user_$i.zygote_key.pem
+  mkp12 user_$i.zygote
+  rm $HOME/.config/zygote/certs/functions/user_$i.zygote/user_$i.zygote_key.pem
+done

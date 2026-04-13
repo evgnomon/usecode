@@ -1,2 +1,0 @@
-click
-psycopg2-binary

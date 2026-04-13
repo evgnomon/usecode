@@ -1,0 +1,12 @@
+{
+  "name": "mkdeb",
+  "version": "0.3.0",
+  "description": "Make Debian packages with ease",
+  "maintainer": "hg@evgnomon.org",
+  "depends": "",
+  "section": "utils",
+  "priority": "optional",
+  "homepage": "https://github.com/evgnomon/flow",
+  "license": "HGL",
+  "root": "pkg/debian"
+}

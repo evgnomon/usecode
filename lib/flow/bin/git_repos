@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="${1:-.}"
+
+find "$root" -name .git -type d 2>/dev/null | while read -r gitdir; do
+    repo="${gitdir%/.git}"
+    needs_action=false
+
+    # Dirty state (staged, unstaged, untracked)
+    if [ -n "$(git -C "$repo" status --porcelain 2>/dev/null)" ]; then
+        needs_action=true
+    fi
+
+    if [ "$needs_action" = false ]; then
+        # Main branch: check if it tracks origin/main and if it's behind
+        main_tracking=$(git -C "$repo" config --get branch.main.remote 2>/dev/null || true)
+        main_merge=$(git -C "$repo" config --get branch.main.merge 2>/dev/null || true)
+        if [ -z "$main_tracking" ] || [ "$main_tracking" != "origin" ] || [ "$main_merge" != "refs/heads/main" ]; then
+            # main doesn't track origin/main (or main branch doesn't exist, skip that)
+            if git -C "$repo" show-ref --verify --quiet refs/heads/main 2>/dev/null; then
+                needs_action=true
+            fi
+        else
+            # Check if main is behind origin/main
+            if git -C "$repo" show-ref --verify --quiet refs/remotes/origin/main 2>/dev/null; then
+                behind=$(git -C "$repo" rev-list --count main..origin/main 2>/dev/null || echo 0)
+                if [ "$behind" -gt 0 ]; then
+                    needs_action=true
+                fi
+            fi
+        fi
+    fi
+
+    if [ "$needs_action" = false ]; then
+        # Current branch: check if it tracks its remote and if it's behind
+        current=$(git -C "$repo" symbolic-ref --short HEAD 2>/dev/null || true)
+        if [ -n "$current" ]; then
+            remote=$(git -C "$repo" config --get "branch.$current.remote" 2>/dev/null || true)
+            merge=$(git -C "$repo" config --get "branch.$current.merge" 2>/dev/null || true)
+            if [ -z "$remote" ] || [ -z "$merge" ]; then
+                # Current branch doesn't track any remote
+                needs_action=true
+            else
+                remote_ref="refs/remotes/$remote/${merge#refs/heads/}"
+                if git -C "$repo" show-ref --verify --quiet "$remote_ref" 2>/dev/null; then
+                    behind=$(git -C "$repo" rev-list --count "$current..$remote/${merge#refs/heads/}" 2>/dev/null || echo 0)
+                    if [ "$behind" -gt 0 ]; then
+                        needs_action=true
+                    fi
+                fi
+            fi
+        fi
+    fi
+
+    if [ "$needs_action" = true ]; then
+        echo "$repo"
+    fi
+done

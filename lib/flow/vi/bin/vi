@@ -1,0 +1,2 @@
+#!/bin/sh
+vim -Z -u NONE -U NONE --noplugin -c "set secure" -c "set nobackup" -c "set nowritebackup" -c "set nomodeline" -c 'set nocompatible' "$@"

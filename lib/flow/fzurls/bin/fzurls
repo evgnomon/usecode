@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+
+open_in_brave() {
+  local result
+  result=$(gdbus call --session \
+    --dest org.evgnomon.FzURLs \
+    --object-path /org/evgnomon/FzURLs \
+    --method org.evgnomon.FzURLs.FocusBraveOnActiveWorkspace 2>&1)
+
+  case "$result" in
+    *"true"*)
+      # Brave window found and focused on current workspace
+      brave-browser "$1" &> /dev/null &
+      ;;
+    *"false"*)
+      # Extension running but no Brave on current workspace
+      brave-browser --new-window "$1" &> /dev/null &
+      ;;
+    *)
+      # Extension not available, just open normally
+      brave-browser "$1" &> /dev/null &
+      ;;
+  esac
+}
+
+if [[ -n "$1" ]]; then
+  if [[ "$1" =~ ^https?:// ]]; then
+    open_in_brave "$1"
+  elif [[ -e "$1" ]]; then
+    open_in_brave "file://$(realpath "$1")"
+  else
+    encoded=$(python3 -c "import urllib.parse, sys; print(urllib.parse.quote_plus(sys.argv[1]))" "$*")
+    open_in_brave "https://duckduckgo.com/?q=${encoded}&t=brave&ia=web"
+  fi
+  exit 0
+fi
+fzf_output=$(cat ~/.config/blueprint/config.yaml | yj | jq -r '.urls[] | "\(.name)\t\(.url)"' | fzf --print-query --with-nth=1 --delimiter='\t')
+query=$(echo "$fzf_output" | sed -n '1p')
+selected=$(echo "$fzf_output" | sed -n '2p')
+if [ -z "$selected" ]; then
+  [ -z "$query" ] && exit 0
+  encoded=$(python3 -c "import urllib.parse, sys; print(urllib.parse.quote_plus(sys.argv[1]))" "$query")
+  open_in_brave "https://duckduckgo.com/?q=${encoded}&t=brave&ia=web"
+  exit 0
+fi
+url=$(echo "$selected" | cut -f2)
+if [[ "$url" == *"%s"* ]]; then
+  query=$(fzf --print-query --prompt="Search query: " < /dev/null | head -1)
+  [ -z "$query" ] && exit 0
+  encoded=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$query'))")
+  url="${url/\%s/$encoded}"
+fi
+open_in_brave "$url"

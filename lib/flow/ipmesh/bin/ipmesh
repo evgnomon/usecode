@@ -1,0 +1,245 @@
+#!/usr/bin/env python3
+
+#!/usr/bin/env python3
+import click
+import subprocess
+import os
+import sys
+import shutil
+
+# ------------------------------
+# Helper Functions / Commands
+# ------------------------------
+
+
+def run(cmd, sudo=False, capture=True, quiet=False):
+    """Run a shell command with optional sudo and error handling."""
+    if sudo:
+        cmd = ["sudo"] + cmd
+    try:
+        result = subprocess.run(cmd, check=True, capture_output=capture, text=True)
+        if not quiet and not capture:
+            print(result.stdout)
+        return result.stdout.strip() if capture else None
+    except subprocess.CalledProcessError as e:
+        click.echo(
+            f"Command failed: {' '.join(cmd)}\n{e.stderr or 'No error output'}",
+            err=True,
+        )
+        sys.exit(1)
+
+
+def install_strongswan_if_missing():
+    """Install strongSwan + swanctl if not present (Debian/Ubuntu)."""
+    if shutil.which("swanctl"):
+        click.echo("strongSwan already installed.")
+        return
+    click.echo("Installing strongSwan...")
+    run(["apt", "update"], sudo=True, capture=False, quiet=True)
+    run(
+        ["apt", "install", "-y", "strongswan", "strongswan-swanctl"],
+        sudo=True,
+        capture=False,
+        quiet=True,
+    )
+    click.echo("strongSwan installed.")
+
+
+def ensure_cred_dirs():
+    """Create strongSwan credential directories if missing."""
+    dirs = [
+        "/etc/swanctl/private/",
+        "/etc/swanctl/x509/",
+        "/etc/swanctl/x509ca/",
+    ]
+    for d in dirs:
+        run(["mkdir", "-p", d], sudo=True)
+
+
+def copy_credentials(key_path, cert_path, ca_path):
+    """Copy private key, host cert, and CA cert to strongSwan directories with proper permissions."""
+    ensure_cred_dirs()
+
+    priv_dir = "/etc/swanctl/private/"
+    x509_dir = "/etc/swanctl/x509/"
+    ca_dir = "/etc/swanctl/x509ca/"
+
+    key_dest = os.path.join(priv_dir, os.path.basename(key_path))
+    cert_dest = os.path.join(x509_dir, os.path.basename(cert_path))
+    ca_dest = os.path.join(ca_dir, os.path.basename(ca_path))
+
+    run(["cp", key_path, key_dest], sudo=True)
+    run(["cp", cert_path, cert_dest], sudo=True)
+    run(["cp", ca_path, ca_dest], sudo=True)
+
+    run(["chmod", "600", key_dest], sudo=True)
+    run(["chown", "root:root", key_dest, cert_dest, ca_dest], sudo=True)
+
+    click.echo("Credentials installed:")
+    click.echo(f"  Key → {key_dest}")
+    click.echo(f"  Cert → {cert_dest}")
+    click.echo(f"  CA → {ca_dest}")
+
+
+def generate_swanctl_config(
+    local_ip, local_id, virtual_ip, peers, cert_basename, key_basename, ca_basename
+):
+    """Generate /etc/swanctl/swanctl.conf content for full-mesh with PKI auth."""
+    lines = ["connections {"]
+
+    for peer_name, peer_ip, peer_id in peers:
+        conn = f"mesh-to-{peer_name}"
+        lines.append(f"""
+    {conn} {{
+        local_addrs  = {local_ip}
+        remote_addrs = {peer_ip}
+        version      = 2
+        proposals    = aes256gcm16-prfsha384-ecp384
+        vips         = {virtual_ip}
+        local {{
+            auth  = pubkey
+            certs = {cert_basename}
+            id    = {local_id}
+        }}
+        remote {{
+            auth = pubkey
+            id   = {peer_id}
+        }}
+        children {{
+            {conn}-child {{
+                local_ts      = {virtual_ip}
+                remote_ts     = 192.168.88.0/24
+                esp_proposals = aes256gcm16-ecp384
+                start_action  = start
+                dpd_action    = restart
+            }}
+        }}
+    }}""")
+
+    lines.append("}\n")
+
+    lines.append(f"""
+secrets {{
+    host-key {{
+        file = "/etc/swanctl/private/{key_basename}"
+    }}
+}}
+
+authorities {{
+    mesh-ca {{
+        cacert = "/etc/swanctl/x509ca/{ca_basename}"
+    }}
+}}
+""")
+
+    config_content = "\n".join(lines)
+    config_path = "/etc/swanctl/swanctl.conf"
+
+    temp_path = "/tmp/swanctl.conf.new"
+    with open(temp_path, "w") as f:
+        f.write(config_content)
+
+    run(["mv", temp_path, config_path], sudo=True)
+    click.echo(f"swanctl.conf generated → {config_path}")
+
+
+def load_configuration():
+    """Load credentials, connections, authorities, etc."""
+    run(["swanctl", "--load-creds"], sudo=True)
+    run(["swanctl", "--load-conns"], sudo=True)
+    run(["swanctl", "--load-authorities"], sudo=True)
+    run(["swanctl", "--load-all"], sudo=True)
+    click.echo("Configuration loaded.")
+
+
+# ------------------------------
+# Main CLI Command
+# ------------------------------
+
+
+@click.command()
+@click.option("--local-ip", required=True, help="This host's public IPv4/IPv6 address")
+@click.option("--local-id", required=True, help="This host's IKE identity e.g. @alpha")
+@click.option(
+    "--virtual-ip", required=True, help="This host's virtual IP e.g. 192.168.88.10/32"
+)
+@click.option(
+    "--peer",
+    multiple=True,
+    nargs=3,
+    type=(str, str, str),
+    help="Peer: <name> <public-ip> <@id>   (repeat for each peer)",
+)
+@click.option(
+    "--cert-file",
+    required=True,
+    help="Path to this host's certificate (e.g. alphaCert.pem)",
+)
+@click.option(
+    "--key-file",
+    required=True,
+    help="Path to this host's private key (e.g. alphaKey.pem)",
+)
+@click.option("--ca-file", required=True, help="Path to CA certificate (caCert.pem)")
+@click.option("--install", is_flag=True, help="Install strongSwan if not found")
+def mesh_pki(
+    local_ip, local_id, virtual_ip, peer, cert_file, key_file, ca_file, install
+):
+    """
+    Full-mesh IPsec VPN using certificate authentication (PKI/pubkey) – no shared PSK.
+
+    For 4 hosts (alpha ↔ beta ↔ gamma ↔ delta), run on each host with its own cert/key.
+
+    Example usage on alpha:
+    sudo ./mesh_pki_full.py \\
+      --local-ip 203.0.113.47 \\
+      --local-id @alpha \\
+      --virtual-ip 192.168.88.10/32 \\
+      --peer beta 198.51.100.215 @beta \\
+      --peer gamma 192.0.2.178 @gamma \\
+      --peer delta 203.0.113.189 @delta \\
+      --cert-file ./alphaCert.pem \\
+      --key-file ./alphaKey.pem \\
+      --ca-file ./caCert.pem
+
+    Certificate generation (run once on secure machine – see previous messages for full commands):
+      ipsec pki --gen --type rsa --size 4096 --outform pem > caKey.pem
+      ipsec pki --self --ca --lifetime 3650 ... > caCert.pem
+      # Then generate per-host keys/certs signed by CA
+    """
+    if os.geteuid() != 0:
+        click.echo("This script must be run as root (sudo).", err=True)
+        sys.exit(1)
+
+    if install:
+        install_strongswan_if_missing()
+
+    peers = list(peer)
+    if not peers:
+        click.echo("At least one --peer required.", err=True)
+        sys.exit(1)
+
+    # Extract basenames for config
+    cert_basename = os.path.basename(cert_file)
+    key_basename = os.path.basename(key_file)
+    ca_basename = os.path.basename(ca_file)
+
+    # Main steps using separate functions
+    copy_credentials(key_file, cert_file, ca_file)
+    generate_swanctl_config(
+        local_ip, local_id, virtual_ip, peers, cert_basename, key_basename, ca_basename
+    )
+    load_configuration()
+
+    click.echo("\nSetup complete. Verify:")
+    click.echo("  sudo swanctl --list-certs --all")
+    click.echo("  sudo swanctl --list-sas")
+    click.echo("  sudo swanctl --list-conns")
+    click.echo("  ip addr show | grep 192.168.88")
+    click.echo(
+        "  ping 192.168.88.11   # test connectivity to another host's virtual IP"
+    )
+
+
+if __name__ == "__main__":
+    mesh_pki()

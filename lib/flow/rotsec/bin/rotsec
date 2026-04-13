@@ -1,0 +1,32 @@
+#!/bin/bash
+export EDITOR=vi
+
+VAULT_ADDR=$(repofqn)
+
+SECRET_FILE=$HOME/.config/blueprint/secrets/secrets.yaml
+if [ ! -z "$VAULT_ADDR" ]; then
+  SECRET_FILE=$HOME/.config/blueprint/secrets/$VAULT_ADDR.yaml
+fi
+
+VAULT_FILE=vault
+if [ ! -z "$VAULT_ADDR" ]; then
+  VAULT_FILE=$VAULT_ADDR.vault
+fi
+
+if [ ! -f $HOME/.config/blueprint/secrets/$VAULT_FILE.asc ]; then
+  cat /dev/random | tr -dc 'a-zA-Z0-9' | fold -w 64 | head -n 1 | vault -e $VAULT_FILE
+fi
+
+if [ ! -f $SECRET_FILE ]; then
+  ANSIBLE_VAULT_PASSWORD_FILE=<(vault -d $VAULT_FILE) ansible-vault create $SECRET_FILE
+fi
+
+export ANSIBLE_STDOUT_CALLBACK=yaml
+
+cd "$HOME/src/github.com/$USER/blueprint"
+ANSIBLE_VAULT_PASSWORD_FILE=<(vault -d $VAULT_FILE)\
+  ansible-playbook \
+  --extra-vars "@$SECRET_FILE" \
+  -i inventory.py \
+  rotate.yaml "$@"
+cd - > /dev/null

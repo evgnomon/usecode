@@ -1,0 +1,586 @@
+#!/usr/bin/env python3
+"""
+cert-gen: A CLI tool for managing X.509 certificates for servers and clients.
+
+Generates certificates suitable for nginx and Chrome browser usage.
+Stores certificates in ~/.x509/ directory.
+"""
+
+import click
+import os
+import subprocess
+import sys
+from pathlib import Path
+from datetime import datetime, timedelta
+
+
+X509_DIR = Path.home() / ".x509"
+CA_KEY = X509_DIR / "ca.key"
+CA_CERT = X509_DIR / "ca.pub"
+CA_SERIAL = X509_DIR / "ca.srl"
+
+
+def ensure_x509_dir():
+    """Ensure the ~/.x509 directory exists."""
+    X509_DIR.mkdir(mode=0o700, exist_ok=True)
+
+
+def run_openssl(args: list, check: bool = True) -> subprocess.CompletedProcess:
+    """Run an openssl command."""
+    cmd = ["openssl"] + args
+    return subprocess.run(cmd, check=check, capture_output=True, text=True)
+
+
+def ca_exists() -> bool:
+    """Check if the CA already exists."""
+    return CA_KEY.exists() and CA_CERT.exists()
+
+
+def create_ca(days: int = 3650, key_size: int = 4096):
+    """Create a new Certificate Authority if it doesn't exist."""
+    if ca_exists():
+        click.echo(f"CA already exists at {CA_KEY} and {CA_CERT}")
+        return
+
+    ensure_x509_dir()
+
+    click.echo("Creating new Certificate Authority...")
+
+    # Generate CA private key and self-signed certificate in one step
+    run_openssl(
+        [
+            "req",
+            "-x509",
+            "-newkey",
+            f"rsa:{key_size}",
+            "-sha256",
+            "-days",
+            str(days),
+            "-nodes",
+            "-keyout",
+            str(CA_KEY),
+            "-out",
+            str(CA_CERT),
+            "-subj",
+            "/CN=Local Development CA/O=cert-gen/OU=Development",
+            "-addext",
+            "basicConstraints = critical,CA:TRUE",
+            "-addext",
+            "keyUsage = critical,keyCertSign,cRLSign",
+        ]
+    )
+    os.chmod(CA_KEY, 0o600)
+
+    # Initialize serial number
+    CA_SERIAL.write_text("1000\n")
+
+    click.echo(f"✓ CA private key: {CA_KEY}")
+    click.echo(f"✓ CA certificate: {CA_CERT}")
+    click.echo(f"\nTo trust this CA in Chrome/system:")
+    click.echo(
+        f"  - Linux: sudo cp {CA_CERT} /usr/local/share/ca-certificates/cert-gen-ca.crt && sudo update-ca-certificates"
+    )
+    click.echo(
+        f"  - macOS: sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain {CA_CERT}"
+    )
+    click.echo(
+        f"  - Chrome: Settings > Privacy > Security > Manage certificates > Authorities > Import {CA_CERT}"
+    )
+
+
+def create_certificate(
+    name: str,
+    domains: list,
+    ips: list,
+    cert_type: str,
+    days: int,
+    key_size: int,
+    create_p12: bool,
+    p12_password: str,
+):
+    """Create a new certificate signed by the CA."""
+    ensure_x509_dir()
+
+    # Ensure CA exists
+    if not ca_exists():
+        click.echo("CA does not exist. Creating one first...")
+        create_ca()
+
+    # Paths for the new certificate
+    cert_dir = X509_DIR
+    key_path = cert_dir / f"{name}.key"
+    csr_path = cert_dir / f"{name}.csr"
+    cert_path = cert_dir / f"{name}.pub"
+    ext_path = cert_dir / f"{name}.ext"
+    p12_path = cert_dir / f"{name}.p12"
+
+    click.echo(f"Creating {cert_type} certificate: {name}")
+
+    # Generate private key
+    run_openssl(["genrsa", "-out", str(key_path), str(key_size)])
+    os.chmod(key_path, 0o600)
+
+    # Prepare subject
+    cn = domains[0] if domains else name
+    subject = f"/CN={cn}/O=cert-gen/OU={cert_type.capitalize()}"
+
+    # Generate CSR
+    run_openssl(
+        ["req", "-new", "-key", str(key_path), "-out", str(csr_path), "-subj", subject]
+    )
+
+    # Create extensions file for SAN (Subject Alternative Names)
+    ext_content = []
+
+    if cert_type == "server":
+        ext_content.append("basicConstraints = CA:FALSE")
+        ext_content.append("keyUsage = critical,digitalSignature,keyEncipherment")
+        ext_content.append("extendedKeyUsage = serverAuth")
+    else:  # client
+        ext_content.append("basicConstraints = CA:FALSE")
+        ext_content.append("keyUsage = critical,digitalSignature")
+        ext_content.append("extendedKeyUsage = clientAuth")
+
+    # Add Subject Alternative Names
+    san_entries = []
+    for i, domain in enumerate(domains, 1):
+        san_entries.append(f"DNS.{i} = {domain}")
+    for i, ip in enumerate(ips, 1):
+        san_entries.append(f"IP.{i} = {ip}")
+
+    if san_entries:
+        ext_content.append("subjectAltName = @alt_names")
+        ext_content.append("")
+        ext_content.append("[alt_names]")
+        ext_content.extend(san_entries)
+
+    ext_path.write_text("\n".join(ext_content) + "\n")
+
+    # Sign the certificate with CA
+    run_openssl(
+        [
+            "x509",
+            "-req",
+            "-in",
+            str(csr_path),
+            "-CA",
+            str(CA_CERT),
+            "-CAkey",
+            str(CA_KEY),
+            "-CAserial",
+            str(CA_SERIAL),
+            "-CAcreateserial",
+            "-out",
+            str(cert_path),
+            "-days",
+            str(days),
+            "-sha256",
+            "-extfile",
+            str(ext_path),
+        ]
+    )
+
+    # Clean up temporary files
+    csr_path.unlink()
+    ext_path.unlink()
+
+    click.echo(f"✓ Private key: {key_path}")
+    click.echo(f"✓ Certificate: {cert_path}")
+
+    # Create P12/PFX if requested
+    if create_p12:
+        p12_args = [
+            "pkcs12",
+            "-export",
+            "-out",
+            str(p12_path),
+            "-inkey",
+            str(key_path),
+            "-in",
+            str(cert_path),
+            "-certfile",
+            str(CA_CERT),
+            "-passout",
+            f"pass:{p12_password}",
+        ]
+        run_openssl(p12_args)
+        click.echo(f"✓ PKCS#12 bundle: {p12_path} (password: {p12_password})")
+
+    # Print usage instructions
+    click.echo(f"\n--- Usage Instructions ---")
+    if cert_type == "server":
+        click.echo(f"\nNginx configuration:")
+        click.echo(f"  ssl_certificate {cert_path};")
+        click.echo(f"  ssl_certificate_key {key_path};")
+    else:
+        click.echo(f"\nClient certificate usage:")
+        if create_p12:
+            click.echo(f"  Import {p12_path} into your browser/application")
+        click.echo(f"  curl --cert {cert_path} --key {key_path} https://...")
+
+
+@click.group()
+@click.version_option(version="1.0.0")
+def cli():
+    """cert-gen: X.509 certificate management for servers and clients.
+
+    Generates certificates signed by a local CA, suitable for:
+    - nginx and other web servers
+    - Chrome and other browsers (after trusting the CA)
+    - Client authentication
+
+    All certificates are stored in ~/.x509/
+    """
+    pass
+
+
+@cli.command("init")
+@click.option(
+    "--days", default=3650, help="CA validity in days (default: 3650 = 10 years)"
+)
+@click.option("--key-size", default=4096, help="RSA key size in bits (default: 4096)")
+@click.option("--force", is_flag=True, help="Recreate CA even if it exists")
+def init_ca(days: int, key_size: int, force: bool):
+    """Initialize the Certificate Authority.
+
+    Creates a new CA if one doesn't exist. The CA is used to sign
+    all server and client certificates.
+    """
+    if force and ca_exists():
+        click.echo("Removing existing CA...")
+        CA_KEY.unlink(missing_ok=True)
+        CA_CERT.unlink(missing_ok=True)
+        CA_SERIAL.unlink(missing_ok=True)
+
+    create_ca(days=days, key_size=key_size)
+
+
+@cli.command("server")
+@click.argument("name")
+@click.option(
+    "-d", "--domain", multiple=True, help="Domain name(s) for the certificate"
+)
+@click.option("-i", "--ip", multiple=True, help="IP address(es) for the certificate")
+@click.option("--days", default=365, help="Validity in days (default: 365)")
+@click.option("--key-size", default=2048, help="RSA key size in bits (default: 2048)")
+@click.option("--p12/--no-p12", default=False, help="Also create PKCS#12 bundle")
+@click.option("--p12-password", default="changeit", help="Password for P12 file")
+def create_server(
+    name: str,
+    domain: tuple,
+    ip: tuple,
+    days: int,
+    key_size: int,
+    p12: bool,
+    p12_password: str,
+):
+    """Create a server certificate.
+
+    NAME: Certificate name (used for filenames)
+
+    Examples:
+
+        cert-gen server myapp -d localhost -d myapp.local -i 127.0.0.1
+
+        cert-gen server nginx -d example.com -d www.example.com --p12
+    """
+    domains = list(domain) if domain else ["localhost"]
+    ips = list(ip) if ip else []
+
+    # Add localhost and 127.0.0.1 by default if no domains/IPs specified
+    if not domain and not ip:
+        ips = ["127.0.0.1"]
+
+    create_certificate(
+        name=name,
+        domains=domains,
+        ips=ips,
+        cert_type="server",
+        days=days,
+        key_size=key_size,
+        create_p12=p12,
+        p12_password=p12_password,
+    )
+
+
+@cli.command("client")
+@click.argument("name")
+@click.option("--email", help="Email address for the client certificate")
+@click.option("--days", default=365, help="Validity in days (default: 365)")
+@click.option("--key-size", default=2048, help="RSA key size in bits (default: 2048)")
+@click.option(
+    "--p12/--no-p12", default=True, help="Create PKCS#12 bundle (default: yes)"
+)
+@click.option("--p12-password", default="changeit", help="Password for P12 file")
+def create_client(
+    name: str, email: str, days: int, key_size: int, p12: bool, p12_password: str
+):
+    """Create a client certificate.
+
+    NAME: Certificate name (used for filenames and CN)
+
+    Examples:
+
+        cert-gen client alice --email alice@example.com
+
+        cert-gen client api-client --p12-password mysecret
+    """
+    domains = [email] if email else [name]
+
+    create_certificate(
+        name=name,
+        domains=domains,
+        ips=[],
+        cert_type="client",
+        days=days,
+        key_size=key_size,
+        create_p12=p12,
+        p12_password=p12_password,
+    )
+
+
+@cli.command("list")
+@click.option("-v", "--verbose", is_flag=True, help="Show certificate details")
+def list_certs(verbose: bool):
+    """List all certificates in ~/.x509/"""
+    if not X509_DIR.exists():
+        click.echo("No certificates found. Run 'cert-gen init' first.")
+        return
+
+    # Find all .pub files (certificates)
+    certs = sorted(X509_DIR.glob("*.pub"))
+
+    if not certs:
+        click.echo("No certificates found.")
+        return
+
+    click.echo(f"Certificates in {X509_DIR}:\n")
+
+    for cert_path in certs:
+        name = cert_path.stem
+        is_ca = name == "ca"
+
+        if verbose:
+            # Get certificate details
+            result = run_openssl(
+                [
+                    "x509",
+                    "-in",
+                    str(cert_path),
+                    "-noout",
+                    "-subject",
+                    "-issuer",
+                    "-dates",
+                    "-ext",
+                    "subjectAltName",
+                ],
+                check=False,
+            )
+
+            click.echo(f"{'=' * 50}")
+            click.echo(f"Certificate: {name} {'(CA)' if is_ca else ''}")
+            click.echo(f"{'=' * 50}")
+            click.echo(result.stdout)
+        else:
+            # Get just expiry date
+            result = run_openssl(
+                ["x509", "-in", str(cert_path), "-noout", "-enddate"], check=False
+            )
+
+            expiry = result.stdout.strip().replace("notAfter=", "")
+            has_key = (X509_DIR / f"{name}.key").exists()
+            has_p12 = (X509_DIR / f"{name}.p12").exists()
+
+            status = "CA" if is_ca else "cert"
+            extras = []
+            if has_key:
+                extras.append("key")
+            if has_p12:
+                extras.append("p12")
+
+            click.echo(
+                f"  {name:20} [{status}] expires: {expiry} ({', '.join(extras)})"
+            )
+
+
+@cli.command("show")
+@click.argument("name")
+def show_cert(name: str):
+    """Show details of a specific certificate.
+
+    NAME: Certificate name (without extension)
+    """
+    cert_path = X509_DIR / f"{name}.pub"
+
+    if not cert_path.exists():
+        click.echo(f"Certificate not found: {cert_path}")
+        sys.exit(1)
+
+    result = run_openssl(["x509", "-in", str(cert_path), "-noout", "-text"])
+
+    click.echo(result.stdout)
+
+
+@cli.command("verify")
+@click.argument("name")
+def verify_cert(name: str):
+    """Verify a certificate against the CA.
+
+    NAME: Certificate name (without extension)
+    """
+    cert_path = X509_DIR / f"{name}.pub"
+
+    if not cert_path.exists():
+        click.echo(f"Certificate not found: {cert_path}")
+        sys.exit(1)
+
+    if not ca_exists():
+        click.echo("CA not found. Cannot verify.")
+        sys.exit(1)
+
+    result = run_openssl(
+        ["verify", "-CAfile", str(CA_CERT), str(cert_path)], check=False
+    )
+
+    if result.returncode == 0:
+        click.echo(f"✓ Certificate {name} is valid and signed by the CA")
+    else:
+        click.echo(f"✗ Certificate {name} verification failed:")
+        click.echo(result.stderr)
+
+
+@cli.command("export-p12")
+@click.argument("name")
+@click.option("--password", default="changeit", help="Password for P12 file")
+def export_p12(name: str, password: str):
+    """Export a certificate to PKCS#12 format.
+
+    NAME: Certificate name (without extension)
+
+    Creates a .p12 file that can be imported into browsers and applications.
+    """
+    cert_path = X509_DIR / f"{name}.pub"
+    key_path = X509_DIR / f"{name}.key"
+    p12_path = X509_DIR / f"{name}.p12"
+
+    if not cert_path.exists():
+        click.echo(f"Certificate not found: {cert_path}")
+        sys.exit(1)
+
+    if not key_path.exists():
+        click.echo(f"Private key not found: {key_path}")
+        sys.exit(1)
+
+    run_openssl(
+        [
+            "pkcs12",
+            "-export",
+            "-out",
+            str(p12_path),
+            "-inkey",
+            str(key_path),
+            "-in",
+            str(cert_path),
+            "-certfile",
+            str(CA_CERT),
+            "-passout",
+            f"pass:{password}",
+        ]
+    )
+
+    click.echo(f"✓ Exported to: {p12_path}")
+    click.echo(f"  Password: {password}")
+
+
+@cli.command("delete")
+@click.argument("name")
+@click.option("--force", is_flag=True, help="Don't ask for confirmation")
+def delete_cert(name: str, force: bool):
+    """Delete a certificate and its associated files.
+
+    NAME: Certificate name (without extension)
+    """
+    if name == "ca":
+        click.echo(
+            "Cannot delete CA using this command. Use 'cert-gen init --force' to recreate."
+        )
+        sys.exit(1)
+
+    files_to_delete = [
+        X509_DIR / f"{name}.key",
+        X509_DIR / f"{name}.pub",
+        X509_DIR / f"{name}.p12",
+    ]
+
+    existing = [f for f in files_to_delete if f.exists()]
+
+    if not existing:
+        click.echo(f"No files found for certificate: {name}")
+        sys.exit(1)
+
+    if not force:
+        click.echo(f"Will delete:")
+        for f in existing:
+            click.echo(f"  {f}")
+        if not click.confirm("Continue?"):
+            click.echo("Aborted.")
+            return
+
+    for f in existing:
+        f.unlink()
+        click.echo(f"Deleted: {f}")
+
+
+@cli.command("nginx-config")
+@click.argument("name")
+@click.option("--server-name", help="Server name for nginx config")
+def nginx_config(name: str, server_name: str):
+    """Generate nginx SSL configuration snippet.
+
+    NAME: Certificate name (without extension)
+    """
+    cert_path = X509_DIR / f"{name}.pub"
+    key_path = X509_DIR / f"{name}.key"
+
+    if not cert_path.exists():
+        click.echo(f"Certificate not found: {cert_path}")
+        sys.exit(1)
+
+    sn = server_name or name
+
+    config = f"""# nginx SSL configuration for {name}
+# Add this to your server block
+
+server {{
+    listen 443 ssl http2;
+    server_name {sn};
+
+    ssl_certificate {cert_path};
+    ssl_certificate_key {key_path};
+
+    # Modern SSL settings
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
+    ssl_prefer_server_ciphers off;
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:SSL:10m;
+
+    # Your location blocks here
+    location / {{
+        root /var/www/html;
+        index index.html;
+    }}
+}}
+
+# Optional: Redirect HTTP to HTTPS
+server {{
+    listen 80;
+    server_name {sn};
+    return 301 https://$server_name$request_uri;
+}}
+"""
+    click.echo(config)
+
+
+if __name__ == "__main__":
+    cli()

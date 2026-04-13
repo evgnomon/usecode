@@ -1,0 +1,10 @@
+[Unit]
+Description=workd service
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/workd serve
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

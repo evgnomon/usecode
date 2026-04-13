@@ -1,0 +1,411 @@
+#!/usr/bin/env python3
+import json
+import os
+import subprocess
+import sys
+import tempfile
+
+import click
+import psycopg2
+
+
+def connect_db(host, port, user, password, database):
+    """Connect to PostgreSQL database."""
+    try:
+        return psycopg2.connect(
+            dbname=database,
+            user=user,
+            password=password,
+            host=host,
+            port=port,
+        )
+    except psycopg2.Error as e:
+        raise click.ClickException(f"Error connecting to database: {e}")
+
+
+def get_pods(conn, namespace, tenant):
+    """Query pods from resources table."""
+    cursor = conn.cursor()
+    query = """
+        SELECT id, api_version, kind, name, namespace, tenant,
+               labels, annotations, spec
+        FROM public.resources
+        WHERE kind = 'Pod'
+            AND namespace = %s
+            AND tenant = %s
+        ORDER BY name;
+    """
+    try:
+        cursor.execute(query, [namespace, tenant])
+        results = cursor.fetchall()
+        pods = []
+        for row in results:
+            resource_id = str(row[0])
+            pod = {
+                "apiVersion": row[1],
+                "kind": row[2],
+                "metadata": {
+                    "name": row[3],
+                    "namespace": row[4],
+                    "labels": {},
+                },
+                "spec": row[8] or {},
+                "_resource_id": resource_id,
+            }
+            if row[6]:
+                pod["metadata"]["labels"] = row[6]
+            if row[7]:
+                pod["metadata"]["annotations"] = row[7]
+            pod["metadata"]["labels"]["mkpod.resource-id"] = resource_id
+            pods.append(pod)
+        return pods
+    except psycopg2.Error as e:
+        raise click.ClickException(f"Error querying database: {e}")
+    finally:
+        cursor.close()
+
+
+def get_referenced_configmap_names(pod_spec):
+    """Extract all ConfigMap names referenced in a pod spec."""
+    spec = pod_spec.get("spec", {})
+    names = set()
+    for volume in spec.get("volumes", []):
+        if "configMap" in volume:
+            cm_name = volume["configMap"].get("name")
+            if cm_name:
+                names.add(cm_name)
+    for container in spec.get("containers", []):
+        for env in container.get("env", []):
+            value_from = env.get("valueFrom", {})
+            if "configMapKeyRef" in value_from:
+                cm_name = value_from["configMapKeyRef"].get("name")
+                if cm_name:
+                    names.add(cm_name)
+    return names
+
+
+def get_referenced_pvc_names(pod_spec):
+    """Extract all PersistentVolumeClaim names referenced in a pod spec."""
+    spec = pod_spec.get("spec", {})
+    names = set()
+    for volume in spec.get("volumes", []):
+        if "persistentVolumeClaim" in volume:
+            claim_name = volume["persistentVolumeClaim"].get("claimName")
+            if claim_name:
+                names.add(claim_name)
+    return names
+
+
+def ensure_pvcs(conn, pod_spec, namespace, tenant):
+    """Ensure all referenced PVCs exist, auto-creating missing ones."""
+    names = get_referenced_pvc_names(pod_spec)
+    if not names:
+        return []
+    cursor = conn.cursor()
+    pvcs = []
+    for pvc_name in names:
+        cursor.execute(
+            """SELECT spec FROM public.resources
+               WHERE kind = 'PersistentVolumeClaim'
+                 AND name = %s AND namespace = %s AND tenant = %s""",
+            [pvc_name, namespace, tenant],
+        )
+        row = cursor.fetchone()
+        if not row:
+            default_spec = {
+                "accessModes": ["ReadWriteOnce"],
+                "resources": {"requests": {"storage": "1Gi"}},
+            }
+            cursor.execute(
+                """INSERT INTO public.resources
+                       (api_version, kind, name, namespace, tenant, spec)
+                   VALUES (%s, %s, %s, %s, %s, %s)""",
+                ["v1", "PersistentVolumeClaim", pvc_name, namespace, tenant,
+                 json.dumps(default_spec)],
+            )
+            conn.commit()
+            click.echo(f"Auto-created PersistentVolumeClaim '{pvc_name}' with default 1Gi storage")
+            spec = default_spec
+        else:
+            spec = row[0] or {}
+        pvcs.append({
+            "apiVersion": "v1",
+            "kind": "PersistentVolumeClaim",
+            "metadata": {"name": pvc_name},
+            "spec": spec,
+        })
+    cursor.close()
+    return pvcs
+
+
+def ensure_configmaps(conn, pod_spec, namespace, tenant):
+    """Ensure all referenced ConfigMaps exist, auto-creating missing ones."""
+    names = get_referenced_configmap_names(pod_spec)
+    if not names:
+        return []
+    cursor = conn.cursor()
+    configmaps = []
+    for cm_name in names:
+        cursor.execute(
+            """SELECT spec FROM public.resources
+               WHERE kind = 'ConfigMap'
+                 AND name = %s AND namespace = %s AND tenant = %s""",
+            [cm_name, namespace, tenant],
+        )
+        row = cursor.fetchone()
+        if not row:
+            cursor.execute(
+                """INSERT INTO public.resources
+                       (api_version, kind, name, namespace, tenant, spec)
+                   VALUES (%s, %s, %s, %s, %s, %s)""",
+                ["v1", "ConfigMap", cm_name, namespace, tenant, json.dumps({})],
+            )
+            conn.commit()
+            click.echo(f"Auto-created empty ConfigMap '{cm_name}'")
+            click.echo(f"  Populate it with: echo 'value' | confmap {cm_name} key")
+            data = {}
+        else:
+            data = row[0] or {}
+        configmaps.append({
+            "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": {"name": cm_name},
+            "data": data,
+        })
+    cursor.close()
+    return configmaps
+
+
+def create_pod_with_podman(conn, pod_spec, namespace, tenant):
+    """Create a pod using podman kube play. Returns True on success."""
+    pod_name = pod_spec["metadata"]["name"]
+    pod_spec = {k: v for k, v in pod_spec.items() if k != "_resource_id"}
+
+    configmaps = ensure_configmaps(conn, pod_spec, namespace, tenant)
+    pvcs = ensure_pvcs(conn, pod_spec, namespace, tenant)
+
+    temp_files = []
+    try:
+        documents = pvcs + [pod_spec]
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump({"apiVersion": "v1", "kind": "List", "items": documents}, f, indent=2)
+            temp_files.append(f.name)
+        pod_file = temp_files[0]
+
+        cm_files = []
+        for cm in configmaps:
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+                json.dump(cm, f, indent=2)
+                temp_files.append(f.name)
+                cm_files.append(f.name)
+
+        click.echo(f"Creating pod '{pod_name}'...")
+        cmd = ["podman", "kube", "play", "--replace"]
+        for cm_file in cm_files:
+            cmd.extend(["--configmap", cm_file])
+        cmd.append(pod_file)
+
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            click.echo(f"Pod '{pod_name}' created successfully")
+            if result.stdout:
+                click.echo(result.stdout)
+            return True
+        else:
+            click.echo(f"Failed to create pod '{pod_name}'", err=True)
+            click.echo(f"Error: {result.stderr}", err=True)
+            return False
+    except Exception as e:
+        click.echo(f"Error creating pod '{pod_name}': {e}", err=True)
+        return False
+    finally:
+        for f in temp_files:
+            try:
+                os.unlink(f)
+            except OSError:
+                pass
+
+
+def get_mkpod_managed_pods():
+    """Return dict of resource_id -> pod_name for all mkpod-managed pods."""
+    result = subprocess.run(
+        ["podman", "pod", "ls", "--filter", "label=mkpod.resource-id", "--format", "json"],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        return {}
+    managed = {}
+    try:
+        for pod in json.loads(result.stdout):
+            labels = pod.get("Labels", {})
+            resource_id = labels.get("mkpod.resource-id")
+            if resource_id:
+                managed[resource_id] = pod.get("Name", "")
+    except (json.JSONDecodeError, KeyError):
+        pass
+    return managed
+
+
+def remove_orphaned_pods(conn, namespace, tenant):
+    """Remove podman pods whose resource has been deleted from the database."""
+    managed = get_mkpod_managed_pods()
+    if not managed:
+        return 0
+
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT id FROM public.resources WHERE kind = 'Pod' AND namespace = %s AND tenant = %s",
+            [namespace, tenant],
+        )
+        active_ids = {str(row[0]) for row in cursor.fetchall()}
+    finally:
+        cursor.close()
+
+    removed = 0
+    for resource_id, pod_name in managed.items():
+        if resource_id not in active_ids:
+            click.echo(f"Removing orphaned pod '{pod_name}' (resource {resource_id})...")
+            result = subprocess.run(
+                ["podman", "pod", "rm", "-f", pod_name],
+                capture_output=True, text=True,
+            )
+            if result.returncode == 0:
+                click.echo(f"Removed orphaned pod '{pod_name}'")
+                removed += 1
+            else:
+                click.echo(f"Failed to remove pod '{pod_name}': {result.stderr}", err=True)
+    return removed
+
+
+# --- Click CLI ---
+
+DB_OPTIONS = [
+    click.option("--host", default="localhost", envvar="PG_HOST", show_default=True, help="DB host"),
+    click.option("--port", default=5432, envvar="PG_PORT", show_default=True, type=int, help="DB port"),
+    click.option("--user", default="admin", envvar="PG_USER", show_default=True, help="DB user"),
+    click.option("--password", default="t6drtfyig7", envvar="PG_PASSWORD", show_default=False, help="DB password"),
+    click.option("--database", default="z", envvar="PG_DATABASE", show_default=True, help="DB name"),
+]
+
+NS_OPTIONS = [
+    click.option("--namespace", "-n", default="main", show_default=True, help="Namespace"),
+    click.option("--tenant", "-t", default="system", show_default=True, help="Tenant"),
+]
+
+
+def db_options(f):
+    for opt in reversed(DB_OPTIONS):
+        f = opt(f)
+    return f
+
+
+def ns_options(f):
+    for opt in reversed(NS_OPTIONS):
+        f = opt(f)
+    return f
+
+
+@click.group()
+def cli():
+    """mkpod — manage pods via podman from a PostgreSQL resource store."""
+
+
+@cli.command()
+@db_options
+@ns_options
+@click.argument("pod_name", required=False)
+def apply(host, port, user, password, database, namespace, tenant, pod_name):
+    """Create or replace pods from the database using podman kube play.
+
+    If POD_NAME is given, only that pod is applied; otherwise all pods
+    in the namespace/tenant are applied. Orphaned pods are cleaned up
+    after a successful run.
+    """
+    conn = connect_db(host, port, user, password, database)
+    try:
+        pods = get_pods(conn, namespace, tenant)
+        if not pods:
+            click.echo("No pods found in database.")
+            return
+
+        if pod_name:
+            pods = [p for p in pods if p["metadata"]["name"] == pod_name]
+            if not pods:
+                raise click.ClickException(f"Pod '{pod_name}' not found.")
+
+        success = sum(
+            1 for pod in pods
+            if create_pod_with_podman(conn, pod, namespace, tenant)
+        )
+        click.echo(f"\nApplied {success}/{len(pods)} pod(s) successfully.")
+        remove_orphaned_pods(conn, namespace, tenant)
+    finally:
+        conn.close()
+
+
+@cli.command("list")
+@db_options
+@ns_options
+def list_cmd(host, port, user, password, database, namespace, tenant):
+    """List pods stored in the database."""
+    conn = connect_db(host, port, user, password, database)
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            """SELECT name, spec FROM public.resources
+               WHERE kind = 'Pod' AND namespace = %s AND tenant = %s
+               ORDER BY name""",
+            [namespace, tenant],
+        )
+        rows = cursor.fetchall()
+        cursor.close()
+
+        if not rows:
+            click.echo("No pods found in database.")
+            return
+
+        click.echo(f"Found {len(rows)} pod(s):\n")
+        for name, spec in rows:
+            click.echo(f"  {name}")
+            if spec:
+                for container in spec.get("containers", []):
+                    click.echo(f"    container: {container.get('name', 'unnamed')}")
+                    click.echo(f"    image:     {container.get('image', 'none')}")
+    except psycopg2.Error as e:
+        raise click.ClickException(f"Error querying database: {e}")
+    finally:
+        conn.close()
+
+
+@cli.command()
+@db_options
+@ns_options
+def cleanup(host, port, user, password, database, namespace, tenant):
+    """Remove podman pods whose resources have been deleted from the database."""
+    conn = connect_db(host, port, user, password, database)
+    try:
+        removed = remove_orphaned_pods(conn, namespace, tenant)
+        if removed == 0:
+            click.echo("No orphaned pods found.")
+        else:
+            click.echo(f"Removed {removed} orphaned pod(s).")
+    finally:
+        conn.close()
+
+
+@cli.command()
+def managed():
+    """Show all podman pods currently managed by mkpod."""
+    pods = get_mkpod_managed_pods()
+    if not pods:
+        click.echo("No mkpod-managed pods running.")
+        return
+    click.echo(f"{'RESOURCE ID':<40} POD NAME")
+    click.echo("-" * 60)
+    for resource_id, pod_name in sorted(pods.items()):
+        click.echo(f"{resource_id:<40} {pod_name}")
+
+
+if __name__ == "__main__":
+    cli()

@@ -1,0 +1,1300 @@
+#!/usr/bin/env python3
+
+"""
+MongoDB / Azure Cosmos DB (MongoDB API) CLI tool.
+Mirrors the pg.py CLI interface, adapted for MongoDB concepts.
+
+Mapping:
+  pg concept   →  mongo concept
+  ─────────────────────────────
+  database     →  database
+  schema       →  (not applicable)
+  table        →  collection
+  column       →  field
+  index        →  index
+  row          →  document
+  SQL query    →  JSON query
+"""
+
+import click
+import os
+import sys
+import json
+import subprocess
+from datetime import datetime, date
+from decimal import Decimal
+from bson import ObjectId
+from pymongo import MongoClient, ASCENDING, DESCENDING
+from pymongo.errors import (
+    ConnectionFailure,
+    OperationFailure,
+    CollectionInvalid,
+    ConfigurationError,
+)
+
+
+# ── Config ────────────────────────────────────────────────────────────────────
+
+
+def find_mongo_config():
+    """Search for .mongo.json starting from cwd and walking up to /."""
+    d = os.path.abspath(os.getcwd())
+    while True:
+        candidate = os.path.join(d, ".mongo.json")
+        if os.path.isfile(candidate):
+            with open(candidate, "r") as f:
+                return json.load(f)
+        parent = os.path.dirname(d)
+        if parent == d:
+            break
+        d = parent
+    return {}
+
+
+_mongo_config = find_mongo_config()
+
+CONTAINER_NAME = _mongo_config.get("container", "mongo1")
+NETWORK_NAME = _mongo_config.get("network", "mongonet")
+MONGO_IMAGE = _mongo_config.get("image", "docker.io/library/mongo:7")
+MONGO_PASSWORD = _mongo_config.get("password", "mongopw")
+MONGO_USER = _mongo_config.get("user", "admin")
+MONGO_PORT = _mongo_config.get("port", 27017)
+MONGO_HOST = _mongo_config.get("host", "localhost")
+MONGO_DATABASE = _mongo_config.get("database", "test")
+MONGO_DATA_DIR = _mongo_config.get(
+    "data_dir", os.path.expanduser("~/.local/share/mongo/data")
+)
+MONGO_CONNECTION_STRING = _mongo_config.get("connection_string", "")
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+
+def get_connection_string() -> str:
+    """Resolve connection string from env, config, or build from parts."""
+    cs = os.getenv("MONGO_CONNECTION_STRING", MONGO_CONNECTION_STRING)
+    if cs:
+        return cs
+    host = os.getenv("MONGO_HOST", MONGO_HOST)
+    port = os.getenv("MONGO_PORT", str(MONGO_PORT))
+    user = os.getenv("MONGO_USER", MONGO_USER)
+    password = os.getenv("MONGO_PASSWORD", MONGO_PASSWORD)
+    return f"mongodb://{user}:{password}@{host}:{port}/?authSource=admin"
+
+
+def get_client() -> MongoClient:
+    """Create and return a MongoDB client."""
+    cs = get_connection_string()
+    try:
+        client = MongoClient(cs, serverSelectionTimeoutMS=5000)
+        client.admin.command("ping")
+        return client
+    except (ConnectionFailure, ConfigurationError) as e:
+        click.echo(f"Connection failed: {e}", err=True)
+        sys.exit(1)
+
+
+def json_serializer(obj):
+    """JSON serializer for BSON / Python types."""
+    if isinstance(obj, ObjectId):
+        return str(obj)
+    if isinstance(obj, bytes):
+        return obj.hex()
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    if isinstance(obj, Decimal):
+        return float(obj)
+    raise TypeError(f"Type {type(obj)} not serializable")
+
+
+def print_results(docs):
+    """Pretty-print query results as a table."""
+    if not docs:
+        click.echo("No documents returned.", err=True)
+        return
+
+    headers = list(docs[0].keys())
+    widths = {col: len(str(col)) for col in headers}
+    for doc in docs:
+        for col in headers:
+            val = doc.get(col)
+            widths[col] = max(widths[col], len(str(val) if val is not None else "null"))
+
+    click.echo(" | ".join(f"{col:<{widths[col]}}" for col in headers))
+    click.echo("-|-".join("-" * widths[col] for col in headers))
+
+    for doc in docs:
+        click.echo(
+            " | ".join(
+                f"{str(doc.get(col)) if doc.get(col) is not None else 'null':<{widths[col]}}"
+                for col in headers
+            )
+        )
+
+
+# ── Podman helpers ────────────────────────────────────────────────────────────
+
+
+def network_exists(name: str) -> bool:
+    result = subprocess.run(["podman", "network", "exists", name], capture_output=True)
+    return result.returncode == 0
+
+
+def create_network(name: str) -> bool:
+    result = subprocess.run(
+        ["podman", "network", "create", name], capture_output=True, text=True
+    )
+    return result.returncode == 0
+
+
+def ensure_network(name: str) -> bool:
+    if network_exists(name):
+        return True
+    click.echo(f"Network '{name}' does not exist. Creating...", err=True)
+    if create_network(name):
+        click.echo(f"Network '{name}' created successfully.", err=True)
+        return True
+    else:
+        click.echo(f"Error: Failed to create network '{name}'.", err=True)
+        return False
+
+
+def container_exists(name: str):
+    result = subprocess.run(
+        ["podman", "ps", "-a", "--filter", f"name=^{name}$", "--format", "{{.State}}"],
+        capture_output=True,
+        text=True,
+    )
+    state = result.stdout.strip()
+    return state if state else None
+
+
+def start_container(name: str) -> bool:
+    return (
+        subprocess.run(
+            ["podman", "start", name], capture_output=True, text=True
+        ).returncode
+        == 0
+    )
+
+
+def stop_container(name: str) -> bool:
+    return (
+        subprocess.run(
+            ["podman", "stop", name], capture_output=True, text=True
+        ).returncode
+        == 0
+    )
+
+
+def remove_container(name: str) -> bool:
+    return (
+        subprocess.run(
+            ["podman", "rm", "-f", name], capture_output=True, text=True
+        ).returncode
+        == 0
+    )
+
+
+# ── CLI ───────────────────────────────────────────────────────────────────────
+
+
+@click.group(invoke_without_command=True)
+@click.pass_context
+def cli(ctx):
+    """MongoDB CLI tool with interactive mode and collection commands."""
+    ctx.ensure_object(dict)
+    if ctx.invoked_subcommand is None:
+        if not sys.stdin.isatty():
+            ctx.obj["client"] = get_client()
+            ctx.invoke(query)
+            return
+        else:
+            click.echo(ctx.get_help(), err=True)
+            return
+    if ctx.invoked_subcommand not in ("kickstart", "db"):
+        ctx.obj["client"] = get_client()
+
+
+# ── kickstart ─────────────────────────────────────────────────────────────────
+
+
+@cli.command()
+@click.option(
+    "--name",
+    "-n",
+    default=CONTAINER_NAME,
+    help=f"Container name (default: {CONTAINER_NAME})",
+)
+@click.option(
+    "--port",
+    "-p",
+    default=MONGO_PORT,
+    type=int,
+    help=f"Host port (default: {MONGO_PORT})",
+)
+@click.option(
+    "--image", default=MONGO_IMAGE, help=f"MongoDB image (default: {MONGO_IMAGE})"
+)
+@click.option(
+    "--data-dir",
+    default=MONGO_DATA_DIR,
+    help=f"Data directory (default: {MONGO_DATA_DIR})",
+)
+@click.option(
+    "--network", default=NETWORK_NAME, help=f"Podman network (default: {NETWORK_NAME})"
+)
+@click.option(
+    "--pull/--no-pull", default=True, help="Pull image before starting (default: pull)"
+)
+@click.option("--force", is_flag=True, help="Remove existing container and start fresh")
+def kickstart(name, port, image, data_dir, network, pull, force):
+    """Start a MongoDB instance using podman."""
+    state = container_exists(name)
+
+    if state and not force:
+        if state == "running":
+            click.echo(f"Container '{name}' is already running.", err=True)
+            return
+        click.echo(f"Container '{name}' exists (state: {state}). Starting...", err=True)
+        if start_container(name):
+            click.echo(f"Container '{name}' started.", err=True)
+        else:
+            click.echo(f"Error: Failed to start container '{name}'.", err=True)
+            sys.exit(1)
+        return
+
+    if state and force:
+        click.echo(f"Removing existing container '{name}'...", err=True)
+        remove_container(name)
+
+    if not ensure_network(network):
+        sys.exit(1)
+
+    if pull:
+        click.echo(f"Pulling image {image}...", err=True)
+        subprocess.run(["podman", "pull", image], capture_output=True)
+
+    os.makedirs(data_dir, exist_ok=True)
+
+    podman_args = [
+        "podman",
+        "run",
+        "-d",
+        "--name",
+        name,
+        "--hostname",
+        name,
+        "--network",
+        network,
+        "--restart",
+        "unless-stopped",
+        "-p",
+        f"{port}:27017",
+        "-v",
+        f"{data_dir}:/data/db",
+        "-e",
+        f"MONGO_INITDB_ROOT_USERNAME={MONGO_USER}",
+        "-e",
+        f"MONGO_INITDB_ROOT_PASSWORD={MONGO_PASSWORD}",
+        image,
+    ]
+
+    click.echo(f"Starting MongoDB container '{name}' on port {port}...", err=True)
+    result = subprocess.run(podman_args, capture_output=True, text=True)
+
+    if result.returncode != 0:
+        click.echo(f"Error starting container: {result.stderr.strip()}", err=True)
+        sys.exit(1)
+
+    click.echo(f"MongoDB container '{name}' started successfully.", err=True)
+    click.echo(f"\nQuick commands:", err=True)
+    click.echo(f"  Logs   : podman logs -f {name}", err=True)
+    click.echo(f"  Stop   : podman stop {name}", err=True)
+    click.echo(f"  Remove : podman rm -f {name}", err=True)
+    click.echo(
+        f"  Connect: mongosh mongodb://{MONGO_USER}:{MONGO_PASSWORD}@localhost:{port}",
+        err=True,
+    )
+
+
+# ── tab (collection) commands ─────────────────────────────────────────────────
+
+
+@cli.group()
+def tab():
+    """Commands related to collections (tables)."""
+    pass
+
+
+@tab.command(name="list")
+@click.option(
+    "--database",
+    "-d",
+    default=MONGO_DATABASE,
+    help=f"Database name (default: {MONGO_DATABASE})",
+)
+@click.pass_context
+def tab_list(ctx, database):
+    """List all collections in a database."""
+    client = get_client()
+    db = client[database]
+
+    try:
+        collections = sorted(db.list_collection_names())
+        if collections:
+            click.echo(f"Collections in {database}:", err=True)
+            for name in collections:
+                click.echo(f"  • {name}", err=True)
+        else:
+            click.echo(f"No collections found in {database}.", err=True)
+    except OperationFailure as e:
+        click.echo(f"Error: {e}", err=True)
+    finally:
+        client.close()
+
+
+@tab.command(name="add")
+@click.argument("name")
+@click.option(
+    "--database",
+    "-d",
+    default=MONGO_DATABASE,
+    help=f"Database name (default: {MONGO_DATABASE})",
+)
+@click.pass_context
+def tab_add(ctx, name, database):
+    """Create a new collection."""
+    client = get_client()
+    db = client[database]
+
+    try:
+        if name in db.list_collection_names():
+            click.echo(f"Collection '{name}' already exists in {database}.", err=True)
+            return
+        db.create_collection(name)
+        click.echo(f"Collection '{name}' created in {database}.", err=True)
+    except (OperationFailure, CollectionInvalid) as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    finally:
+        client.close()
+
+
+@tab.command(name="drop")
+@click.argument("name")
+@click.option(
+    "--database",
+    "-d",
+    default=MONGO_DATABASE,
+    help=f"Database name (default: {MONGO_DATABASE})",
+)
+@click.pass_context
+def tab_drop(ctx, name, database):
+    """Drop a collection."""
+    client = get_client()
+    db = client[database]
+
+    try:
+        db.drop_collection(name)
+        click.echo(f"Collection '{name}' dropped from {database}.", err=True)
+    except OperationFailure as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    finally:
+        client.close()
+
+
+@tab.command(name="rename")
+@click.argument("old_name")
+@click.argument("new_name")
+@click.option(
+    "--database",
+    "-d",
+    default=MONGO_DATABASE,
+    help=f"Database name (default: {MONGO_DATABASE})",
+)
+@click.pass_context
+def tab_rename(ctx, old_name, new_name, database):
+    """Rename a collection."""
+    client = get_client()
+    db = client[database]
+
+    try:
+        collections = db.list_collection_names()
+        if new_name in collections and old_name not in collections:
+            click.echo(
+                f"Collection '{new_name}' already exists. Nothing to do.", err=True
+            )
+            return
+        db[old_name].rename(new_name)
+        click.echo(
+            f"Collection '{old_name}' renamed to '{new_name}' in {database}.", err=True
+        )
+    except OperationFailure as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    finally:
+        client.close()
+
+
+@tab.command(name="copy")
+@click.argument("source")
+@click.argument("destination")
+@click.option(
+    "--database",
+    "-d",
+    default=MONGO_DATABASE,
+    help=f"Database name (default: {MONGO_DATABASE})",
+)
+@click.option("--data/--no-data", default=True, help="Copy data as well (default: yes)")
+@click.pass_context
+def tab_copy(ctx, source, destination, database, data):
+    """Copy a collection (structure and optionally data) to a new collection."""
+    client = get_client()
+    db = client[database]
+
+    try:
+        if destination in db.list_collection_names():
+            click.echo(
+                f"Collection '{destination}' already exists in {database}. Nothing to do.",
+                err=True,
+            )
+            return
+
+        if data:
+            # Use aggregation pipeline to copy all documents
+            pipeline = [{"$out": destination}]
+            db[source].aggregate(pipeline)
+        else:
+            # Create empty collection, copy indexes only
+            db.create_collection(destination)
+
+        # Copy indexes (excluding _id which is auto-created)
+        for index_info in db[source].list_indexes():
+            if index_info["name"] == "_id_":
+                continue
+            keys = list(index_info["key"].items())
+            opts = {}
+            if index_info.get("unique"):
+                opts["unique"] = True
+            if index_info.get("sparse"):
+                opts["sparse"] = True
+            if index_info.get("expireAfterSeconds") is not None:
+                opts["expireAfterSeconds"] = index_info["expireAfterSeconds"]
+            if "name" in index_info:
+                opts["name"] = index_info["name"]
+            db[destination].create_index(keys, **opts)
+
+        label = "with data" if data else "structure only"
+        click.echo(
+            f"Collection '{source}' copied to '{destination}' ({label}) in {database}.",
+            err=True,
+        )
+    except OperationFailure as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    finally:
+        client.close()
+
+
+# ── col (field) commands ──────────────────────────────────────────────────────
+# MongoDB is schemaless, so "columns" map to field operations via $set/$unset/$rename.
+
+
+@cli.group()
+def col():
+    """Commands to add, drop, and rename fields on a collection."""
+    pass
+
+
+@col.command(name="list")
+@click.argument("collection")
+@click.option(
+    "--database",
+    "-d",
+    default=MONGO_DATABASE,
+    help=f"Database name (default: {MONGO_DATABASE})",
+)
+@click.option(
+    "--sample",
+    default=100,
+    type=int,
+    help="Number of documents to sample for field discovery (default: 100)",
+)
+@click.pass_context
+def col_list(ctx, collection, database, sample):
+    """List all fields found in a collection (sampled from documents)."""
+    client = get_client()
+    db = client[database]
+
+    try:
+        # Aggregate field names and types from a sample of documents
+        pipeline = [
+            {"$sample": {"size": sample}},
+            {"$project": {"_doc": {"$objectToArray": "$$ROOT"}}},
+            {"$unwind": "$_doc"},
+            {
+                "$group": {
+                    "_id": "$_doc.k",
+                    "types": {"$addToSet": {"$type": "$_doc.v"}},
+                    "count": {"$sum": 1},
+                }
+            },
+            {"$sort": {"_id": 1}},
+        ]
+        fields = list(db[collection].aggregate(pipeline))
+
+        if fields:
+            click.echo(
+                f"Fields in {database}.{collection} (sampled {sample} docs):", err=True
+            )
+            for f in fields:
+                types_str = ", ".join(sorted(f["types"]))
+                nullable = f["count"] < sample
+                nullable_str = ", nullable" if nullable else ""
+                click.echo(f"  • {f['_id']} ({types_str}{nullable_str})", err=True)
+        else:
+            click.echo(
+                f"No fields found in {database}.{collection} (collection may be empty).",
+                err=True,
+            )
+    except OperationFailure as e:
+        click.echo(f"Error: {e}", err=True)
+    finally:
+        client.close()
+
+
+@col.command(name="add")
+@click.argument("collection")
+@click.argument("field_name")
+@click.option(
+    "--default",
+    "default_value",
+    default=None,
+    help="Default value (JSON literal) to set on all existing documents",
+)
+@click.option(
+    "--database",
+    "-d",
+    default=MONGO_DATABASE,
+    help=f"Database name (default: {MONGO_DATABASE})",
+)
+@click.pass_context
+def col_add(ctx, collection, field_name, default_value, database):
+    """Add a field to all documents in a collection.
+
+    Sets the field to the given default value (or null) on every document
+    that doesn't already have it.
+    """
+    client = get_client()
+    db = client[database]
+
+    try:
+        value = json.loads(default_value) if default_value is not None else None
+        result = db[collection].update_many(
+            {field_name: {"$exists": False}},
+            {"$set": {field_name: value}},
+        )
+        click.echo(
+            f"Field '{field_name}' added to {result.modified_count} document(s) in '{database}.{collection}'.",
+            err=True,
+        )
+    except (OperationFailure, json.JSONDecodeError) as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    finally:
+        client.close()
+
+
+@col.command(name="drop")
+@click.argument("collection")
+@click.argument("field_name")
+@click.option(
+    "--database",
+    "-d",
+    default=MONGO_DATABASE,
+    help=f"Database name (default: {MONGO_DATABASE})",
+)
+@click.pass_context
+def col_drop(ctx, collection, field_name, database):
+    """Remove a field from all documents in a collection."""
+    client = get_client()
+    db = client[database]
+
+    try:
+        result = db[collection].update_many(
+            {field_name: {"$exists": True}},
+            {"$unset": {field_name: ""}},
+        )
+        click.echo(
+            f"Field '{field_name}' removed from {result.modified_count} document(s) in '{database}.{collection}'.",
+            err=True,
+        )
+    except OperationFailure as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    finally:
+        client.close()
+
+
+@col.command(name="rename")
+@click.argument("collection")
+@click.argument("old_name")
+@click.argument("new_name")
+@click.option(
+    "--database",
+    "-d",
+    default=MONGO_DATABASE,
+    help=f"Database name (default: {MONGO_DATABASE})",
+)
+@click.pass_context
+def col_rename(ctx, collection, old_name, new_name, database):
+    """Rename a field on all documents in a collection."""
+    client = get_client()
+    db = client[database]
+
+    try:
+        result = db[collection].update_many(
+            {old_name: {"$exists": True}},
+            {"$rename": {old_name: new_name}},
+        )
+        click.echo(
+            f"Field '{old_name}' renamed to '{new_name}' on {result.modified_count} document(s) in '{database}.{collection}'.",
+            err=True,
+        )
+    except OperationFailure as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    finally:
+        client.close()
+
+
+# ── idx (index) commands ──────────────────────────────────────────────────────
+
+
+@cli.group()
+def idx():
+    """Commands to add, drop, and list indexes on a collection."""
+    pass
+
+
+@idx.command(name="list")
+@click.argument("collection")
+@click.option(
+    "--database",
+    "-d",
+    default=MONGO_DATABASE,
+    help=f"Database name (default: {MONGO_DATABASE})",
+)
+@click.pass_context
+def idx_list(ctx, collection, database):
+    """List all indexes on a collection."""
+    client = get_client()
+    db = client[database]
+
+    try:
+        indexes = list(db[collection].list_indexes())
+        if indexes:
+            click.echo(f"Indexes on {database}.{collection}:", err=True)
+            for idx_info in indexes:
+                keys_str = ", ".join(f"{k}: {v}" for k, v in idx_info["key"].items())
+                flags = []
+                if idx_info.get("unique"):
+                    flags.append("unique")
+                if idx_info.get("sparse"):
+                    flags.append("sparse")
+                if idx_info.get("expireAfterSeconds") is not None:
+                    flags.append(f"ttl={idx_info['expireAfterSeconds']}s")
+                flags_str = f" [{', '.join(flags)}]" if flags else ""
+                click.echo(f"  • {idx_info['name']}{flags_str}", err=True)
+                click.echo(f"    keys: {{{keys_str}}}", err=True)
+        else:
+            click.echo(f"No indexes found on {database}.{collection}.", err=True)
+    except OperationFailure as e:
+        click.echo(f"Error: {e}", err=True)
+    finally:
+        client.close()
+
+
+@idx.command(name="add")
+@click.argument("collection")
+@click.argument("fields", nargs=-1, required=True)
+@click.option("--unique", "is_unique", is_flag=True, help="Create a unique index")
+@click.option("--sparse", "is_sparse", is_flag=True, help="Create a sparse index")
+@click.option("--ttl", default=None, type=int, help="TTL in seconds (for date fields)")
+@click.option(
+    "--desc", "descending", multiple=True, help="Field(s) to index in descending order"
+)
+@click.option("--text", "is_text", is_flag=True, help="Create a text index")
+@click.option(
+    "--name", "-n", default=None, help="Custom index name (default: auto-generated)"
+)
+@click.option(
+    "--database",
+    "-d",
+    default=MONGO_DATABASE,
+    help=f"Database name (default: {MONGO_DATABASE})",
+)
+@click.pass_context
+def idx_add(
+    ctx,
+    collection,
+    fields,
+    is_unique,
+    is_sparse,
+    ttl,
+    descending,
+    is_text,
+    name,
+    database,
+):
+    """Add an index to a collection.
+
+    Examples:
+
+      mongo idx add users email                     # ascending index on email
+
+      mongo idx add users email username --unique    # unique compound index
+
+      mongo idx add events created_at --ttl 86400   # TTL index (24h)
+
+      mongo idx add articles title body --text       # text search index
+
+      mongo idx add logs timestamp --desc timestamp  # descending index
+    """
+    client = get_client()
+    db = client[database]
+
+    try:
+        if is_text:
+            keys = [(f, "text") for f in fields]
+        else:
+            desc_set = set(descending)
+            keys = [(f, DESCENDING if f in desc_set else ASCENDING) for f in fields]
+
+        opts = {}
+        if is_unique:
+            opts["unique"] = True
+        if is_sparse:
+            opts["sparse"] = True
+        if ttl is not None:
+            opts["expireAfterSeconds"] = ttl
+        if name:
+            opts["name"] = name
+
+        idx_name = db[collection].create_index(keys, **opts)
+
+        flags = []
+        if is_unique:
+            flags.append("unique")
+        if is_sparse:
+            flags.append("sparse")
+        if is_text:
+            flags.append("text")
+        if ttl is not None:
+            flags.append(f"ttl={ttl}s")
+        flags_str = f" ({', '.join(flags)})" if flags else ""
+
+        click.echo(
+            f"Index '{idx_name}'{flags_str} created on '{database}.{collection}' ({', '.join(fields)}).",
+            err=True,
+        )
+    except OperationFailure as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    finally:
+        client.close()
+
+
+@idx.command(name="drop")
+@click.argument("collection")
+@click.argument("name")
+@click.option(
+    "--database",
+    "-d",
+    default=MONGO_DATABASE,
+    help=f"Database name (default: {MONGO_DATABASE})",
+)
+@click.pass_context
+def idx_drop(ctx, collection, name, database):
+    """Drop an index by name."""
+    client = get_client()
+    db = client[database]
+
+    try:
+        db[collection].drop_index(name)
+        click.echo(f"Index '{name}' dropped from '{database}.{collection}'.", err=True)
+    except OperationFailure as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    finally:
+        client.close()
+
+
+# ── row (document) commands ───────────────────────────────────────────────────
+
+
+@cli.group()
+def row():
+    """Commands to operate on documents (rows)."""
+    pass
+
+
+@row.command(name="list")
+@click.argument("collection")
+@click.option(
+    "--database",
+    "-d",
+    default=MONGO_DATABASE,
+    help=f"Database name (default: {MONGO_DATABASE})",
+)
+@click.option(
+    "--limit",
+    "-l",
+    default=100,
+    type=int,
+    help="Maximum documents to return (default: 100)",
+)
+@click.option(
+    "--format",
+    "-f",
+    "output_format",
+    type=click.Choice(["json", "table"]),
+    default="json",
+    help="Output format (default: json)",
+)
+@click.pass_context
+def row_list(ctx, collection, database, limit, output_format):
+    """List documents in a collection."""
+    client = get_client()
+    db = client[database]
+
+    try:
+        docs = list(db[collection].find({}, limit=limit))
+        if output_format == "json":
+            print(json.dumps(docs, default=json_serializer, indent=2))
+        else:
+            print_results(docs)
+    except OperationFailure as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    finally:
+        client.close()
+
+
+@row.command(name="rm")
+@click.argument("collection")
+@click.argument("id", required=False, default=None)
+@click.option(
+    "--all", "all_docs", is_flag=True, help="Delete all documents in the collection."
+)
+@click.option(
+    "--database",
+    "-d",
+    default=MONGO_DATABASE,
+    help=f"Database name (default: {MONGO_DATABASE})",
+)
+@click.pass_context
+def row_rm(ctx, collection, id, all_docs, database):
+    """Remove a document by _id, or all documents with --all."""
+    if id is None and not all_docs:
+        click.echo(
+            "Error: provide an _id or use --all to delete all documents.", err=True
+        )
+        sys.exit(1)
+    if id is not None and all_docs:
+        click.echo("Error: cannot specify both an _id and --all.", err=True)
+        sys.exit(1)
+
+    client = get_client()
+    db = client[database]
+
+    try:
+        if all_docs:
+            result = db[collection].delete_many({})
+            click.echo(
+                f"Deleted {result.deleted_count} document(s) from '{database}.{collection}'.",
+                err=True,
+            )
+        else:
+            # Try as ObjectId first, fall back to string _id
+            try:
+                doc_id = ObjectId(id)
+            except Exception:
+                doc_id = id
+            result = db[collection].delete_one({"_id": doc_id})
+            click.echo(
+                f"Deleted {result.deleted_count} document(s) from '{database}.{collection}' where _id={id}.",
+                err=True,
+            )
+    except OperationFailure as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    finally:
+        client.close()
+
+
+# ── query ─────────────────────────────────────────────────────────────────────
+
+
+@cli.command()
+@click.argument(
+    "query_path", type=click.Path(exists=True), required=False, default=None
+)
+@click.option(
+    "--database",
+    "-d",
+    default=MONGO_DATABASE,
+    help=f"Database name (default: {MONGO_DATABASE})",
+)
+@click.option(
+    "--collection",
+    "-c",
+    default=None,
+    help="Collection name (required for find queries)",
+)
+@click.option(
+    "--format",
+    "-f",
+    "output_format",
+    type=click.Choice(["json", "table"]),
+    default="json",
+    help="Output format (default: json)",
+)
+@click.pass_context
+def query(ctx, query_path, database, collection, output_format):
+    """Execute a JSON query file, directory of query files, or JSON from stdin.
+
+    Query file format (JSON):
+      { "find": { "field": "value" } }                         # find query
+      { "find": { ... }, "projection": { "field": 1 } }        # with projection
+      { "aggregate": [ { "$match": { ... } }, ... ] }           # aggregation pipeline
+      { "insert": { "field": "value" } }                        # insert one
+      { "insert": [ { ... }, { ... } ] }                        # insert many
+      { "update": { "filter": { ... }, "set": { ... } } }      # update
+      { "delete": { "field": "value" } }                        # delete
+
+    Collection can be specified in the JSON as "collection" or via --collection.
+    """
+    if query_path is None and sys.stdin.isatty():
+        click.echo("Error: No query path provided and no input on stdin.", err=True)
+        sys.exit(1)
+
+    client = get_client()
+    db = client[database]
+
+    def execute_query(query_json, col_name):
+        """Execute a single query dict and return results."""
+        col_name = query_json.pop("collection", None) or col_name
+        if not col_name:
+            return {
+                "error": "No collection specified. Use --collection or include 'collection' in the query."
+            }
+
+        col = db[col_name]
+
+        if "find" in query_json:
+            projection = query_json.get("projection")
+            limit = query_json.get("limit", 0)
+            sort = query_json.get("sort")
+            cursor = col.find(query_json["find"], projection)
+            if sort:
+                cursor = cursor.sort(list(sort.items()))
+            if limit:
+                cursor = cursor.limit(limit)
+            return list(cursor)
+
+        elif "aggregate" in query_json:
+            return list(col.aggregate(query_json["aggregate"]))
+
+        elif "insert" in query_json:
+            data = query_json["insert"]
+            if isinstance(data, list):
+                result = col.insert_many(data)
+                return {"status": "success", "inserted_count": len(result.inserted_ids)}
+            else:
+                result = col.insert_one(data)
+                return {"status": "success", "inserted_id": str(result.inserted_id)}
+
+        elif "update" in query_json:
+            update_spec = query_json["update"]
+            filt = update_spec.get("filter", {})
+            set_fields = update_spec.get("set", {})
+            unset_fields = update_spec.get("unset", {})
+            update_doc = {}
+            if set_fields:
+                update_doc["$set"] = set_fields
+            if unset_fields:
+                update_doc["$unset"] = {k: "" for k in unset_fields}
+            if not update_doc:
+                return {"error": "Update requires 'set' and/or 'unset' fields."}
+            many = update_spec.get("many", True)
+            if many:
+                result = col.update_many(filt, update_doc)
+            else:
+                result = col.update_one(filt, update_doc)
+            return {
+                "status": "success",
+                "matched_count": result.matched_count,
+                "modified_count": result.modified_count,
+            }
+
+        elif "delete" in query_json:
+            result = col.delete_many(query_json["delete"])
+            return {"status": "success", "deleted_count": result.deleted_count}
+
+        else:
+            return {
+                "error": "Unknown query type. Use 'find', 'aggregate', 'insert', 'update', or 'delete'."
+            }
+
+    try:
+        if query_path is not None and os.path.isdir(query_path):
+            results = {}
+            json_files = sorted(
+                [f for f in os.listdir(query_path) if f.endswith(".json")]
+            )
+            for json_file in json_files:
+                file_path = os.path.join(query_path, json_file)
+                try:
+                    with open(file_path, "r") as f:
+                        query_json = json.load(f)
+                    results[json_file] = execute_query(query_json, collection)
+                except (json.JSONDecodeError, OperationFailure) as e:
+                    results[json_file] = {"error": str(e)}
+            click.echo(json.dumps(results, default=json_serializer, indent=2))
+        else:
+            if query_path is not None:
+                with open(query_path, "r") as f:
+                    query_json = json.load(f)
+            else:
+                query_json = json.load(sys.stdin)
+
+            result = execute_query(query_json, collection)
+
+            if isinstance(result, list):
+                if output_format == "json":
+                    click.echo(json.dumps(result, default=json_serializer, indent=2))
+                else:
+                    print_results(result)
+            else:
+                click.echo(json.dumps(result, default=json_serializer, indent=2))
+
+    except (json.JSONDecodeError, OperationFailure) as e:
+        click.echo(json.dumps({"error": str(e)}), err=True)
+        sys.exit(1)
+    finally:
+        client.close()
+
+
+# ── dump ──────────────────────────────────────────────────────────────────────
+
+
+@cli.command()
+@click.option(
+    "--database",
+    "-d",
+    default=MONGO_DATABASE,
+    help=f"Database name (default: {MONGO_DATABASE})",
+)
+@click.pass_context
+def dump(ctx, database):
+    """Dump collection schemas (indexes, validator rules) as JSON — no data."""
+    client = get_client()
+    db = client[database]
+
+    output = {"database": database, "collections": {}}
+
+    try:
+        for col_name in sorted(db.list_collection_names()):
+            col_info = {"indexes": [], "validator": None}
+
+            # Indexes
+            for idx_info in db[col_name].list_indexes():
+                col_info["indexes"].append(
+                    {
+                        "name": idx_info["name"],
+                        "keys": dict(idx_info["key"]),
+                        "unique": idx_info.get("unique", False),
+                        "sparse": idx_info.get("sparse", False),
+                        "expireAfterSeconds": idx_info.get("expireAfterSeconds"),
+                    }
+                )
+
+            # Validator (schema validation rules if any)
+            col_options = db.command("listCollections", filter={"name": col_name})
+            for c in col_options.get("cursor", {}).get("firstBatch", []):
+                validator = c.get("options", {}).get("validator")
+                if validator:
+                    col_info["validator"] = validator
+
+            output["collections"][col_name] = col_info
+
+        click.echo(json.dumps(output, default=json_serializer, indent=2))
+    except OperationFailure as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    finally:
+        client.close()
+
+
+# ── db (database) commands ────────────────────────────────────────────────────
+
+
+@cli.group()
+def db():
+    """Commands related to databases."""
+    pass
+
+
+@db.command(name="list")
+@click.pass_context
+def db_list(ctx):
+    """List all databases."""
+    client = get_client()
+
+    try:
+        dbs = client.list_database_names()
+        if dbs:
+            click.echo("Databases:", err=True)
+            for name in sorted(dbs):
+                stats = client[name].command("dbStats")
+                size_mb = stats.get("dataSize", 0) / (1024 * 1024)
+                collections = stats.get("collections", 0)
+                click.echo(
+                    f"  • {name} ({collections} collections, {size_mb:.2f} MB)",
+                    err=True,
+                )
+        else:
+            click.echo("No databases found.", err=True)
+    except OperationFailure as e:
+        click.echo(f"Error: {e}", err=True)
+    finally:
+        client.close()
+
+
+@db.command(name="add")
+@click.argument("name")
+@click.pass_context
+def db_add(ctx, name):
+    """Create a new database (by creating an init collection)."""
+    client = get_client()
+
+    try:
+        if name in client.list_database_names():
+            click.echo(f"Database '{name}' already exists.", err=True)
+            return
+        # MongoDB creates databases lazily; insert a temp doc to force creation
+        client[name].create_collection("_init")
+        click.echo(
+            f"Database '{name}' created (with placeholder collection '_init').",
+            err=True,
+        )
+    except OperationFailure as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    finally:
+        client.close()
+
+
+@db.command(name="drop")
+@click.argument("name")
+@click.pass_context
+def db_drop(ctx, name):
+    """Drop a database."""
+    client = get_client()
+
+    try:
+        client.drop_database(name)
+        click.echo(f"Database '{name}' dropped.", err=True)
+    except OperationFailure as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    finally:
+        client.close()
+
+
+@db.command(name="save")
+@click.argument("name")
+@click.option(
+    "--output", "-o", default=None, help="Output file path (default: <name>.archive.gz)"
+)
+@click.pass_context
+def db_save(ctx, name, output):
+    """Save (dump) a database using mongodump."""
+    if output is None:
+        output = f"{name}.archive.gz"
+
+    dump_cmd = [
+        "mongodump",
+        "--uri",
+        get_connection_string(),
+        "--db",
+        name,
+        "--archive",
+        "--gzip",
+    ]
+
+    try:
+        with open(output, "wb") as f:
+            result = subprocess.run(dump_cmd, stdout=f, stderr=subprocess.PIPE)
+            if result.returncode != 0:
+                click.echo(
+                    f"Error: mongodump failed: {result.stderr.decode().strip()}",
+                    err=True,
+                )
+                sys.exit(1)
+        click.echo(f"Database '{name}' saved to '{output}'.", err=True)
+    except FileNotFoundError:
+        click.echo(
+            "Error: mongodump not found. Ensure MongoDB tools are installed.", err=True
+        )
+        sys.exit(1)
+
+
+@db.command(name="restore")
+@click.argument("input_file", type=click.Path(exists=True))
+@click.option(
+    "--name", "-n", default=None, help="Database name (default: inferred from filename)"
+)
+@click.pass_context
+def db_restore(ctx, input_file, name):
+    """Restore a database from a mongodump archive."""
+    if name is None:
+        basename = os.path.basename(input_file)
+        name = basename.split(".")[0]
+        if not name:
+            click.echo(
+                "Error: Could not infer database name from filename. Use --name.",
+                err=True,
+            )
+            sys.exit(1)
+
+    restore_cmd = [
+        "mongorestore",
+        "--uri",
+        get_connection_string(),
+        "--db",
+        name,
+        "--archive",
+        input_file,
+        "--gzip",
+    ]
+
+    try:
+        result = subprocess.run(restore_cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            click.echo(f"Error: mongorestore failed: {result.stderr.strip()}", err=True)
+            sys.exit(1)
+        click.echo(f"Database '{name}' restored from '{input_file}'.", err=True)
+    except FileNotFoundError:
+        click.echo(
+            "Error: mongorestore not found. Ensure MongoDB tools are installed.",
+            err=True,
+        )
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    cli()

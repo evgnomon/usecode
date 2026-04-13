@@ -1,0 +1,39 @@
+#!/bin/bash
+
+set -e
+
+SECRET_PATH=$HOME/.config/blueprint/secrets
+SECRET_FILE=$SECRET_PATH/secrets.yaml
+
+VAULT_FILE=vault
+SECRET_FILE=$SECRET_PATH/secrets.yaml
+NEW_VAULT_PASSWORD_FILE=vault_new
+
+if [ ! -z "$1" ]; then
+  SECRET_FILE=$SECRET_PATH/$1.yaml
+fi
+
+if [ ! -z "$1" ]; then
+  VAULT_FILE=$1.vault
+fi
+
+if [ ! -z "$1" ]; then
+  NEW_VAULT_PASSWORD_FILE=$1.vault_new
+fi
+
+if [ ! -f $SECRET_FILE.bak ]; then
+  mv $SECRET_FILE $SECRET_FILE.bak
+fi
+
+cat /dev/random | tr -dc 'a-zA-Z0-9' | fold -w 64 | head -n 1 | vault -e $NEW_VAULT_PASSWORD_FILE
+
+ansible-vault decrypt --vault-password-file <(vault -d $VAULT_FILE) --output -  $SECRET_FILE.bak | ansible-vault encrypt --vault-password-file <(vault -d $NEW_VAULT_PASSWORD_FILE) --output $SECRET_FILE
+
+if [ -f $SECRET_PATH/$NEW_VAULT_PASSWORD_FILE.asc ]; then
+  rm $SECRET_PATH/$VAULT_FILE.asc
+  mv $SECRET_PATH/$NEW_VAULT_PASSWORD_FILE.asc $SECRET_PATH/$VAULT_FILE.asc
+fi
+
+if [ -f $SECRET_FILE.bak ]; then
+  rm $SECRET_FILE.bak
+fi

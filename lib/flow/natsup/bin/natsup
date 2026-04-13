@@ -1,0 +1,762 @@
+#!/usr/bin/env python3
+"""
+Generic script to run NATS server nodes (with JetStream) using Podman.
+
+Usage examples:
+
+  # Create a 3-node cluster (default)
+  python3 nats-node-podman.py cluster
+
+  # Create a 5-node cluster
+  python3 nats-node-podman.py cluster --nodes 5
+
+  # Single node - main client port 4222
+  python3 nats-node-podman.py node --node-id 1 --client-port 4222 --monitoring-port 8222
+
+  # Single node 2
+  python3 nats-node-podman.py node --node-id 2 --client-port 4223 --monitoring-port 8223
+
+  # Using env vars
+  NATS_NODE_ID=3 CLIENT_PORT=4224 MONITORING_PORT=8224 python3 nats-node-podman.py node
+"""
+
+import argparse
+import os
+import shutil
+import subprocess
+import sys
+import time
+import urllib.request
+import urllib.error
+import json
+from typing import List, Optional, Tuple
+
+
+# ─── Configuration ────────────────────────────────────────────────────────────
+
+DEFAULT_NETWORK = "nats-cluster"
+DEFAULT_CLUSTER_NAME = "c1"
+DEFAULT_IMAGE = "nats:2-alpine"
+DEFAULT_NODE_COUNT = 3
+HEALTH_CHECK_TIMEOUT = 30  # seconds
+HEALTH_CHECK_INTERVAL = 2  # seconds
+
+
+# ─── Utility Functions ────────────────────────────────────────────────────────
+
+
+def build_nats_name(node_id: int) -> str:
+    return f"nats{node_id}"
+
+
+def build_routes(node_count: int) -> str:
+    """Builds --routes string assuming nodes are named nats1,nats2,nats3,..."""
+    routes = [f"nats://nats{i}:6222" for i in range(1, node_count + 1)]
+    return ",".join(routes)
+
+
+def get_client_port(node_id: int, override: int = 0) -> int:
+    return override if override else (4222 + node_id - 1)
+
+
+def get_monitoring_port(node_id: int, override: int = 0) -> int:
+    return override if override else (8222 + node_id - 1)
+
+
+def get_volume_path(data_dir: str, node_id: int) -> str:
+    return f"{data_dir}/js-{node_id}"
+
+
+# ─── Network Functions ────────────────────────────────────────────────────────
+
+
+def network_exists(name: str) -> bool:
+    """Check if a Podman network exists."""
+    result = subprocess.run(
+        ["podman", "network", "exists", name],
+        capture_output=True,
+    )
+    return result.returncode == 0
+
+
+def create_network(name: str) -> bool:
+    """Create a Podman network with DNS enabled. Returns True on success."""
+    result = subprocess.run(
+        ["podman", "network", "create", "--dns-enabled", name],
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
+
+
+def ensure_network(name: str) -> bool:
+    """Ensure the network exists, creating it if necessary. Returns True on success."""
+    if network_exists(name):
+        return True
+
+    print(f"Network '{name}' does not exist. Creating...")
+    if create_network(name):
+        print(f"Network '{name}' created successfully.")
+        return True
+    else:
+        print(f"Error: Failed to create network '{name}'", file=sys.stderr)
+        return False
+
+
+# ─── Container Functions ──────────────────────────────────────────────────────
+
+
+def container_exists(name: str) -> Optional[str]:
+    """Check if a container with the given name exists. Returns state or None."""
+    result = subprocess.run(
+        ["podman", "ps", "-a", "--filter", f"name=^{name}$", "--format", "{{.State}}"],
+        capture_output=True,
+        text=True,
+    )
+    state = result.stdout.strip()
+    return state if state else None
+
+
+def start_container(name: str) -> bool:
+    """Start an existing stopped container. Returns True on success."""
+    result = subprocess.run(
+        ["podman", "start", name],
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
+
+
+def stop_container(name: str) -> bool:
+    """Stop a running container. Returns True on success."""
+    result = subprocess.run(
+        ["podman", "stop", name],
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
+
+
+def remove_container(name: str) -> bool:
+    """Force remove a container. Returns True on success."""
+    result = subprocess.run(
+        ["podman", "rm", "-f", name],
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
+
+
+def remove_volume(volume_path: str) -> bool:
+    """Remove a volume directory. Returns True on success."""
+    try:
+        if os.path.exists(volume_path):
+            shutil.rmtree(volume_path)
+            return True
+        return True  # Already gone
+    except OSError as e:
+        print(f"Error removing volume '{volume_path}': {e}", file=sys.stderr)
+        return False
+
+
+def get_existing_nodes(max_node_id: int = 9) -> List[Tuple[int, str]]:
+    """Get list of existing NATS nodes as (node_id, state) tuples."""
+    nodes = []
+    for i in range(1, max_node_id + 1):
+        state = container_exists(build_nats_name(i))
+        if state:
+            nodes.append((i, state))
+    return nodes
+
+
+# ─── Health Check Functions ───────────────────────────────────────────────────
+
+
+def check_node_health(monitoring_port: int) -> Tuple[bool, Optional[dict]]:
+    """Check health of a single node. Returns (healthy, info_dict)."""
+    try:
+        url = f"http://localhost:{monitoring_port}/healthz"
+        with urllib.request.urlopen(url, timeout=5) as response:
+            return response.status == 200, None
+    except (urllib.error.URLError, urllib.error.HTTPError):
+        return False, None
+
+
+def get_node_info(monitoring_port: int) -> Optional[dict]:
+    """Get server info from a node."""
+    try:
+        url = f"http://localhost:{monitoring_port}/varz"
+        with urllib.request.urlopen(url, timeout=5) as response:
+            return json.loads(response.read().decode())
+    except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError):
+        return None
+
+
+def get_route_info(monitoring_port: int) -> Optional[dict]:
+    """Get routing info from a node."""
+    try:
+        url = f"http://localhost:{monitoring_port}/routez"
+        with urllib.request.urlopen(url, timeout=5) as response:
+            return json.loads(response.read().decode())
+    except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError):
+        return None
+
+
+def wait_for_cluster_health(
+    node_count: int,
+    timeout: int = HEALTH_CHECK_TIMEOUT,
+    interval: int = HEALTH_CHECK_INTERVAL,
+) -> bool:
+    """Wait for all nodes to be healthy and connected. Returns True if healthy."""
+    print(f"\nWaiting for cluster health (timeout: {timeout}s)...")
+    start_time = time.time()
+
+    while time.time() - start_time < timeout:
+        all_healthy = True
+        all_connected = True
+
+        for node_id in range(1, node_count + 1):
+            port = get_monitoring_port(node_id)
+            healthy, _ = check_node_health(port)
+
+            if not healthy:
+                all_healthy = False
+                break
+
+            # Check routes
+            route_info = get_route_info(port)
+            if route_info:
+                num_routes = route_info.get("num_routes", 0)
+                expected_routes = node_count - 1
+                if num_routes < expected_routes:
+                    all_connected = False
+
+        if all_healthy and all_connected:
+            print("✓ All nodes healthy and connected!")
+            return True
+
+        time.sleep(interval)
+        print(".", end="", flush=True)
+
+    print("\n✗ Timeout waiting for cluster health")
+    return False
+
+
+def print_cluster_status(node_count: int) -> None:
+    """Print status of all nodes in the cluster."""
+    print("\nCluster Status:")
+    print("-" * 60)
+
+    for node_id in range(1, node_count + 1):
+        name = build_nats_name(node_id)
+        state = container_exists(name)
+        port = get_monitoring_port(node_id)
+
+        if not state:
+            print(f"  {name}: not found")
+            continue
+
+        healthy, _ = check_node_health(port)
+        route_info = get_route_info(port)
+        num_routes = route_info.get("num_routes", 0) if route_info else 0
+
+        health_icon = "✓" if healthy else "✗"
+        print(
+            f"  {name}: {state:<10} health: {health_icon}  routes: {num_routes}/{node_count - 1}"
+        )
+
+    print("-" * 60)
+
+
+# ─── Prompt Functions ─────────────────────────────────────────────────────────
+
+
+def prompt_yes_no(message: str, default: bool = True) -> bool:
+    """Prompt user for yes/no confirmation."""
+    suffix = " [Y/n]: " if default else " [y/N]: "
+    try:
+        response = input(message + suffix).strip().lower()
+        if not response:
+            return default
+        return response in ("y", "yes")
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False
+
+
+# ─── Node Creation ────────────────────────────────────────────────────────────
+
+
+def create_node(
+    node_id: int,
+    node_count: int,
+    network: str,
+    cluster_name: str,
+    image: str,
+    data_dir: str,
+    client_port: int = 0,
+    monitoring_port: int = 0,
+    dry_run: bool = False,
+    pull: bool = True,
+    verbose: bool = True,
+) -> bool:
+    """Create and start a single NATS node. Returns True on success."""
+    nats_name = build_nats_name(node_id)
+    client_port = get_client_port(node_id, client_port)
+    monitoring_port = get_monitoring_port(node_id, monitoring_port)
+    volume_host_path = get_volume_path(data_dir, node_id)
+    volume_mapping = f"{volume_host_path}:/data/js"
+    routes = build_routes(node_count)
+
+    podman_args: List[str] = [
+        "podman",
+        "run",
+        "-d",
+        "--name",
+        nats_name,
+        "--hostname",
+        nats_name,
+        "--network",
+        network,
+        "--restart",
+        "unless-stopped",
+        "-p",
+        f"{client_port}:4222",
+        "-p",
+        f"{monitoring_port}:8222",
+        "-v",
+        volume_mapping,
+        image,
+        # NATS server flags
+        "--name",
+        nats_name,
+        "--cluster_name",
+        cluster_name,
+        "--jetstream",
+        "--store_dir",
+        "/data/js",
+        "--cluster",
+        "nats://0.0.0.0:6222",
+        "--routes",
+        routes,
+        "--http_port",
+        "8222",
+    ]
+
+    if verbose:
+        print(f"  Starting {nats_name}...")
+        print(f"    Client: {client_port}, Monitor: {monitoring_port}")
+
+    if dry_run:
+        print("    DRY RUN — command:")
+        print("    " + " ".join(podman_args[:15]) + " ...")
+        return True
+
+    # Pull image (only once per cluster creation)
+    if pull:
+        subprocess.run(["podman", "pull", image], capture_output=True)
+
+    # Ensure data directory exists
+    os.makedirs(volume_host_path, exist_ok=True)
+
+    # Launch container
+    result = subprocess.run(podman_args, capture_output=True, text=True)
+
+    if result.returncode != 0:
+        print(f"    ✗ Failed to start {nats_name}", file=sys.stderr)
+        if result.stderr:
+            print(f"    stderr: {result.stderr.strip()}", file=sys.stderr)
+        return False
+
+    if verbose:
+        container_id = result.stdout.strip()[:12]
+        print(f"    ✓ Started ({container_id})")
+
+    return True
+
+
+# ─── Commands ─────────────────────────────────────────────────────────────────
+
+
+def cmd_cluster(args: argparse.Namespace) -> int:
+    """Create a NATS cluster."""
+    node_count = args.nodes
+    network = args.network
+    cluster_name = args.cluster_name
+    image = args.image
+    data_dir = args.data_dir
+    auto_yes = args.yes
+
+    print(f"Creating {node_count}-node NATS cluster")
+    print(f"  Network      : {network}")
+    print(f"  Cluster name : {cluster_name}")
+    print(f"  Data dir     : {data_dir}")
+    print()
+
+    # Check for existing nodes
+    existing = get_existing_nodes()
+    if existing:
+        print("Found existing NATS containers:")
+        for node_id, state in existing:
+            print(f"  {build_nats_name(node_id)}: {state}")
+
+        should_remove = auto_yes or prompt_yes_no(
+            "\nRemove existing containers and their volumes?"
+        )
+
+        if should_remove:
+            for node_id, _ in existing:
+                name = build_nats_name(node_id)
+                volume_path = get_volume_path(data_dir, node_id)
+
+                print(f"  Removing {name}...", end=" ")
+                if remove_container(name):
+                    print("container ✓", end=" ")
+                else:
+                    print("container ✗", end=" ")
+
+                if remove_volume(volume_path):
+                    print("volume ✓")
+                else:
+                    print("volume ✗")
+        else:
+            print("Aborted.")
+            return 1
+
+    # Ensure network exists
+    if not ensure_network(network):
+        return 1
+
+    # Pull image once
+    if not args.no_pull:
+        print(f"\nPulling image {image}...")
+        subprocess.run(["podman", "pull", image], check=True)
+
+    # Create nodes
+    print(f"\nCreating {node_count} nodes...")
+    for node_id in range(1, node_count + 1):
+        success = create_node(
+            node_id=node_id,
+            node_count=node_count,
+            network=network,
+            cluster_name=cluster_name,
+            image=image,
+            data_dir=data_dir,
+            dry_run=args.dry_run,
+            pull=False,  # Already pulled
+            verbose=True,
+        )
+        if not success:
+            print(f"\nFailed to create node {node_id}. Cluster may be incomplete.")
+            return 1
+
+    if args.dry_run:
+        print("\nDry run complete.")
+        return 0
+
+    # Wait for health
+    if not wait_for_cluster_health(node_count):
+        print("\nCluster started but may not be fully healthy.")
+        print_cluster_status(node_count)
+        return 1
+
+    # Print final status
+    print_cluster_status(node_count)
+
+    # Print helpful commands
+    print("\nQuick commands:")
+    print(f"  Logs (node 1) : podman logs -f nats1")
+    print(f"  Health        : curl http://localhost:8222/healthz")
+    print(f"  Routes        : curl http://localhost:8222/routez")
+    print(f"  Stop all      : podman stop nats{{1..{node_count}}}")
+    print(f"  Remove all    : podman rm -f nats{{1..{node_count}}}")
+
+    return 0
+
+
+def cmd_node(args: argparse.Namespace) -> int:
+    """Create a single NATS node."""
+    node_id = args.node_id
+    if not 1 <= node_id <= 9:
+        print("Error: --node-id must be between 1 and 9", file=sys.stderr)
+        return 1
+
+    nats_name = build_nats_name(node_id)
+    network = args.network
+    data_dir = args.data_dir
+    auto_yes = args.yes
+
+    # Ensure network exists
+    if not ensure_network(network):
+        return 1
+
+    # Check if container already exists
+    container_state = container_exists(nats_name)
+    if container_state:
+        print(f"Container '{nats_name}' already exists (state: {container_state})")
+
+        if container_state == "running":
+            print("Container is already running.")
+            monitoring_port = get_monitoring_port(node_id, args.monitoring_port)
+            print(f"\nQuick checks:")
+            print(f"  Logs   : podman logs -f {nats_name}")
+            print(f"  Health : curl http://localhost:{monitoring_port}/healthz")
+            print(f"  Stop   : podman stop {nats_name}")
+            return 0
+
+        # Container exists but not running
+        should_remove = auto_yes or prompt_yes_no(
+            f"Remove existing container '{nats_name}' and its volume?"
+        )
+
+        if should_remove:
+            volume_path = get_volume_path(data_dir, node_id)
+            print(f"Removing container '{nats_name}'...", end=" ")
+            if not remove_container(nats_name):
+                print("✗")
+                return 1
+            print("✓")
+
+            print(f"Removing volume '{volume_path}'...", end=" ")
+            if remove_volume(volume_path):
+                print("✓")
+            else:
+                print("✗ (continuing anyway)")
+        else:
+            # Start existing container
+            print(f"Starting existing container '{nats_name}'...")
+            if start_container(nats_name):
+                print("✓ Started successfully.")
+                monitoring_port = get_monitoring_port(node_id, args.monitoring_port)
+                print(f"\nQuick checks:")
+                print(f"  Logs   : podman logs -f {nats_name}")
+                print(f"  Health : curl http://localhost:{monitoring_port}/healthz")
+                return 0
+            else:
+                print("✗ Failed to start")
+                return 1
+
+    # Pull image
+    if not args.no_pull:
+        print(f"Pulling image {args.image}...")
+        subprocess.run(["podman", "pull", args.image], check=True)
+
+    # Create the node
+    client_port = get_client_port(node_id, args.client_port)
+    monitoring_port = get_monitoring_port(node_id, args.monitoring_port)
+
+    print(f"\nStarting NATS node {nats_name}")
+    print(f"  Network         : {network}")
+    print(f"  Client port     : {client_port} → 4222")
+    print(f"  Monitoring port : {monitoring_port} → 8222")
+    print(f"  Data directory  : {get_volume_path(data_dir, node_id)}")
+    print(f"  Routes          : {build_routes(args.nodes)}")
+
+    if args.dry_run:
+        print("\nDRY RUN — no container created")
+        return 0
+
+    success = create_node(
+        node_id=node_id,
+        node_count=args.nodes,
+        network=network,
+        cluster_name=args.cluster_name,
+        image=args.image,
+        data_dir=data_dir,
+        client_port=args.client_port,
+        monitoring_port=args.monitoring_port,
+        dry_run=args.dry_run,
+        pull=False,
+        verbose=False,
+    )
+
+    if not success:
+        return 1
+
+    print("✓ Container started")
+
+    # Wait for this node to be healthy
+    print("\nWaiting for node health...", end=" ")
+    for _ in range(15):
+        healthy, _ = check_node_health(monitoring_port)
+        if healthy:
+            print("✓")
+            break
+        time.sleep(1)
+        print(".", end="", flush=True)
+    else:
+        print("✗ (timeout)")
+
+    print(f"\nQuick checks:")
+    print(f"  Logs        : podman logs -f {nats_name}")
+    print(f"  Health      : curl http://localhost:{monitoring_port}/healthz")
+    print(f"  Routes      : curl http://localhost:{monitoring_port}/routez")
+    print(f"  Stop        : podman stop {nats_name}")
+    print(f"  Remove      : podman rm -f {nats_name}")
+
+    return 0
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    """Show cluster status."""
+    print_cluster_status(args.nodes)
+    return 0
+
+
+def cmd_remove(args: argparse.Namespace) -> int:
+    """Remove cluster nodes and volumes."""
+    data_dir = args.data_dir
+    auto_yes = args.yes
+
+    existing = get_existing_nodes()
+    if not existing:
+        print("No NATS containers found.")
+        return 0
+
+    print("Found NATS containers:")
+    for node_id, state in existing:
+        volume_path = get_volume_path(data_dir, node_id)
+        volume_exists = "yes" if os.path.exists(volume_path) else "no"
+        print(f"  {build_nats_name(node_id)}: {state}, volume: {volume_exists}")
+
+    should_remove = auto_yes or prompt_yes_no("\nRemove all containers and volumes?")
+
+    if not should_remove:
+        print("Aborted.")
+        return 1
+
+    for node_id, _ in existing:
+        name = build_nats_name(node_id)
+        volume_path = get_volume_path(data_dir, node_id)
+
+        print(f"  Removing {name}...", end=" ")
+        if remove_container(name):
+            print("container ✓", end=" ")
+        else:
+            print("container ✗", end=" ")
+
+        if remove_volume(volume_path):
+            print("volume ✓")
+        else:
+            print("volume ✗")
+
+    print("\nDone.")
+    return 0
+
+
+# ─── Argument Parsing ─────────────────────────────────────────────────────────
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Run NATS JetStream nodes with Podman",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s cluster              Create a 3-node cluster
+  %(prog)s cluster --nodes 5    Create a 5-node cluster
+  %(prog)s node --node-id 1     Create/start a single node
+  %(prog)s status               Show cluster status
+  %(prog)s remove               Remove all nodes and volumes
+""",
+    )
+
+    # Global options
+    parser.add_argument(
+        "--network",
+        default=os.getenv("NATS_NETWORK", DEFAULT_NETWORK),
+        help=f"Podman network name (default: {DEFAULT_NETWORK})",
+    )
+    parser.add_argument(
+        "--cluster-name",
+        default=os.getenv("CLUSTER_NAME", DEFAULT_CLUSTER_NAME),
+        help=f"NATS cluster name (default: {DEFAULT_CLUSTER_NAME})",
+    )
+    parser.add_argument(
+        "--image",
+        default=os.getenv("NATS_IMAGE", DEFAULT_IMAGE),
+        help=f"Container image (default: {DEFAULT_IMAGE})",
+    )
+    parser.add_argument(
+        "--data-dir",
+        default=os.getenv("DATA_DIR", f"{os.getenv('HOME')}/data/nats"),
+        help="Host directory for JetStream storage",
+    )
+    parser.add_argument(
+        "--nodes",
+        type=int,
+        default=int(os.getenv("NATS_NODE_COUNT", str(DEFAULT_NODE_COUNT))),
+        help=f"Number of nodes in cluster (default: {DEFAULT_NODE_COUNT})",
+    )
+    parser.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="Automatically answer yes to prompts",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print commands instead of running them",
+    )
+    parser.add_argument(
+        "--no-pull",
+        action="store_true",
+        help="Do not pull image before starting",
+    )
+
+    subparsers = parser.add_subparsers(dest="command", help="Command to run")
+
+    # cluster command
+    cluster_parser = subparsers.add_parser("cluster", help="Create a NATS cluster")
+    cluster_parser.set_defaults(func=cmd_cluster)
+
+    # node command
+    node_parser = subparsers.add_parser("node", help="Create/start a single node")
+    node_parser.add_argument(
+        "--node-id",
+        type=int,
+        default=int(os.getenv("NATS_NODE_ID", "1")),
+        help="Node number 1–9 (default: 1)",
+    )
+    node_parser.add_argument(
+        "--client-port",
+        type=int,
+        default=int(os.getenv("CLIENT_PORT", "0")),
+        help="Host port for NATS client connections",
+    )
+    node_parser.add_argument(
+        "--monitoring-port",
+        type=int,
+        default=int(os.getenv("MONITORING_PORT", "0")),
+        help="Host port for monitoring/health",
+    )
+    node_parser.set_defaults(func=cmd_node)
+
+    # status command
+    status_parser = subparsers.add_parser("status", help="Show cluster status")
+    status_parser.set_defaults(func=cmd_status)
+
+    # remove command
+    remove_parser = subparsers.add_parser("remove", help="Remove all nodes and volumes")
+    remove_parser.set_defaults(func=cmd_remove)
+
+    return parser.parse_args()
+
+
+# ─── Main ─────────────────────────────────────────────────────────────────────
+
+
+def main():
+    args = parse_args()
+
+    if not args.command:
+        # Default to cluster command if no subcommand given
+        args.command = "cluster"
+        args.func = cmd_cluster
+
+    sys.exit(args.func(args))
+
+
+if __name__ == "__main__":
+    main()

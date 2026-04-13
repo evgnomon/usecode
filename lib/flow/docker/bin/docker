@@ -1,0 +1,18 @@
+#!/bin/sh
+
+DOCKER_BIN=/Applications/Docker.app/Contents/Resources/bin/docker
+if [ -f $DOCKER_BIN ]; then
+  $DOCKER_BIN --config $HOME/.docker $@
+  exit $?
+fi
+
+
+DOCKER_BIN=/usr/local/bin/docker
+if [ -f $DOCKER_BIN ]; then
+  sudo $DOCKER_BIN --config $HOME/.docker $@
+  exit $?
+fi
+
+
+DOCKER_BIN=/usr/bin/docker
+sudo $DOCKER_BIN --config $HOME/.docker $@

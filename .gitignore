@@ -10,3 +10,6 @@ build/
 
 *.tar.gz
 .pg.json
+
+__pycache__
+stuff

@@ -1,0 +1,42 @@
+#!/bin/bash
+
+if [ ! -f "playbooks/main.yaml" ]; then
+    "playbooks/main.yaml not found"
+    exit 1
+fi
+
+export EDITOR=vi
+export ANSIBLE_STDOUT_CALLBACK=yaml
+
+VAULT_ADDR=$(repofqn)
+SECRET_FILE=$HOME/.config/blueprint/secrets/$VAULT_ADDR.yaml
+VAULT_FILE=$VAULT_ADDR.vault
+
+if [ -z "$YACHT_EVENT_NAME" ]; then
+  export YACHT_EVENT_NAME=push
+fi
+
+if [ -z "$YACHT_REF_NAME" ]; then
+  export YACHT_REF_NAME=$(git symbolic-ref --short HEAD)
+fi
+
+if [ ! -f $HOME/.config/blueprint/secrets/$VAULT_FILE.asc ]; then
+  cat /dev/random | tr -dc 'a-zA-Z0-9' | fold -w 64 | head -n 1 | vault -e $VAULT_FILE
+fi
+
+if [ ! -f $SECRET_FILE ]; then
+  ANSIBLE_VAULT_PASSWORD_FILE=<(vault -d $VAULT_FILE) ansible-vault create $SECRET_FILE
+fi
+
+INPUT_VAULT_PASS=$(vault -d $VAULT_FILE)
+INPUT_VAULT=$(cat $SECRET_FILE)
+if [ -z "$INPUT_PLAYBOOK" ]; then
+  INPUT_PLAYBOOK=playbooks/main.yaml
+fi
+export YACHT_REF_NAME=$(git symbolic-ref --short HEAD)
+export ANSIBLE_COLLECTIONS_PATH=$CODE_HOME/github.com/evgnomon/catamaran/ansible_collections:$HOME/.ansible/collections/ansible_collections
+
+ANSIBLE_VAULT_PASSWORD_FILE=<(echo "$INPUT_VAULT_PASS") INPUT_VAULT_FILE=<(echo "$INPUT_VAULT")\
+  ansible-playbook \
+  --ask-become-pass \
+  "$INPUT_PLAYBOOK" "$@"

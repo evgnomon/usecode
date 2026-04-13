@@ -1,0 +1,36 @@
+#!/bin/bash
+
+# Exit on any error
+set -e
+
+# Check if a file argument is provided
+if [ $# -ne 1 ]; then
+    echo "Usage: $0 <filename>"
+    exit 1
+fi
+
+filename="$1"
+
+# Check if file exists
+if [ ! -f "$filename" ]; then
+    echo "Error: File '$filename' does not exist"
+    exit 1
+fi
+
+# Check if file has .asc extension
+if [[ "$filename" == *.asc ]]; then
+    # Decrypt and print content
+    openssl enc -aes-256-cbc -pbkdf2 -d -in "$filename" -a
+else
+    # Encrypt and save with .asc postfix
+    output="${filename}.asc"
+    openssl enc -pbkdf2 -aes-256-cbc -salt -in "$filename" -out "$output" -a
+    if [ $? -eq 0 ]; then
+        # Remove original file if encryption was successful
+        rm "$filename"
+        echo "File encrypted as $output and original file removed"
+    else
+        echo "Error: Encryption failed"
+        exit 1
+    fi
+fi

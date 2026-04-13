@@ -1,0 +1,21 @@
+#!/bin/bash
+
+VAULT_ADDR=$(repofqn)
+SECRET_FILE=$HOME/.config/blueprint/secrets/$VAULT_ADDR.yaml
+VAULT_FILE=$VAULT_ADDR.vault
+export INPUT_VAULT_PASS=$(vault -d $VAULT_FILE)
+export INPUT_VAULT=$(cat $SECRET_FILE)
+
+# Use playbooks/main.yaml if no playbook is specified
+if [ -z "$INPUT_PLAYBOOK" ]; then
+  export INPUT_PLAYBOOK=playbooks/main.yaml
+fi
+
+docker run -it --rm -v.:/github/workspace \
+  -v $HOME/.config/blueprint:/root/.config/blueprint \
+  -v $HOME/.ssh:/root/.ssh \
+  -e "INPUT_VAULT_PASS" \
+  -e 'INPUT_VAULT' \
+  -e "INPUT_PLAYBOOK=$INPUT_PLAYBOOK" \
+  -e "INPUT_ARGS=$@" \
+  --workdir /github/workspace yacht

@@ -1,0 +1,553 @@
+#!/usr/bin/env python3
+"""
+Secret Manager – SSH pubkey auth + Ansible Vault compatible storage
+
+Server:    python secret_manager.py serve
+CLI local: python secret_manager.py upsert acme prod db --value "secret"
+CLI remote: python secret_manager.py --remote http://localhost:8000 upsert acme prod db --value "secret"
+"""
+
+import os
+import sys
+import json
+import base64
+import secrets
+import threading
+from datetime import datetime, timezone, timedelta
+from typing import Tuple
+
+import click
+import requests
+from fastapi import FastAPI, Request, HTTPException, status, Depends
+from pydantic import BaseModel
+import uvicorn
+
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+    Ed25519PublicKey,
+    Ed25519PrivateKey,
+)
+from cryptography.exceptions import InvalidSignature
+
+# ────────────────────────────────────────────────
+# Ansible Vault compatible crypto (AES-256-CTR + HMAC-SHA256 + PBKDF2)
+# ────────────────────────────────────────────────
+
+
+def encrypt_to_vault(plaintext: str, password: str) -> str:
+    import os, binascii
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    from cryptography.hazmat.primitives.padding import PKCS7
+    from cryptography.hazmat.primitives import hmac
+
+    salt = os.urandom(32)
+    kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=80, salt=salt, iterations=10000)
+    derived = kdf.derive(password.encode())
+    key, hmac_key, iv = derived[:32], derived[32:64], derived[64:]
+
+    padder = PKCS7(algorithms.AES.block_size).padder()
+    padded = padder.update(plaintext.encode()) + padder.finalize()
+
+    cipher = Cipher(algorithms.AES(key), modes.CTR(iv))
+    enc = cipher.encryptor()
+    ciphertext = enc.update(padded) + enc.finalize()
+
+    h = hmac.HMAC(hmac_key, hashes.SHA256())
+    h.update(ciphertext)
+    hmac_val = h.finalize()
+
+    payload = salt + hmac_val + ciphertext
+    hexed = binascii.hexlify(payload).decode().upper()
+    wrapped = "\n".join(hexed[i : i + 80] for i in range(0, len(hexed), 80))
+    return "$ANSIBLE_VAULT;1.1;AES256\n" + wrapped + "\n"
+
+
+def decrypt_vault(vault_text: str, password: str) -> str:
+    import binascii
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    from cryptography.hazmat.primitives.padding import PKCS7
+    from cryptography.hazmat.primitives import hmac
+
+    lines = vault_text.splitlines()
+    if not lines or lines[0] != "$ANSIBLE_VAULT;1.1;AES256":
+        raise ValueError("Invalid vault header")
+    hex_payload = "".join(lines[1:])
+    payload = binascii.unhexlify(hex_payload)
+
+    salt, hmac_val, ciphertext = payload[:32], payload[32:64], payload[64:]
+
+    kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=80, salt=salt, iterations=10000)
+    derived = kdf.derive(password.encode())
+    key, hmac_key, iv = derived[:32], derived[32:64], derived[64:]
+
+    h = hmac.HMAC(hmac_key, hashes.SHA256())
+    h.update(ciphertext)
+    try:
+        h.verify(hmac_val)
+    except:
+        raise ValueError("HMAC verification failed – wrong password?")
+
+    cipher = Cipher(algorithms.AES(key), modes.CTR(iv))
+    dec = cipher.decryptor()
+    padded = dec.update(ciphertext) + dec.finalize()
+
+    unp = PKCS7(algorithms.AES.block_size).unpadder()
+    plaintext = unp.update(padded) + unp.finalize()
+    return plaintext.decode()
+
+
+# ────────────────────────────────────────────────
+# SSH ed25519 helpers
+# ────────────────────────────────────────────────
+
+
+def load_ed25519_pubkey(path: str) -> Ed25519PublicKey:
+    path = os.path.expanduser(path)
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"Public key not found: {path}")
+    with open(path, "rb") as f:
+        data = f.read().strip()
+    pub = serialization.load_ssh_public_key(data)
+    if not isinstance(pub, Ed25519PublicKey):
+        raise ValueError("Only ed25519 keys are supported")
+    return pub
+
+
+def load_ed25519_priv_seed(path: str) -> bytes:
+    path = os.path.expanduser(path)
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"Private key not found: {path}")
+    with open(path, "rb") as f:
+        data = f.read().strip()
+    priv = serialization.load_ssh_private_key(data, password=None)
+    return priv.private_bytes_raw  # 32-byte seed
+
+
+def sign_message(seed: bytes, message: bytes) -> str:
+    priv = Ed25519PrivateKey.from_private_bytes(seed)
+    signature = priv.sign(message)
+    return base64.b64encode(signature).decode()
+
+
+def verify_signature(pub: Ed25519PublicKey, sig_b64: str, message: bytes) -> bool:
+    try:
+        sig = base64.b64decode(sig_b64)
+        pub.verify(sig, message)
+        return True
+    except InvalidSignature:
+        return False
+    except Exception:
+        return False
+
+
+# ────────────────────────────────────────────────
+# Authorization token helpers
+# ────────────────────────────────────────────────
+
+
+def build_auth_token(pubkey_str: str, timestamp: str, nonce: str, signature: str) -> str:
+    """Encode signing fields into a single base64 Authorization token."""
+    payload = json.dumps({
+        "pubkey": pubkey_str,
+        "timestamp": timestamp,
+        "nonce": nonce,
+        "signature": signature,
+    }, separators=(",", ":"))
+    return base64.b64encode(payload.encode()).decode()
+
+
+def parse_auth_token(header: str) -> dict:
+    """Parse 'Signature <base64>' Authorization header and return fields."""
+    scheme, _, token = header.partition(" ")
+    if scheme != "Signature" or not token:
+        raise ValueError("Expected 'Signature <token>' format")
+    payload = base64.b64decode(token)
+    data = json.loads(payload)
+    for field in ("pubkey", "timestamp", "nonce", "signature"):
+        if field not in data:
+            raise ValueError(f"Missing field in token: {field}")
+    return data
+
+
+def build_auth_headers(tenant: str, pubkey_path: str, privkey_path: str, method: str, path: str, signing_key: str = None) -> dict:
+    """Build request headers with a consolidated Authorization token."""
+    pub = load_ed25519_pubkey(pubkey_path)
+    seed = load_ed25519_priv_seed(privkey_path)
+
+    nonce = base64.b64encode(os.urandom(16)).decode()[:22]
+    ts = datetime.now(timezone.utc).isoformat(timespec="seconds") + "Z"
+    msg_str = f"{tenant}|{nonce}|{ts}|{method}|{path}"
+    if signing_key is not None:
+        msg_str += f"|{signing_key}"
+    msg = msg_str.encode()
+    sig = sign_message(seed, msg)
+
+    pub_str = pub.public_bytes(
+        encoding=serialization.Encoding.OpenSSH,
+        format=serialization.PublicFormat.OpenSSH,
+    ).decode("utf-8")
+
+    token = build_auth_token(pub_str, ts, nonce, sig)
+
+    return {
+        "X-Tenant": tenant,
+        "Authorization": f"Signature {token}",
+        "Content-Type": "application/json",
+    }
+
+
+def fetch_signing_key(remote: str, tenant: str, resource_group: str, pubkey_path: str, privkey_path: str) -> str:
+    """Fetch a signing key from the server using SSH-only auth (no signing key needed)."""
+    api_path = "/signing-key"
+    headers = build_auth_headers(tenant, pubkey_path, privkey_path, "POST", api_path)
+    payload = {"resource_group": resource_group}
+    r = requests.post(
+        f"{remote.rstrip('/')}{api_path}", json=payload, headers=headers, timeout=10
+    )
+    r.raise_for_status()
+    return r.json()["signing_key"]
+
+
+# ────────────────────────────────────────────────
+# FastAPI Server
+# ────────────────────────────────────────────────
+
+app = FastAPI(title="Secret Manager – SSH Pubkey Auth (per resource group)")
+
+MAX_SKEW = timedelta(minutes=5)
+
+SIGNING_KEY_TTL = timedelta(minutes=10)
+_signing_keys: dict = {}  # (tenant, rg) -> {"key": str, "created_at": datetime}
+_signing_keys_lock = threading.Lock()
+
+
+def get_or_create_signing_key(tenant: str, rg: str) -> Tuple[str, datetime]:
+    """Return (key_b64, expires_at), creating a new key if expired or missing."""
+    now = datetime.now(timezone.utc)
+    with _signing_keys_lock:
+        entry = _signing_keys.get((tenant, rg))
+        if entry is None or (now - entry["created_at"]) >= SIGNING_KEY_TTL:
+            key_b64 = base64.b64encode(secrets.token_bytes(32)).decode()
+            entry = {"key": key_b64, "created_at": now}
+            _signing_keys[(tenant, rg)] = entry
+        expires_at = entry["created_at"] + SIGNING_KEY_TTL
+        return entry["key"], expires_at
+
+
+def get_current_signing_key(tenant: str, rg: str) -> str | None:
+    """Return the current signing key if it exists and is not expired, else None."""
+    now = datetime.now(timezone.utc)
+    with _signing_keys_lock:
+        entry = _signing_keys.get((tenant, rg))
+        if entry is None or (now - entry["created_at"]) >= SIGNING_KEY_TTL:
+            return None
+        return entry["key"]
+
+
+def load_authorized_keys(tenant: str, resource_group: str) -> list[Ed25519PublicKey]:
+    path = f"/var/secrets/{tenant}/{resource_group}/authorized_keys"
+    if not os.path.isfile(path):
+        raise HTTPException(
+            status_code=403,
+            detail=f"No authorized_keys file found for tenant '{tenant}' / resource-group '{resource_group}'",
+        )
+
+    keys = []
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            try:
+                pub = serialization.load_ssh_public_key(line.encode())
+                if isinstance(pub, Ed25519PublicKey):
+                    keys.append(pub)
+            except Exception:
+                pass  # skip invalid lines
+
+    if not keys:
+        raise HTTPException(
+            status_code=403, detail=f"No valid ed25519 public keys found in {path}"
+        )
+
+    return keys
+
+
+async def _verify_ssh_core(request: Request, require_signing_key: bool) -> Tuple[str, str]:
+    tenant = request.headers.get("X-Tenant")
+    if not tenant:
+        raise HTTPException(401, "Missing header: X-Tenant")
+
+    # Read resource_group from JSON body early
+    try:
+        body = await request.json()
+        rg = body.get("resource_group")
+        if not rg:
+            raise HTTPException(400, "Missing 'resource_group' in request body")
+    except Exception:
+        raise HTTPException(400, "Invalid JSON or missing resource_group")
+
+    # Parse Authorization token
+    auth_header = request.headers.get("Authorization")
+    if not auth_header:
+        raise HTTPException(401, "Missing Authorization header")
+
+    try:
+        token_data = parse_auth_token(auth_header)
+    except ValueError as e:
+        raise HTTPException(401, f"Invalid Authorization token: {e}")
+
+    pubkey_str = token_data["pubkey"]
+    sig_b64 = token_data["signature"]
+    ts_str = token_data["timestamp"]
+    nonce = token_data["nonce"]
+
+    # Check timestamp
+    try:
+        ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+        if abs(datetime.now(timezone.utc) - ts) > MAX_SKEW:
+            raise HTTPException(401, "Timestamp outside allowed window (±5 min)")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(401, "Invalid timestamp (ISO UTC expected)")
+
+    # Reconstruct signed message
+    if require_signing_key:
+        signing_key = get_current_signing_key(tenant, rg)
+        if signing_key is None:
+            raise HTTPException(401, "No active signing key for this tenant/resource-group; fetch one via POST /signing-key first")
+        message = f"{tenant}|{nonce}|{ts_str}|{request.method}|{request.url.path}|{signing_key}".encode()
+    else:
+        message = f"{tenant}|{nonce}|{ts_str}|{request.method}|{request.url.path}".encode()
+
+    # Parse client's public key
+    pubkey_str = pubkey_str.strip()
+    try:
+        if pubkey_str.startswith("ssh-ed25519 "):
+            pub = serialization.load_ssh_public_key(pubkey_str.encode())
+        else:
+            raw_bytes = base64.b64decode(pubkey_str)
+            if len(raw_bytes) != 32:
+                raise ValueError("Ed25519 raw public key must be 32 bytes")
+            pub = Ed25519PublicKey.from_public_bytes(raw_bytes)
+    except Exception as e:
+        raise HTTPException(400, f"Invalid public key format: {str(e)}")
+
+    # Load authorized keys for this specific tenant + resource group
+    allowed = load_authorized_keys(tenant, rg)
+
+    # Compare raw public key bytes
+    client_raw = pub.public_bytes(
+        encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw
+    )
+    if not any(
+        k.public_bytes(
+            encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw
+        )
+        == client_raw
+        for k in allowed
+    ):
+        raise HTTPException(
+            403, "Public key not authorized for this tenant/resource-group"
+        )
+
+    # Verify signature
+    if not verify_signature(pub, sig_b64, message):
+        raise HTTPException(401, "Invalid signature")
+
+    return tenant, rg
+
+
+async def verify_ssh_auth(request: Request) -> Tuple[str, str]:
+    """Auth dependency for endpoints that require a signing key (/upsert, /read)."""
+    return await _verify_ssh_core(request, require_signing_key=True)
+
+
+async def verify_ssh_auth_basic(request: Request) -> Tuple[str, str]:
+    """Auth dependency for bootstrap endpoints that do NOT require a signing key (/signing-key)."""
+    return await _verify_ssh_core(request, require_signing_key=False)
+
+
+class SigningKeyRequest(BaseModel):
+    resource_group: str
+
+
+class UpsertRequest(BaseModel):
+    resource_group: str
+    name: str
+    value: str
+    vault_password: str
+
+
+class ReadRequest(BaseModel):
+    resource_group: str
+    name: str
+    vault_password: str
+
+
+@app.post("/signing-key")
+async def api_signing_key(
+    body: SigningKeyRequest, auth: Tuple[str, str] = Depends(verify_ssh_auth_basic)
+):
+    tenant, rg = auth
+    if body.resource_group != rg:
+        raise HTTPException(
+            400, "resource_group in body must match authenticated resource group"
+        )
+    key_b64, expires_at = get_or_create_signing_key(tenant, rg)
+    return {"signing_key": key_b64, "expires_at": expires_at.isoformat()}
+
+
+@app.post("/upsert")
+async def api_upsert(
+    body: UpsertRequest, auth: Tuple[str, str] = Depends(verify_ssh_auth)
+):
+    tenant, rg = auth
+    if body.resource_group != rg:
+        raise HTTPException(
+            400, "resource_group in body must match authenticated resource group"
+        )
+
+    path = f"/var/secrets/{tenant}/{rg}/secrets/{body.name}"
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    encrypted = encrypt_to_vault(body.value, body.vault_password)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(encrypted)
+    return {"status": "upserted", "path": path}
+
+
+@app.post("/read")
+async def api_read(body: ReadRequest, auth: Tuple[str, str] = Depends(verify_ssh_auth)):
+    tenant, rg = auth
+    if body.resource_group != rg:
+        raise HTTPException(
+            400, "resource_group in body must match authenticated resource group"
+        )
+
+    path = f"/var/secrets/{tenant}/{rg}/secrets/{body.name}"
+    if not os.path.isfile(path):
+        raise HTTPException(404, "Secret not found")
+
+    with open(path, encoding="utf-8") as f:
+        vault_content = f.read()
+
+    try:
+        value = decrypt_vault(vault_content, body.vault_password)
+        return {"value": value}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+# ────────────────────────────────────────────────
+# Click CLI
+# ────────────────────────────────────────────────
+
+
+@click.group()
+@click.option(
+    "--remote", default=None, help="Remote API base URL (e.g. http://localhost:8000)"
+)
+@click.pass_context
+def cli(ctx, remote):
+    ctx.ensure_object(dict)
+    ctx.obj["remote"] = remote
+
+
+@cli.command()
+@click.argument("tenant")
+@click.argument("resource_group")
+@click.argument("name")
+@click.option("--value", "-v", default=None, help="Secret value (or read from stdin)")
+@click.option("--vault-password", prompt=True, hide_input=True)
+@click.option("--pubkey", default="~/.ssh/passless.pub")
+@click.option("--privkey", default="~/.ssh/passless")
+@click.pass_context
+def upsert(ctx, tenant, resource_group, name, value, vault_password, pubkey, privkey):
+    remote = ctx.obj["remote"]
+
+    if value is None:
+        if sys.stdin.isatty():
+            raise click.UsageError("Provide --value or pipe input")
+        value = sys.stdin.read().rstrip("\n")
+
+    if not value:
+        raise click.UsageError("Secret value cannot be empty")
+
+    if remote:
+        sk = fetch_signing_key(remote, tenant, resource_group, pubkey, privkey)
+        api_path = "/upsert"
+        headers = build_auth_headers(tenant, pubkey, privkey, "POST", api_path, signing_key=sk)
+        payload = {
+            "resource_group": resource_group,
+            "name": name,
+            "value": value,
+            "vault_password": vault_password,
+        }
+        r = requests.post(
+            f"{remote.rstrip('/')}{api_path}", json=payload, headers=headers, timeout=10
+        )
+        r.raise_for_status()
+        click.echo(r.json())
+    else:
+        path = f"/var/secrets/{tenant}/{resource_group}/secrets/{name}"
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        enc = encrypt_to_vault(value, vault_password)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(enc)
+        click.secho(f"Secret saved → {path}", fg="green")
+
+
+@cli.command()
+@click.argument("tenant")
+@click.argument("resource_group")
+@click.argument("name")
+@click.option("--vault-password", prompt=True, hide_input=True)
+@click.option("--pubkey", default="~/.ssh/passless.pub")
+@click.option("--privkey", default="~/.ssh/passless")
+@click.pass_context
+def read(ctx, tenant, resource_group, name, vault_password, pubkey, privkey):
+    remote = ctx.obj["remote"]
+
+    if remote:
+        sk = fetch_signing_key(remote, tenant, resource_group, pubkey, privkey)
+        api_path = "/read"
+        headers = build_auth_headers(tenant, pubkey, privkey, "POST", api_path, signing_key=sk)
+        payload = {
+            "resource_group": resource_group,
+            "name": name,
+            "vault_password": vault_password,
+        }
+        r = requests.post(
+            f"{remote.rstrip('/')}{api_path}", json=payload, headers=headers, timeout=10
+        )
+        r.raise_for_status()
+        click.echo(r.json()["value"])
+    else:
+        path = f"/var/secrets/{tenant}/{resource_group}/secrets/{name}"
+        if not os.path.isfile(path):
+            click.secho(f"Not found: {path}", fg="red", err=True)
+            sys.exit(1)
+        with open(path, encoding="utf-8") as f:
+            vault = f.read()
+        try:
+            val = decrypt_vault(vault, vault_password)
+            click.echo(val)
+        except ValueError as e:
+            click.secho(f"Decryption failed: {e}", fg="red", err=True)
+            sys.exit(1)
+
+
+@cli.command()
+def serve():
+    """Run the FastAPI server"""
+    click.echo("Starting server → http://0.0.0.0:8000")
+    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
+
+
+if __name__ == "__main__":
+    cli(obj={})
