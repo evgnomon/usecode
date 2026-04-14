@@ -1,0 +1,8 @@
+---
+- name: Build container image
+  hosts: localhost
+  collections:
+    - evgnomon.catamaran
+  roles:
+    - role: z_container
+
