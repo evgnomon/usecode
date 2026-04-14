@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CONFIG="$HOME/.config/blueprint/config.yaml"
+
+usage() {
+    echo "Usage: set_git_conf [-p PROFILE] [REPO_PATH]"
+    echo ""
+    echo "Configure git identity and signing for a repo using blueprint config."
+    echo ""
+    echo "  -p PROFILE   Profile name (default: from default_user_profile in config)"
+    echo "  REPO_PATH    Path to repo (default: current directory)"
+    exit 1
+}
+
+profile=""
+while getopts "p:h" opt; do
+    case "$opt" in
+        p) profile="$OPTARG" ;;
+        h|*) usage ;;
+    esac
+done
+shift $((OPTIND - 1))
+
+repo="${1:-.}"
+
+if [[ ! -f "$CONFIG" ]]; then
+    echo "Error: config not found at $CONFIG" >&2
+    exit 1
+fi
+
+if [[ -z "$profile" ]]; then
+    profile=$(yq -r '.default_user_profile' "$CONFIG")
+fi
+
+email=$(yq -r ".profiles.$profile.useremail" "$CONFIG")
+name=$(yq -r ".profiles.$profile.fullname // .profiles.$profile.username" "$CONFIG")
+gpg_key=$(yq -r ".profiles.$profile.gpg_key" "$CONFIG")
+sign_format=$(yq -r ".profiles.$profile.git_sign_format // \"\"" "$CONFIG")
+signers_file=$(yq -r ".profiles.$profile.allowed_signers_file // \"$HOME/.ssh/allowed_signers\"" "$CONFIG")
+
+if [[ "$email" == "null" || "$name" == "null" || "$gpg_key" == "null" ]]; then
+    echo "Error: profile '$profile' is missing required fields" >&2
+    exit 1
+fi
+
+git -C "$repo" config user.email "$email"
+git -C "$repo" config user.name "$name"
+git -C "$repo" config user.signingKey "$gpg_key"
+git -C "$repo" config commit.gpgsign true
+git -C "$repo" config tag.gpgSign true
+
+if [[ -n "$sign_format" ]]; then
+    git -C "$repo" config gpg.format "$sign_format"
+else
+    git -C "$repo" config --unset gpg.format 2>/dev/null || true
+fi
+
+git -C "$repo" config gpg.ssh.allowedSignersFile "$signers_file"
+
+# Set origin remote if missing, derived from the repo's absolute path
+if ! git -C "$repo" remote get-url origin &>/dev/null; then
+    abs_repo="$(cd "$repo" && pwd)"
+    # Expect path like .../src/<host>/<owner>/<reponame>
+    repo_name="$(basename "$abs_repo")"
+    owner="$(basename "$(dirname "$abs_repo")")"
+    host="$(basename "$(dirname "$(dirname "$abs_repo")")")"
+    if [[ -n "$host" && -n "$owner" && -n "$repo_name" ]]; then
+        if [[ "$host" == "github.com" ]] && ! gh repo view "${owner}/${repo_name}" &>/dev/null; then
+            gh repo create "${owner}/${repo_name}" --private
+            echo "Created private repo: ${owner}/${repo_name}"
+        fi
+        git -C "$repo" remote add origin "git@${host}:${owner}/${repo_name}.git"
+        echo "Added origin remote: git@${host}:${owner}/${repo_name}.git"
+    fi
+fi
+
+echo "Configured '$repo' with profile '$profile' ($name <$email>)"
