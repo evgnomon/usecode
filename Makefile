@@ -1,4 +1,4 @@
-.PHONY: ci deploy publish version
+.PHONY: all ci deploy publish build version
 
 $(eval $(shell ./scripts/ci_wrapper.sh --env 2>/dev/null))
 
@@ -7,6 +7,7 @@ export VERSION
 
 LIB_DIRS := $(wildcard lib/*)
 
+all: build
 
 ci:
 	@echo "══════════════════════════════════════════"
@@ -50,12 +51,17 @@ deploy:
 version:
 	@echo $(VERSION)
 
+build:
+	@for d in $(LIB_DIRS); do \
+		if $(MAKE) -C $$d -n build >/dev/null 2>&1; then \
+			$(MAKE) -C $$d build || exit $$?; \
+		fi; \
+	done
+
 publish:
 	@for d in $(LIB_DIRS); do \
 		if $(MAKE) -C $$d -n publish >/dev/null 2>&1; then \
 			$(MAKE) -C $$d publish || exit $$?; \
-		else \
-			echo "Skipping $$d (no publish target)"; \
 		fi; \
 	done
 
