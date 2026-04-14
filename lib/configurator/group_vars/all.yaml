@@ -129,7 +129,5 @@ eget_packages:
 debian_go_packages:
 
 common_git_repos:
-  - url: ssh://git@github.com/evgnomon/blueprint.git
+  - url: ssh://git@github.com/evgnomon/usecode.git
     prefix: &prefix_home_src "{{ ansible_facts['env']['HOME'] }}/src"
-  - url: ssh://git@github.com/evgnomon/flow.git
-    prefix: *prefix_home_src
