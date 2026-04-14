@@ -1,8 +1,8 @@
-.PHONY: ci deploy publish
+.PHONY: ci deploy publish version
 
 $(eval $(shell ./scripts/ci_wrapper.sh --env 2>/dev/null))
 
-VERSION := 0.2.22
+VERSION := $(shell git describe --tags --match 'v*' --always 2>/dev/null | sed 's/^v//; s/-\([0-9]*\)-g/.dev\1+/')
 export VERSION
 
 LIB_DIRS := $(wildcard lib/*)
@@ -46,6 +46,9 @@ ci:
  
 deploy:
 	@echo "Deploying $(CI_COMMIT_SHORT) from $(CI_BRANCH) [env=$(CI_ENV) track=$(CI_TRACK)]..."
+
+version:
+	@echo $(VERSION)
 
 publish:
 	@for d in $(LIB_DIRS); do \
