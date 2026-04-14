@@ -1,6 +1,11 @@
-.PHONY: ci deploy
+.PHONY: ci deploy publish
 
 $(eval $(shell ./scripts/ci_wrapper.sh --env 2>/dev/null))
+
+VERSION := 0.2.22
+export VERSION
+
+LIB_DIRS := $(wildcard lib/*)
 
 
 ci:
@@ -41,4 +46,13 @@ ci:
  
 deploy:
 	@echo "Deploying $(CI_COMMIT_SHORT) from $(CI_BRANCH) [env=$(CI_ENV) track=$(CI_TRACK)]..."
- 
+
+publish:
+	@for d in $(LIB_DIRS); do \
+		if $(MAKE) -C $$d -n publish >/dev/null 2>&1; then \
+			$(MAKE) -C $$d publish || exit $$?; \
+		else \
+			echo "Skipping $$d (no publish target)"; \
+		fi; \
+	done
+
