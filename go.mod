@@ -1,6 +1,6 @@
 module github.com/evgnomon/zygote
 
-go 1.24.0
+go 1.25.0
 
 require (
 	github.com/docker/docker v28.1.1+incompatible
@@ -16,8 +16,8 @@ require (
 	github.com/redis/go-redis/v9 v9.7.3
 	github.com/rs/zerolog v1.34.0
 	github.com/urfave/cli/v2 v2.27.6
-	golang.org/x/crypto v0.46.0
-	golang.org/x/term v0.38.0
+	golang.org/x/crypto v0.50.0
+	golang.org/x/term v0.42.0
 )
 
 require github.com/moby/sys/atomicwriter v0.1.0 // indirect
@@ -56,8 +56,8 @@ require (
 	go.opentelemetry.io/otel/sdk v1.35.0 // indirect
 	go.opentelemetry.io/otel/trace v1.35.0 // indirect
 	go.uber.org/atomic v1.7.0 // indirect
-	golang.org/x/net v0.48.0 // indirect
-	golang.org/x/sys v0.39.0 // indirect
-	golang.org/x/text v0.32.0 // indirect
+	golang.org/x/net v0.52.0 // indirect
+	golang.org/x/sys v0.43.0 // indirect
+	golang.org/x/text v0.36.0 // indirect
 	gotest.tools/v3 v3.5.2 // indirect
 )
