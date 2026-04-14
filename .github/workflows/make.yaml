@@ -17,8 +17,6 @@ jobs:
       (github.event_name == 'delete' &&
        github.event.ref_type == 'branch' &&
        github.event.ref != 'main')
-    container:
-      image: ghcr.io/evgnomon/barge:main
     permissions:
       contents: read
       packages: write
