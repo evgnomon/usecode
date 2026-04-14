@@ -1,0 +1,23 @@
+---
+- name: Create mount points for volumes
+  ansible.builtin.file:
+    path: "/mnt/{{ item.key }}"
+    state: directory
+    mode: '0755'
+  with_dict: "{{ attached_volumes }}"
+  when: attached_volumes is defined and attached_volumes | length > 0
+
+- name: Update fstab for attached volumes
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    line: "{{ item.value }} /mnt/{{ item.key }} {{ item.get('filesystem', default_filesystem_type) }} defaults 0 2"
+    regexp: "^{{ item.value }}\\s+/mnt/{{ item.key }}\\s+"
+    state: present
+  with_dict: "{{ attached_volumes }}"
+  when: attached_volumes is defined and attached_volumes | length > 0
+
+- name: Mount all volumes
+  ansible.builtin.command: mount -a
+  changed_when: false
+  failed_when: false
+  when: attached_volumes is defined and attached_volumes | length > 0

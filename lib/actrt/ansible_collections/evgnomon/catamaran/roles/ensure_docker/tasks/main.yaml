@@ -1,0 +1,75 @@
+---
+- name: Update apt package index
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+
+- name: Install required system packages
+  apt:
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gnupg
+      - lsb-release
+    state: present
+
+- name: Create apt keyrings directory
+  file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: '0755'
+
+- name: Download Docker GPG key
+  get_url:
+    url: https://download.docker.com/linux/debian/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    mode: '0644'
+
+- name: Set up the stable repository
+  apt_repository:
+    repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian {{ debian_codename }} stable"
+    state: present
+    filename: docker
+    update_cache: yes
+
+- name: Install Docker CE and related packages
+  apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-compose-plugin
+    state: present
+
+- name: Create Docker daemon configuration directory
+  file:
+    path: /etc/docker
+    state: directory
+    mode: '0755'
+
+- name: Configure Docker daemon settings
+  copy:
+    content: |
+      {
+        "log-driver": "journald",
+        "default-ulimit": ["nofile=1024:4096"],
+        "live-restore": true,
+        "iptables": false
+      }
+    dest: /etc/docker/daemon.json
+    mode: '0644'
+  notify: Restart Docker
+
+- name: Add user to docker group
+  user:
+    name: "{{ docker_user }}"
+    groups: docker
+    append: yes
+  when: docker_user is defined
+
+- name: Ensure Docker service is running and enabled
+  systemd:
+    name: docker
+    state: started
+    enabled: yes

@@ -1,0 +1,86 @@
+---
+- name: Create default for binaries
+  shell: |
+    mkdir -p {{ ansible_env.HOME }}/.local/bin
+
+- set_fact:
+    z_network_name: "{{ lookup('env', 'INPUT_CONTAINER_NETWORK') | default('mynet') }}"
+  tags: always
+
+- import_role:
+    name: evgnomon.catamaran.z_defaults
+
+- name: Docker pull
+  no_log: true
+  shell: |
+    docker login ghcr.io -u {{ secrets.docker_login.user }} -p {{ secrets.docker_login.pass if "pass" in secrets.docker_login else z_user_token }}
+    docker pull mysql:8.0.33
+    docker pull redis:7.0.11
+    docker pull ghcr.io/evgnomon/ark:main
+
+- name: Download Zygote Binary
+  shell: |
+    eget evgnomon/zygote -a zygote- -a "{{ z_os }}"  -a {{ z_arch }} --to {{ ansible_env.HOME }}/.local/bin/zygote
+  environment:
+    PATH: '{{ ansible_env.HOME }}/.local/bin:{{ ansible_env.PATH }}'
+
+- name: Initialize Zygote locally
+  notify: &notify_shutdown_zygote
+   - Shutdown Zygote on Github event
+   - Shutdown Zygote locally
+  become: true
+  environment:
+    PATH: '{{ ansible_env.HOME }}/.local/bin:{{ ansible_env.PATH }}'
+    DOCKER_NETWORK_NAME: "{{ z_network_name }}"
+  when: not github_event
+  shell: |
+    zygote deinit -v
+    zygote init
+  args:
+    chdir: "{{ workspace }}"
+
+- name: Initialize Zygote
+  notify: *notify_shutdown_zygote
+  become: true
+  when: github_event
+  environment:
+    PATH: '{{ ansible_env.HOME }}/.local/bin:{{ ansible_env.PATH }}'
+    DOCKER_NETWORK_NAME: "{{ z_network_name }}"
+    DB_SHARD_1_INTERNAL_HOST: zygote-db-shard-1
+    DB_SHARD_1_INTERNAL_PORT: 3306
+    DB_SHARD_2_INTERNAL_HOST: zygote-db-shard-2
+    DB_SHARD_2_INTERNAL_PORT: 3306
+  shell: |
+    zygote deinit -v
+    zygote init
+  args:
+    chdir: "{{ workspace }}"
+
+- name: Run Migrations
+  retries: 3
+  delay: 3
+  environment:
+    PATH: '{{ ansible_env.HOME }}/.local/bin:{{ ansible_env.PATH }}'
+    REDIS_NATMAP_DISABLED: true
+    DB_SHARD_1_INTERNAL_HOST: zygote-db-shard-1
+    DB_SHARD_1_INTERNAL_PORT: 3306
+    DB_SHARD_2_INTERNAL_HOST: zygote-db-shard-2
+    DB_SHARD_2_INTERNAL_PORT: 3306
+  when: github_event
+  tags: z
+  shell: &run_migrations |
+    zygote migrate up
+  args:
+    chdir: "{{ workspace }}"
+
+- name: Run Migrations locally
+  tags: z
+  retries: 3
+  delay: 3
+  environment:
+    PATH: '{{ ansible_env.HOME }}/.local/bin:{{ ansible_env.PATH }}'
+  shell: *run_migrations
+  args:
+    chdir: "{{ workspace }}"
+  when: not github_event
+

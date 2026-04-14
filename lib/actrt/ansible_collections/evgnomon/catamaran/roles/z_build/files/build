@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+
+set -e
+
+[ ! -d ./dist ] && mkdir ./dist
+
+if [ -f "Makefile" ]; then
+  make build
+elif [ -f "go.mod" ]; then
+  export GOFLAGS="-buildvcs=false"
+
+  # Define target operating systems and architectures
+  TARGETS=(
+      "darwin/amd64"
+      "darwin/arm64"
+      "linux/amd64"
+      "linux/arm64"
+      "windows/amd64"
+      "windows/arm64"
+  )
+
+  for TARGET in "${TARGETS[@]}"; do
+      OS=$(echo $TARGET | cut -d '/' -f 1)
+      ARCH=$(echo $TARGET | cut -d '/' -f 2)
+
+      # Build zygote binary
+      OUTPUT="./dist/z-$OS-$ARCH"
+      [ "$OS" = "windows" ] && OUTPUT="$OUTPUT.exe"
+      GOOS=$OS GOARCH=$ARCH go build -v -o "$OUTPUT" ./cmd/zygote
+
+      # Build zcore binary
+      OUTPUT_ZCORE="./dist/zcore-$OS-$ARCH"
+      [ "$OS" = "windows" ] && OUTPUT_ZCORE="$OUTPUT_ZCORE.exe"
+      GOOS=$OS GOARCH=$ARCH go build -v -o "$OUTPUT_ZCORE" ./cmd/zcore
+  done
+
+elif [ -f "package.json" ]; then
+  npm run build
+
+elif [ -f build.zig ]; then
+  zig build -Doptimize=ReleaseFast
+
+elif [ -f "CMakeLists.txt" ]; then
+  mkdir -p build_cmake
+  cd build_cmake
+  cmake .. -DCMAKE_BUILD_TYPE=Release
+  cmake --build . --config Release
+  cd ..
+
+elif [ -f "poetry.lock" ]; then
+  poetry sync
+  poetry build
+
+elif [ -f "uv.lock" ]; then
+  uv sync
+  uv build
+
+else
+  echo "No recognized build configuration found."
+  exit 1
+fi
+
+if [ -f "Makefile" ]; then
+  make dist
+elif [ -f ".deb.json" ]; then
+  mkdeb
+fi

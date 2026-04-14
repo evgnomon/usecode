@@ -1,0 +1,8 @@
+---
+- name: Install {{ z_target }} on {{ z_os }} {{ z_arch }}
+  copy:
+    src: "{{ workspace }}/dist/{{ z_target }}-{{ z_os }}-{{ z_arch }}"
+    dest: /usr/bin/{{ z_target }}
+    mode: 0755
+  tags:
+    - deploy

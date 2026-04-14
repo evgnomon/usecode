@@ -1,0 +1,5 @@
+---
+image_name: ghcr.io/{{ z_repo_slug }}:{{z_track}}
+target_port: 3000
+public_port: 127.0.0.1:3000
+network_name: "zygote"

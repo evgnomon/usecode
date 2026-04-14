@@ -1,0 +1,12 @@
+---
+- gh_image:
+    user: "{{ github_actor or z_repo_owner }}"
+    token: "{{ z_user_token }}"
+    image: "{{ z_repo_name }}"
+    owner: "{{ z_repo_owner }}"
+    state: "{{ z_state }}"
+    tag: "{{ z_track }}"
+    dockerfile: "{{ workspace }}/Dockerfile"
+    context: "{{ workspace }}"
+    publish: "{{ github_actor is defined }}"
+  become: true

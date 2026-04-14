@@ -1,0 +1,13 @@
+---
+- name: Create A records
+  community.general.cloudflare_dns:
+    zone: "{{ name_zone }}"
+    record: "{{ item.record_name }}"
+    type: "{{ item.get('record_type', 'A') }}"
+    value: "{{ item.record_value }}"
+    api_token: "{{ api_token }}"
+    state: present
+    ttl: 300
+    proxied: false
+  with_items: "{{ z_dns_records | default([]) }}"
+  no_log: true

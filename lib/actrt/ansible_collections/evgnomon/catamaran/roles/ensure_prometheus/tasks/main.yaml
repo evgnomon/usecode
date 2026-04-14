@@ -1,0 +1,9 @@
+---
+- name: Template prometheus configuration
+  template:
+    src: prometheus.yml.j2
+    dest: "{{ z_config_file }}"
+    owner: root
+    group: root
+    mode: '0600'
+  become: true

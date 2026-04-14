@@ -1,0 +1,3 @@
+---
+name_zone: "{{ z_name_zone }}"
+api_token: "{{ secrets.cf_api_token }}"

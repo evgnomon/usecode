@@ -1,0 +1,30 @@
+---
+- name: Before
+  environment: &run_environment
+    PATH: '{{ ansible_env.HOME }}/.local/bin:{{ ansible_env.PATH }}'
+    REDIS_NATMAP_DISABLED: true
+    DOCKER_NETWORK_NAME: "{{ z_network_name }}"
+    DB_SHARD_1_INTERNAL_HOST: zygote-db-shard-1
+    DB_SHARD_1_INTERNAL_PORT: 3306
+    DB_SHARD_2_INTERNAL_HOST: zygote-db-shard-2
+    DB_SHARD_2_INTERNAL_PORT: 3306
+  shell: "{{ before }}"
+  args:
+    chdir: "{{ workspace }}"
+
+- name: Run
+  environment: *run_environment
+  when: github_event
+  tags: z
+  shell: "{{ run }}"
+  args:
+    chdir: "{{ workspace }}"
+
+- name: Run locally
+  tags: z
+  environment:
+    PATH: '{{ ansible_env.HOME }}/.local/bin:{{ ansible_env.PATH }}'
+  shell: "{{ run }}"
+  args:
+    chdir: "{{ workspace }}"
+  when: not github_event

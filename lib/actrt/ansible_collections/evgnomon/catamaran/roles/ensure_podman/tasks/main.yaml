@@ -1,0 +1,17 @@
+---
+- name: Install podman
+  become: true
+  package:
+    name: podman
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Configure settings
+  become: true
+  copy:
+    content: |
+      [network]
+      firewall_driver = "iptables"
+    dest:  /etc/containers/containers.conf
+    mode: '0644'

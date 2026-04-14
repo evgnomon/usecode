@@ -1,0 +1,76 @@
+---
+- include_role:
+    name: z_install
+  vars:
+    z_target: "{{ z_service_name }}"
+
+- name: Ensure service user exists
+  user:
+    name: "{{ z_service_user }}"
+    system: yes
+    create_home: "{{ z_service_create_home }}"
+    home: "{{ z_service_home_dir if z_service_create_home else omit }}"
+    shell: /sbin/nologin
+  become: yes
+
+- name: Ensure service group exists
+  group:
+    name: "{{ z_service_group }}"
+    system: yes
+  become: yes
+
+- name: Check if service binary exists
+  stat:
+    path: "{{ z_service_binary_path }}"
+  register: binary_stat
+  failed_when: not binary_stat.stat.exists
+
+- name: Set CAP_NET_BIND_SERVICE capability on binary
+  command: setcap 'cap_net_bind_service=+ep' {{ z_service_binary_path }}
+  become: true
+
+- name: Deploy service file
+  template:
+    src: z_service.j2
+    dest: "{{ z_service_systemd_file }}"
+    owner: root
+    group: root
+    mode: '0644'
+  become: yes
+
+- name: Ensure {{ z_service_name }} is enabled and in desired state
+  systemd:
+    name: "{{ z_service_name }}"
+    state: "{{ z_service_state }}"
+    enabled: "{{ z_service_enabled }}"
+  become: yes
+
+- name: Recursively set ownership of cert_dir to service user
+  ansible.builtin.file:
+    path: "{{ z_service_cert_dir }}"
+    owner: "{{ z_service_user }}"
+    group: "{{ z_service_group }}"
+    state: directory
+    recurse: true   # Recursively apply ownership to all contents
+  become: true
+
+- name: cert_dir permissions exclusive to service user
+  file:
+    path: "{{ z_service_cert_dir }}"
+    state: directory
+    mode: 0700
+  become: true
+
+- name: Reload systemd
+  command: systemctl daemon-reload
+  become: yes
+  tags:
+    - deploy
+
+- name: Restart {{ z_service_name }}
+  systemd:
+    name: "{{ z_service_name }}"
+    state: restarted
+  become: yes
+  tags:
+    - deploy

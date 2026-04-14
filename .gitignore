@@ -11,9 +11,73 @@ build/
 *.tar.gz
 .pg.json
 
-__pycache__
 stuff
 
 .claude
 .ansible
 .ci.env.mk
+
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# uv
+.uv/
+.env
+.envrc
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env.bak/
+env/
+
+# VS Code settings
+.vscode/
+.idea/
+
+# Pytest cache
+.pytest_cache/
+
+# Mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Ruff
+.ruff_cache/
+
+# Sphinx documentation
+docs/_build/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# macOS
+.DS_Store
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+
+# Test reports
+*.log
+coverage.xml
+*.cover
+.hypothesis/
+
+# Build
+build/
+dist/
+*.egg-info/
+
+# PyInstaller
+*.manifest
+*.spec
+
+# mypy
+.mypy_cache/

@@ -1,0 +1,2 @@
+---
+collection_dir : "{{ workspace }}/ansible_collections/evgnomon/catamaran"

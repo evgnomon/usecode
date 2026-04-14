@@ -1,0 +1,22 @@
+---
+galaxy_info:
+  author: Hamed Ghasemzadeh
+  description: Ensure Prometheus Node Exporter on hosts
+  license_fil: COPYING
+  min_ansible_version: 2.9
+  platforms:
+    - name: EL
+      versions:
+        - 7
+        - 8
+  categories:
+    - devops
+    - automation
+    - monitoring
+  tags:
+    - prometheus
+    - monitoring
+    - node-exporter
+dependencies:
+  - role: evgnomon.catamaran.z_defaults
+  - role: evgnomon.catamaran.ensure_pod

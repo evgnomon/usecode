@@ -1,0 +1,7 @@
+---
+domain: "{{ z_domain }}"
+shard: "{{ z_shard }}"
+replica: "{{ z_replica }}"
+node_type: "{{ z_node_type }}"
+tenant: "{{ z_user }}"
+token: ""

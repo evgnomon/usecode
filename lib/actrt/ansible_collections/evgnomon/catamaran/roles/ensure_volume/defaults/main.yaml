@@ -1,0 +1,3 @@
+---
+# Default filesystem type for volumes
+default_filesystem_type: ext4

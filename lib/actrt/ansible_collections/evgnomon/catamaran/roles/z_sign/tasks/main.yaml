@@ -1,0 +1,10 @@
+---
+- name: Sign certificate
+  delegate_to: localhost
+  sign_cert:
+    domain: "{{ domain }}"
+    token: "{{ token }}"
+    shard: "{{ shard }}"
+    replica: "{{ replica }}"
+    node_type: "{{ node_type }}"
+    tenant : "{{ tenant }}"

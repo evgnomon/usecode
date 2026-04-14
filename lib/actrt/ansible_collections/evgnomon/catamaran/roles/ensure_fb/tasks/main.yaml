@@ -1,0 +1,27 @@
+---
+- name: Template client configuration
+  template:
+    src: fluent-bit.conf.j2
+    dest: "{{ z_config_file }}"
+    owner: root
+    group: root
+    mode: '0600'
+  become: true
+
+- name: Ensure host directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+  loop:
+    - "{{ z_backup_dir }}/certs/functions/{{ z_container_full_name }}"
+    - "{{ z_container_working_dir }}"
+    - "{{ z_container_config_dir }}"
+
+
+- include_role:
+    name : z_ca_deploy
+  vars:
+    function_name: "fb"
+
+- include_role:
+    name : ensure_pod

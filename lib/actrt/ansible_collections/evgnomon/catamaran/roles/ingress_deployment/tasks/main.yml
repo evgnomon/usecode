@@ -1,0 +1,96 @@
+---
+# =============================================================================
+# Nginx Podman Kube Play Role - Main Tasks
+# =============================================================================
+
+- name: Ensure podman is installed
+  ansible.builtin.package:
+    name: podman
+    state: present
+  become: true
+  tags:
+    - nginx
+    - install
+
+# ---------------------------------------------------------------------------
+# State: absent – tear down all resources
+# ---------------------------------------------------------------------------
+- name: Stop pods with podman kube down
+  ansible.builtin.command:
+    cmd: podman kube down {{ nginx_kube_manifest_dest }}
+  when: nginx_state == "absent"
+  failed_when: false
+  changed_when: true
+  tags:
+    - nginx
+    - deploy
+
+- name: Remove Kubernetes manifest file
+  ansible.builtin.file:
+    path: "{{ nginx_kube_manifest_dest }}"
+    state: absent
+  when: nginx_state == "absent"
+  tags:
+    - nginx
+    - config
+
+# ---------------------------------------------------------------------------
+# State: present – deploy all resources
+# ---------------------------------------------------------------------------
+- name: Generate Kubernetes manifest from template
+  ansible.builtin.template:
+    src: kube-manifest.yaml.j2
+    dest: "{{ nginx_kube_manifest_dest }}"
+    owner: "{{ nginx_manifest_owner }}"
+    group: "{{ nginx_manifest_group }}"
+    mode: "{{ nginx_manifest_mode }}"
+  register: manifest_result
+  when: nginx_state == "present"
+  tags:
+    - nginx
+    - config
+
+- name: Stop existing pods if manifest changed
+  ansible.builtin.command:
+    cmd: podman kube down {{ nginx_kube_manifest_dest }}
+  when:
+    - nginx_state == "present"
+    - manifest_result.changed
+    - nginx_auto_start
+  failed_when: false
+  changed_when: true
+  tags:
+    - nginx
+    - deploy
+
+- name: Start pods with podman kube play
+  ansible.builtin.command:
+    cmd: >-
+      podman kube play
+      {% if nginx_podman_network %}--network {{ nginx_podman_network }}{% endif %}
+      {{ nginx_kube_manifest_dest }}
+  when:
+    - nginx_state == "present"
+    - nginx_auto_start
+  register: kube_play_result
+  changed_when: "'Pod' in kube_play_result.stdout"
+  tags:
+    - nginx
+    - deploy
+
+- name: Display deployment status
+  ansible.builtin.debug:
+    msg: |
+      Nginx deployed successfully!
+      Access at: http://localhost:{{ nginx_host_port }}
+      Health check: http://localhost:{{ nginx_host_port }}{{ nginx_health_path }}
+
+      Manage with:
+        podman kube down {{ nginx_kube_manifest_dest }}
+        podman kube play {{ nginx_kube_manifest_dest }}
+  when:
+    - nginx_state == "present"
+    - nginx_auto_start
+  tags:
+    - nginx
+    - deploy

@@ -1,0 +1,9 @@
+---
+z_container_name: "node-exporter"
+z_container_user: root
+function_name: "{{ z_node_type }}-{{ z_container_name }}"
+z_container_image: quay.io/prometheus/node-exporter:latest
+z_container_command: "--path.rootfs=/host"
+
+z_container_volumes:
+  - "/:/host:ro,rslave"

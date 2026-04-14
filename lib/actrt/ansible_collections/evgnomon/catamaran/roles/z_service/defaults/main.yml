@@ -1,0 +1,22 @@
+---
+z_service_binary_path: "/usr/bin/{{ z_service_name }}"
+z_service_description: "{{ z_service_name }} Daemon"
+z_service_user: "{{ z_user }}"
+z_service_group: "{{ z_user }}"
+z_service_working_dir: "{{ z_backup_dir }}"
+z_service_domain: "{{ inventory_hostname }}"
+z_use_domain_cert: false
+z_service_env_vars:
+  Z_DOMAIN: "{{ inventory_hostname.split('.')[1:] | join('.') }}"
+  Z_HOST: "{{ inventory_hostname }}"
+  ZYGOTE_CONFIG_HOME: "{{ z_backup_dir }}"
+  ZCORE_PORT: 443
+  ACME: true
+  DOCKER_NETWORK_NAME: "host"
+  USE_DOMAIN_CERT: "{{ true if z_use_domain_cert else false }}"
+z_service_create_home: false  # Whether to create a home directory for the user
+z_service_state: "started"
+z_service_enabled: true
+z_service_cert_dir: "{{ z_keychain_dir }}/{{ z_service_domain }}"
+z_service_cert_file: "{{ z_service_cert_dir }}/{{ z_service_domain }}_cert.pem"
+z_service_systemd_file: "/etc/systemd/system/{{ z_service_name }}.service"

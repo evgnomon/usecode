@@ -1,0 +1,23 @@
+---
+- include_role:
+    name: z_sign
+  vars:
+    token: "{{ function_name }}"
+
+- name: Copy CA certificate to remote machines
+  copy:
+    src: '{{ z_certs_ca_src }}/ca_cert.pem'
+    dest: '{{ ca_cert_file }}'
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Deploy function certificates
+  copy:
+    src: '{{ z_certs_func_src }}/{{ cert_name }}'
+    dest: '{{ dest }}'
+    owner: "{{ user }}"
+    group: "{{ group }}"
+    mode: "0600"
+  become: true

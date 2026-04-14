@@ -1,0 +1,10 @@
+namespace: evgnomon
+name: catamaran
+version: 0.2.19
+readme: README.md
+authors:
+  - Hamed Ghasemzadeh <hg@evgnomon.org>
+description: Catamaran Ansible module
+tags: [catamaran, github, devops, ansible]
+license_file: COPYING
+repository: https://github.com/evgnomon/catamaran

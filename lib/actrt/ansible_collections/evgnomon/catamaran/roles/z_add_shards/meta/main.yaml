@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  author: Hamed Ghasemzadeh
+  description: Add shards hostnames to the inventory
+  license_file: COPYING
+  min_ansible_version: 2.9
+  platforms:
+    - name: EL
+      versions:
+        - 7
+        - 8
+  categories:
+    - devops
+    - automation
+  tags:
+    - defaults
+    - configuration
+dependencies:
+  - role: evgnomon.catamaran.z_defaults

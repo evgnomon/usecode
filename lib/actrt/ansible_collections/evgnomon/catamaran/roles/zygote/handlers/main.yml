@@ -1,0 +1,24 @@
+---
+- name: Shutdown Zygote
+  become: true
+  environment:
+    PATH: '{{ ansible_env.HOME }}/.local/bin:{{ ansible_env.PATH }}'
+  block:
+    - name: Shutdown Zygote on Github event
+      when: github_event
+      environment:
+        DB_SHARD_1_INTERNAL_HOST: zygote-db-shard-1
+        DB_SHARD_1_INTERNAL_PORT: 3306
+        DB_SHARD_2_INTERNAL_HOST: zygote-db-shard-2
+        DB_SHARD_2_INTERNAL_PORT: 3306
+      args: &zygote_deinit_args
+        chdir: "{{ workspace }}"
+      shell: &zygote_deinit |
+        zygote migrate down
+        zygote deinit -v
+
+    - name: Shutdown Zygote locally
+      when: not github_event
+      tags: remove
+      args: *zygote_deinit_args
+      shell: *zygote_deinit

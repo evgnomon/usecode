@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+
+if [ -f "Makefile" ]; then
+  make check
+
+elif [ -f "go.mod" ]; then
+  export GOFLAGS="-buildvcs=false"
+  go fmt ./...
+  golangci-lint run
+  go test -v ./...
+
+elif [ -f "package.json" ]; then
+  npm install
+  npm run test
+
+elif [ -f build.zig ]; then
+  zig build test -Doptimize=Debug
+
+elif [ -f "CMakeLists.txt" ]; then
+  echo not implemented for CMAKE
+
+elif [ -f "uv.lock" ]; then
+  uv sync
+  uv run poe check
+
+else
+  echo "No recognized build configuration found."
+  exit 1
+fi

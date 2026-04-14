@@ -1,0 +1,7 @@
+disable_ipv6_settings:
+  - key: net.ipv6.conf.all.disable_ipv6
+    value: 1
+  - key: net.ipv6.conf.default.disable_ipv6
+    value: 1
+  - key: net.ipv6.conf.lo.disable_ipv6
+    value: 1

@@ -1,0 +1,55 @@
+---
+# =============================================================================
+# Nginx Podman Kube Play Role - Default Variables
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# General Settings
+# -----------------------------------------------------------------------------
+nginx_state: present  # "present" to deploy all resources, "absent" to remove them
+nginx_app_name: nginx-demo
+nginx_image: docker.io/library/nginx:alpine
+
+# -----------------------------------------------------------------------------
+# Networking
+# -----------------------------------------------------------------------------
+nginx_container_port: 80
+nginx_host_port: 8080
+nginx_worker_connections: 1024
+
+# -----------------------------------------------------------------------------
+# Resource Limits
+# -----------------------------------------------------------------------------
+nginx_memory_limit: "128Mi"
+nginx_cpu_limit: "250m"
+nginx_memory_request: "64Mi"
+nginx_cpu_request: "100m"
+
+# -----------------------------------------------------------------------------
+# Storage
+# -----------------------------------------------------------------------------
+nginx_pvc_storage_size: 100Mi
+nginx_pvc_access_mode: ReadWriteOnce
+
+# -----------------------------------------------------------------------------
+# Health Checks
+# -----------------------------------------------------------------------------
+nginx_health_path: /health
+nginx_liveness_initial_delay: 5
+nginx_liveness_period: 10
+nginx_readiness_initial_delay: 3
+nginx_readiness_period: 5
+
+# -----------------------------------------------------------------------------
+# File Paths
+# -----------------------------------------------------------------------------
+nginx_kube_manifest_dest: /tmp/nginx-kube-manifest.yaml
+nginx_manifest_owner: "{{ ansible_user | default('root') }}"
+nginx_manifest_group: "{{ ansible_user | default('root') }}"
+nginx_manifest_mode: "0644"
+
+# -----------------------------------------------------------------------------
+# Podman Settings
+# -----------------------------------------------------------------------------
+nginx_podman_network: ""  # Leave empty for default, or specify network name
+nginx_auto_start: true    # Whether to start the pods after generating manifest

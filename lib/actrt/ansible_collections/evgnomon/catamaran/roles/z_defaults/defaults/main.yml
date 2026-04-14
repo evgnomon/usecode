@@ -1,0 +1,53 @@
+---
+workspace: "{{ lookup('env', 'PWD') }}"
+zygote_home: "/var/lib/zygote"
+zygote_user: "zygote"
+github_event: "{{ lookup('file', lookup('env', 'GITHUB_EVENT_PATH')) | from_json if lookup('env', 'GITHUB_EVENT_PATH') else {} }}"
+github_actor: "{{ lookup('env', 'GITHUB_ACTOR') }}"
+z_event_type: "{{ lookup('env', 'YACHT_EVENT_NAME') or lookup('env', 'GITHUB_EVENT_NAME') | default('push') }}"
+z_state: "{{ 'absent' if z_event_type == 'delete' else 'present' }}"
+z_ref_pull_request_ref: "{{ github_event.pull_request.head.ref if 'pull_request' in github_event else '' }}"
+z_ref_name: '{{ z_ref_pull_request_ref if z_ref_pull_request_ref else github_event.ref if "ref" in github_event else lookup("env", "YACHT_REF_NAME") or "refs/heads/main" }}'
+z_env_name:  '{{ z_ref_name.replace("refs/heads/","").replace("/","-").replace("_","-") }}'
+z_user_token: '{{ lookup("env", "INPUT_GITHUB_TOKEN") or (secrets.github_pat if secrets and "github_pat" in secrets else "")}}'
+z_tag: "{{ (github_event.get('ref') | regex_replace('refs/tags/', '')) if 'refs/tags' in github_event.get('ref','') else '' }}"
+z_track: "{{ z_tag or z_env_name }}"
+z_purge: false
+z_bin_dir: /usr/local/bin
+z_dir_name: "{{ workspace | basename }}"
+z_parent_dir_name: "{{ (workspace | dirname) | basename }}"
+z_repo_name: "{{ github_event.repository.name if github_event and 'repository' in github_event and 'name' in github_event.repository else z_dir_name }}"
+z_repo_owner: "{{ github_event.repository.owner.login if github_event and 'repository' in github_event and 'owner' in github_event.repository and 'login' in github_event.repository.owner else z_parent_dir_name }}"
+z_repo_slug: "{{ z_repo_owner }}/{{ z_repo_name }}"
+z_num_shards: 3
+z_user: "{{ z_repo_slug.split('/')[1] }}"
+z_domain: "{{ z_user }}.run"
+z_node: "{{ inventory_hostname.split('.')[0] | trim }}"
+z_node_type: "{{ z_node.split('-')[0] }}"
+z_replica: "{{ z_node.split('-')[1] }}"
+z_shard: "{{ z_node.split('-')[2] if z_node.split('-') | length > 2 else 0 }}"
+z_suffix: "{{ z_replica }}{{ '-' + z_shard if z_shard | int > 0 else '' }}"
+z_shard_size: 3
+z_backup_dir: /var/lib/{{ z_user }}
+z_certs_dir: "{{ z_backup_dir }}/certs"
+z_ca_dir: "{{ z_certs_dir }}/ca"
+z_keychain_dir: "{{ z_certs_dir }}/functions"
+z_certs_src: "{{ lookup('env', 'HOME') }}/.config/zygote/certs"
+z_certs_func_src: "{{ z_certs_src }}/functions"
+z_certs_ca_src: "{{ z_certs_src }}/ca"
+z_os: >-
+  {{
+    {
+      'Darwin': 'darwin',
+      'Debian': 'linux',
+      'Windows': 'windows'
+    }[ansible_os_family] | default('')
+  }}
+z_arch: >-
+  {{
+    {
+      'x86_64': 'amd64',
+      'aarch64': 'arm64',
+      'i386': '386'
+    }[ansible_architecture] | default('')
+  }}

@@ -1,0 +1,10 @@
+tenant_home: "{{ zygote_home }}"
+function_name: ""
+domain: "{{ z_domain }}"
+cert_name: "{{ z_user + '-' + z_node_type + '-' + function_name + '-' + z_suffix + '.' + domain if function_name else inventory_hostname }}"
+ca_cert_dir: '{{ tenant_home }}/certs/ca'
+ca_cert_file: '{{ ca_cert_dir }}/ca_cert.pem'
+func_cert_dir: '{{ z_certs_func_src }}/{{ cert_name }}'
+dest: '{{ tenant_home }}/certs/functions/'
+user: "{{ z_user }}"
+group: "{{ z_user }}"

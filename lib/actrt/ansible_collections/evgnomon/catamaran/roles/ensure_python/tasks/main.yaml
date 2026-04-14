@@ -1,0 +1,12 @@
+---
+- name: Ensure Python 3 venv package is installed
+  apt:
+    name: python3-venv
+    state: present
+    cache_valid_time: 3600
+    update_cache: true
+  become: true
+
+- name: Create a Python virtual environment
+  command: python3 -m venv /opt/python
+  become: true

@@ -1,0 +1,23 @@
+[Unit]
+Description={{ z_service_description }}
+After=network.target
+
+[Service]
+ExecStart={{ z_service_binary_path }}
+Restart=always
+User={{ z_service_user }}
+Group={{ z_service_group }}
+{% if z_service_working_dir != "" %}
+WorkingDirectory={{ z_service_working_dir }}
+{% endif %}
+{% if z_service_env_vars | length > 0 %}
+{% for key, value in z_service_env_vars.items() %}
+Environment="{{ key }}={{ value }}"
+{% endfor %}
+{% endif %}
+Type=simple
+KillMode=process
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

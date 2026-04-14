@@ -1,0 +1,214 @@
+---
+- name: Update Hetzner servers
+  hetzner.hcloud.server:
+    api_token: "{{ secrets.hetzner.prod }}"
+    name: "{{ vm_name }}"
+    server_type: '{{ item.get("server_type", "cpx22") }}'
+    image: debian-13
+    location: "{{ item.get('location', 'nbg1') }}"
+    state: '{{ item.get("state") if "state" in item else "absent" if z_event_type == "delete" else "present" }}'
+    ssh_keys: "{{ item.ssh_keys }}"
+    labels: "{{ dict(item.labels | zip(['true'] * (item.labels | length))) }}"
+  vars:
+    vm_name: '{{ item.name + "-" + z_env_name if z_env_name != "main" else item.name }}'
+  register: server_info
+  with_items: "{{ z_nodes.hetzner }}"
+
+- name: Ensure Hetzner volumes
+  hcloud_volume:
+    api_token: "{{ secrets.hetzner.prod }}"
+    format: "{{ volume.get('filesystem', 'ext4') }}"
+    name: "{{ volume.name }}"
+    size: "{{ volume.size | int }}"
+    location: "{{ outer_item.get('location', 'nbg1') }}"
+    state: '{{ volume.get("state") if "state" in volume else "absent" if z_event_type == "delete" else "present" }}'
+    labels: "{{ dict(outer_item.labels | zip(['true'] * (outer_item.labels | length))) }}"
+    automount: false
+  register: volume_info
+  with_subelements: 
+    - "{{ z_nodes.hetzner | selectattr('volumes', 'defined') | list }}"
+    - volumes
+    - flags:
+        skip_missing: true
+  vars:
+    outer_item: "{{ item.0 }}"
+    volume: "{{ item.1 }}"
+  when: z_nodes.hetzner | selectattr('volumes', 'defined') | list | length > 0
+
+- name: Attach volumes to Hetzner servers
+  hetzner.hcloud.volume:
+    api_token: "{{ secrets.hetzner.prod }}"
+    name: "{{ volume.name }}"
+    server: "{{ vm_name }}"
+    automount: false
+    state: '{{ volume.get("state") if "state" in volume else "absent" if z_event_type == "delete" else "present" }}'
+  vars:
+    vm_name: '{{ outer_item.name + "-" + z_env_name if z_env_name != "main" else outer_item.name }}'
+    outer_item: "{{ item.0 }}"
+    volume: "{{ item.1 }}"
+  with_subelements:
+    - "{{ z_nodes.hetzner | selectattr('volumes', 'defined') | list }}"
+    - volumes
+    - flags:
+        skip_missing: true
+  when:
+    - z_nodes.hetzner | selectattr('volumes', 'defined') | list | length > 0
+    - outer_item.get('state', 'present') == 'present'
+    - (volume.get("state") if "state" in volume else "absent" if z_event_type == "delete" else "present") == 'present'
+
+- name: Collect Hetzner volume information
+  set_fact:
+    hetzner_volumes: "{{ hetzner_volumes | default({}) | combine({item.hcloud_volume.server: (hetzner_volumes[item.hcloud_volume.server] | default({}) | combine({item.hcloud_volume.name: item.hcloud_volume.linux_device | string})) }) }}"
+  with_items: "{{ volume_info.results | selectattr('hcloud_volume', 'defined') | list }}"
+  when: 
+    - volume_info is defined
+    - volume_info.results is defined
+    - z_nodes.hetzner | selectattr('volumes', 'defined') | list | length > 0
+    - item.hcloud_volume is not none
+
+- name: Add HC hosts to the inventory
+  add_host:
+    name: "{{ item.item.name }}"
+    groups: "{{ item.item.labels }}"
+    ansible_host: "{{ ansible_host }}"
+    ansible_user: "{{ ansible_user }}"
+    ansible_ssh_common_args: "-o StrictHostKeyChecking=no"
+    ansible_python_interpreter: /usr/bin/python3
+    cloud_provider: "hetzner"
+    attached_volumes: "{{ hetzner_volumes[vm_name] | default({}) }}"
+  vars:
+    ansible_host: "{{ item.hcloud_server.ipv4_address }}"
+    ansible_user: "root"
+    vm_name: '{{ item.item.name + "-" + z_env_name if z_env_name != "main" else item.item.name }}'
+  with_items: "{{ server_info.results | selectattr('hcloud_server.ipv4_address', 'defined') | list }}"
+  when: 
+    - z_event_type == "push"
+    # - item.item.get('state', 'present') == 'present'
+
+- name: Set z_dns_records fact from server_info results
+  set_fact:
+    z_dns_records: "{{ z_dns_records | default([]) + [{'record_name': item.hcloud_server.name, 'record_value': item.hcloud_server.ipv4_address}] }}"
+  with_items: "{{ server_info.results | selectattr('hcloud_server.ipv4_address', 'defined') | list }}"
+  when: z_event_type == "push"
+
+- name: Update Digital Ocean servers
+  vars:
+    vm_name: '{{ item.name + "-" + z_env_name if z_env_name != "main" else item.name }}'
+  digitalocean.cloud.droplet:
+    token: "{{ secrets.doctl.prod }}"
+    state: "{{ item.get('state') if 'state' in item else 'absent' if z_event_type == 'delete' else 'present' }}"
+    name: "{{ vm_name }}"
+    region: "{{ item.get('location', 'fra1') }}"
+    size: s-2vcpu-4gb
+    image: debian-13-x64
+    unique_name: true
+    ssh_keys: "{{ item.ssh_keys }}"
+    tags: "{{ item.labels }}"
+  register: droplet_info
+  with_items: "{{ z_nodes.digitalocean }}"
+
+- name: Detach Digital Ocean volumes
+  digitalocean.cloud.volume_action:
+    droplet_name: "{{ vm_name }}"
+    token: "{{ secrets.doctl.prod }}"
+    volume_name: "{{ volume.name }}"
+    region: "{{ outer_item.get('location', 'fra1') }}"
+    state: absent
+  with_subelements: 
+    - "{{ z_nodes.digitalocean | selectattr('volumes', 'defined') | list }}"
+    - volumes
+    - flags:
+        skip_missing: true
+  vars:
+    vm_name: '{{ outer_item.name + "-" + z_env_name if z_env_name != "main" else outer_item.name }}'
+    outer_item: "{{ item.0 }}"
+    volume: "{{ item.1 }}"
+  when: 
+    - z_nodes.digitalocean | selectattr('volumes', 'defined') | list | length > 0
+    - (volume.get('state') if 'state' in volume else 'absent' if z_event_type == 'delete' else 'present') == 'absent'
+  failed_when: false
+
+- name: Ensure Digital Ocean volumes
+  digitalocean.cloud.volume:
+    token: "{{ secrets.doctl.prod }}"
+    name: "{{ volume.name }}"
+    region: "{{ outer_item.get('location', 'fra1') }}"
+    size_gigabytes: "{{ volume.size }}"
+    filesystem_type: "{{ volume.get('filesystem', 'ext4') }}"
+    filesystem_label: "{{ volume.get('filesystem_label', volume.name) }}"
+    description: "{{ volume.get('description', '') }}"
+    state: "{{ volume.get('state') if 'state' in volume else 'absent' if z_event_type == 'delete' else 'present' }}"
+  with_subelements: 
+    - "{{ z_nodes.digitalocean | selectattr('volumes', 'defined') | list }}"
+    - volumes
+    - flags:
+        skip_missing: true
+  vars:
+    outer_item: "{{ item.0 }}"
+    volume: "{{ item.1 }}"
+  when: z_nodes.digitalocean | selectattr('volumes', 'defined') | list | length > 0
+  retries: 3
+  delay: 10
+
+- name: Attach volumes to Digital Ocean servers
+  digitalocean.cloud.volume_action:
+    token: "{{ secrets.doctl.prod }}"
+    volume_name: "{{ volume.name }}"
+    region: "{{ outer_item.get('location', 'fra1') }}"
+    droplet_name: "{{ vm_name }}"
+    state: "{{ volume.get('state') if 'state' in volume else 'absent' if z_event_type == 'delete' else 'present' }}"
+  vars:
+    vm_name: '{{ outer_item.name + "-" + z_env_name if z_env_name != "main" else outer_item.name }}'
+    outer_item: "{{ item.0 }}"
+    volume: "{{ item.1 }}"
+  with_subelements:
+    - "{{ z_nodes.digitalocean | selectattr('volumes', 'defined') | list }}"
+    - volumes
+    - flags:
+        skip_missing: true
+  when: 
+    - z_nodes.digitalocean | selectattr('volumes', 'defined') | list | length > 0
+    - outer_item.get('state', 'present') == 'present'
+    - (volume.get('state') if 'state' in volume else 'absent' if z_event_type == 'delete' else 'present') == 'present'
+
+- name: Collect DigitalOcean volume information
+  set_fact:
+    do_volumes: "{{ do_volumes | default({}) | combine({outer_item.name: (do_volumes[outer_item.name] | default({}) | combine({volume.name: '/dev/disk/by-id/scsi-0DO_Volume_' + volume.name})) }) }}"
+  with_subelements: 
+    - "{{ z_nodes.digitalocean | selectattr('volumes', 'defined') | list }}"
+    - volumes
+    - flags:
+        skip_missing: true
+  vars:
+    outer_item: "{{ item.0 }}"
+    volume: "{{ item.1 }}"
+  when: z_nodes.digitalocean | selectattr('volumes', 'defined') | list | length > 0
+
+- name: Add DO hosts to the inventory
+  add_host:
+    name: "{{ item.item.name }}"
+    groups: "{{ item.item.labels }}"
+    ansible_host: "{{ ansible_host }}"
+    ansible_user: "{{ ansible_user }}"
+    ansible_ssh_common_args: "-o StrictHostKeyChecking=no"
+    ansible_python_interpreter: /usr/bin/python3
+    cloud_provider: "digitalocean"
+    attached_volumes: "{{ do_volumes[vm_name] | default({}) }}"
+  vars:
+    ansible_host: "{{ item.droplet.networks.v4 | selectattr('type', 'equalto', 'public') | map(attribute='ip_address') | first }}"
+    ansible_user: "root"
+    vm_name: '{{ item.item.name + "-" + z_env_name if z_env_name != "main" else item.item.name }}'
+  with_items: "{{ droplet_info.results | selectattr('droplet.networks.v4', 'defined') | list }}"
+  when:
+    - z_event_type == "push"
+    # - item.item.get('state', 'present') == 'present'
+  retries: 5
+  delay: 10
+
+- name: Set z_dns_records fact from droplet_info results
+  set_fact:
+    z_dns_records: "{{ z_dns_records | default([]) + [{'record_name': item.item.name, 'record_value': ansible_host}] }}"
+  with_items: "{{ droplet_info.results | selectattr('droplet.networks.v4', 'defined') | list }}"
+  when: z_event_type == "push"
+  vars:
+    ansible_host: "{{ item.droplet.networks.v4 | selectattr('type', 'equalto', 'public') | map(attribute='ip_address') | first }}"

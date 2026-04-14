@@ -1,0 +1,17 @@
+z_container_user: "{{ z_user }}"
+z_container_group: "{{ z_container_user }}"
+z_container_domain: "{{ inventory_hostname }}"
+z_use_domain_cert: false
+z_service_env_vars:
+  Z_DOMAIN: "{{ inventory_hostname.split('.')[1:] | join('.') }}"
+  Z_HOST: "{{ inventory_hostname }}"
+  CONTAINER_HOME: "{{ z_mount_workdir }}"
+  USE_DOMAIN_CERT: "{{ true if z_use_domain_cert else false }}"
+z_container_create_home: false
+z_container_state: "started"
+
+z_container_volumes: []
+z_container_command: ""
+z_container_restart_policy: "unless-stopped"
+z_container_user_in_container: "root"
+z_container_ports: []

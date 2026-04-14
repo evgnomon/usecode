@@ -1,0 +1,4 @@
+---
+- set_fact:
+    secrets: "{{ lookup('file', lookup('env', 'INPUT_VAULT_FILE'), errors='ignore') | default('') | from_yaml | default({}) }}"
+  no_log: true

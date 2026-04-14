@@ -1,0 +1,22 @@
+global:
+  scrape_interval: {{ prometheus_scrape_interval }}
+  evaluation_interval: {{ prometheus_evaluation_interval }}
+
+rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['{{ z_node_type }}-node-exporter.{{ z_domain }}:9100']
+    scheme: https
+    tls_config:
+      ca_file: {{ z_mount_cert_ca_file }}
+      cert_file: {{ z_mount_cert_func_pub }}
+      key_file: {{ z_mount_cert_func_key }}
+      insecure_skip_verify: false

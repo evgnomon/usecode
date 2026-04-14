@@ -1,0 +1,5 @@
+---
+- setup:
+    gather_subset: min
+  tags:
+    - always

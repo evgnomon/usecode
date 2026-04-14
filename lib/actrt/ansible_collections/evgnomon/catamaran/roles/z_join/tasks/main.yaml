@@ -1,0 +1,13 @@
+---
+- shell: |
+    z deinit -v -y
+    z join -d zygote.run --host {{ inventory_hostname }} --num-shards {{ z_num_shards }} --shard-size {{ z_shard_size }} --db {{ z_user }}
+  args:
+    chdir: /tmp
+  environment:
+    ZYGOTE_CONFIG_HOME: "{{ z_backup_dir }}"
+    Z_NO_COLOR: "1"
+    Z_DOMAIN: "{{ inventory_hostname.split('.')[1:] | join('.') }}"
+    Z_HOST: "{{ inventory_hostname }}"
+  tags:
+    - join

@@ -1,0 +1,10 @@
+---
+- name: Add private keys to SSH agent
+  shell: |
+    echo "{{ secrets[ssh_key_name].private }}" | tr -d '\r' | ssh-add -
+  when:
+    - ssh_key_name is defined
+    - secrets is defined
+    - secrets is not none
+    - ssh_key_name in secrets
+  no_log: true

@@ -1,0 +1,21 @@
+z_container_name: "prometheus"
+z_container_user: root
+function_name: "{{ z_node_type }}-{{z_container_name}}"
+z_container_image: docker.io/prom/prometheus:latest
+z_container_command: "/bin/prometheus --config.file={{ z_mount_config_file }} --storage.tsdb.path={{ z_mount_workdir }}/data --web.console.libraries=/etc/prometheus/console_libraries --web.console.templates=/etc/prometheus/consoles --web.enable-lifecycle --web.listen-address=0.0.0.0:9090"
+
+prometheus_scrape_interval: 15s
+prometheus_evaluation_interval: 15s
+prometheus_retention_time: 15d
+
+z_mount_config_file: "{{ z_mount_configdir }}/prometheus.yml"
+z_config_file: "{{ z_container_config_dir }}/prometheus.yml"
+
+z_container_volumes:
+  - "{{ z_backup_dir }}/certs/functions/{{ z_container_full_name }}:{{ z_mount_cert_func_dir }}:ro"
+  - "{{ z_backup_dir }}/certs/ca/ca_cert.pem:{{ z_mount_cert_ca_file }}:ro"
+  - "{{ z_container_working_dir }}:{{ z_mount_workdir }}"
+  - "{{ z_container_config_dir }}:{{ z_mount_configdir }}:ro"
+
+z_container_ports:
+  - "9090:9090"

@@ -1,0 +1,16 @@
+galaxy_info:
+  author: Hamed Ghasemzadeh
+  description: Read secrets from Github Actions Secrets
+  license_fil: COPYING
+  min_ansible_version: 2.9
+  platforms:
+    - name: EL
+      versions:
+        - 7
+        - 8
+  categories:
+    - devops
+    - automation
+  tags:
+    - defaults
+    - configuration

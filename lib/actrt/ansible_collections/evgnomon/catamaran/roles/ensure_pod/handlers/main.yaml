@@ -1,0 +1,7 @@
+---
+- name: "set podman container state"
+  containers.podman.podman_container:
+    name: "{{ z_container_full_name }}"
+    state: "{{ z_container_state }}"
+    restart_policy: "{{ z_container_restart_policy }}"
+  become: true

@@ -1,0 +1,34 @@
+---
+- name: Create netork
+  containers.podman.podman_network:
+    name: "{{ network_name }}"
+    state: present
+  when:
+    - github_actor
+    - z_track == "main"
+- name: Pull container
+  containers.podman.podman_image:
+    name: "{{ image_name }}"
+    state: present
+    pull: yes
+    force: true
+  register: pull_result
+  when:
+    - github_actor
+    - z_track == "main"
+
+- name: Start podman container
+  containers.podman.podman_container:
+    name: "{{ z_user }}"
+    image: "{{ image_name }}"
+    state: "{{ 'absent' if z_event_type == 'delete' else 'started' }}"
+    ports: "{{[public_port | string + ':' + target_port | string] if public_port else []}}"
+    recreate: True
+    detach: True
+    restart_policy: "always"
+    network: "{{ network_name }}"
+  register: container_result
+  changed_when: container_result.changed
+  when:
+    - github_actor
+    - z_track == "main"

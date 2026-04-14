@@ -1,0 +1,13 @@
+---
+- name: Add shards
+  add_host:
+    name: "{{ host_name }}"
+    groups: shards
+    ansible_user: "root"
+    z_replica_index: "{{ shard_name.split('-')[1] }}"
+    z_shard_index: "{{ shard_name.split('-')[2] if shard_name.split('-') | length > 2 else 0 }}"
+    z_shard_suffix: "{{ '-' + shard_name.split('-')[2] if shard_name.split('-') | length > 2 else '' }}"
+  with_items: "{{ shard_hosts | trim | split(',') }}"
+  vars:
+    host_name: "{{ item | trim }}"
+    shard_name: "{{ host_name.split('.')[0] }}"

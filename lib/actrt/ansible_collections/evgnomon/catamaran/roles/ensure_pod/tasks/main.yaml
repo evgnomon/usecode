@@ -1,0 +1,27 @@
+---
+- name: Ensure {{ z_container_name }} directories exist
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+  become: true
+  loop:
+    - "{{ z_container_working_dir }}"
+    - "{{ z_container_config_dir }}"
+
+- name: Create {{ z_container_name }} container with Podman
+  containers.podman.podman_container:
+    command: "{{ z_container_command if z_container_command else omit }}"
+    name: "{{ z_container_full_name }}"
+    image: "{{ z_container_image }}"
+    state: "{{ 'absent' if z_container_state == 'absent' else 'present' }}"
+    restart_policy: "{{ z_container_restart_policy }}"
+    user: "{{ z_container_user_in_container }}"
+    volumes: "{{ z_container_volumes }}"
+    env: "{{ z_service_env_vars | default({}) }}"
+    recreate: true
+    ports: "{{ z_container_ports if z_container_ports else omit }}"
+  become: true
+  notify: "set podman container state"

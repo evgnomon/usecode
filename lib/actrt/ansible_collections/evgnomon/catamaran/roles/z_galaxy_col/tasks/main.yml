@@ -1,0 +1,20 @@
+---
+- name: Build the collection
+  command:
+    cmd: "ansible-galaxy collection build --force"
+  args:
+    chdir: "{{ collection_dir }}"
+
+- name: Get the path of the built collection tarball
+  find:
+    paths: "{{ collection_dir }}"
+    patterns: "*.tar.gz"
+  register: collection_tarball
+
+- name: Publish the collection to Galaxy
+  command:
+    cmd: "ansible-galaxy collection publish {{ collection_tarball.files[0].path }} --token {{ secrets.galaxy_token }}"
+  no_log: true
+  when:
+    - z_tag is defined
+    - z_tag != ""

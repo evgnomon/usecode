@@ -1,0 +1,10 @@
+z_container_command: "/fluent-bit/bin/fluent-bit -c {{ z_mount_config_file }}"
+z_container_volumes:
+  - "{{ z_backup_dir }}/certs/functions/{{ cert_name }}:{{ z_mount_cert_func_dir }}:ro"
+  - "{{ z_backup_dir }}/certs/ca/ca_cert.pem:{{ z_mount_cert_ca_file }}:ro"
+  - "{{ z_container_working_dir }}:{{ z_mount_workdir }}"
+  - "{{ z_container_config_dir }}:{{ z_mount_configdir }}:ro"
+  - /var/log/journal:/var/log/journal:ro
+  - /etc/machine-id:/etc/machine-id:ro
+
+z_container_ports: "{{ ['24224:24224/tcp'] if z_fb_receiver else [] }}"

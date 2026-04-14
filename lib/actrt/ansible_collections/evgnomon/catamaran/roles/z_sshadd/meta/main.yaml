@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  author: Hamed Ghasemzadeh
+  description: Add ssh key to ssh-agent in the controller
+  license_fil: COPYING
+  min_ansible_version: 2.9
+  platforms:
+    - name: EL
+      versions:
+        - 7
+        - 8
+  categories:
+    - devops
+    - automation
+  tags:
+    - defaults
+    - configuration
+dependencies:
+  - role: evgnomon.catamaran.z_secrets

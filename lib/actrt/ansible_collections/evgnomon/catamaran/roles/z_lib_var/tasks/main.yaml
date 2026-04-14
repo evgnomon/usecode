@@ -1,0 +1,45 @@
+---
+- name: Create service group
+  group:
+    name: "{{ z_user }}"
+    state: present
+    system: yes
+- name: Create service user
+  user:
+    name: "{{ z_user }}"
+    state: present
+    shell: /sbin/nologin
+    create_home: no
+    group: "{{ z_user }}"
+    system: yes
+- name: Create base directory
+  file:
+    path: "{{ z_backup_dir }}"
+    state: directory
+    mode: "0755"
+    owner: root
+    group: root
+
+- name: Create certs directory
+  file:
+    path: "{{ z_certs_dir }}"
+    state: directory
+    mode: "0755"
+    owner: root
+    group: root
+
+- name: Create ca directory
+  file:
+    path: "{{ z_ca_dir }}"
+    state: directory
+    mode: "0755"
+    owner: root
+    group: root
+
+- name: Create functions directory
+  file:
+    path: "{{ z_keychain_dir }}"
+    state: directory
+    mode: "0755" # Restrictive permissions for functions directory
+    owner: root
+    group: root

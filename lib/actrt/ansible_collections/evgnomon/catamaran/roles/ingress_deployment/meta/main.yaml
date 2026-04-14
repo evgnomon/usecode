@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  author: Hamed Ghasemzadeh
+  description: Ingress ingress_deployment and management role
+  license_fil: COPYING
+  min_ansible_version: 2.9
+  platforms:
+    - name: EL
+      versions:
+        - 7
+        - 8
+  categories:
+    - devops
+    - automation
+  tags:
+    - podman
+    - containers
+    - pod
+dependencies:
+  - role: evgnomon.catamaran.z_defaults

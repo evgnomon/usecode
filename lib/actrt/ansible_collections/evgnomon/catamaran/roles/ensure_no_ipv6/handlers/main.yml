@@ -1,0 +1,5 @@
+---
+- name: Apply sysctl settings
+  ansible.builtin.command: sysctl -p /etc/sysctl.d/99-disable-ipv6.conf
+  become: true
+  changed_when: true

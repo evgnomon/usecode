@@ -1,0 +1,17 @@
+---
+- name: Create release from dist directory on tag push
+  tags: publish
+  when:
+    - z_tag is defined
+    - z_tag != ""
+  with_fileglob:
+    - "{{ workspace }}/dist/*"
+  evgnomon.catamaran.pkg_release:
+    github_token: "{{ z_user_token }}"
+    repo: "{{ z_repo_slug }}"
+    tag_name: "{{ z_tag }}"
+    release_name: Release {{ z_tag }}
+    release_description: Release {{ z_tag }}
+    prerelease: false
+    binaries:
+      - path: "{{ item }}"

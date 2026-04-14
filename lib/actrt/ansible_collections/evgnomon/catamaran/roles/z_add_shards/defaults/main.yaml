@@ -1,0 +1,15 @@
+---
+letters: ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"]  # List of letters
+shard_hosts: >
+  {% set hosts = [] %}
+  {% for shard in range(z_num_shards) %}
+    {% for replica in range(z_shard_size) %}
+      {% set replica_letter = letters[replica] %}
+      {% if shard == 0 %}
+        {% set _ = hosts.append('shard-' + replica_letter + '.' + z_domain) %}
+      {% else %}
+        {% set _ = hosts.append('shard-' + replica_letter + '-' + shard|string + '.' + z_domain) %}
+      {% endif %}
+    {% endfor %}
+  {% endfor %}
+  {{ hosts | join(',') }}

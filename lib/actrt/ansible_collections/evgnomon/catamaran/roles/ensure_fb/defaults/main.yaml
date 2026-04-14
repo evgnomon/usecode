@@ -1,0 +1,26 @@
+z_container_name: "fb"
+z_container_user: root
+function_name: "{{ z_node_type }}-{{z_container_name}}"
+z_container_image: docker.io/fluent/fluent-bit:latest
+
+logs_node_addr: monitor-a.{{ z_domain }}
+
+z_mount_config_file: "{{ z_mount_configdir }}/fluent-bit.conf"
+z_config_file: "{{ z_container_config_dir }}/fluent-bit.conf"
+
+z_container_working_dir: "{{z_backup_dir}}/{{ z_container_name }}/var"
+z_container_config_dir: "{{z_backup_dir}}/{{ z_container_name }}/etc"
+z_mount_workdir: "/var/lib/{{ z_container_name }}"
+z_mount_configdir: "/etc/{{ z_container_name }}"
+z_container_full_name: "{{ z_user }}-{{ z_node_type }}-{{ z_container_name }}-{{ z_suffix }}"
+z_container_cert_dir: "/etc/{{ z_container_name }}/certs"
+z_mount_cert_ca_file: "/etc/ca/ca_cert.pem"
+cert_name: "{{ z_container_full_name }}.{{ z_domain if z_container_name else inventory_hostname }}"
+z_mount_cert_func_dir: "/etc/certs/{{ cert_name }}"
+
+
+z_mount_cert_func_pub: "{{ z_mount_cert_func_dir }}/{{ cert_name }}_cert.pem"
+z_mount_cert_func_key: "{{ z_mount_cert_func_dir }}/{{ cert_name }}_key.pem"
+z_mount_cert_func_p12: "{{ z_mount_cert_func_dir }}/{{ cert_name }}.p12"
+
+z_fb_receiver: false

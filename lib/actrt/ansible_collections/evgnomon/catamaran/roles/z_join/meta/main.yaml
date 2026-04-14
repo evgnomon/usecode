@@ -1,0 +1,26 @@
+---
+galaxy_info:
+  author: Hamed Ghasemzadeh
+  description: Join a shard as a member and lead if there is no leader
+  license_fil: COPYING
+  min_ansible_version: 2.9
+  platforms:
+    - name: EL
+      versions:
+        - 7
+        - 8
+  categories:
+    - devops
+    - automation
+  tags:
+    - defaults
+    - configuration
+dependencies:
+  - role: evgnomon.catamaran.z_facts
+  - role: evgnomon.catamaran.z_defaults
+  - role: evgnomon.catamaran.z_ca_deploy
+    vars:
+      function_name: provisioner
+  - role: z_install
+    vars:
+      z_target: z
