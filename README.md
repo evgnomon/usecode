@@ -8,6 +8,7 @@ Build `usecode` project with:
 git clone
 cd usecode
 make
+sudo make install
 ```
 
 Everything is ready in `/build` dir after build, you can run `usecode` with.
@@ -18,6 +19,7 @@ As it might take a long time to build `usecode` project, you can use save some t
 git clone
 cd usecode
 make -DCACHED=1
+sudo make install
 ```
 
 Which gives the same `/build` dir with `usecode` ready to run, but with some time saved.
