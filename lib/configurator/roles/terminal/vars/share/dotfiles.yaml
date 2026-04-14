@@ -1,5 +1,6 @@
 ---
 dotfiles:
+  - .config/autostart/swap-alt-win.desktop
   - .config/containers/registries.conf
   - .config/hcloud/cli.sh
   - .gitignore_global

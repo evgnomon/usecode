@@ -1,0 +1,5 @@
+[Desktop Entry]
+Type=Application
+Name=Swap Alt Win
+Exec=gsettings set org.gnome.desktop.input-sources xkb-options "['altwin:swap_alt_win']"
+X-GNOME-Autostart-enabled=true
