@@ -2,7 +2,7 @@
 
 $(eval $(shell ./scripts/ci_wrapper.sh --env 2>/dev/null))
 
-VERSION := $(shell git describe --tags --match 'v*' --always 2>/dev/null | sed 's/^v//; s/-\([0-9]*\)-g/.dev\1+/')
+VERSION := $(shell git describe --tags --match 'v*' --abbrev=0 2>/dev/null | sed 's/^v//')
 export VERSION
 
 LIB_DIRS := $(wildcard lib/*)
