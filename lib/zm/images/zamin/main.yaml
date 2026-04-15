@@ -1,0 +1,4 @@
+- hosts: all
+  tasks:
+    - script: entry.sh
+      become: true

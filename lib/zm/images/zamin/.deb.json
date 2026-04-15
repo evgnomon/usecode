@@ -1,0 +1,12 @@
+{
+  "name": "zamin",
+  "version": "0.1.0",
+  "description": "Default image for zm tool",
+  "maintainer": "hg@evgnomon.org",
+  "depends": "",
+  "section": "utils",
+  "priority": "optional",
+  "homepage": "https://github.com/evgnomon/zamin",
+  "license": "HGL",
+  "root": "pkg/debian"
+}

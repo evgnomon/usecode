@@ -1,0 +1,9 @@
+#cloud-config
+users:
+  - name: packer
+    plain_text_passwd: packer
+    lock_passwd: false
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+
+ssh_pwauth: true
