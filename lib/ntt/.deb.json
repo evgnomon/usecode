@@ -1,0 +1,11 @@
+{
+  "name": "ntt",
+  "version": "0.5.0",
+  "description": "A lightweight terminal switcher",
+  "maintainer": "hg@evgnomon.org",
+  "depends": "libc6",
+  "section": "utils",
+  "priority": "optional",
+  "homepage": "https://github.com/evgnomon/ntt",
+  "license": "HGL"
+}

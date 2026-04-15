@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+rsync -avP --delete shadow:$HOME/.cache/blueprint/apt/ $HOME/.cache/blueprint/apt/
+reprepro -b $HOME/.cache/blueprint/apt/ includedeb trixie ./dist/*.deb
+reprepro -b $HOME/.cache/blueprint/apt/ export
+
+rsync -avP --delete $HOME/.cache/blueprint/apt/ shadow:$HOME/.cache/blueprint/apt/
+ssh shadow $HOME/.local/bin/rclone -v sync $HOME/.cache/blueprint/apt/ archive:$USER/debian/

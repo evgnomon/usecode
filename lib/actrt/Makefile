@@ -1,13 +1,15 @@
 COLLECTION_DIR := ansible_collections/evgnomon/catamaran
-VERSION ?= $(shell awk '/^VERSION[[:space:]]*:=/ {print $$3}' ../../Makefile)
+VERSION ?= $(shell git describe --tags --match 'v*' --abbrev=0 2>/dev/null | sed 's/^v//')
 COLLECTION_ARTIFACT := $(COLLECTION_DIR)/evgnomon-catamaran-$(VERSION).tar.gz
-STAMP_DIR := .stamps
+ROOT_DIR ?= $(abspath $(CURDIR)/../..)
+BUILD_DIR ?= $(ROOT_DIR)/build
+STAMP_DIR := $(ROOT_DIR)/.stamps/$(patsubst $(ROOT_DIR)/%,%,$(CURDIR))
 PYTHON_ARTIFACT := dist/catamaran-$(VERSION).tar.gz
 PYPI_STAMP := $(STAMP_DIR)/pypi-$(VERSION)
 GALAXY_STAMP := $(STAMP_DIR)/galaxy-$(VERSION)
 VERSION_STAMP := $(STAMP_DIR)/version-$(VERSION)
 
-.PHONY: all check build build-python build-collection publish publish-pypi publish-galaxy clean
+.PHONY: all check build build-python build-collection publish publish-pypi publish-galaxy clean clean-python clean-collection clean-stamps
 
 all: build
 
@@ -38,16 +40,24 @@ publish: publish-pypi publish-galaxy
 publish-pypi: $(PYPI_STAMP)
 
 $(PYPI_STAMP): $(PYTHON_ARTIFACT)
-	@UV_PUBLISH_TOKEN=`getsecret | jq -r '.pypi.all'` uv publish dist/catamaran-$(VERSION)-py3-none-any.whl dist/catamaran-$(VERSION).tar.gz
+	@./scripts/publish-pypi.sh $(VERSION)
 	@mkdir -p $(STAMP_DIR)
 	@touch $@
 
 publish-galaxy: $(GALAXY_STAMP)
 
 $(GALAXY_STAMP): $(COLLECTION_ARTIFACT)
-	@ansible-galaxy collection publish $(COLLECTION_ARTIFACT) --token `getsecret | jq -r '.ansible_galaxy.token'`
+	@./scripts/publish-galaxy.sh $(VERSION) $(COLLECTION_ARTIFACT)
 	@mkdir -p $(STAMP_DIR)
 	@touch $@
 
-clean:
-	rm -rf dist $(COLLECTION_DIR)/*.tar.gz
+clean: clean-python clean-collection clean-stamps
+
+clean-python:
+	rm -rf dist
+
+clean-collection:
+	rm -rf $(COLLECTION_DIR)/*.tar.gz
+
+clean-stamps:
+	rm -rf $(STAMP_DIR)

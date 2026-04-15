@@ -81,3 +81,9 @@ dist/
 
 # mypy
 .mypy_cache/
+tags
+.cache
+node_modules
+lib/zm/images/ubuntu-noble/pkg/debian/usr/share/zm/images/ubuntu-noble
+*.img
+zig-out

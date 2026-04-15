@@ -1,0 +1,5 @@
+sphinx>=8.0.0
+furo>=2024.0.0
+myst-parser>=4.0.0
+invoke>=2.0.0
+sphinx-autobuild>=2024.0.0

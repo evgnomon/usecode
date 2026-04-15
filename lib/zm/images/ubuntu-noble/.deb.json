@@ -1,0 +1,12 @@
+{
+  "name": "ubuntu-noble",
+  "version": "24.04.4",
+  "description": "Ubuntu Noble",
+  "maintainer": "hg@evgnomon.org",
+  "depends": "",
+  "section": "utils",
+  "priority": "optional",
+  "homepage": "https://documentation.ubuntu.com/public-images/public-images-how-to/launch-with-libvirt/",
+  "license": "HGL",
+  "root": "pkg/debian"
+}

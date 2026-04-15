@@ -1,9 +1,16 @@
-.PHONY: all ci deploy publish build version
+.PHONY: all ci deploy publish build version install
+
+DESTDIR ?= /
+export DESTDIR
 
 $(eval $(shell ./scripts/ci_wrapper.sh --env 2>/dev/null))
 
 VERSION := $(shell git describe --tags --match 'v*' --abbrev=0 2>/dev/null | sed 's/^v//')
 export VERSION
+
+ROOT_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+BUILD_DIR := $(ROOT_DIR)/build
+export ROOT_DIR BUILD_DIR
 
 LIB_DIRS := $(wildcard lib/*)
 
@@ -55,6 +62,13 @@ build:
 	@for d in $(LIB_DIRS); do \
 		if $(MAKE) -C $$d -n build >/dev/null 2>&1; then \
 			$(MAKE) -C $$d build || exit $$?; \
+		fi; \
+	done
+
+install:
+	@for d in $(LIB_DIRS); do \
+		if $(MAKE) -C $$d -n install >/dev/null 2>&1; then \
+			$(MAKE) -C $$d install || exit $$?; \
 		fi; \
 	done
 

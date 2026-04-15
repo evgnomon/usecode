@@ -4,7 +4,9 @@ NAME ?= ark
 TAG ?= latest
 IMAGE ?= $(REGISTRY)/$(OWNER)/$(NAME):$(TAG)
 
-STAMP_DIR := .stamps
+ROOT_DIR ?= $(abspath $(CURDIR)/../..)
+BUILD_DIR ?= $(ROOT_DIR)/build
+STAMP_DIR := $(ROOT_DIR)/.stamps/$(patsubst $(ROOT_DIR)/%,%,$(CURDIR))
 BUILD_STAMP := $(STAMP_DIR)/build
 PUBLISH_STAMP := $(STAMP_DIR)/publish
 SOURCES := Dockerfile evgnomon.asc evgnomon.sources SHA512SUMS $(shell find playbooks -type f 2>/dev/null)
