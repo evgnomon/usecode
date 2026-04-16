@@ -10,6 +10,6 @@
 
 - file:
     state: link
-    src: "{{ target_home }}/src/github.com/evgnomon/recipes"
+    src: "{{ target_home }}/src/github.com/evgnomon/agents/goose/recipes"
     dest: "{{ target_home }}/.config/goose/recipes"
     force: true

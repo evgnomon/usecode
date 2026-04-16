@@ -1,7 +1,7 @@
 ---
 - name: Find all files in flow bin directories
   find:
-    paths: "{{ blueprint_user_home }}/src/github.com/evgnomon/flow"
+    paths: "{{ blueprint_user_home }}/src/github.com/evgnomon/usecode/lib/workflows"
     file_type: file
     recurse: yes
   register: flow_files
