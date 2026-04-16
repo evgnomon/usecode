@@ -54,11 +54,11 @@ fi
 
 cd $HOME/src/github.com/evgnomon
 
-if [ ! -d $HOME/src/github.com/evgnomon/blueprint ]; then
-  git clone https://github.com/evgnomon/blueprint.git
+if [ ! -d $HOME/src/github.com/evgnomon/usecode ]; then
+  git clone https://github.com/evgnomon/usecode.git
 fi
 
-cd $HOME/src/github.com/evgnomon/blueprint
+cd $HOME/src/github.com/evgnomon/usecode/lib/configurator
 
 PLAYARGS=""
 
