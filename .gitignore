@@ -88,3 +88,4 @@ lib/zm/images/ubuntu-noble/pkg/debian/usr/share/zm/images/ubuntu-noble
 lib/zm/images/zamin/pkg/debian/usr/share/zm/images/zamin
 *.img
 zig-out
+.zig-cache
