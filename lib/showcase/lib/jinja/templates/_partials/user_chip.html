@@ -1,0 +1,13 @@
+{# A partial included from dashboard.html — receives `user` via context. #}
+<div class="chip">
+  <span class="avatar">{{ user.name[0] | upper }}</span>
+  <div>
+    <strong>{{ user.name }}</strong>
+    {# tests: `is defined`, `is string`, `in` #}
+    {% if user.role is defined and user.role in ['admin', 'owner'] %}
+      <span class="role">{{ user.role | upper }}</span>
+    {% endif %}
+    <br>
+    <small>{{ user.email }}</small>
+  </div>
+</div>

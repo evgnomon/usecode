@@ -1,0 +1,365 @@
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css" media="(prefers-color-scheme: light)">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+<link rel="stylesheet" href="index.css">
+
+<div class="layout">
+<aside class="sidebar">
+  <div class="brand">Snippets</div>
+  <nav class="menu">
+    <a href="index.html" class="menu-item">
+      <span class="menu-icon">◆</span>Code snippets
+    </a>
+    <a href="functions.html" class="menu-item active">
+      <span class="menu-icon">◆</span>Functions
+    </a>
+    <a href="dictionaries.html" class="menu-item">
+      <span class="menu-icon">◆</span>Dictionaries
+    </a>
+    <a href="structs.html" class="menu-item">
+      <span class="menu-icon">◆</span>Structs
+    </a>
+  </nav>
+</aside>
+
+<main class="content">
+
+<div class="section">
+<h2>Function definitions</h2>
+<p class="sub">Declaring a function <code>add(a, b)</code> — focus on parameter types and return type</p>
+
+<div class="wrapper">
+<div class="tabs" data-group="f">
+  <button type="button" class="tab active" data-lang="python"><span class="dot" style="background:#3572A5"></span>Python</button>
+  <button type="button" class="tab" data-lang="go"><span class="dot" style="background:#00ADD8"></span>Go</button>
+  <button type="button" class="tab" data-lang="zig"><span class="dot" style="background:#F7A41D"></span>Zig</button>
+  <button type="button" class="tab" data-lang="c"><span class="dot" style="background:#555555"></span>C</button>
+  <button type="button" class="tab" data-lang="cpp"><span class="dot" style="background:#F34B7D"></span>C++</button>
+  <button type="button" class="tab" data-lang="rust"><span class="dot" style="background:#DEA584"></span>Rust</button>
+  <button type="button" class="tab" data-lang="typescript"><span class="dot" style="background:#3178C6"></span>TypeScript</button>
+  <button type="button" class="tab" data-lang="javascript"><span class="dot" style="background:#F1E05A"></span>JavaScript</button>
+  <button type="button" class="tab" data-lang="csharp"><span class="dot" style="background:#68217A"></span>C#</button>
+  <button type="button" class="tab" data-lang="kotlin"><span class="dot" style="background:#A97BFF"></span>Kotlin</button>
+  <button type="button" class="tab" data-lang="java"><span class="dot" style="background:#B07219"></span>Java</button>
+  <button type="button" class="tab" data-lang="scala"><span class="dot" style="background:#DC322F"></span>Scala</button>
+  <button type="button" class="tab" data-lang="bash"><span class="dot" style="background:#89E051"></span>Bash</button>
+</div>
+
+<div class="panel active" data-group="f" id="f-python">
+<pre><code class="language-python">def add(a: int, b: int) -&gt; int:
+    return a + b</code></pre>
+</div>
+
+<div class="panel" data-group="f" id="f-go">
+<pre><code class="language-go">func add(a int, b int) int {
+    return a + b
+}</code></pre>
+</div>
+
+<div class="panel" data-group="f" id="f-zig">
+<pre><code><span class="hljs-keyword">fn</span> <span class="hljs-title">add</span>(a: <span class="hljs-type">i32</span>, b: <span class="hljs-type">i32</span>) <span class="hljs-type">i32</span> {
+    <span class="hljs-keyword">return</span> a + b;
+}</code></pre>
+</div>
+
+<div class="panel" data-group="f" id="f-c">
+<pre><code class="language-c">int add(int a, int b) {
+    return a + b;
+}</code></pre>
+</div>
+
+<div class="panel" data-group="f" id="f-cpp">
+<pre><code class="language-cpp">int add(int a, int b) {
+    return a + b;
+}</code></pre>
+</div>
+
+<div class="panel" data-group="f" id="f-rust">
+<pre><code class="language-rust">fn add(a: i32, b: i32) -&gt; i32 {
+    a + b
+}</code></pre>
+</div>
+
+<div class="panel" data-group="f" id="f-typescript">
+<pre><code class="language-typescript">function add(a: number, b: number): number {
+  return a + b;
+}</code></pre>
+</div>
+
+<div class="panel" data-group="f" id="f-javascript">
+<pre><code class="language-javascript">function add(a, b) {
+  return a + b;
+}</code></pre>
+</div>
+
+<div class="panel" data-group="f" id="f-csharp">
+<pre><code class="language-csharp">int Add(int a, int b) {
+    return a + b;
+}</code></pre>
+</div>
+
+<div class="panel" data-group="f" id="f-kotlin">
+<pre><code class="language-kotlin">fun add(a: Int, b: Int): Int {
+    return a + b
+}</code></pre>
+</div>
+
+<div class="panel" data-group="f" id="f-java">
+<pre><code class="language-java">public static int add(int a, int b) {
+    return a + b;
+}</code></pre>
+</div>
+
+<div class="panel" data-group="f" id="f-scala">
+<pre><code class="language-scala">def add(a: Int, b: Int): Int =
+  a + b</code></pre>
+</div>
+
+<div class="panel" data-group="f" id="f-bash">
+<pre><code class="language-bash">add() {
+  local a=$1
+  local b=$2
+  echo $(( a + b ))
+}</code></pre>
+</div>
+
+</div>
+</div>
+
+<div class="section">
+<h2>Multiple return values</h2>
+<p class="sub">Return both a quotient and remainder — showing tuple / struct / out-param return styles</p>
+
+<div class="wrapper">
+<div class="tabs" data-group="g">
+  <button type="button" class="tab active" data-lang="python"><span class="dot" style="background:#3572A5"></span>Python</button>
+  <button type="button" class="tab" data-lang="go"><span class="dot" style="background:#00ADD8"></span>Go</button>
+  <button type="button" class="tab" data-lang="zig"><span class="dot" style="background:#F7A41D"></span>Zig</button>
+  <button type="button" class="tab" data-lang="c"><span class="dot" style="background:#555555"></span>C</button>
+  <button type="button" class="tab" data-lang="cpp"><span class="dot" style="background:#F34B7D"></span>C++</button>
+  <button type="button" class="tab" data-lang="rust"><span class="dot" style="background:#DEA584"></span>Rust</button>
+  <button type="button" class="tab" data-lang="typescript"><span class="dot" style="background:#3178C6"></span>TypeScript</button>
+  <button type="button" class="tab" data-lang="javascript"><span class="dot" style="background:#F1E05A"></span>JavaScript</button>
+  <button type="button" class="tab" data-lang="csharp"><span class="dot" style="background:#68217A"></span>C#</button>
+  <button type="button" class="tab" data-lang="kotlin"><span class="dot" style="background:#A97BFF"></span>Kotlin</button>
+  <button type="button" class="tab" data-lang="java"><span class="dot" style="background:#B07219"></span>Java</button>
+  <button type="button" class="tab" data-lang="scala"><span class="dot" style="background:#DC322F"></span>Scala</button>
+  <button type="button" class="tab" data-lang="bash"><span class="dot" style="background:#89E051"></span>Bash</button>
+</div>
+
+<div class="panel active" data-group="g" id="g-python">
+<pre><code class="language-python">def divmod_(a: int, b: int) -&gt; tuple[int, int]:
+    return a // b, a % b</code></pre>
+</div>
+
+<div class="panel" data-group="g" id="g-go">
+<pre><code class="language-go">func divmod(a, b int) (int, int) {
+    return a / b, a % b
+}</code></pre>
+</div>
+
+<div class="panel" data-group="g" id="g-zig">
+<pre><code><span class="hljs-keyword">fn</span> <span class="hljs-title">divmod</span>(a: <span class="hljs-type">i32</span>, b: <span class="hljs-type">i32</span>) <span class="hljs-keyword">struct</span> { q: <span class="hljs-type">i32</span>, r: <span class="hljs-type">i32</span> } {
+    <span class="hljs-keyword">return</span> .{ .q = <span class="hljs-built_in">@divTrunc</span>(a, b), .r = <span class="hljs-built_in">@mod</span>(a, b) };
+}</code></pre>
+</div>
+
+<div class="panel" data-group="g" id="g-c">
+<pre><code class="language-c">void divmod(int a, int b, int *q, int *r) {
+    *q = a / b;
+    *r = a % b;
+}</code></pre>
+</div>
+
+<div class="panel" data-group="g" id="g-cpp">
+<pre><code class="language-cpp">#include &lt;tuple&gt;
+
+std::tuple&lt;int, int&gt; divmod(int a, int b) {
+    return { a / b, a % b };
+}</code></pre>
+</div>
+
+<div class="panel" data-group="g" id="g-rust">
+<pre><code class="language-rust">fn divmod(a: i32, b: i32) -&gt; (i32, i32) {
+    (a / b, a % b)
+}</code></pre>
+</div>
+
+<div class="panel" data-group="g" id="g-typescript">
+<pre><code class="language-typescript">function divmod(a: number, b: number): [number, number] {
+  return [Math.trunc(a / b), a % b];
+}</code></pre>
+</div>
+
+<div class="panel" data-group="g" id="g-javascript">
+<pre><code class="language-javascript">function divmod(a, b) {
+  return [Math.trunc(a / b), a % b];
+}</code></pre>
+</div>
+
+<div class="panel" data-group="g" id="g-csharp">
+<pre><code class="language-csharp">(int q, int r) DivMod(int a, int b) {
+    return (a / b, a % b);
+}</code></pre>
+</div>
+
+<div class="panel" data-group="g" id="g-kotlin">
+<pre><code class="language-kotlin">fun divmod(a: Int, b: Int): Pair&lt;Int, Int&gt; {
+    return Pair(a / b, a % b)
+}</code></pre>
+</div>
+
+<div class="panel" data-group="g" id="g-java">
+<pre><code class="language-java">record DivMod(int q, int r) {}
+
+public static DivMod divmod(int a, int b) {
+    return new DivMod(a / b, a % b);
+}</code></pre>
+</div>
+
+<div class="panel" data-group="g" id="g-scala">
+<pre><code class="language-scala">def divmod(a: Int, b: Int): (Int, Int) =
+  (a / b, a % b)</code></pre>
+</div>
+
+<div class="panel" data-group="g" id="g-bash">
+<pre><code class="language-bash">divmod() {
+  local a=$1 b=$2
+  echo "$(( a / b )) $(( a % b ))"
+}</code></pre>
+</div>
+
+</div>
+</div>
+
+<div class="section">
+<h2>Returning errors</h2>
+<p class="sub">Parsing an integer — showing how failure is signalled: exceptions, error values, Result/Either, or out-params</p>
+
+<div class="wrapper">
+<div class="tabs" data-group="e">
+  <button type="button" class="tab active" data-lang="python"><span class="dot" style="background:#3572A5"></span>Python</button>
+  <button type="button" class="tab" data-lang="go"><span class="dot" style="background:#00ADD8"></span>Go</button>
+  <button type="button" class="tab" data-lang="zig"><span class="dot" style="background:#F7A41D"></span>Zig</button>
+  <button type="button" class="tab" data-lang="c"><span class="dot" style="background:#555555"></span>C</button>
+  <button type="button" class="tab" data-lang="cpp"><span class="dot" style="background:#F34B7D"></span>C++</button>
+  <button type="button" class="tab" data-lang="rust"><span class="dot" style="background:#DEA584"></span>Rust</button>
+  <button type="button" class="tab" data-lang="typescript"><span class="dot" style="background:#3178C6"></span>TypeScript</button>
+  <button type="button" class="tab" data-lang="javascript"><span class="dot" style="background:#F1E05A"></span>JavaScript</button>
+  <button type="button" class="tab" data-lang="csharp"><span class="dot" style="background:#68217A"></span>C#</button>
+  <button type="button" class="tab" data-lang="kotlin"><span class="dot" style="background:#A97BFF"></span>Kotlin</button>
+  <button type="button" class="tab" data-lang="java"><span class="dot" style="background:#B07219"></span>Java</button>
+  <button type="button" class="tab" data-lang="scala"><span class="dot" style="background:#DC322F"></span>Scala</button>
+  <button type="button" class="tab" data-lang="bash"><span class="dot" style="background:#89E051"></span>Bash</button>
+</div>
+
+<div class="panel active" data-group="e" id="e-python">
+<pre><code class="language-python">def parse_int(s: str) -&gt; int:
+    # Raises ValueError on failure
+    return int(s)</code></pre>
+</div>
+
+<div class="panel" data-group="e" id="e-go">
+<pre><code class="language-go">import "strconv"
+
+func parseInt(s string) (int, error) {
+    return strconv.Atoi(s)
+}</code></pre>
+</div>
+
+<div class="panel" data-group="e" id="e-zig">
+<pre><code><span class="hljs-keyword">fn</span> <span class="hljs-title">parseInt</span>(s: []<span class="hljs-keyword">const</span> <span class="hljs-type">u8</span>) <span class="hljs-built_in">!</span><span class="hljs-type">i32</span> {
+    <span class="hljs-keyword">return</span> std.fmt.parseInt(<span class="hljs-type">i32</span>, s, <span class="hljs-number">10</span>);
+}</code></pre>
+</div>
+
+<div class="panel" data-group="e" id="e-c">
+<pre><code class="language-c">#include &lt;stdlib.h&gt;
+#include &lt;errno.h&gt;
+
+// Returns 0 on success, -1 on error; result via out-param
+int parse_int(const char *s, int *out) {
+    char *end;
+    errno = 0;
+    long v = strtol(s, &end, 10);
+    if (errno != 0 || *end != '\0') return -1;
+    *out = (int)v;
+    return 0;
+}</code></pre>
+</div>
+
+<div class="panel" data-group="e" id="e-cpp">
+<pre><code class="language-cpp">#include &lt;stdexcept&gt;
+#include &lt;string&gt;
+
+int parse_int(const std::string &s) {
+    // Throws std::invalid_argument / std::out_of_range
+    return std::stoi(s);
+}</code></pre>
+</div>
+
+<div class="panel" data-group="e" id="e-rust">
+<pre><code class="language-rust">fn parse_int(s: &str) -&gt; Result&lt;i32, std::num::ParseIntError&gt; {
+    s.parse::&lt;i32&gt;()
+}</code></pre>
+</div>
+
+<div class="panel" data-group="e" id="e-typescript">
+<pre><code class="language-typescript">function parseIntStrict(s: string): number {
+  const n = Number(s);
+  if (!Number.isInteger(n)) throw new Error(`invalid int: ${s}`);
+  return n;
+}</code></pre>
+</div>
+
+<div class="panel" data-group="e" id="e-javascript">
+<pre><code class="language-javascript">function parseIntStrict(s) {
+  const n = Number(s);
+  if (!Number.isInteger(n)) throw new Error(`invalid int: ${s}`);
+  return n;
+}</code></pre>
+</div>
+
+<div class="panel" data-group="e" id="e-csharp">
+<pre><code class="language-csharp">int ParseInt(string s) {
+    // Throws FormatException / OverflowException
+    return int.Parse(s);
+}</code></pre>
+</div>
+
+<div class="panel" data-group="e" id="e-kotlin">
+<pre><code class="language-kotlin">fun parseInt(s: String): Result&lt;Int&gt; = runCatching { s.toInt() }</code></pre>
+</div>
+
+<div class="panel" data-group="e" id="e-java">
+<pre><code class="language-java">public static int parseInt(String s) throws NumberFormatException {
+    return Integer.parseInt(s);
+}</code></pre>
+</div>
+
+<div class="panel" data-group="e" id="e-scala">
+<pre><code class="language-scala">import scala.util.Try
+
+def parseInt(s: String): Try[Int] = Try(s.toInt)</code></pre>
+</div>
+
+<div class="panel" data-group="e" id="e-bash">
+<pre><code class="language-bash">parse_int() {
+  local s=$1
+  [[ $s =~ ^-?[0-9]+$ ]] || { echo "invalid int: $s" &gt;&2; return 1; }
+  echo "$s"
+}</code></pre>
+</div>
+
+</div>
+</div>
+
+</main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/rust.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/go.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/kotlin.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/scala.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/typescript.min.js"></script>
+<script src="index.js"></script>

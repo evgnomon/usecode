@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% from "_macros.html" import product_card, badge %}
+
+{% block title %}Products — {{ super() }}{% endblock %}
+
+{% block content %}
+  <h1>Products</h1>
+
+  <form method="get" class="search">
+    <input name="q" value="{{ query }}" placeholder="search…">
+    <select name="currency">
+      {% for c in ['USD', 'EUR', 'GBP'] %}
+        <option value="{{ c }}" {% if c == currency %}selected{% endif %}>{{ c }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit">Filter</button>
+  </form>
+
+  {# `{% if %}` with an empty-sequence check #}
+  {% if not products %}
+    <p>No products match <em>{{ query }}</em>.</p>
+  {% else %}
+    {# `groupby` filter buckets items by a key — here, by stock status #}
+    {% set buckets = products | groupby('stock') %}
+    <p>{{ products | length }} result{{ '' if products|length == 1 else 's' }}.</p>
+
+    <div class="grid">
+      {% for p in products %}
+        {# `loop` exposes index/first/last/cycle — cycle row colors #}
+        <div class="row {{ loop.cycle('odd', 'even') }}">
+          {{ product_card(p, currency) }}
+          {# inline `if` expression #}
+          <small>#{{ loop.index }} of {{ loop.length }}{{ ' — first' if loop.first else '' }}</small>
+        </div>
+      {% endfor %}
+    </div>
+
+    {# `sum` on attributes with the attribute shortcut #}
+    <p class="total">
+      Total inventory value:
+      <strong>{{ products | sum(attribute='price') | money(currency) }}</strong>
+    </p>
+
+    {# highlight the search term inside names #}
+    {% if query %}
+      <details>
+        <summary>Matches (highlighted)</summary>
+        <ul>
+          {% for p in products %}
+            <li>{{ p.name | highlight(query) }}</li>
+          {% endfor %}
+        </ul>
+      </details>
+    {% endif %}
+  {% endif %}
+{% endblock %}

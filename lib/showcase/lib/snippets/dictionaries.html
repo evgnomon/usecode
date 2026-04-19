@@ -1,0 +1,414 @@
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css" media="(prefers-color-scheme: light)">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+<link rel="stylesheet" href="index.css">
+
+<div class="layout">
+<aside class="sidebar">
+  <div class="brand">Snippets</div>
+  <nav class="menu">
+    <a href="index.html" class="menu-item">
+      <span class="menu-icon">◆</span>Code snippets
+    </a>
+    <a href="functions.html" class="menu-item">
+      <span class="menu-icon">◆</span>Functions
+    </a>
+    <a href="dictionaries.html" class="menu-item active">
+      <span class="menu-icon">◆</span>Dictionaries
+    </a>
+    <a href="structs.html" class="menu-item">
+      <span class="menu-icon">◆</span>Structs
+    </a>
+  </nav>
+</aside>
+
+<main class="content">
+
+<div class="section">
+<h2>Create &amp; initialize</h2>
+<p class="sub">A dictionary mapping string keys to integer values</p>
+
+<div class="wrapper">
+<div class="tabs" data-group="d1">
+  <button type="button" class="tab active" data-lang="python"><span class="dot" style="background:#3572A5"></span>Python</button>
+  <button type="button" class="tab" data-lang="go"><span class="dot" style="background:#00ADD8"></span>Go</button>
+  <button type="button" class="tab" data-lang="zig"><span class="dot" style="background:#F7A41D"></span>Zig</button>
+  <button type="button" class="tab" data-lang="c"><span class="dot" style="background:#555555"></span>C</button>
+  <button type="button" class="tab" data-lang="cpp"><span class="dot" style="background:#F34B7D"></span>C++</button>
+  <button type="button" class="tab" data-lang="rust"><span class="dot" style="background:#DEA584"></span>Rust</button>
+  <button type="button" class="tab" data-lang="typescript"><span class="dot" style="background:#3178C6"></span>TypeScript</button>
+  <button type="button" class="tab" data-lang="javascript"><span class="dot" style="background:#F1E05A"></span>JavaScript</button>
+  <button type="button" class="tab" data-lang="csharp"><span class="dot" style="background:#68217A"></span>C#</button>
+  <button type="button" class="tab" data-lang="kotlin"><span class="dot" style="background:#A97BFF"></span>Kotlin</button>
+  <button type="button" class="tab" data-lang="java"><span class="dot" style="background:#B07219"></span>Java</button>
+  <button type="button" class="tab" data-lang="scala"><span class="dot" style="background:#DC322F"></span>Scala</button>
+  <button type="button" class="tab" data-lang="bash"><span class="dot" style="background:#89E051"></span>Bash</button>
+</div>
+
+<div class="panel active" data-group="d1" id="d1-python">
+<pre><code class="language-python">ages = {"alice": 30, "bob": 25}</code></pre>
+</div>
+
+<div class="panel" data-group="d1" id="d1-go">
+<pre><code class="language-go">ages := map[string]int{
+    "alice": 30,
+    "bob":   25,
+}</code></pre>
+</div>
+
+<div class="panel" data-group="d1" id="d1-zig">
+<pre><code>var ages = std.StringHashMap(i32).init(allocator);
+defer ages.deinit();
+try ages.put("alice", 30);
+try ages.put("bob", 25);</code></pre>
+</div>
+
+<div class="panel" data-group="d1" id="d1-c">
+<pre><code class="language-c">// C has no built-in dict; use an array of pairs or a hash lib (e.g. uthash)
+#include &lt;uthash.h&gt;
+
+typedef struct {
+    char name[32];
+    int age;
+    UT_hash_handle hh;
+} entry;
+
+entry *ages = NULL, *e;
+e = malloc(sizeof(*e));
+strcpy(e-&gt;name, "alice");
+e-&gt;age = 30;
+HASH_ADD_STR(ages, name, e);</code></pre>
+</div>
+
+<div class="panel" data-group="d1" id="d1-cpp">
+<pre><code class="language-cpp">#include &lt;unordered_map&gt;
+#include &lt;string&gt;
+
+std::unordered_map&lt;std::string, int&gt; ages = {
+    {"alice", 30},
+    {"bob",   25},
+};</code></pre>
+</div>
+
+<div class="panel" data-group="d1" id="d1-rust">
+<pre><code class="language-rust">use std::collections::HashMap;
+
+let ages: HashMap&lt;&str, i32&gt; = HashMap::from([
+    ("alice", 30),
+    ("bob",   25),
+]);</code></pre>
+</div>
+
+<div class="panel" data-group="d1" id="d1-typescript">
+<pre><code class="language-typescript">const ages: Record&lt;string, number&gt; = {
+  alice: 30,
+  bob: 25,
+};</code></pre>
+</div>
+
+<div class="panel" data-group="d1" id="d1-javascript">
+<pre><code class="language-javascript">const ages = { alice: 30, bob: 25 };</code></pre>
+</div>
+
+<div class="panel" data-group="d1" id="d1-csharp">
+<pre><code class="language-csharp">var ages = new Dictionary&lt;string, int&gt; {
+    ["alice"] = 30,
+    ["bob"]   = 25,
+};</code></pre>
+</div>
+
+<div class="panel" data-group="d1" id="d1-kotlin">
+<pre><code class="language-kotlin">val ages = mutableMapOf("alice" to 30, "bob" to 25)</code></pre>
+</div>
+
+<div class="panel" data-group="d1" id="d1-java">
+<pre><code class="language-java">Map&lt;String, Integer&gt; ages = new HashMap&lt;&gt;();
+ages.put("alice", 30);
+ages.put("bob", 25);</code></pre>
+</div>
+
+<div class="panel" data-group="d1" id="d1-scala">
+<pre><code class="language-scala">val ages = scala.collection.mutable.Map("alice" -&gt; 30, "bob" -&gt; 25)</code></pre>
+</div>
+
+<div class="panel" data-group="d1" id="d1-bash">
+<pre><code class="language-bash">declare -A ages
+ages[alice]=30
+ages[bob]=25</code></pre>
+</div>
+
+</div>
+</div>
+
+<div class="section">
+<h2>Lookup with default</h2>
+<p class="sub">Read a key, returning <code>0</code> if missing</p>
+
+<div class="wrapper">
+<div class="tabs" data-group="d2">
+  <button type="button" class="tab active" data-lang="python"><span class="dot" style="background:#3572A5"></span>Python</button>
+  <button type="button" class="tab" data-lang="go"><span class="dot" style="background:#00ADD8"></span>Go</button>
+  <button type="button" class="tab" data-lang="zig"><span class="dot" style="background:#F7A41D"></span>Zig</button>
+  <button type="button" class="tab" data-lang="c"><span class="dot" style="background:#555555"></span>C</button>
+  <button type="button" class="tab" data-lang="cpp"><span class="dot" style="background:#F34B7D"></span>C++</button>
+  <button type="button" class="tab" data-lang="rust"><span class="dot" style="background:#DEA584"></span>Rust</button>
+  <button type="button" class="tab" data-lang="typescript"><span class="dot" style="background:#3178C6"></span>TypeScript</button>
+  <button type="button" class="tab" data-lang="javascript"><span class="dot" style="background:#F1E05A"></span>JavaScript</button>
+  <button type="button" class="tab" data-lang="csharp"><span class="dot" style="background:#68217A"></span>C#</button>
+  <button type="button" class="tab" data-lang="kotlin"><span class="dot" style="background:#A97BFF"></span>Kotlin</button>
+  <button type="button" class="tab" data-lang="java"><span class="dot" style="background:#B07219"></span>Java</button>
+  <button type="button" class="tab" data-lang="scala"><span class="dot" style="background:#DC322F"></span>Scala</button>
+  <button type="button" class="tab" data-lang="bash"><span class="dot" style="background:#89E051"></span>Bash</button>
+</div>
+
+<div class="panel active" data-group="d2" id="d2-python">
+<pre><code class="language-python">age = ages.get("carol", 0)</code></pre>
+</div>
+
+<div class="panel" data-group="d2" id="d2-go">
+<pre><code class="language-go">age, ok := ages["carol"]
+if !ok {
+    age = 0
+}</code></pre>
+</div>
+
+<div class="panel" data-group="d2" id="d2-zig">
+<pre><code>const age = ages.get("carol") orelse 0;</code></pre>
+</div>
+
+<div class="panel" data-group="d2" id="d2-c">
+<pre><code class="language-c">entry *found;
+HASH_FIND_STR(ages, "carol", found);
+int age = found ? found-&gt;age : 0;</code></pre>
+</div>
+
+<div class="panel" data-group="d2" id="d2-cpp">
+<pre><code class="language-cpp">auto it = ages.find("carol");
+int age = (it != ages.end()) ? it-&gt;second : 0;</code></pre>
+</div>
+
+<div class="panel" data-group="d2" id="d2-rust">
+<pre><code class="language-rust">let age = *ages.get("carol").unwrap_or(&0);</code></pre>
+</div>
+
+<div class="panel" data-group="d2" id="d2-typescript">
+<pre><code class="language-typescript">const age = ages["carol"] ?? 0;</code></pre>
+</div>
+
+<div class="panel" data-group="d2" id="d2-javascript">
+<pre><code class="language-javascript">const age = ages["carol"] ?? 0;</code></pre>
+</div>
+
+<div class="panel" data-group="d2" id="d2-csharp">
+<pre><code class="language-csharp">int age = ages.TryGetValue("carol", out var v) ? v : 0;</code></pre>
+</div>
+
+<div class="panel" data-group="d2" id="d2-kotlin">
+<pre><code class="language-kotlin">val age = ages.getOrDefault("carol", 0)</code></pre>
+</div>
+
+<div class="panel" data-group="d2" id="d2-java">
+<pre><code class="language-java">int age = ages.getOrDefault("carol", 0);</code></pre>
+</div>
+
+<div class="panel" data-group="d2" id="d2-scala">
+<pre><code class="language-scala">val age = ages.getOrElse("carol", 0)</code></pre>
+</div>
+
+<div class="panel" data-group="d2" id="d2-bash">
+<pre><code class="language-bash">age=${ages[carol]:-0}</code></pre>
+</div>
+
+</div>
+</div>
+
+<div class="section">
+<h2>Iterate entries</h2>
+<p class="sub">Walk every key/value pair</p>
+
+<div class="wrapper">
+<div class="tabs" data-group="d3">
+  <button type="button" class="tab active" data-lang="python"><span class="dot" style="background:#3572A5"></span>Python</button>
+  <button type="button" class="tab" data-lang="go"><span class="dot" style="background:#00ADD8"></span>Go</button>
+  <button type="button" class="tab" data-lang="zig"><span class="dot" style="background:#F7A41D"></span>Zig</button>
+  <button type="button" class="tab" data-lang="c"><span class="dot" style="background:#555555"></span>C</button>
+  <button type="button" class="tab" data-lang="cpp"><span class="dot" style="background:#F34B7D"></span>C++</button>
+  <button type="button" class="tab" data-lang="rust"><span class="dot" style="background:#DEA584"></span>Rust</button>
+  <button type="button" class="tab" data-lang="typescript"><span class="dot" style="background:#3178C6"></span>TypeScript</button>
+  <button type="button" class="tab" data-lang="javascript"><span class="dot" style="background:#F1E05A"></span>JavaScript</button>
+  <button type="button" class="tab" data-lang="csharp"><span class="dot" style="background:#68217A"></span>C#</button>
+  <button type="button" class="tab" data-lang="kotlin"><span class="dot" style="background:#A97BFF"></span>Kotlin</button>
+  <button type="button" class="tab" data-lang="java"><span class="dot" style="background:#B07219"></span>Java</button>
+  <button type="button" class="tab" data-lang="scala"><span class="dot" style="background:#DC322F"></span>Scala</button>
+  <button type="button" class="tab" data-lang="bash"><span class="dot" style="background:#89E051"></span>Bash</button>
+</div>
+
+<div class="panel active" data-group="d3" id="d3-python">
+<pre><code class="language-python">for name, age in ages.items():
+    print(name, age)</code></pre>
+</div>
+
+<div class="panel" data-group="d3" id="d3-go">
+<pre><code class="language-go">for name, age := range ages {
+    fmt.Println(name, age)
+}</code></pre>
+</div>
+
+<div class="panel" data-group="d3" id="d3-zig">
+<pre><code>var it = ages.iterator();
+while (it.next()) |kv| {
+    std.debug.print("{s} {}\n", .{ kv.key_ptr.*, kv.value_ptr.* });
+}</code></pre>
+</div>
+
+<div class="panel" data-group="d3" id="d3-c">
+<pre><code class="language-c">entry *e, *tmp;
+HASH_ITER(hh, ages, e, tmp) {
+    printf("%s %d\n", e-&gt;name, e-&gt;age);
+}</code></pre>
+</div>
+
+<div class="panel" data-group="d3" id="d3-cpp">
+<pre><code class="language-cpp">for (const auto &[name, age] : ages) {
+    std::cout &lt;&lt; name &lt;&lt; ' ' &lt;&lt; age &lt;&lt; '\n';
+}</code></pre>
+</div>
+
+<div class="panel" data-group="d3" id="d3-rust">
+<pre><code class="language-rust">for (name, age) in &ages {
+    println!("{name} {age}");
+}</code></pre>
+</div>
+
+<div class="panel" data-group="d3" id="d3-typescript">
+<pre><code class="language-typescript">for (const [name, age] of Object.entries(ages)) {
+  console.log(name, age);
+}</code></pre>
+</div>
+
+<div class="panel" data-group="d3" id="d3-javascript">
+<pre><code class="language-javascript">for (const [name, age] of Object.entries(ages)) {
+  console.log(name, age);
+}</code></pre>
+</div>
+
+<div class="panel" data-group="d3" id="d3-csharp">
+<pre><code class="language-csharp">foreach (var (name, age) in ages) {
+    Console.WriteLine($"{name} {age}");
+}</code></pre>
+</div>
+
+<div class="panel" data-group="d3" id="d3-kotlin">
+<pre><code class="language-kotlin">for ((name, age) in ages) {
+    println("$name $age")
+}</code></pre>
+</div>
+
+<div class="panel" data-group="d3" id="d3-java">
+<pre><code class="language-java">for (var e : ages.entrySet()) {
+    System.out.println(e.getKey() + " " + e.getValue());
+}</code></pre>
+</div>
+
+<div class="panel" data-group="d3" id="d3-scala">
+<pre><code class="language-scala">for ((name, age) &lt;- ages) println(s"$name $age")</code></pre>
+</div>
+
+<div class="panel" data-group="d3" id="d3-bash">
+<pre><code class="language-bash">for name in "${!ages[@]}"; do
+  echo "$name ${ages[$name]}"
+done</code></pre>
+</div>
+
+</div>
+</div>
+
+<div class="section">
+<h2>Delete a key</h2>
+<p class="sub">Remove an entry if present</p>
+
+<div class="wrapper">
+<div class="tabs" data-group="d4">
+  <button type="button" class="tab active" data-lang="python"><span class="dot" style="background:#3572A5"></span>Python</button>
+  <button type="button" class="tab" data-lang="go"><span class="dot" style="background:#00ADD8"></span>Go</button>
+  <button type="button" class="tab" data-lang="zig"><span class="dot" style="background:#F7A41D"></span>Zig</button>
+  <button type="button" class="tab" data-lang="c"><span class="dot" style="background:#555555"></span>C</button>
+  <button type="button" class="tab" data-lang="cpp"><span class="dot" style="background:#F34B7D"></span>C++</button>
+  <button type="button" class="tab" data-lang="rust"><span class="dot" style="background:#DEA584"></span>Rust</button>
+  <button type="button" class="tab" data-lang="typescript"><span class="dot" style="background:#3178C6"></span>TypeScript</button>
+  <button type="button" class="tab" data-lang="javascript"><span class="dot" style="background:#F1E05A"></span>JavaScript</button>
+  <button type="button" class="tab" data-lang="csharp"><span class="dot" style="background:#68217A"></span>C#</button>
+  <button type="button" class="tab" data-lang="kotlin"><span class="dot" style="background:#A97BFF"></span>Kotlin</button>
+  <button type="button" class="tab" data-lang="java"><span class="dot" style="background:#B07219"></span>Java</button>
+  <button type="button" class="tab" data-lang="scala"><span class="dot" style="background:#DC322F"></span>Scala</button>
+  <button type="button" class="tab" data-lang="bash"><span class="dot" style="background:#89E051"></span>Bash</button>
+</div>
+
+<div class="panel active" data-group="d4" id="d4-python">
+<pre><code class="language-python">ages.pop("bob", None)</code></pre>
+</div>
+
+<div class="panel" data-group="d4" id="d4-go">
+<pre><code class="language-go">delete(ages, "bob")</code></pre>
+</div>
+
+<div class="panel" data-group="d4" id="d4-zig">
+<pre><code>_ = ages.remove("bob");</code></pre>
+</div>
+
+<div class="panel" data-group="d4" id="d4-c">
+<pre><code class="language-c">HASH_FIND_STR(ages, "bob", found);
+if (found) {
+    HASH_DEL(ages, found);
+    free(found);
+}</code></pre>
+</div>
+
+<div class="panel" data-group="d4" id="d4-cpp">
+<pre><code class="language-cpp">ages.erase("bob");</code></pre>
+</div>
+
+<div class="panel" data-group="d4" id="d4-rust">
+<pre><code class="language-rust">ages.remove("bob");</code></pre>
+</div>
+
+<div class="panel" data-group="d4" id="d4-typescript">
+<pre><code class="language-typescript">delete ages["bob"];</code></pre>
+</div>
+
+<div class="panel" data-group="d4" id="d4-javascript">
+<pre><code class="language-javascript">delete ages["bob"];</code></pre>
+</div>
+
+<div class="panel" data-group="d4" id="d4-csharp">
+<pre><code class="language-csharp">ages.Remove("bob");</code></pre>
+</div>
+
+<div class="panel" data-group="d4" id="d4-kotlin">
+<pre><code class="language-kotlin">ages.remove("bob")</code></pre>
+</div>
+
+<div class="panel" data-group="d4" id="d4-java">
+<pre><code class="language-java">ages.remove("bob");</code></pre>
+</div>
+
+<div class="panel" data-group="d4" id="d4-scala">
+<pre><code class="language-scala">ages -= "bob"</code></pre>
+</div>
+
+<div class="panel" data-group="d4" id="d4-bash">
+<pre><code class="language-bash">unset 'ages[bob]'</code></pre>
+</div>
+
+</div>
+</div>
+
+</main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/rust.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/go.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/kotlin.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/scala.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/typescript.min.js"></script>
+<script src="index.js"></script>

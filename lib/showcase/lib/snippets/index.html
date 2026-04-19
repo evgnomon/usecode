@@ -1,0 +1,532 @@
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css" media="(prefers-color-scheme: light)">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+<link rel="stylesheet" href="index.css">
+
+<div class="layout">
+<aside class="sidebar">
+  <div class="brand">Snippets</div>
+  <nav class="menu">
+    <a href="index.html" class="menu-item active">
+      <span class="menu-icon">◆</span>Code snippets
+    </a>
+    <a href="functions.html" class="menu-item">
+      <span class="menu-icon">◆</span>Functions
+    </a>
+    <a href="dictionaries.html" class="menu-item">
+      <span class="menu-icon">◆</span>Dictionaries
+    </a>
+    <a href="structs.html" class="menu-item">
+      <span class="menu-icon">◆</span>Structs
+    </a>
+  </nav>
+</aside>
+
+<main class="content">
+
+<div class="section">
+<h2>1 — Numeric pipeline</h2>
+<p class="sub">Filter evens, square them, sum → <code>120</code></p>
+
+<div class="wrapper">
+<div class="tabs" data-group="a">
+  <button type="button" class="tab active" data-lang="python"><span class="dot" style="background:#3572A5"></span>Python</button>
+  <button type="button" class="tab" data-lang="go"><span class="dot" style="background:#00ADD8"></span>Go</button>
+  <button type="button" class="tab" data-lang="zig"><span class="dot" style="background:#F7A41D"></span>Zig</button>
+  <button type="button" class="tab" data-lang="c"><span class="dot" style="background:#555555"></span>C</button>
+  <button type="button" class="tab" data-lang="cpp"><span class="dot" style="background:#F34B7D"></span>C++</button>
+  <button type="button" class="tab" data-lang="rust"><span class="dot" style="background:#DEA584"></span>Rust</button>
+  <button type="button" class="tab" data-lang="typescript"><span class="dot" style="background:#3178C6"></span>TypeScript</button>
+  <button type="button" class="tab" data-lang="javascript"><span class="dot" style="background:#F1E05A"></span>JavaScript</button>
+  <button type="button" class="tab" data-lang="csharp"><span class="dot" style="background:#68217A"></span>C#</button>
+  <button type="button" class="tab" data-lang="kotlin"><span class="dot" style="background:#A97BFF"></span>Kotlin</button>
+  <button type="button" class="tab" data-lang="java"><span class="dot" style="background:#B07219"></span>Java</button>
+  <button type="button" class="tab" data-lang="scala"><span class="dot" style="background:#DC322F"></span>Scala</button>
+  <button type="button" class="tab" data-lang="bash"><span class="dot" style="background:#89E051"></span>Bash</button>
+</div>
+
+<div class="panel active" data-group="a" id="a-python">
+<pre><code class="language-python">nums = [1, 2, 3, 4, 5, 6, 7, 8]
+
+result = sum(x**2 for x in nums if x % 2 == 0)
+
+print(result)  # 120</code></pre>
+</div>
+
+<div class="panel" data-group="a" id="a-go">
+<pre><code class="language-go">package main
+
+import "fmt"
+
+func main() {
+    nums := []int{1, 2, 3, 4, 5, 6, 7, 8}
+
+    result := 0
+    for _, x := range nums {
+        if x%2 == 0 {
+            result += x * x
+        }
+    }
+
+    fmt.Println(result) // 120
+}</code></pre>
+</div>
+
+<div class="panel" data-group="a" id="a-zig">
+<pre><code><span class="hljs-keyword">const</span> std = <span class="hljs-built_in">@import</span>(<span class="hljs-string">"std"</span>);
+
+<span class="hljs-keyword">pub</span> <span class="hljs-keyword">fn</span> <span class="hljs-title">main</span>() <span class="hljs-type">void</span> {
+    <span class="hljs-keyword">const</span> nums = [_]<span class="hljs-type">i32</span>{ <span class="hljs-number">1</span>, <span class="hljs-number">2</span>, <span class="hljs-number">3</span>, <span class="hljs-number">4</span>, <span class="hljs-number">5</span>, <span class="hljs-number">6</span>, <span class="hljs-number">7</span>, <span class="hljs-number">8</span> };
+
+    <span class="hljs-keyword">var</span> result: <span class="hljs-type">i32</span> = <span class="hljs-number">0</span>;
+    <span class="hljs-keyword">for</span> (nums) |x| {
+        <span class="hljs-keyword">if</span> (<span class="hljs-built_in">@mod</span>(x, <span class="hljs-number">2</span>) == <span class="hljs-number">0</span>) {
+            result += x * x;
+        }
+    }
+
+    std.debug.print(<span class="hljs-string">"{d}\n"</span>, .{result}); <span class="hljs-comment">// 120</span>
+}</code></pre>
+</div>
+
+<div class="panel" data-group="a" id="a-c">
+<pre><code class="language-c">#include &lt;stdio.h&gt;
+
+int main(void) {
+    int nums[] = {1, 2, 3, 4, 5, 6, 7, 8};
+    int n = sizeof(nums) / sizeof(nums[0]);
+
+    int result = 0;
+    for (int i = 0; i &lt; n; i++) {
+        if (nums[i] % 2 == 0)
+            result += nums[i] * nums[i];
+    }
+
+    printf("%d\n", result); // 120
+    return 0;
+}</code></pre>
+</div>
+
+<div class="panel" data-group="a" id="a-cpp">
+<pre><code class="language-cpp">#include &lt;iostream&gt;
+#include &lt;vector&gt;
+#include &lt;numeric&gt;
+#include &lt;ranges&gt;
+
+int main() {
+    std::vector nums = {1, 2, 3, 4, 5, 6, 7, 8};
+
+    auto sq = nums
+        | std::views::filter(
+            [](int x) { return x % 2 == 0; })
+        | std::views::transform(
+            [](int x) { return x * x; });
+
+    int result = std::accumulate(
+        sq.begin(), sq.end(), 0);
+
+    std::cout &lt;&lt; result &lt;&lt; "\n"; // 120
+}</code></pre>
+</div>
+
+<div class="panel" data-group="a" id="a-rust">
+<pre><code class="language-rust">fn main() {
+    let nums = vec![1, 2, 3, 4, 5, 6, 7, 8];
+
+    let result: i32 = nums.iter()
+        .filter(|&&x| x % 2 == 0)
+        .map(|&x| x * x)
+        .sum();
+
+    println!("{result}"); // 120
+}</code></pre>
+</div>
+
+<div class="panel" data-group="a" id="a-typescript">
+<pre><code class="language-typescript">const nums: number[] = [1, 2, 3, 4, 5, 6, 7, 8];
+
+const result = nums
+  .filter(x =&gt; x % 2 === 0)
+  .map(x =&gt; x * x)
+  .reduce((a, b) =&gt; a + b, 0);
+
+console.log(result); // 120</code></pre>
+</div>
+
+<div class="panel" data-group="a" id="a-javascript">
+<pre><code class="language-javascript">const nums = [1, 2, 3, 4, 5, 6, 7, 8];
+
+const result = nums
+  .filter(x =&gt; x % 2 === 0)
+  .map(x =&gt; x * x)
+  .reduce((a, b) =&gt; a + b, 0);
+
+console.log(result); // 120</code></pre>
+</div>
+
+<div class="panel" data-group="a" id="a-csharp">
+<pre><code class="language-csharp">using System;
+using System.Linq;
+
+int[] nums = {1, 2, 3, 4, 5, 6, 7, 8};
+
+int result = nums
+    .Where(x =&gt; x % 2 == 0)
+    .Select(x =&gt; x * x)
+    .Sum();
+
+Console.WriteLine(result); // 120</code></pre>
+</div>
+
+<div class="panel" data-group="a" id="a-kotlin">
+<pre><code class="language-kotlin">fun main() {
+    val nums = listOf(1, 2, 3, 4, 5, 6, 7, 8)
+
+    val result = nums
+        .filter { it % 2 == 0 }
+        .sumOf { it * it }
+
+    println(result) // 120
+}</code></pre>
+</div>
+
+<div class="panel" data-group="a" id="a-java">
+<pre><code class="language-java">import java.util.List;
+
+public class Main {
+    public static void main(String[] args) {
+        var nums = List.of(1, 2, 3, 4, 5, 6, 7, 8);
+
+        int result = nums.stream()
+            .filter(x -&gt; x % 2 == 0)
+            .mapToInt(x -&gt; x * x)
+            .sum();
+
+        System.out.println(result); // 120
+    }
+}</code></pre>
+</div>
+
+<div class="panel" data-group="a" id="a-scala">
+<pre><code class="language-scala">@main def run(): Unit =
+  val nums = List(1, 2, 3, 4, 5, 6, 7, 8)
+
+  val result = nums
+    .filter(_ % 2 == 0)
+    .map(x =&gt; x * x)
+    .sum
+
+  println(result) // 120</code></pre>
+</div>
+
+<div class="panel" data-group="a" id="a-bash">
+<pre><code class="language-bash">#!/usr/bin/env bash
+
+nums=(1 2 3 4 5 6 7 8)
+result=0
+
+for x in "${nums[@]}"; do
+  if (( x % 2 == 0 )); then
+    (( result += x * x ))
+  fi
+done
+
+echo "$result" # 120</code></pre>
+</div>
+
+</div>
+</div>
+
+<div class="section">
+<h2>2 — Mixed types</h2>
+<p class="sub">Iterate a list of <code>(name, age)</code> pairs, keep adults, format as strings</p>
+
+<div class="wrapper">
+<div class="tabs" data-group="b">
+  <button type="button" class="tab active" data-lang="python"><span class="dot" style="background:#3572A5"></span>Python</button>
+  <button type="button" class="tab" data-lang="go"><span class="dot" style="background:#00ADD8"></span>Go</button>
+  <button type="button" class="tab" data-lang="zig"><span class="dot" style="background:#F7A41D"></span>Zig</button>
+  <button type="button" class="tab" data-lang="c"><span class="dot" style="background:#555555"></span>C</button>
+  <button type="button" class="tab" data-lang="cpp"><span class="dot" style="background:#F34B7D"></span>C++</button>
+  <button type="button" class="tab" data-lang="rust"><span class="dot" style="background:#DEA584"></span>Rust</button>
+  <button type="button" class="tab" data-lang="typescript"><span class="dot" style="background:#3178C6"></span>TypeScript</button>
+  <button type="button" class="tab" data-lang="javascript"><span class="dot" style="background:#F1E05A"></span>JavaScript</button>
+  <button type="button" class="tab" data-lang="csharp"><span class="dot" style="background:#68217A"></span>C#</button>
+  <button type="button" class="tab" data-lang="kotlin"><span class="dot" style="background:#A97BFF"></span>Kotlin</button>
+  <button type="button" class="tab" data-lang="java"><span class="dot" style="background:#B07219"></span>Java</button>
+  <button type="button" class="tab" data-lang="scala"><span class="dot" style="background:#DC322F"></span>Scala</button>
+  <button type="button" class="tab" data-lang="bash"><span class="dot" style="background:#89E051"></span>Bash</button>
+</div>
+
+<div class="panel active" data-group="b" id="b-python">
+<pre><code class="language-python">people = [("Alice", 30), ("Bob", 15), ("Carol", 22)]
+
+adults = [
+    f"{name} is {age}"
+    for name, age in people
+    if age >= 18
+]
+
+print(adults)
+# ['Alice is 30', 'Carol is 22']</code></pre>
+</div>
+
+<div class="panel" data-group="b" id="b-go">
+<pre><code class="language-go">package main
+
+import "fmt"
+
+type Person struct {
+    Name string
+    Age  int
+}
+
+func main() {
+    people := []Person{
+        {"Alice", 30}, {"Bob", 15}, {"Carol", 22},
+    }
+
+    var adults []string
+    for _, p := range people {
+        if p.Age >= 18 {
+            adults = append(adults,
+                fmt.Sprintf("%s is %d", p.Name, p.Age))
+        }
+    }
+
+    fmt.Println(adults)
+    // [Alice is 30 Carol is 22]
+}</code></pre>
+</div>
+
+<div class="panel" data-group="b" id="b-zig">
+<pre><code><span class="hljs-keyword">const</span> std = <span class="hljs-built_in">@import</span>(<span class="hljs-string">"std"</span>);
+
+<span class="hljs-keyword">const</span> Person = <span class="hljs-keyword">struct</span> {
+    name: []<span class="hljs-keyword">const</span> <span class="hljs-type">u8</span>,
+    age: <span class="hljs-type">i32</span>,
+};
+
+<span class="hljs-keyword">pub</span> <span class="hljs-keyword">fn</span> <span class="hljs-title">main</span>() <span class="hljs-type">void</span> {
+    <span class="hljs-keyword">const</span> people = [_]Person{
+        .{ .name = <span class="hljs-string">"Alice"</span>, .age = <span class="hljs-number">30</span> },
+        .{ .name = <span class="hljs-string">"Bob"</span>,   .age = <span class="hljs-number">15</span> },
+        .{ .name = <span class="hljs-string">"Carol"</span>, .age = <span class="hljs-number">22</span> },
+    };
+
+    <span class="hljs-keyword">for</span> (people) |p| {
+        <span class="hljs-keyword">if</span> (p.age >= <span class="hljs-number">18</span>) {
+            std.debug.print(<span class="hljs-string">"{s} is {d}\n"</span>,
+                .{ p.name, p.age });
+        }
+    }
+    <span class="hljs-comment">// Alice is 30</span>
+    <span class="hljs-comment">// Carol is 22</span>
+}</code></pre>
+</div>
+
+<div class="panel" data-group="b" id="b-c">
+<pre><code class="language-c">#include &lt;stdio.h&gt;
+
+typedef struct { const char *name; int age; } Person;
+
+int main(void) {
+    Person people[] = {
+        {"Alice", 30}, {"Bob", 15}, {"Carol", 22}
+    };
+    int n = sizeof(people) / sizeof(people[0]);
+
+    for (int i = 0; i &lt; n; i++) {
+        if (people[i].age >= 18)
+            printf("%s is %d\n",
+                people[i].name, people[i].age);
+    }
+    // Alice is 30
+    // Carol is 22
+    return 0;
+}</code></pre>
+</div>
+
+<div class="panel" data-group="b" id="b-cpp">
+<pre><code class="language-cpp">#include &lt;iostream&gt;
+#include &lt;vector&gt;
+#include &lt;string&gt;
+#include &lt;ranges&gt;
+#include &lt;format&gt;
+
+int main() {
+    struct Person { std::string name; int age; };
+
+    std::vector&lt;Person&gt; people = {
+        {"Alice", 30}, {"Bob", 15}, {"Carol", 22}
+    };
+
+    for (auto&amp; [name, age] : people
+         | std::views::filter(
+             [](auto&amp; p) { return p.age >= 18; }))
+    {
+        std::cout &lt;&lt; std::format(
+            "{} is {}\n", name, age);
+    }
+    // Alice is 30
+    // Carol is 22
+}</code></pre>
+</div>
+
+<div class="panel" data-group="b" id="b-rust">
+<pre><code class="language-rust">fn main() {
+    let people = vec![
+        ("Alice", 30),
+        ("Bob", 15),
+        ("Carol", 22),
+    ];
+
+    let adults: Vec&lt;String&gt; = people.iter()
+        .filter(|(_, age)| *age >= 18)
+        .map(|(name, age)| format!("{name} is {age}"))
+        .collect();
+
+    println!("{adults:?}");
+    // ["Alice is 30", "Carol is 22"]
+}</code></pre>
+</div>
+
+<div class="panel" data-group="b" id="b-typescript">
+<pre><code class="language-typescript">interface Person { name: string; age: number }
+
+const people: Person[] = [
+  { name: "Alice", age: 30 },
+  { name: "Bob",   age: 15 },
+  { name: "Carol", age: 22 },
+];
+
+const adults = people
+  .filter(p =&gt; p.age >= 18)
+  .map(p =&gt; `${p.name} is ${p.age}`);
+
+console.log(adults);
+// ['Alice is 30', 'Carol is 22']</code></pre>
+</div>
+
+<div class="panel" data-group="b" id="b-javascript">
+<pre><code class="language-javascript">const people = [
+  { name: "Alice", age: 30 },
+  { name: "Bob",   age: 15 },
+  { name: "Carol", age: 22 },
+];
+
+const adults = people
+  .filter(p =&gt; p.age >= 18)
+  .map(p =&gt; `${p.name} is ${p.age}`);
+
+console.log(adults);
+// ['Alice is 30', 'Carol is 22']</code></pre>
+</div>
+
+<div class="panel" data-group="b" id="b-csharp">
+<pre><code class="language-csharp">var people = new[] {
+    (Name: "Alice", Age: 30),
+    (Name: "Bob",   Age: 15),
+    (Name: "Carol", Age: 22),
+};
+
+var adults = people
+    .Where(p =&gt; p.Age >= 18)
+    .Select(p =&gt; $"{p.Name} is {p.Age}")
+    .ToList();
+
+Console.WriteLine(string.Join(", ", adults));
+// Alice is 30, Carol is 22</code></pre>
+</div>
+
+<div class="panel" data-group="b" id="b-kotlin">
+<pre><code class="language-kotlin">data class Person(val name: String, val age: Int)
+
+fun main() {
+    val people = listOf(
+        Person("Alice", 30),
+        Person("Bob", 15),
+        Person("Carol", 22),
+    )
+
+    val adults = people
+        .filter { it.age >= 18 }
+        .map { "${it.name} is ${it.age}" }
+
+    println(adults)
+    // [Alice is 30, Carol is 22]
+}</code></pre>
+</div>
+
+<div class="panel" data-group="b" id="b-java">
+<pre><code class="language-java">import java.util.List;
+
+record Person(String name, int age) {}
+
+public class Main {
+    public static void main(String[] args) {
+        var people = List.of(
+            new Person("Alice", 30),
+            new Person("Bob", 15),
+            new Person("Carol", 22)
+        );
+
+        var adults = people.stream()
+            .filter(p -&gt; p.age() >= 18)
+            .map(p -&gt; p.name() + " is " + p.age())
+            .toList();
+
+        System.out.println(adults);
+        // [Alice is 30, Carol is 22]
+    }
+}</code></pre>
+</div>
+
+<div class="panel" data-group="b" id="b-scala">
+<pre><code class="language-scala">case class Person(name: String, age: Int)
+
+@main def run(): Unit =
+  val people = List(
+    Person("Alice", 30),
+    Person("Bob", 15),
+    Person("Carol", 22),
+  )
+
+  val adults = people
+    .filter(_.age >= 18)
+    .map(p =&gt; s"${p.name} is ${p.age}")
+
+  println(adults)
+  // List(Alice is 30, Carol is 22)</code></pre>
+</div>
+
+<div class="panel" data-group="b" id="b-bash">
+<pre><code class="language-bash">#!/usr/bin/env bash
+
+declare -A ages=( [Alice]=30 [Bob]=15 [Carol]=22 )
+
+adults=()
+for name in "${!ages[@]}"; do
+  age=${ages[$name]}
+  if (( age >= 18 )); then
+    adults+=("$name is $age")
+  fi
+done
+
+printf '%s\n' "${adults[@]}"
+# Alice is 30
+# Carol is 22</code></pre>
+</div>
+
+</div>
+</div>
+
+</main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/rust.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/go.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/kotlin.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/scala.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/typescript.min.js"></script>
+<script src="index.js"></script>

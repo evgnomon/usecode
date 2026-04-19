@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% from "_macros.html" import panel, product_card %}
+
+{% block title %}Dashboard — {{ super() }}{% endblock %}
+
+{% block head %}
+  {# extend parent block by calling super() #}
+  <meta name="robots" content="noindex">
+{% endblock %}
+
+{% block content %}
+  <h1>Welcome, {{ user.name }}</h1>
+
+  {# include a partial; `with context` is implicit #}
+  {% include "_partials/user_chip.html" %}
+
+  {% call panel('Autoescape demo') %}
+    {# default: escaped — the <script> tag is rendered as text #}
+    <p><em>escaped:</em> {{ notice }}</p>
+    {# `safe` opts out of escaping — only for trusted strings #}
+    <p><em>raw (unsafe):</em> {{ notice | emojify | safe }}</p>
+  {% endcall %}
+
+  {% call panel('Scoped variables & whitespace') %}
+    {# `with` creates a scope; variables vanish outside. #}
+    {% with discount = 0.15, vat = 0.20 %}
+      {% set gross = 100 * (1 - discount) * (1 + vat) %}
+      <p>100 − 15% + 20% VAT = <strong>{{ gross | money }}</strong></p>
+    {% endwith %}
+
+    {# `-` trims whitespace on that side. Useful for clean output. #}
+    <pre>{%- for n in range(3) -%}
+      item-{{ n }}{{ ',' if not loop.last }}
+    {%- endfor -%}</pre>
+  {% endcall %}
+
+  {% call panel('Assignment block & dictsort') %}
+    {# `set ... endset` captures a rendered block into a variable #}
+    {% set summary %}
+      {{ products | length }} products,
+      {{ products | selectattr('stock', 'gt', 0) | list | length }} in stock
+    {% endset %}
+    <p>{{ summary | trim }}</p>
+
+    <ul>
+      {# `dictsort` on a dict-like: sort user fields alphabetically #}
+      {% for k, v in user | dictsort %}
+        <li><code>{{ k }}</code> = {{ v }}</li>
+      {% endfor %}
+    </ul>
+  {% endcall %}
+
+  {% call panel('Top premium items') %}
+    <div class="grid">
+      {# chainable filters: select → sort → slice #}
+      {% for p in products | selectattr('price', 'gt', 100) | sort(attribute='price', reverse=true) %}
+        {{ product_card(p) }}
+      {% else %}
+        <p>No premium items.</p>
+      {% endfor %}
+    </div>
+  {% endcall %}
+{% endblock %}

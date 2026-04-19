@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{% block title %}{{ site_name }}{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='/style.css') }}">
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <header class="topbar">
+    <a href="/" class="brand">{{ site_name }}</a>
+    <nav>
+      {# loop over a literal tuple to build nav links #}
+      {% for label, href in [('Home','/'), ('Products','/products'), ('Dashboard','/dashboard')] %}
+        <a href="{{ href }}">{{ label }}</a>
+      {% endfor %}
+    </nav>
+  </header>
+
+  <main class="content">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="foot">
+    {# `now` is a global callable; strftime via a filter chain #}
+    <small>Rendered {{ now().strftime('%Y-%m-%d %H:%M UTC') }}</small>
+  </footer>
+</body>
+</html>

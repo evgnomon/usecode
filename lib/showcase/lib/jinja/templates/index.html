@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% from "_macros.html" import panel, badge %}
+
+{% block title %}Home — {{ super() }}{% endblock %}
+
+{% block content %}
+  {# `set` defines a template-local variable. #}
+  {% set features = [
+      ('Inheritance', 'extends + blocks + super()'),
+      ('Includes',    '{% include %} for partials'),
+      ('Macros',      'reusable components with {% call %}'),
+      ('Filters',     'built-in and custom'),
+      ('Tests',       'x is defined / odd / expensive'),
+      ('Autoescape',  'escape by default, opt in with |safe'),
+  ] %}
+
+  {% call panel('Features in this demo') %}
+    <ol>
+      {% for name, desc in features %}
+        <li>
+          <strong>{{ name }}</strong> — {{ desc }}
+          {# loop object: index/first/last/length #}
+          {% if loop.last %}{{ badge('last', 'info') }}{% endif %}
+        </li>
+      {% endfor %}
+    </ol>
+  {% endcall %}
+
+  {% call panel('Expressions & filters') %}
+    <pre>
+{% filter trim %}
+  {# `filter` block: applies a filter to its body #}
+  The quick brown fox jumps over the lazy dog.
+{% endfilter %}
+    </pre>
+    <ul>
+      <li>upper → {{ 'hello' | upper }}</li>
+      <li>default → {{ missing | default('n/a') }}</li>
+      <li>join → {{ ['a', 'b', 'c'] | join(', ') }}</li>
+      <li>length → {{ 'jinja' | length }}</li>
+      <li>replace → {{ 'foo-bar' | replace('-', ' ') | title }}</li>
+      <li>custom emojify → {{ 'ship it :rocket: :fire:' | emojify }}</li>
+      <li>custom money → {{ 1234.5 | money('EUR') }}</li>
+    </ul>
+  {% endcall %}
+{% endblock %}

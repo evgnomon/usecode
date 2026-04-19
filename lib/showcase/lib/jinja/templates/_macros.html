@@ -1,0 +1,33 @@
+{# Reusable macros — like mini components. #}
+
+{% macro badge(text, kind='default') -%}
+  <span class="badge badge-{{ kind }}">{{ text }}</span>
+{%- endmacro %}
+
+{% macro product_card(p, currency='USD') -%}
+  <article class="card {% if p is expensive %}card-premium{% endif %}">
+    <h3>{{ p.name }}</h3>
+    <p class="price">{{ p.price | money(currency) }}</p>
+    <p class="tags">
+      {% for t in p.tags %}{{ badge(t, 'tag') }}{% endfor %}
+    </p>
+    {# `if / elif / else` with a test #}
+    {% if p.stock == 0 %}
+      {{ badge('out of stock', 'warn') }}
+    {% elif p.stock < 5 %}
+      {{ badge('low stock: ' ~ p.stock, 'info') }}
+    {% else %}
+      {{ badge('in stock', 'ok') }}
+    {% endif %}
+  </article>
+{%- endmacro %}
+
+{# `call` macro: caller supplies a body block. #}
+{% macro panel(title) -%}
+  <section class="panel">
+    <h2>{{ title }}</h2>
+    <div class="panel-body">
+      {{ caller() }}
+    </div>
+  </section>
+{%- endmacro %}

@@ -1,0 +1,555 @@
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css" media="(prefers-color-scheme: light)">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+<link rel="stylesheet" href="index.css">
+
+<div class="layout">
+<aside class="sidebar">
+  <div class="brand">Snippets</div>
+  <nav class="menu">
+    <a href="index.html" class="menu-item">
+      <span class="menu-icon">◆</span>Code snippets
+    </a>
+    <a href="functions.html" class="menu-item">
+      <span class="menu-icon">◆</span>Functions
+    </a>
+    <a href="dictionaries.html" class="menu-item">
+      <span class="menu-icon">◆</span>Dictionaries
+    </a>
+    <a href="structs.html" class="menu-item active">
+      <span class="menu-icon">◆</span>Structs
+    </a>
+  </nav>
+</aside>
+
+<main class="content">
+
+<div class="section">
+<h2>Define &amp; construct</h2>
+<p class="sub">A <code>Person</code> record with a name and age</p>
+
+<div class="wrapper">
+<div class="tabs" data-group="s1">
+  <button type="button" class="tab active" data-lang="python"><span class="dot" style="background:#3572A5"></span>Python</button>
+  <button type="button" class="tab" data-lang="go"><span class="dot" style="background:#00ADD8"></span>Go</button>
+  <button type="button" class="tab" data-lang="zig"><span class="dot" style="background:#F7A41D"></span>Zig</button>
+  <button type="button" class="tab" data-lang="c"><span class="dot" style="background:#555555"></span>C</button>
+  <button type="button" class="tab" data-lang="cpp"><span class="dot" style="background:#F34B7D"></span>C++</button>
+  <button type="button" class="tab" data-lang="rust"><span class="dot" style="background:#DEA584"></span>Rust</button>
+  <button type="button" class="tab" data-lang="typescript"><span class="dot" style="background:#3178C6"></span>TypeScript</button>
+  <button type="button" class="tab" data-lang="javascript"><span class="dot" style="background:#F1E05A"></span>JavaScript</button>
+  <button type="button" class="tab" data-lang="csharp"><span class="dot" style="background:#68217A"></span>C#</button>
+  <button type="button" class="tab" data-lang="kotlin"><span class="dot" style="background:#A97BFF"></span>Kotlin</button>
+  <button type="button" class="tab" data-lang="java"><span class="dot" style="background:#B07219"></span>Java</button>
+  <button type="button" class="tab" data-lang="scala"><span class="dot" style="background:#DC322F"></span>Scala</button>
+  <button type="button" class="tab" data-lang="bash"><span class="dot" style="background:#89E051"></span>Bash</button>
+</div>
+
+<div class="panel active" data-group="s1" id="s1-python">
+<pre><code class="language-python">from dataclasses import dataclass
+
+@dataclass
+class Person:
+    name: str
+    age: int
+
+alice = Person("Alice", 30)</code></pre>
+</div>
+
+<div class="panel" data-group="s1" id="s1-go">
+<pre><code class="language-go">type Person struct {
+    Name string
+    Age  int
+}
+
+alice := Person{Name: "Alice", Age: 30}</code></pre>
+</div>
+
+<div class="panel" data-group="s1" id="s1-zig">
+<pre><code><span class="hljs-keyword">const</span> Person = <span class="hljs-keyword">struct</span> {
+    name: []<span class="hljs-keyword">const</span> <span class="hljs-type">u8</span>,
+    age: <span class="hljs-type">i32</span>,
+};
+
+<span class="hljs-keyword">const</span> alice = Person{ .name = <span class="hljs-string">"Alice"</span>, .age = <span class="hljs-number">30</span> };</code></pre>
+</div>
+
+<div class="panel" data-group="s1" id="s1-c">
+<pre><code class="language-c">typedef struct {
+    const char *name;
+    int age;
+} Person;
+
+Person alice = {"Alice", 30};</code></pre>
+</div>
+
+<div class="panel" data-group="s1" id="s1-cpp">
+<pre><code class="language-cpp">struct Person {
+    std::string name;
+    int age;
+};
+
+Person alice{"Alice", 30};</code></pre>
+</div>
+
+<div class="panel" data-group="s1" id="s1-rust">
+<pre><code class="language-rust">struct Person {
+    name: String,
+    age: i32,
+}
+
+let alice = Person {
+    name: String::from("Alice"),
+    age: 30,
+};</code></pre>
+</div>
+
+<div class="panel" data-group="s1" id="s1-typescript">
+<pre><code class="language-typescript">interface Person {
+  name: string;
+  age: number;
+}
+
+const alice: Person = { name: "Alice", age: 30 };</code></pre>
+</div>
+
+<div class="panel" data-group="s1" id="s1-javascript">
+<pre><code class="language-javascript">const alice = { name: "Alice", age: 30 };</code></pre>
+</div>
+
+<div class="panel" data-group="s1" id="s1-csharp">
+<pre><code class="language-csharp">record Person(string Name, int Age);
+
+var alice = new Person("Alice", 30);</code></pre>
+</div>
+
+<div class="panel" data-group="s1" id="s1-kotlin">
+<pre><code class="language-kotlin">data class Person(val name: String, val age: Int)
+
+val alice = Person("Alice", 30)</code></pre>
+</div>
+
+<div class="panel" data-group="s1" id="s1-java">
+<pre><code class="language-java">record Person(String name, int age) {}
+
+var alice = new Person("Alice", 30);</code></pre>
+</div>
+
+<div class="panel" data-group="s1" id="s1-scala">
+<pre><code class="language-scala">case class Person(name: String, age: Int)
+
+val alice = Person("Alice", 30)</code></pre>
+</div>
+
+<div class="panel" data-group="s1" id="s1-bash">
+<pre><code class="language-bash">#!/usr/bin/env bash
+
+declare -A alice=( [name]="Alice" [age]=30 )
+
+echo "${alice[name]} is ${alice[age]}"</code></pre>
+</div>
+
+</div>
+</div>
+
+<div class="section">
+<h2>Access &amp; update fields</h2>
+<p class="sub">Read a field, then produce an updated copy or mutation</p>
+
+<div class="wrapper">
+<div class="tabs" data-group="s2">
+  <button type="button" class="tab active" data-lang="python"><span class="dot" style="background:#3572A5"></span>Python</button>
+  <button type="button" class="tab" data-lang="go"><span class="dot" style="background:#00ADD8"></span>Go</button>
+  <button type="button" class="tab" data-lang="zig"><span class="dot" style="background:#F7A41D"></span>Zig</button>
+  <button type="button" class="tab" data-lang="c"><span class="dot" style="background:#555555"></span>C</button>
+  <button type="button" class="tab" data-lang="cpp"><span class="dot" style="background:#F34B7D"></span>C++</button>
+  <button type="button" class="tab" data-lang="rust"><span class="dot" style="background:#DEA584"></span>Rust</button>
+  <button type="button" class="tab" data-lang="typescript"><span class="dot" style="background:#3178C6"></span>TypeScript</button>
+  <button type="button" class="tab" data-lang="javascript"><span class="dot" style="background:#F1E05A"></span>JavaScript</button>
+  <button type="button" class="tab" data-lang="csharp"><span class="dot" style="background:#68217A"></span>C#</button>
+  <button type="button" class="tab" data-lang="kotlin"><span class="dot" style="background:#A97BFF"></span>Kotlin</button>
+  <button type="button" class="tab" data-lang="java"><span class="dot" style="background:#B07219"></span>Java</button>
+  <button type="button" class="tab" data-lang="scala"><span class="dot" style="background:#DC322F"></span>Scala</button>
+  <button type="button" class="tab" data-lang="bash"><span class="dot" style="background:#89E051"></span>Bash</button>
+</div>
+
+<div class="panel active" data-group="s2" id="s2-python">
+<pre><code class="language-python">from dataclasses import replace
+
+print(alice.name)              # Alice
+older = replace(alice, age=31)</code></pre>
+</div>
+
+<div class="panel" data-group="s2" id="s2-go">
+<pre><code class="language-go">fmt.Println(alice.Name) // Alice
+alice.Age = 31</code></pre>
+</div>
+
+<div class="panel" data-group="s2" id="s2-zig">
+<pre><code><span class="hljs-keyword">var</span> p = alice;
+std.debug.print(<span class="hljs-string">"{s}\n"</span>, .{p.name});
+p.age = <span class="hljs-number">31</span>;</code></pre>
+</div>
+
+<div class="panel" data-group="s2" id="s2-c">
+<pre><code class="language-c">printf("%s\n", alice.name); // Alice
+alice.age = 31;</code></pre>
+</div>
+
+<div class="panel" data-group="s2" id="s2-cpp">
+<pre><code class="language-cpp">std::cout &lt;&lt; alice.name &lt;&lt; "\n"; // Alice
+alice.age = 31;</code></pre>
+</div>
+
+<div class="panel" data-group="s2" id="s2-rust">
+<pre><code class="language-rust">println!("{}", alice.name); // Alice
+
+let older = Person { age: 31, ..alice };</code></pre>
+</div>
+
+<div class="panel" data-group="s2" id="s2-typescript">
+<pre><code class="language-typescript">console.log(alice.name); // Alice
+
+const older: Person = { ...alice, age: 31 };</code></pre>
+</div>
+
+<div class="panel" data-group="s2" id="s2-javascript">
+<pre><code class="language-javascript">console.log(alice.name); // Alice
+
+const older = { ...alice, age: 31 };</code></pre>
+</div>
+
+<div class="panel" data-group="s2" id="s2-csharp">
+<pre><code class="language-csharp">Console.WriteLine(alice.Name); // Alice
+
+var older = alice with { Age = 31 };</code></pre>
+</div>
+
+<div class="panel" data-group="s2" id="s2-kotlin">
+<pre><code class="language-kotlin">println(alice.name) // Alice
+
+val older = alice.copy(age = 31)</code></pre>
+</div>
+
+<div class="panel" data-group="s2" id="s2-java">
+<pre><code class="language-java">System.out.println(alice.name()); // Alice
+
+var older = new Person(alice.name(), 31);</code></pre>
+</div>
+
+<div class="panel" data-group="s2" id="s2-scala">
+<pre><code class="language-scala">println(alice.name) // Alice
+
+val older = alice.copy(age = 31)</code></pre>
+</div>
+
+<div class="panel" data-group="s2" id="s2-bash">
+<pre><code class="language-bash">echo "${alice[name]}" # Alice
+alice[age]=31</code></pre>
+</div>
+
+</div>
+</div>
+
+<div class="section">
+<h2>Methods</h2>
+<p class="sub">Attach a <code>greet()</code> behavior to <code>Person</code></p>
+
+<div class="wrapper">
+<div class="tabs" data-group="s3">
+  <button type="button" class="tab active" data-lang="python"><span class="dot" style="background:#3572A5"></span>Python</button>
+  <button type="button" class="tab" data-lang="go"><span class="dot" style="background:#00ADD8"></span>Go</button>
+  <button type="button" class="tab" data-lang="zig"><span class="dot" style="background:#F7A41D"></span>Zig</button>
+  <button type="button" class="tab" data-lang="c"><span class="dot" style="background:#555555"></span>C</button>
+  <button type="button" class="tab" data-lang="cpp"><span class="dot" style="background:#F34B7D"></span>C++</button>
+  <button type="button" class="tab" data-lang="rust"><span class="dot" style="background:#DEA584"></span>Rust</button>
+  <button type="button" class="tab" data-lang="typescript"><span class="dot" style="background:#3178C6"></span>TypeScript</button>
+  <button type="button" class="tab" data-lang="javascript"><span class="dot" style="background:#F1E05A"></span>JavaScript</button>
+  <button type="button" class="tab" data-lang="csharp"><span class="dot" style="background:#68217A"></span>C#</button>
+  <button type="button" class="tab" data-lang="kotlin"><span class="dot" style="background:#A97BFF"></span>Kotlin</button>
+  <button type="button" class="tab" data-lang="java"><span class="dot" style="background:#B07219"></span>Java</button>
+  <button type="button" class="tab" data-lang="scala"><span class="dot" style="background:#DC322F"></span>Scala</button>
+  <button type="button" class="tab" data-lang="bash"><span class="dot" style="background:#89E051"></span>Bash</button>
+</div>
+
+<div class="panel active" data-group="s3" id="s3-python">
+<pre><code class="language-python">@dataclass
+class Person:
+    name: str
+    age: int
+    def greet(self) -> str:
+        return f"Hi, I'm {self.name}"
+
+print(alice.greet())</code></pre>
+</div>
+
+<div class="panel" data-group="s3" id="s3-go">
+<pre><code class="language-go">func (p Person) Greet() string {
+    return "Hi, I'm " + p.Name
+}
+
+fmt.Println(alice.Greet())</code></pre>
+</div>
+
+<div class="panel" data-group="s3" id="s3-zig">
+<pre><code><span class="hljs-keyword">const</span> Person = <span class="hljs-keyword">struct</span> {
+    name: []<span class="hljs-keyword">const</span> <span class="hljs-type">u8</span>,
+    age: <span class="hljs-type">i32</span>,
+    <span class="hljs-keyword">pub</span> <span class="hljs-keyword">fn</span> <span class="hljs-title">greet</span>(self: Person) <span class="hljs-keyword">void</span> {
+        std.debug.print(<span class="hljs-string">"Hi, I'm {s}\n"</span>, .{self.name});
+    }
+};
+
+alice.greet();</code></pre>
+</div>
+
+<div class="panel" data-group="s3" id="s3-c">
+<pre><code class="language-c">void person_greet(const Person *p) {
+    printf("Hi, I'm %s\n", p->name);
+}
+
+person_greet(&alice);</code></pre>
+</div>
+
+<div class="panel" data-group="s3" id="s3-cpp">
+<pre><code class="language-cpp">struct Person {
+    std::string name;
+    int age;
+    std::string greet() const {
+        return "Hi, I'm " + name;
+    }
+};
+
+std::cout &lt;&lt; alice.greet() &lt;&lt; "\n";</code></pre>
+</div>
+
+<div class="panel" data-group="s3" id="s3-rust">
+<pre><code class="language-rust">impl Person {
+    fn greet(&self) -&gt; String {
+        format!("Hi, I'm {}", self.name)
+    }
+}
+
+println!("{}", alice.greet());</code></pre>
+</div>
+
+<div class="panel" data-group="s3" id="s3-typescript">
+<pre><code class="language-typescript">class Person {
+  constructor(public name: string, public age: number) {}
+  greet(): string {
+    return `Hi, I'm ${this.name}`;
+  }
+}
+
+console.log(new Person("Alice", 30).greet());</code></pre>
+</div>
+
+<div class="panel" data-group="s3" id="s3-javascript">
+<pre><code class="language-javascript">class Person {
+  constructor(name, age) { this.name = name; this.age = age; }
+  greet() { return `Hi, I'm ${this.name}`; }
+}
+
+console.log(new Person("Alice", 30).greet());</code></pre>
+</div>
+
+<div class="panel" data-group="s3" id="s3-csharp">
+<pre><code class="language-csharp">record Person(string Name, int Age) {
+    public string Greet() =&gt; $"Hi, I'm {Name}";
+}
+
+Console.WriteLine(alice.Greet());</code></pre>
+</div>
+
+<div class="panel" data-group="s3" id="s3-kotlin">
+<pre><code class="language-kotlin">data class Person(val name: String, val age: Int) {
+    fun greet() = "Hi, I'm $name"
+}
+
+println(alice.greet())</code></pre>
+</div>
+
+<div class="panel" data-group="s3" id="s3-java">
+<pre><code class="language-java">record Person(String name, int age) {
+    String greet() { return "Hi, I'm " + name; }
+}
+
+System.out.println(alice.greet());</code></pre>
+</div>
+
+<div class="panel" data-group="s3" id="s3-scala">
+<pre><code class="language-scala">case class Person(name: String, age: Int) {
+  def greet: String = s"Hi, I'm $name"
+}
+
+println(alice.greet)</code></pre>
+</div>
+
+<div class="panel" data-group="s3" id="s3-bash">
+<pre><code class="language-bash">person_greet() {
+    local -n p=$1
+    echo "Hi, I'm ${p[name]}"
+}
+
+person_greet alice</code></pre>
+</div>
+
+</div>
+</div>
+
+<div class="section">
+<h2>Serialize to JSON</h2>
+<p class="sub">Encode <code>Person</code> to JSON and decode back</p>
+
+<div class="wrapper">
+<div class="tabs" data-group="s4">
+  <button type="button" class="tab active" data-lang="python"><span class="dot" style="background:#3572A5"></span>Python</button>
+  <button type="button" class="tab" data-lang="go"><span class="dot" style="background:#00ADD8"></span>Go</button>
+  <button type="button" class="tab" data-lang="zig"><span class="dot" style="background:#F7A41D"></span>Zig</button>
+  <button type="button" class="tab" data-lang="c"><span class="dot" style="background:#555555"></span>C</button>
+  <button type="button" class="tab" data-lang="cpp"><span class="dot" style="background:#F34B7D"></span>C++</button>
+  <button type="button" class="tab" data-lang="rust"><span class="dot" style="background:#DEA584"></span>Rust</button>
+  <button type="button" class="tab" data-lang="typescript"><span class="dot" style="background:#3178C6"></span>TypeScript</button>
+  <button type="button" class="tab" data-lang="javascript"><span class="dot" style="background:#F1E05A"></span>JavaScript</button>
+  <button type="button" class="tab" data-lang="csharp"><span class="dot" style="background:#68217A"></span>C#</button>
+  <button type="button" class="tab" data-lang="kotlin"><span class="dot" style="background:#A97BFF"></span>Kotlin</button>
+  <button type="button" class="tab" data-lang="java"><span class="dot" style="background:#B07219"></span>Java</button>
+  <button type="button" class="tab" data-lang="scala"><span class="dot" style="background:#DC322F"></span>Scala</button>
+  <button type="button" class="tab" data-lang="bash"><span class="dot" style="background:#89E051"></span>Bash</button>
+</div>
+
+<div class="panel active" data-group="s4" id="s4-python">
+<pre><code class="language-python">import json
+from dataclasses import asdict
+
+s = json.dumps(asdict(alice))
+p = Person(**json.loads(s))</code></pre>
+</div>
+
+<div class="panel" data-group="s4" id="s4-go">
+<pre><code class="language-go">import "encoding/json"
+
+type Person struct {
+    Name string `json:"name"`
+    Age  int    `json:"age"`
+}
+
+b, _ := json.Marshal(alice)
+var p Person
+json.Unmarshal(b, &p)</code></pre>
+</div>
+
+<div class="panel" data-group="s4" id="s4-zig">
+<pre><code><span class="hljs-keyword">const</span> std = <span class="hljs-keyword">@import</span>(<span class="hljs-string">"std"</span>);
+
+<span class="hljs-keyword">var</span> buf: [<span class="hljs-number">256</span>]<span class="hljs-type">u8</span> = <span class="hljs-literal">undefined</span>;
+<span class="hljs-keyword">var</span> fbs = std.io.fixedBufferStream(&buf);
+<span class="hljs-keyword">try</span> std.json.stringify(alice, .{}, fbs.writer());
+
+<span class="hljs-keyword">const</span> parsed = <span class="hljs-keyword">try</span> std.json.parseFromSlice(
+    Person, allocator, fbs.getWritten(), .{});
+<span class="hljs-keyword">defer</span> parsed.deinit();</code></pre>
+</div>
+
+<div class="panel" data-group="s4" id="s4-c">
+<pre><code class="language-c">// using cJSON
+cJSON *j = cJSON_CreateObject();
+cJSON_AddStringToObject(j, "name", alice.name);
+cJSON_AddNumberToObject(j, "age", alice.age);
+char *s = cJSON_PrintUnformatted(j);
+
+cJSON *d = cJSON_Parse(s);
+Person p = {
+    cJSON_GetObjectItem(d, "name")->valuestring,
+    cJSON_GetObjectItem(d, "age")->valueint,
+};</code></pre>
+</div>
+
+<div class="panel" data-group="s4" id="s4-cpp">
+<pre><code class="language-cpp">#include &lt;nlohmann/json.hpp&gt;
+using json = nlohmann::json;
+
+json j = {{"name", alice.name}, {"age", alice.age}};
+auto s = j.dump();
+
+auto d = json::parse(s);
+Person p{d["name"], d["age"]};</code></pre>
+</div>
+
+<div class="panel" data-group="s4" id="s4-rust">
+<pre><code class="language-rust">use serde::{Serialize, Deserialize};
+
+#[derive(Serialize, Deserialize)]
+struct Person {
+    name: String,
+    age: i32,
+}
+
+let s = serde_json::to_string(&alice)?;
+let p: Person = serde_json::from_str(&s)?;</code></pre>
+</div>
+
+<div class="panel" data-group="s4" id="s4-typescript">
+<pre><code class="language-typescript">const s: string = JSON.stringify(alice);
+const p: Person = JSON.parse(s);</code></pre>
+</div>
+
+<div class="panel" data-group="s4" id="s4-javascript">
+<pre><code class="language-javascript">const s = JSON.stringify(alice);
+const p = JSON.parse(s);</code></pre>
+</div>
+
+<div class="panel" data-group="s4" id="s4-csharp">
+<pre><code class="language-csharp">using System.Text.Json;
+
+var s = JsonSerializer.Serialize(alice);
+var p = JsonSerializer.Deserialize&lt;Person&gt;(s);</code></pre>
+</div>
+
+<div class="panel" data-group="s4" id="s4-kotlin">
+<pre><code class="language-kotlin">import kotlinx.serialization.*
+import kotlinx.serialization.json.*
+
+@Serializable
+data class Person(val name: String, val age: Int)
+
+val s = Json.encodeToString(alice)
+val p = Json.decodeFromString&lt;Person&gt;(s)</code></pre>
+</div>
+
+<div class="panel" data-group="s4" id="s4-java">
+<pre><code class="language-java">// using Jackson
+var mapper = new ObjectMapper();
+String s = mapper.writeValueAsString(alice);
+Person p = mapper.readValue(s, Person.class);</code></pre>
+</div>
+
+<div class="panel" data-group="s4" id="s4-scala">
+<pre><code class="language-scala">import upickle.default._
+
+implicit val rw: ReadWriter[Person] = macroRW
+val s = write(alice)
+val p = read[Person](s)</code></pre>
+</div>
+
+<div class="panel" data-group="s4" id="s4-bash">
+<pre><code class="language-bash">s=$(jq -n --arg n "${alice[name]}" \
+          --argjson a "${alice[age]}" \
+          '{name:$n, age:$a}')
+
+name=$(jq -r .name &lt;&lt;&lt;"$s")
+age=$(jq -r .age &lt;&lt;&lt;"$s")</code></pre>
+</div>
+
+</div>
+</div>
+
+</main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/rust.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/go.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/kotlin.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/scala.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/typescript.min.js"></script>
+<script src="index.js"></script>

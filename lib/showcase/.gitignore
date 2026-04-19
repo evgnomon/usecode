@@ -1,0 +1,22 @@
+.zig-cache
+a.out
+zig-out
+showcase
+
+
+# Added by cargo
+
+/target
+/cpp_manifest
+/obj
+/bin
+.bsp
+.scala-build
+main.scala
+
+
+# Added by cargo
+#
+# already existing elements were commented out
+
+#/target
