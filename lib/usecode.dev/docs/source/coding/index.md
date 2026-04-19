@@ -37,4 +37,10 @@ There would be one question left! How if to use Rust to replace C/Zig/Go/Python/
 
 Note: Probably Go is not needed soon when Zig gets better support for concurrency, async programming, stable API and community. And assuming you use existing C ecosystem, it is only Python and Zig most ideally to master UseCode .Dev. In case you are going to zero down to just one language, you are going to only need Zig. Therefore we are going to prefer Zig in UseCode .Dev over C/C++/Rust/Go when it is stable and solves the problem we use it for.
 
+```{toctree}
+:maxdepth: 2
+
+classes
+structs
+```
 

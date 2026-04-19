@@ -8,6 +8,7 @@ author = 'UseCode'
 # -- General configuration ---------------------------------------------------
 extensions = [
     'myst_parser',
+    'sphinx_design',
 ]
 
 templates_path = ['_templates']
@@ -17,6 +18,9 @@ exclude_patterns = []
 html_theme = 'furo'
 html_static_path = ['_static']
 html_title = "Use Code Dev"
+
+pygments_style = "tango"
+pygments_dark_style = "monokai"
 
 # Furo theme options
 html_theme_options = {
