@@ -67,7 +67,7 @@ func ReadConfig() (*ZygoteConfig, error) {
 }
 
 var (
-	secretsDir = filepath.Join(os.Getenv("HOME"), ".blueprint", "secrets")
+	secretsDir = filepath.Join(os.Getenv("HOME"), ".config", "usecode", "secrets")
 )
 
 type RunOpts struct {
@@ -305,14 +305,14 @@ func RepoName() string {
 
 func RepoVaultPath() string {
 	vaultAddress := RepoFullName()
-	secretFile := filepath.Join(UserHome(), ".blueprint", "secrets", fmt.Sprintf("%s.yaml", vaultAddress))
+	secretFile := filepath.Join(UserHome(), ".config", "usecode", "secrets", fmt.Sprintf("%s.yaml", vaultAddress))
 	return secretFile
 }
 
 func CreateRepoVault() error {
 	vaultAddress := RepoFullName()
 	vaultFile := fmt.Sprintf("%s.vault", vaultAddress)
-	vaultFileExist := PathExists(filepath.Join(UserHome(), ".blueprint", "secrets", fmt.Sprintf("%s.asc", vaultFile)))
+	vaultFileExist := PathExists(filepath.Join(UserHome(), ".config", "usecode", "secrets", fmt.Sprintf("%s.asc", vaultFile)))
 	s, err := randomString(randLen)
 	logger.FatalIfErr("Error generating random string", err)
 	if vaultFileExist {

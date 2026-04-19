@@ -1,8 +1,5 @@
 .PHONY: all ci deploy publish build version install
 
-DESTDIR ?= /
-export DESTDIR
-
 $(eval $(shell ./scripts/ci_wrapper.sh --env 2>/dev/null))
 
 VERSION := $(shell git describe --tags --match 'v*' --abbrev=0 2>/dev/null | sed 's/^v//')

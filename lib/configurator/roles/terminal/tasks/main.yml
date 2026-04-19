@@ -147,24 +147,6 @@
     - autoremove
     - upgrade
 
-- name: Install common Cargo packages
-  ansible.builtin.command:
-    cmd: "{{ cargo_cmd }} install {{ item }}"
-  loop: "{{ common_cargo_packages | default ([]) }}"
-  when:
-    - common_cargo_packages is defined and common_cargo_packages | length > 0
-  tags:
-    - cargo
-
-- name: Install OS specific Cargo packages
-  ansible.builtin.command:
-    cmd: "{{ cargo_cmd }} install {{ item }}"
-  loop: "{{ cargo_packages | default ([]) }}"
-  when:
-    - cargo_packages is defined and cargo_packages | length > 0
-  tags:
-    - cargo
-
 - name: Ensure ~/.bashrc.d directory exists
   ansible.builtin.file:
     path: "{{ ansible_facts['env']['HOME'] }}/.bashrc.d"
@@ -255,26 +237,6 @@
   include_tasks: fonts_install.yaml
   tags:
     - fonts
-
-- name: Install common Go packages
-  command: go install {{ item }}
-  environment:
-    CGO_ENABLED: "1"
-  with_items: "{{ common_go_packages }}"
-  tags:
-    - go
-
-- name: Install common Go packages for Debian
-  command: go install {{ item }}
-  environment:
-    CGO_ENABLED: "1"
-  with_items: "{{ debian_go_packages }}"
-  when:
-    - ansible_facts['os_family'] == "Debian"
-    - debian_go_packages is defined and debian_go_packages is iterable
-    - debian_go_packages | length > 0
-  tags:
-    - go
 
 - name: Install common Node packages
   command: npm install -g {{ item }}

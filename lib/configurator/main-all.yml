@@ -6,17 +6,6 @@
   roles:
     - python
 
-- name: Install Eget packages
-  gather_facts: false
-  hosts: 
-    - all
-    - localhost
-  roles:
-    - eget
-  tags:
-    - eget
-
-
 - name: Install Rust packages
   gather_facts: false
   hosts: 

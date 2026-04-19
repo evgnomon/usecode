@@ -186,14 +186,14 @@ def secrets(name=""):
     # Determine SECRET_FILE
     home = Path.home()
     if name:
-        secret_file = home / ".blueprint" / "secrets" / f"{name}.yaml"
+        secret_file = home / ".config" / "usecode" / "secrets" / f"{name}.yaml"
     else:
-        secret_file = home / ".blueprint" / "secrets" / "secrets.yaml"
+        secret_file = home / ".config" / "usecode" / "secrets" / "secrets.yaml"
 
     # Determine VAULT_FILE
     vault_file = name + ".vault" if name else "vault"
 
-    vault_file_path = home / ".blueprint" / "secrets" / f"{vault_file}.asc"
+    vault_file_path = home / ".config" / "usecode" / "secrets" / f"{vault_file}.asc"
 
     # Check if vault file exists
     if not vault_file_path.exists():

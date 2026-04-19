@@ -1,27 +1,20 @@
-# HGL/Blueprint
-
-Print your workstation wherever you are. The same thing, the same way, every time.
-
-## Install
-
-### Linux (bare metal)
+# Getting Started
 
 ```bash
-curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/evgnomon/blueprint/refs/heads/main/install.sh | sh
+git clone
+make
 ```
 
-Provide user configs:
+# Provide user configs:
 
 ```bash
-git clone ssh://git@github.com:YOURUSER/.blueprint.git ~/.config/blueprint
+git clone ssh://git@github.com:YOURUSER/config.git ~/.config/usecode
 ```
 
-### Windows / macOS (Dev Container)
-
-On Windows or macOS, run Blueprint inside a [Dev Container](https://containers.dev/). Open the repo in VS Code or any Dev Containers-compatible editor and reopen in container — the `.devcontainer/devcontainer.json` is already configured. Then run the install script inside the container:
+# Dev Container Setup
 
 ```bash
-curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/evgnomon/blueprint/refs/heads/main/install.sh | DEV_CONTAINER=1 sh
+DEV_CONTAINER=1 make
 ```
 
 ## Vim Plugins
@@ -90,12 +83,3 @@ repo_secrets:
     secret_name: VAULT_FILE
     secret_file: ~/.config/blueprint/secrets/evgnomon_blueprint_github.yaml
 ```
-
-## License
-
-HGL, verified:
-
-```bash
-shasum -a 512 -c SHA512SUMS
-```
-

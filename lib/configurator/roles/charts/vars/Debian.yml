@@ -9,5 +9,3 @@ path_components:
   - "/usr/local/bin"
   - "/usr/bin"
 custom_path: "{{ path_components | join(':') }}:$PATH"
-
-cargo_packages: []

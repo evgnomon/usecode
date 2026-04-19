@@ -10,7 +10,7 @@ ENV_FILE := .env
 .env:
 	@touch .env
 
-all: dist
+all: build
 
 build: $(OUTPUT)
 
