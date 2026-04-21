@@ -29,6 +29,7 @@ principles/privacy
 principles/code
 principles/full_box
 principles/protocol
+principles/ai
 
 coding/index
 ```
