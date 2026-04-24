@@ -34,7 +34,7 @@ rbenv() {
 status() {
     local code=$?
     echo "Exit status: $code"
-    
+
     case $code in
         0)   echo "✓ Success" ;;
         1)   echo "✗ General error" ;;
@@ -77,7 +77,7 @@ alias g=git
 alias gg=goose
 alias a=claude
 alias i=invoke
-alias c="clear"
+alias c='cd ~ && claude --disallowedTools "Read,Edit,Write,Bash,Glob,Grep"'
 alias mkpass="bp vault gen pass"
 alias z=fzurls
 alias r='gg run --recipe'
