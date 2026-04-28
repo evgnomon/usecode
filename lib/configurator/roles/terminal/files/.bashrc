@@ -17,12 +17,6 @@ RED="\[\e[31m\]"
 RESET="\[\e[0m\]"    # Reset color 
 ORANGE='\[\033[38;5;208m\]'
 
-# append to the history file, don't overwrite it
-shopt -s histappend
-
-# for setting history length see HISTSIZE and HISTFILESIZE in bash(1)
-HISTSIZE=100000
-HISTFILESIZE=2000000
 
 # check the window size after each command and, if necessary,
 # update the values of LINES and COLUMNS.
@@ -116,13 +110,6 @@ export LESS_TERMCAP_se=$'\e[0m'        # reset reverse video
 export LESS_TERMCAP_us=$'\e[1;32m'     # begin underline
 export LESS_TERMCAP_ue=$'\e[0m'        # reset underline
 
-HISTCONTROL=ignoreboth:erasedups  # Ignore duplicates
-shopt -s histappend               # Append to history, don't overwrite
-shopt -s cmdhist                  # Save multi-line commands as one
-function reset_keyboard_protocol() {
-    printf '\e[>0u'
-}
-PROMPT_COMMAND="reset_keyboard_protocol;history -a; history -c; history -r"
 
 # Modified prompt
 if [ "$(id -u)" -eq 0 ]; then
@@ -159,6 +146,20 @@ else
   bind -m vi-command '"\C-k": "\C-z\C-k\C-z"'
   bind -m vi-insert '"\C-k": "\C-z\C-k\C-z"'
 fi
+
+# for setting history length see HISTSIZE and HISTFILESIZE in bash(1)
+HISTSIZE=100000
+HISTFILESIZE=2000000
+HISTCONTROL=ignoreboth:erasedups  # Ignore duplicates
+
+# append to the history file, don't overwrite it
+shopt -s histappend               # Append to history, don't overwrite
+shopt -s cmdhist                  # Save multi-line commands as one
+
+function reset_keyboard_protocol() {
+    printf '\e[>0u'
+}
+PROMPT_COMMAND="reset_keyboard_protocol;history -a"
 
 # Source drop-in bashrc files from ~/.bashrc.d/ in sorted order
 if [ -d "$HOME/.bashrc.d" ]; then
