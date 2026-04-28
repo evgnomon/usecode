@@ -1,6 +1,3 @@
-[user]
-	name = Hamed Ghasemzadeh
-
 [core]
 	autocrlf = input
 	excludesfile = ~/.gitignore_global
