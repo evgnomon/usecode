@@ -176,7 +176,7 @@ pkg_debian:
         - name: kotlinc
           src: "kotlinc/bin/kotlinc"
         - name: kapt
-          src: "kotlinc/bin/kapt" 
+          src: "kotlinc/bin/kapt"
         - name: kotlin-compiler
           src: "kotlinc/bin/kotlin-compiler"
         - name: kotlinc-js

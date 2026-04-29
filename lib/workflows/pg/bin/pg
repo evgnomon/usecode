@@ -279,7 +279,10 @@ def tab():
 
 @tab.command(name="list")
 @click.option(
-    "--database", "-d", default=PG_DATABASE, help=f"Database name (default: {PG_DATABASE})"
+    "--database",
+    "-d",
+    default=PG_DATABASE,
+    help=f"Database name (default: {PG_DATABASE})",
 )
 @click.option("--schema", "-s", default="public", help="Schema name (default: public)")
 @click.pass_context
@@ -399,7 +402,9 @@ def tables_rename(ctx, old_name, new_name, database, schema):
         old_exists = cur.fetchone()["exists"]
 
         if new_exists and not old_exists:
-            click.echo(f"Table '{schema}.{new_name}' already exists. Nothing to do.", err=True)
+            click.echo(
+                f"Table '{schema}.{new_name}' already exists. Nothing to do.", err=True
+            )
             return
 
         cur.execute(f"ALTER TABLE {qualified_old} RENAME TO {id_new}")
@@ -423,14 +428,18 @@ def tables_rename(ctx, old_name, new_name, database, schema):
             old_seq = row["seq_name"]
             # Replace old table name prefix with new table name prefix
             if old_seq.startswith(f"{old_name}_"):
-                new_seq = f"{new_name}_{old_seq[len(old_name) + 1:]}"
+                new_seq = f"{new_name}_{old_seq[len(old_name) + 1 :]}"
                 old_seq_id = psycopg2.sql.Identifier(old_seq).as_string(conn)
                 new_seq_id = psycopg2.sql.Identifier(new_seq).as_string(conn)
-                cur.execute(f"ALTER SEQUENCE {psycopg2.sql.Identifier(schema).as_string(conn)}.{old_seq_id} RENAME TO {new_seq_id}")
+                cur.execute(
+                    f"ALTER SEQUENCE {psycopg2.sql.Identifier(schema).as_string(conn)}.{old_seq_id} RENAME TO {new_seq_id}"
+                )
                 click.echo(f"Sequence '{old_seq}' renamed to '{new_seq}'.", err=True)
 
         conn.commit()
-        click.echo(f"Table '{schema}.{old_name}' renamed to '{schema}.{new_name}'.", err=True)
+        click.echo(
+            f"Table '{schema}.{old_name}' renamed to '{schema}.{new_name}'.", err=True
+        )
     except psycopg2.Error as e:
         conn.rollback()
         click.echo(f"Error: {e}", err=True)
@@ -465,20 +474,24 @@ def tables_copy(ctx, source, destination, database, schema, data):
             (schema, destination),
         )
         if cur.fetchone()["exists"]:
-            click.echo(f"Table '{schema}.{destination}' already exists. Nothing to do.", err=True)
+            click.echo(
+                f"Table '{schema}.{destination}' already exists. Nothing to do.",
+                err=True,
+            )
             return
 
         if data:
-            cur.execute(
-                f"CREATE TABLE {qualified_dst} AS TABLE {qualified_src}"
-            )
+            cur.execute(f"CREATE TABLE {qualified_dst} AS TABLE {qualified_src}")
         else:
             cur.execute(
                 f"CREATE TABLE {qualified_dst} AS TABLE {qualified_src} WITH NO DATA"
             )
         conn.commit()
         label = "with data" if data else "structure only"
-        click.echo(f"Table '{schema}.{source}' copied to '{schema}.{destination}' ({label}).", err=True)
+        click.echo(
+            f"Table '{schema}.{source}' copied to '{schema}.{destination}' ({label}).",
+            err=True,
+        )
     except psycopg2.Error as e:
         conn.rollback()
         click.echo(f"Error: {e}", err=True)
@@ -510,7 +523,10 @@ def _resolve_column_type(type_name, is_float, is_double, is_long, is_unsigned, f
     }
     pg_type = type_map.get(type_name)
     if pg_type is None:
-        click.echo(f"Error: Unknown type '{type_name}'. Use: string, number, bool, jsonb", err=True)
+        click.echo(
+            f"Error: Unknown type '{type_name}'. Use: string, number, bool, jsonb",
+            err=True,
+        )
         sys.exit(1)
     return pg_type
 
@@ -547,8 +563,13 @@ def column_list(ctx, table, database, schema):
             click.echo(f"Columns in {schema}.{table}:", err=True)
             for row in rows:
                 nullable = "nullable" if row["is_nullable"] == "YES" else "not null"
-                default = f" default={row['column_default']}" if row["column_default"] else ""
-                click.echo(f"  • {row['column_name']} ({row['data_type']}, {nullable}{default})", err=True)
+                default = (
+                    f" default={row['column_default']}" if row["column_default"] else ""
+                )
+                click.echo(
+                    f"  • {row['column_name']} ({row['data_type']}, {nullable}{default})",
+                    err=True,
+                )
         else:
             click.echo(f"No columns found for {schema}.{table}.", err=True)
     except psycopg2.Error as e:
@@ -564,23 +585,66 @@ def column_list(ctx, table, database, schema):
 @click.argument("col_name")
 @click.argument("col_type", type=click.Choice(["string", "number", "bool", "jsonb"]))
 @click.option("--nullable", is_flag=True, help="Allow NULL values")
-@click.option("--float", "is_float", is_flag=True, help="Use 4-byte float (REAL) for number type")
-@click.option("--double", "is_double", is_flag=True, help="Use 8-byte float (DOUBLE PRECISION) for number type")
-@click.option("--long", "is_long", is_flag=True, help="Use 8-byte integer (BIGINT) for number type")
-@click.option("--unsigned", "is_unsigned", is_flag=True, help="Use unsigned (adds CHECK >= 0 constraint)")
-@click.option("--fixed", type=int, default=None, help="Use fixed-point decimal with N fractional digits (NUMERIC)")
-@click.option("--default", "default_value", default=None, help="Default value (SQL literal or expression)")
+@click.option(
+    "--float", "is_float", is_flag=True, help="Use 4-byte float (REAL) for number type"
+)
+@click.option(
+    "--double",
+    "is_double",
+    is_flag=True,
+    help="Use 8-byte float (DOUBLE PRECISION) for number type",
+)
+@click.option(
+    "--long",
+    "is_long",
+    is_flag=True,
+    help="Use 8-byte integer (BIGINT) for number type",
+)
+@click.option(
+    "--unsigned",
+    "is_unsigned",
+    is_flag=True,
+    help="Use unsigned (adds CHECK >= 0 constraint)",
+)
+@click.option(
+    "--fixed",
+    type=int,
+    default=None,
+    help="Use fixed-point decimal with N fractional digits (NUMERIC)",
+)
+@click.option(
+    "--default",
+    "default_value",
+    default=None,
+    help="Default value (SQL literal or expression)",
+)
 @click.option(
     "--database", "-d", default=None, help="Database name (default: from config)"
 )
 @click.option("--schema", "-s", default="public", help="Schema name (default: public)")
 @click.pass_context
-def column_add(ctx, table, col_name, col_type, nullable, is_float, is_double, is_long, is_unsigned, fixed, default_value, database, schema):
+def column_add(
+    ctx,
+    table,
+    col_name,
+    col_type,
+    nullable,
+    is_float,
+    is_double,
+    is_long,
+    is_unsigned,
+    fixed,
+    default_value,
+    database,
+    schema,
+):
     """Add a column to a table. Numbers default to INTEGER (4-byte signed)."""
     conn = get_connection(dbname=database) if database else ctx.obj["conn"]
     cur = conn.cursor()
 
-    pg_type = _resolve_column_type(col_type, is_float, is_double, is_long, is_unsigned, fixed)
+    pg_type = _resolve_column_type(
+        col_type, is_float, is_double, is_long, is_unsigned, fixed
+    )
     qualified = f"{psycopg2.sql.Identifier(schema).as_string(conn)}.{psycopg2.sql.Identifier(table).as_string(conn)}"
     col_id = psycopg2.sql.Identifier(col_name).as_string(conn)
     null_clause = "" if nullable else " NOT NULL"
@@ -607,7 +671,9 @@ def column_add(ctx, table, col_name, col_type, nullable, is_float, is_double, is
             label = f"unsigned {label}"
         if nullable:
             label += " (nullable)"
-        click.echo(f"Column '{col_name}' ({label}) added to '{schema}.{table}'.", err=True)
+        click.echo(
+            f"Column '{col_name}' ({label}) added to '{schema}.{table}'.", err=True
+        )
     except psycopg2.Error as e:
         conn.rollback()
         click.echo(f"Error: {e}", err=True)
@@ -674,14 +740,18 @@ def column_rename(ctx, table, old_name, new_name, database, schema):
         )
         existing = {row["column_name"] for row in cur.fetchall()}
         if new_name in existing and old_name not in existing:
-            click.echo(f"Column '{new_name}' already exists on '{schema}.{table}'. Nothing to do.", err=True)
+            click.echo(
+                f"Column '{new_name}' already exists on '{schema}.{table}'. Nothing to do.",
+                err=True,
+            )
             return
 
-        cur.execute(
-            f"ALTER TABLE {qualified} RENAME COLUMN {old_id} TO {new_id}"
-        )
+        cur.execute(f"ALTER TABLE {qualified} RENAME COLUMN {old_id} TO {new_id}")
         conn.commit()
-        click.echo(f"Column '{old_name}' renamed to '{new_name}' on '{schema}.{table}'.", err=True)
+        click.echo(
+            f"Column '{old_name}' renamed to '{new_name}' on '{schema}.{table}'.",
+            err=True,
+        )
     except psycopg2.Error as e:
         conn.rollback()
         click.echo(f"Error: {e}", err=True)
@@ -739,9 +809,23 @@ def index_list(ctx, table, database, schema):
 @idx.command(name="add")
 @click.argument("table")
 @click.argument("columns", nargs=-1, required=True)
-@click.option("--gin/--no-gin", default=None, help="Force GIN index on/off (default: auto-detect from column type)")
-@click.option("--unique", "is_unique", is_flag=True, help="Create a UNIQUE constraint instead of an index")
-@click.option("--name", "-n", default=None, help="Custom index/constraint name (default: auto-generated)")
+@click.option(
+    "--gin/--no-gin",
+    default=None,
+    help="Force GIN index on/off (default: auto-detect from column type)",
+)
+@click.option(
+    "--unique",
+    "is_unique",
+    is_flag=True,
+    help="Create a UNIQUE constraint instead of an index",
+)
+@click.option(
+    "--name",
+    "-n",
+    default=None,
+    help="Custom index/constraint name (default: auto-generated)",
+)
 @click.option(
     "--database", "-d", default=None, help="Database name (default: from config)"
 )
@@ -792,18 +876,22 @@ def index_add(ctx, table, columns, gin, is_unique, name, database, schema):
 
     try:
         if is_unique:
-            cur.execute(
-                "SELECT 1 FROM pg_constraint WHERE conname = %s", (name,)
-            )
+            cur.execute("SELECT 1 FROM pg_constraint WHERE conname = %s", (name,))
             if cur.fetchone():
-                click.echo(f"Unique constraint '{name}' already exists on '{schema}.{table}', skipping.", err=True)
+                click.echo(
+                    f"Unique constraint '{name}' already exists on '{schema}.{table}', skipping.",
+                    err=True,
+                )
                 return
             cols_str = ", ".join(col_ids)
             cur.execute(
                 f"ALTER TABLE {qualified} ADD CONSTRAINT {name_id} UNIQUE ({cols_str})"
             )
             conn.commit()
-            click.echo(f"Unique constraint '{name}' added to '{schema}.{table}' on ({', '.join(columns)}).", err=True)
+            click.echo(
+                f"Unique constraint '{name}' added to '{schema}.{table}' on ({', '.join(columns)}).",
+                err=True,
+            )
         else:
             cols_str = ", ".join(col_ids)
             using = "USING gin" if gin else ""
@@ -812,7 +900,10 @@ def index_add(ctx, table, columns, gin, is_unique, name, database, schema):
             )
             conn.commit()
             idx_type = "GIN index" if gin else "Index"
-            click.echo(f"{idx_type} '{name}' created on '{schema}.{table}' ({', '.join(columns)}).", err=True)
+            click.echo(
+                f"{idx_type} '{name}' created on '{schema}.{table}' ({', '.join(columns)}).",
+                err=True,
+            )
     except psycopg2.errors.DuplicateObject:
         conn.rollback()
         click.echo(f"Constraint or index '{name}' already exists, skipping.", err=True)
@@ -887,11 +978,16 @@ def row_rm(ctx, table, id, all_rows, database, schema):
         if all_rows:
             cur.execute(f"DELETE FROM {qualified}")
             conn.commit()
-            click.echo(f"Deleted {cur.rowcount} row(s) from '{schema}.{table}'.", err=True)
+            click.echo(
+                f"Deleted {cur.rowcount} row(s) from '{schema}.{table}'.", err=True
+            )
         else:
             cur.execute(f"DELETE FROM {qualified} WHERE id = %s", (id,))
             conn.commit()
-            click.echo(f"Deleted {cur.rowcount} row(s) from '{schema}.{table}' where id={id}.", err=True)
+            click.echo(
+                f"Deleted {cur.rowcount} row(s) from '{schema}.{table}' where id={id}.",
+                err=True,
+            )
     except psycopg2.Error as e:
         conn.rollback()
         click.echo(f"Error: {e}", err=True)
@@ -908,7 +1004,9 @@ def row_rm(ctx, table, id, all_rows, database, schema):
     "--database", "-d", default=None, help="Database name (default: from config)"
 )
 @click.option("--schema", "-s", default="public", help="Schema name (default: public)")
-@click.option("--limit", "-l", default=100, type=int, help="Maximum rows to return (default: 100)")
+@click.option(
+    "--limit", "-l", default=100, type=int, help="Maximum rows to return (default: 100)"
+)
 @click.pass_context
 def row_list(ctx, table, database, schema, limit):
     """List rows of a table."""
@@ -956,7 +1054,9 @@ def schema(ctx, dbname):
         if rows:
             click.echo(f"Schemas in {dbname}:", err=True)
             for row in rows:
-                click.echo(f"  • {row['schema_name']} (owner: {row['schema_owner']})", err=True)
+                click.echo(
+                    f"  • {row['schema_name']} (owner: {row['schema_owner']})", err=True
+                )
         else:
             click.echo("No schemas found.", err=True)
     except psycopg2.Error as e:
@@ -968,7 +1068,10 @@ def schema(ctx, dbname):
 
 @cli.command()
 @click.option(
-    "--database", "-d", default=PG_DATABASE, help=f"Database name (default: {PG_DATABASE})"
+    "--database",
+    "-d",
+    default=PG_DATABASE,
+    help=f"Database name (default: {PG_DATABASE})",
 )
 @click.option("--schema", "-s", default="public", help="Schema name (default: public)")
 @click.pass_context
@@ -1406,7 +1509,9 @@ def database_drop(ctx, name, force):
                 "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = %s AND pid <> pg_backend_pid()",
                 (name,),
             )
-        cur.execute(f"DROP DATABASE IF EXISTS {psycopg2.sql.Identifier(name).as_string(conn)}")
+        cur.execute(
+            f"DROP DATABASE IF EXISTS {psycopg2.sql.Identifier(name).as_string(conn)}"
+        )
         click.echo(f"Database '{name}' dropped.", err=True)
     except psycopg2.Error as e:
         click.echo(f"Error: {e}", err=True)
@@ -1491,7 +1596,10 @@ def database_restore(ctx, input_file, name, create):
         basename = os.path.basename(input_file)
         name = basename.split(".")[0]
         if not name:
-            click.echo("Error: Could not infer database name from filename. Use --name.", err=True)
+            click.echo(
+                "Error: Could not infer database name from filename. Use --name.",
+                err=True,
+            )
             sys.exit(1)
 
     conn = get_connection(dbname="postgres")
@@ -1505,7 +1613,9 @@ def database_restore(ctx, input_file, name, create):
             )
             click.echo(f"Database '{name}' created.", err=True)
         except psycopg2.errors.DuplicateDatabase:
-            click.echo(f"Database '{name}' already exists, restoring into it.", err=True)
+            click.echo(
+                f"Database '{name}' already exists, restoring into it.", err=True
+            )
         except psycopg2.Error as e:
             click.echo(f"Error creating database: {e}", err=True)
             sys.exit(1)

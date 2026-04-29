@@ -45,11 +45,29 @@ env.lstrip_blocks = True
 
 
 PRODUCTS = [
-    {"id": 1, "name": "Mechanical Keyboard", "price": 149.0, "tags": ["gear", "input"], "stock": 12},
+    {
+        "id": 1,
+        "name": "Mechanical Keyboard",
+        "price": 149.0,
+        "tags": ["gear", "input"],
+        "stock": 12,
+    },
     {"id": 2, "name": "USB-C Cable", "price": 9.5, "tags": ["cable"], "stock": 0},
-    {"id": 3, "name": "4K Monitor", "price": 489.0, "tags": ["display", "gear"], "stock": 3},
+    {
+        "id": 3,
+        "name": "4K Monitor",
+        "price": 489.0,
+        "tags": ["display", "gear"],
+        "stock": 3,
+    },
     {"id": 4, "name": "Notebook", "price": 4.25, "tags": ["paper"], "stock": 87},
-    {"id": 5, "name": "Ergonomic Chair", "price": 329.0, "tags": ["furniture"], "stock": 2},
+    {
+        "id": 5,
+        "name": "Ergonomic Chair",
+        "price": 329.0,
+        "tags": ["furniture"],
+        "stock": 2,
+    },
 ]
 
 

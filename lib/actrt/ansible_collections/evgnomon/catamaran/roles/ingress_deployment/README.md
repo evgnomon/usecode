@@ -82,12 +82,12 @@ Deploy nginx using Podman Kube Play, showcasing multiple Kubernetes resource typ
 - name: Deploy nginx with Podman
   hosts: servers
   become: true
-  
+
   vars:
     nginx_host_port: 8080
     nginx_deployment_replicas: 3
     nginx_secret_password: "{{ vault_nginx_password }}"
-  
+
   roles:
     - nginx_podman
 ```

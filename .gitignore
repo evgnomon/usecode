@@ -5,7 +5,9 @@
 /inventory
 /.config
 /.vscode
-build/
+build
+dist
+
 .stamps/
 
 *.tar.gz
@@ -70,9 +72,6 @@ coverage.xml
 *.cover
 .hypothesis/
 
-# Build
-build/
-dist/
 *.egg-info/
 
 # PyInstaller

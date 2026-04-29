@@ -14,7 +14,7 @@ esac
 BLUE="\[\e[34m\]"    # Blue for path
 GREEN="\[\e[32m\]"   # Green for Git branch
 RED="\[\e[31m\]"
-RESET="\[\e[0m\]"    # Reset color 
+RESET="\[\e[0m\]"    # Reset color
 ORANGE='\[\033[38;5;208m\]'
 
 # append to the history file, don't overwrite it

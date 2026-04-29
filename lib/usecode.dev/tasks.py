@@ -84,7 +84,7 @@ def watch(c, port=8000):
     try:
         c.run(
             f"sphinx-autobuild {DOCS_SOURCE} {BUILD_DIR} --port {port} --open-browser",
-            pty=True
+            pty=True,
         )
     except Exception as e:
         print("\nNote: sphinx-autobuild not installed.")

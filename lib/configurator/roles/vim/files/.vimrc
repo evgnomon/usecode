@@ -211,4 +211,3 @@ command! -bang -nargs=* Rg
     \ call fzf#vim#grep(
     \   'rg --line-number --no-heading --color=always --hidden -i --glob "!{.git,node_modules}/*" -- '.shellescape(<q-args>), 1,
     \   fzf#vim#with_preview(), <bang>0)
-

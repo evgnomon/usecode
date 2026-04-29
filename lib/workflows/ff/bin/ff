@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-
-fd -I --hidden --exclude .git . ${1:-$HOME} | fzf -m
-
-

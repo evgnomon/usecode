@@ -25,7 +25,7 @@
     labels: "{{ dict(outer_item.labels | zip(['true'] * (outer_item.labels | length))) }}"
     automount: false
   register: volume_info
-  with_subelements: 
+  with_subelements:
     - "{{ z_nodes.hetzner | selectattr('volumes', 'defined') | list }}"
     - volumes
     - flags:
@@ -60,7 +60,7 @@
   set_fact:
     hetzner_volumes: "{{ hetzner_volumes | default({}) | combine({item.hcloud_volume.server: (hetzner_volumes[item.hcloud_volume.server] | default({}) | combine({item.hcloud_volume.name: item.hcloud_volume.linux_device | string})) }) }}"
   with_items: "{{ volume_info.results | selectattr('hcloud_volume', 'defined') | list }}"
-  when: 
+  when:
     - volume_info is defined
     - volume_info.results is defined
     - z_nodes.hetzner | selectattr('volumes', 'defined') | list | length > 0
@@ -81,7 +81,7 @@
     ansible_user: "root"
     vm_name: '{{ item.item.name + "-" + z_env_name if z_env_name != "main" else item.item.name }}'
   with_items: "{{ server_info.results | selectattr('hcloud_server.ipv4_address', 'defined') | list }}"
-  when: 
+  when:
     - z_event_type == "push"
     # - item.item.get('state', 'present') == 'present'
 
@@ -114,7 +114,7 @@
     volume_name: "{{ volume.name }}"
     region: "{{ outer_item.get('location', 'fra1') }}"
     state: absent
-  with_subelements: 
+  with_subelements:
     - "{{ z_nodes.digitalocean | selectattr('volumes', 'defined') | list }}"
     - volumes
     - flags:
@@ -123,7 +123,7 @@
     vm_name: '{{ outer_item.name + "-" + z_env_name if z_env_name != "main" else outer_item.name }}'
     outer_item: "{{ item.0 }}"
     volume: "{{ item.1 }}"
-  when: 
+  when:
     - z_nodes.digitalocean | selectattr('volumes', 'defined') | list | length > 0
     - (volume.get('state') if 'state' in volume else 'absent' if z_event_type == 'delete' else 'present') == 'absent'
   failed_when: false
@@ -138,7 +138,7 @@
     filesystem_label: "{{ volume.get('filesystem_label', volume.name) }}"
     description: "{{ volume.get('description', '') }}"
     state: "{{ volume.get('state') if 'state' in volume else 'absent' if z_event_type == 'delete' else 'present' }}"
-  with_subelements: 
+  with_subelements:
     - "{{ z_nodes.digitalocean | selectattr('volumes', 'defined') | list }}"
     - volumes
     - flags:
@@ -166,7 +166,7 @@
     - volumes
     - flags:
         skip_missing: true
-  when: 
+  when:
     - z_nodes.digitalocean | selectattr('volumes', 'defined') | list | length > 0
     - outer_item.get('state', 'present') == 'present'
     - (volume.get('state') if 'state' in volume else 'absent' if z_event_type == 'delete' else 'present') == 'present'
@@ -174,7 +174,7 @@
 - name: Collect DigitalOcean volume information
   set_fact:
     do_volumes: "{{ do_volumes | default({}) | combine({outer_item.name: (do_volumes[outer_item.name] | default({}) | combine({volume.name: '/dev/disk/by-id/scsi-0DO_Volume_' + volume.name})) }) }}"
-  with_subelements: 
+  with_subelements:
     - "{{ z_nodes.digitalocean | selectattr('volumes', 'defined') | list }}"
     - volumes
     - flags:

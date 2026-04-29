@@ -10,12 +10,22 @@
   "languageserver": {
     "csharp-ls": {
       "command": "csharp-ls",
-      "filetypes": ["cs"],
-      "rootPatterns": ["*.csproj", ".vim/", ".git/", ".hg/"]
+      "filetypes": [
+        "cs"
+      ],
+      "rootPatterns": [
+        "*.csproj",
+        ".vim/",
+        ".git/",
+        ".hg/"
+      ]
     },
     "zls": {
       "command": "zls",
-      "filetypes": ["zig", "zon"],
+      "filetypes": [
+        "zig",
+        "zon"
+      ],
       "settings": {}
     }
   },

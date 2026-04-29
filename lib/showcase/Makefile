@@ -7,7 +7,7 @@ all: build
 
 build: $(cpp_target) $(rust_target) target/AllJavaFeatures.class bin/Debug/net10.0/linux-x64/main.dll bin/Debug/net10.0/linux-x64/main bin/Release/net10.0/linux-x64/publish/main target/main.kt.jar
 
-$(cpp_target): 
+$(cpp_target):
 	g++ -std=c++23 -pthread src/main.cc src/run.cc -I src -o $(cpp_target)
 
 $(rust_target):
@@ -24,7 +24,7 @@ clean:
 	dotnet clean
 
 bin/Release/net10.0/linux-x64/publish/main: main.cs
-	dotnet publish -c Release -r linux-x64 /p:PublishAot=true 
+	dotnet publish -c Release -r linux-x64 /p:PublishAot=true
 
 bin/Debug/net10.0/linux-x64/main.dll bin/Debug/net10.0/linux-x64/main: main.cs
 	dotnet build -c Debug -r linux-x64

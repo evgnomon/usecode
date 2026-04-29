@@ -1124,7 +1124,7 @@ service_restart
 # --- 30.3 Stack implementation ---
 declare -a stack=()
 stack_push() { stack+=("$1"); }
-stack_pop()  { 
+stack_pop()  {
     local top=${stack[-1]}
     unset 'stack[-1]'
     echo "$top"

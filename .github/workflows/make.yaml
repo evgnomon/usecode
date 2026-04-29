@@ -7,7 +7,7 @@ on:
     tags:
       - '*'
   delete:
- 
+
 jobs:
   ci:
     runs-on: ubuntu-latest

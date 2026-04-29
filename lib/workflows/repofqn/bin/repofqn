@@ -1,8 +1,0 @@
-#!/bin/sh
-
-repo_path=$(pwd)
-org=$(basename $(dirname $repo_path))
-repo=$(basename $repo_path)
-formatted="${org}_${repo}"
-echo $formatted
-
