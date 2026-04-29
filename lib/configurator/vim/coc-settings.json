@@ -1,0 +1,40 @@
+{
+  "snippets.ultisnips.pythonPrompt": false,
+  "python.formatting.provider": "ruff",
+  "python.formatting.blackPath": "${env:HOME}/.pyenv/shims/black",
+  "python.pythonPath": "${env:HOME}/.pyenv/shims/python",
+  "[zig]": {
+    "coc.preferences.formatOnSave": true,
+    "semanticTokens.enable": true
+  },
+  "languageserver": {
+    "csharp-ls": {
+      "command": "csharp-ls",
+      "filetypes": [
+        "cs"
+      ],
+      "rootPatterns": [
+        "*.csproj",
+        ".vim/",
+        ".git/",
+        ".hg/"
+      ]
+    },
+    "zls": {
+      "command": "zls",
+      "filetypes": [
+        "zig",
+        "zon"
+      ],
+      "settings": {}
+    }
+  },
+  "clangd.path": "clangd",
+  "clangd.arguments": [
+    "--background-index",
+    "--clang-tidy",
+    "--completion-style=detailed",
+    "--header-insertion=iwyu",
+    "--pch-storage=memory"
+  ]
+}
