@@ -2,13 +2,13 @@
   gather_facts: false
   hosts:
     - all
-    - localhost    
+    - localhost
   roles:
     - python
 
 - name: Install Rust packages
   gather_facts: false
-  hosts: 
+  hosts:
     - all
     - localhost
   roles:
@@ -18,7 +18,7 @@
 
 - name: Install C# Language Server
   gather_facts: false
-  hosts: 
+  hosts:
     - all
     - localhost
   roles:
@@ -28,7 +28,7 @@
 
 - name: Install Goose CLI
   gather_facts: false
-  hosts: 
+  hosts:
     - all
     - localhost
   roles:
@@ -37,7 +37,7 @@
     - goose
 
 - name: vim role
-  hosts: 
+  hosts:
     - all
     - localhost
   strategy: free

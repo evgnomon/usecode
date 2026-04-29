@@ -39,6 +39,7 @@
     - disable_ipv6
     - remove-gnome-packages
     - packer
+    - llama-cpp
   environment:
     PATH: "{{ custom_path }}"
     LD_LIBRARY_PATH: "{{ ansible_facts['env']['HOME'] }}/.pyenv/versions/3.12.0/lib/"

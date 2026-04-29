@@ -1,22 +1,22 @@
 # Configuration file for the Sphinx documentation builder.
 
 # -- Project information -----------------------------------------------------
-project = 'HGL - The Last Software License'
-copyright = '2025, UseCode'
-author = 'UseCode'
+project = "HGL - The Last Software License"
+copyright = "2025, UseCode"
+author = "UseCode"
 
 # -- General configuration ---------------------------------------------------
 extensions = [
-    'myst_parser',
-    'sphinx_design',
+    "myst_parser",
+    "sphinx_design",
 ]
 
-templates_path = ['_templates']
+templates_path = ["_templates"]
 exclude_patterns = []
 
 # -- Options for HTML output -------------------------------------------------
-html_theme = 'furo'
-html_static_path = ['_static']
+html_theme = "furo"
+html_static_path = ["_static"]
 html_title = "Use Code Dev"
 
 pygments_style = "tango"

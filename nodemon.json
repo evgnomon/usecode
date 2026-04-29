@@ -1,5 +1,9 @@
 {
-  "watch": ["*.go", "go.mod", "go.sum"],
+  "watch": [
+    "*.go",
+    "go.mod",
+    "go.sum"
+  ],
   "ext": "go",
   "exec": "go run ./cmd/zcore",
   "signal": "SIGTERM",
@@ -7,7 +11,10 @@
     "Z_LOG_LEVEL": "debug",
     "ZCORE_DOMAIN": "my.zygote.run"
   },
-  "ignore": ["vendor/*", "bin/*"],
+  "ignore": [
+    "vendor/*",
+    "bin/*"
+  ],
   "delay": 1000,
   "verbose": true
 }

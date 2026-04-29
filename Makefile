@@ -1,4 +1,4 @@
-.PHONY: all ci deploy publish build version install
+.PHONY: all ci deploy publish build version install clean
 
 $(eval $(shell ./scripts/ci_wrapper.sh --env 2>/dev/null))
 
@@ -48,7 +48,7 @@ ci:
 	@echo "  CI_DIR:          $(CI_DIR)"
 	@echo "  CI_PARENT:       $(CI_PARENT)"
 	@echo "══════════════════════════════════════════"
- 
+
 deploy:
 	@echo "Deploying $(CI_COMMIT_SHORT) from $(CI_BRANCH) [env=$(CI_ENV) track=$(CI_TRACK)]..."
 
@@ -76,3 +76,5 @@ publish:
 		fi; \
 	done
 
+clean:
+	@rm -rf $(BUILD_DIR) $(ROOT_DIR)/.stamps

@@ -72,6 +72,8 @@ apt_packages:
     - ugrep # Ultra-fast grep alternative with TUI and PCRE support for searching text in files
     - libnss3-tools # Tools for managing NSS databases and certificates for secure communication
     - skopeo # Tool for inspecting and copying container images between registries and local storage
+    - tmux # Terminal multiplexer for managing multiple terminal sessions in one window
+    - wl-clipboard # Command-line copy/paste utilities (wl-copy, wl-paste) for Wayland clipboard integration
 
   ubuntu:
     - mysql-client  # MySQL database client tools for connecting to MySQL servers

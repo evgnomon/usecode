@@ -1,9 +1,12 @@
 prefix := /usr
 version := 0.1.0
+DESTDIR ?= /
+IMAGE_DIR := $(DESTDIR)$(patsubst /%,%,$(prefix))/share/zm/images
+INSTALLED_IMAGE := $(IMAGE_DIR)/zamin
 
 all: dist
 
-.PHONY: build build-image clean install dist publish
+.PHONY: build build-image clean install uninstall dist publish
 
 build: build-image
 
@@ -17,12 +20,15 @@ publish: dist
 
 build-image: output-zamin/zamin
 
-install: output-zamin/zamin
-	@mkdir -p $(prefix)/share/zm/images
-	@cp output-zamin/zamin $(prefix)/share/zm/images/zamin
+install: $(INSTALLED_IMAGE)
+
+$(INSTALLED_IMAGE): output-zamin/zamin
+	@install -d $(@D)
+	@install -m 0644 $< $@
 
 uninstall:
-	@rm -f $(prefix)/share/zm/images/zamin
+	@rm -f $(INSTALLED_IMAGE)
+	@rmdir $(IMAGE_DIR) 2>/dev/null || true
 
 clean:
 	@rm -rf output-zamin

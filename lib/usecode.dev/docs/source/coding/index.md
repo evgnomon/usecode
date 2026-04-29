@@ -11,7 +11,7 @@ I suggest starting with Python as you can automate almost everything with it, no
 
 But you can not create all sort of APIs with Python! For example if you want to create a mobile app, you will need to learn Swift (for iOS) or Kotlin/Java (for Android). If you want to create a web front-end, you will need to learn JavaScript (or TypeScript) along with HTML and CSS. If you want to create a game, you might want to learn C# (with Unity) or C++ (with Unreal Engine). Each programming language has its own strengths and weaknesses, and is suited for different tasks. We need to add more languages to out stack. We apparently do not need to learn 100 languages for the same task, preferably one language that can do it all. But in reality, each language has its own ecosystem and community, and some tasks are better suited for certain languages. Therefore, it is good to have a basic understanding of multiple languages, at least not being limited to Python! But how many programming languages should one learn? It depends on your goals and interests. But what should be the goal and the interest for the purpose of UseCode .Dev? And how to choose the right languages?
 
-Python hits scalability and performance issues when it comes to large scale applications and high performance requirements. Specially when you have no control over the host system. Therefore, we need to add a language that can handle those use cases. I suggest Go. 
+Python hits scalability and performance issues when it comes to large scale applications and high performance requirements. Specially when you have no control over the host system. Therefore, we need to add a language that can handle those use cases. I suggest Go.
 
 The goal of UseCode .Dev is to empower you to create your own solutions and tools and contribute to a single branch of code. As we do not have any limitation over what is part of UseCode .Dev, we need to choose a set of programming languages that can cover a wide range of tasks and use cases and minimize the number of languages to learn. This reduces the barrier to entry as a developer. To minimize the number of languages we learn, we can prefer one eco system over another. For example if we prefer web over mobile, we can choose JavaScript/TypeScript as our main language as it can be used for both front-end and back-end development. We can release our work on the web earlier than other platforms and fund further development on other platforms. Or even use Terminal which eliminates the need for a graphical user interface!
 
@@ -43,4 +43,3 @@ Note: Probably Go is not needed soon when Zig gets better support for concurrenc
 classes
 structs
 ```
-

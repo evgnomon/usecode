@@ -1,16 +1,32 @@
 ---
 - name: Install build dependencies (Debian/Ubuntu)
   apt:
-    name: [git, cmake, make, gcc, g++, libopenblas-dev]
+    name:
+      - git
+      - cmake
+      - make
+      - gcc
+      - g++
+      - libopenblas-dev
+      - libvulkan-dev
+      - vulkan-tools
+      - glslc
+      - spirv-tools
+      - spirv-headers
+      - mesa-vulkan-drivers
     state: present
     update_cache: true
   become: true
+  tags:
+    - llama-cpp
 
 - name: Create build directory
   file:
     path: "{{ llama_cpp_org_dir }}"
     state: directory
     mode: "0755"
+  tags:
+    - llama-cpp
 
 - name: Clone llama.cpp repository
   git:
@@ -18,24 +34,32 @@
     dest: "{{ llama_cpp_dir }}"
     depth: 1
     update: true
+  tags:
+    - llama-cpp
 
 - name: Create build directory
   file:
     path: "{{ llama_cpp_build_dir }}"
     state: directory
     mode: "0755"
+  tags:
+    - llama-cpp
 
 - name: Configure with CMake
-  command: cmake .. -DCMAKE_BUILD_TYPE=Release
+  command: cmake .. -DCMAKE_BUILD_TYPE=Release -DGGML_VULKAN=ON
   args:
     chdir: "{{ llama_cpp_build_dir }}"
   changed_when: true
+  tags:
+    - llama-cpp
 
 - name: Build llama.cpp
   shell: cmake --build . --config Release -j$(nproc)
   args:
     chdir: "{{ llama_cpp_build_dir }}"
   changed_when: true
+  tags:
+    - llama-cpp
 
 - name: Find compiled binaries
   find:
@@ -43,6 +67,8 @@
     patterns: "llama-*"
     file_type: file
   register: llama_binaries
+  tags:
+    - llama-cpp
 
 - name: Symlink binaries to ~/.local/bin
   file:
@@ -51,13 +77,19 @@
     state: link
     force: true
   loop: "{{ llama_binaries.files }}"
+  tags:
+    - llama-cpp
 
 - name: Verify installation
   command: "{{ llama_bin_link_dir }}/llama-cli --version"
   register: llama_version
   changed_when: false
   failed_when: false
+  tags:
+    - llama-cpp
 
 - name: Print version
   debug:
     msg: "llama.cpp installed: {{ llama_version.stdout }}"
+  tags:
+    - llama-cpp

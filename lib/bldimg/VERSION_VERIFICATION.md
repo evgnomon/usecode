@@ -1,7 +1,7 @@
 # Dockerfile Version Verification Report
 
-**Date:** 2025-12-24  
-**Triggered by:** hg@evgnomon.org  
+**Date:** 2025-12-24
+**Triggered by:** hg@evgnomon.org
 **Workflow:** Maintain Dockerfile
 
 ## Verification Results

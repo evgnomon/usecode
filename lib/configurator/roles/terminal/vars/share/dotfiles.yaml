@@ -2,6 +2,7 @@
 dotfiles:
   - .config/autostart/swap-alt-win.desktop
   - .config/containers/registries.conf
+  - .config/foot/foot.ini
   - .config/hcloud/cli.sh
   - .gitignore_global
   - .gitconfig
@@ -13,8 +14,10 @@ dotfiles:
   - .ctags.d/javascript.ctags
   - .bashrc
   - .inputrc
+  - .local/bin/foot-shell
   - .profile
   - .bash_aliases
+  - .tmux.conf
   - claude/settings.json:.claude/settings.json
 
 root_dotfiles:

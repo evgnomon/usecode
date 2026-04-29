@@ -15,4 +15,3 @@ Upgrade with poetry then set the same version in `galaxy.yml`.
 poetry version patch
 # Set the same version in ansible_collections/evgnomon/catamaran/galaxy.yml
 ```
-

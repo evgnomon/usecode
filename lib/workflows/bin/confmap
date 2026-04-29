@@ -1,0 +1,219 @@
+#!/usr/bin/env python3
+import psycopg2
+import json
+import sys
+import os
+import argparse
+
+_pg_config = {}
+
+PG_PASSWORD = _pg_config.get("password", "t6drtfyig7")
+PG_USER = _pg_config.get("user", "admin")
+PG_PORT = _pg_config.get("port", 5432)
+PG_HOST = _pg_config.get("host", "localhost")
+PG_DATABASE = _pg_config.get("database", "z")
+
+
+def connect_db():
+    """Connect to PostgreSQL database"""
+    try:
+        conn = psycopg2.connect(
+            dbname=PG_DATABASE,
+            user=PG_USER,
+            password=PG_PASSWORD,
+            host=PG_HOST,
+            port=PG_PORT,
+        )
+        return conn
+    except psycopg2.Error as e:
+        print(f"Error connecting to database: {e}")
+        sys.exit(1)
+
+
+def update_config_map(conn, config_name, key, value, namespace="main", tenant="system"):
+    """Update a specific key in ConfigMap spec"""
+    cursor = conn.cursor()
+
+    try:
+        # First, find the ConfigMap
+        query = """
+            SELECT id, spec
+            FROM public.resources
+            WHERE kind = 'ConfigMap'
+                AND name = %s
+                AND namespace = %s
+                AND tenant = %s
+        """
+        cursor.execute(query, [config_name, namespace, tenant])
+        result = cursor.fetchone()
+
+        if not result:
+            # Create the ConfigMap if it doesn't exist
+            spec = {key: value}
+            insert_query = """
+                INSERT INTO public.resources (api_version, kind, name, namespace, tenant, spec)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """
+            cursor.execute(
+                insert_query,
+                ["v1", "ConfigMap", config_name, namespace, tenant, json.dumps(spec)],
+            )
+            conn.commit()
+            print(f"Created ConfigMap '{config_name}' with key '{key}'")
+            return
+
+        record_id = result[0]
+        spec = result[1] or {}
+
+        # Update the key in spec
+        spec[key] = value
+
+        # Update the database
+        update_query = """
+            UPDATE public.resources
+            SET spec = %s
+            WHERE id = %s
+        """
+        cursor.execute(update_query, [json.dumps(spec), record_id])
+        conn.commit()
+
+        print(f"Updated ConfigMap '{config_name}' key '{key}'")
+
+    except psycopg2.Error as e:
+        print(f"Error updating database: {e}")
+        conn.rollback()
+        sys.exit(1)
+    finally:
+        cursor.close()
+
+
+def list_config_maps(
+    conn, config_name=None, key=None, namespace="main", tenant="system"
+):
+    """Query and list ConfigMaps from resources table"""
+    cursor = conn.cursor()
+
+    query = """
+        SELECT
+            id, api_version, kind, name, namespace, tenant,
+            labels, annotations, spec
+        FROM public.resources
+        WHERE kind = 'ConfigMap'
+            AND namespace = %s
+            AND tenant = %s
+    """
+    params = [namespace, tenant]
+
+    if config_name:
+        query += " AND name = %s"
+        params.append(config_name)
+
+    query += " ORDER BY id;"
+
+    try:
+        cursor.execute(query, params)
+        results = cursor.fetchall()
+
+        if not results:
+            print("No ConfigMaps found in database.")
+            return
+
+        if not key:
+            print(f"Found {len(results)} ConfigMap(s):\n")
+
+        for row in results:
+            config_map = {
+                "id": row[0],
+                "api_version": row[1],
+                "kind": row[2],
+                "name": row[3],
+                "namespace": row[4],
+                "tenant": row[5],
+                "labels": row[6],
+                "annotations": row[7],
+                "spec": row[8],
+            }
+
+            if key:
+                # If a key is specified, only show that key from spec
+                if config_map["spec"] and key in config_map["spec"]:
+                    print(config_map["spec"][key])
+                continue
+
+            print(f"ID: {config_map['id']}")
+            print(f"  api_version: {config_map['api_version']}")
+            print(f"  kind: {config_map['kind']}")
+            print(f"  name: {config_map['name']}")
+            print(f"  namespace: {config_map['namespace']}")
+            print(f"  tenant: {config_map['tenant']}")
+
+            if config_map["labels"]:
+                print(f"  labels:")
+                for key_name, value in config_map["labels"].items():
+                    print(f"    {key_name}: {value}")
+
+            if config_map["annotations"]:
+                print(f"  annotations:")
+                for key_name, value in config_map["annotations"].items():
+                    print(f"    {key_name}: {value}")
+
+            if config_map["spec"]:
+                print(f"  spec:")
+                for key_name, value in config_map["spec"].items():
+                    print(f"    {key_name}: {value}")
+
+            print()
+
+    except psycopg2.Error as e:
+        print(f"Error querying database: {e}")
+        sys.exit(1)
+    finally:
+        cursor.close()
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Query ConfigMaps from database")
+    parser.add_argument("config_name", nargs="?", help="Name of the ConfigMap to find")
+    parser.add_argument(
+        "key", nargs="?", help="Specific key to retrieve from the ConfigMap spec"
+    )
+    parser.add_argument(
+        "--namespace", default="main", help="Namespace to query (default: main)"
+    )
+    parser.add_argument(
+        "--tenant", default="system", help="Tenant to query (default: system)"
+    )
+
+    args = parser.parse_args()
+
+    conn = connect_db()
+    try:
+        # Check if there's stdin input - if so, update instead of query
+        if not sys.stdin.isatty():
+            if not args.config_name or not args.key:
+                print("Error: config_name and key are required when reading from stdin")
+                sys.exit(1)
+
+            # Read value from stdin
+            stdin_value = sys.stdin.read().strip()
+
+            # Update the ConfigMap
+            update_config_map(
+                conn,
+                args.config_name,
+                args.key,
+                stdin_value,
+                args.namespace,
+                args.tenant,
+            )
+        else:
+            # Normal query operation
+            list_config_maps(
+                conn, args.config_name, args.key, args.namespace, args.tenant
+            )
+    finally:
+        conn.close()
+
+
+if __name__ == "__main__":
+    main()

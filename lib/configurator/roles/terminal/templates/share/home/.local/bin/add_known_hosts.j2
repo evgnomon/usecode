@@ -38,7 +38,7 @@ echo ""
 # Scan each host and add to known_hosts
 for host in "${HOSTS[@]}"; do
     echo "Scanning $host:$SSH_PORT..."
-    
+
     # Use ssh-keyscan to get the host key
     if ssh-keyscan -p "$SSH_PORT" -t rsa,ecdsa,ed25519 "$host" 2>/dev/null >> "$KNOWN_HOSTS_FILE"; then
         echo "✓ Added host key for $host"

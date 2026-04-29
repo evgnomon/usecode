@@ -134,14 +134,14 @@ type ClusterMember struct {
 // ClusterStatusHandler is a specific handler using GenericQueryHandler
 func (dc *SQLQueryController) ClusterStatusHandler(c http.Context) error {
 	query := `
-        SELECT 
+        SELECT
             MEMBER_ID,
             MEMBER_HOST,
             MEMBER_PORT,
             MEMBER_STATE,
             MEMBER_ROLE,
             MEMBER_VERSION
-        FROM 
+        FROM
             performance_schema.replication_group_members
     `
 	var results = []ClusterMember{}

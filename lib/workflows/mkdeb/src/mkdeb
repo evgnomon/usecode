@@ -161,7 +161,7 @@ parse_zon() {
 detect_arch() {
     local machine
     machine=$(uname -m)
-    
+
     case "$machine" in
         x86_64)  echo "amd64" ;;
         aarch64) echo "arm64" ;;
@@ -174,7 +174,7 @@ detect_arch() {
 # Map Debian arch to Zig target
 debian_to_zig_arch() {
     local deb_arch="$1"
-    
+
     case "$deb_arch" in
         amd64)  echo "x86_64-linux" ;;
         arm64)  echo "aarch64-linux" ;;
@@ -285,9 +285,9 @@ build_zig() {
     local build_dir="$1"
     local zig_target
     local bin_dir="$build_dir$INSTALL_PREFIX/bin"
-    
+
     mkdir -p "$bin_dir"
-    
+
     # If a pre-built binary is specified, just copy it
     if [[ -n "$BINARY_PATH" ]]; then
         if [[ ! -f "$BINARY_PATH" ]]; then
@@ -297,35 +297,35 @@ build_zig() {
         cp -L "$BINARY_PATH" "$bin_dir/"
         return
     fi
-    
+
     # If skip-build is set, copy from zig-out
     if [[ "$SKIP_BUILD" == true ]]; then
         log_info "Skipping build, using existing zig-out/"
-        
+
         if [[ ! -d "$SOURCE_DIR/zig-out" ]]; then
             die "zig-out directory not found. Run 'zig build' first or remove --skip-build"
         fi
-        
+
         # Copy bin directory
         if [[ -d "$SOURCE_DIR/zig-out/bin" ]]; then
             cp -Lr "$SOURCE_DIR/zig-out/bin/"* "$bin_dir/" 2>/dev/null || true
         fi
-        
+
         # Copy lib directory if exists
         if [[ -d "$SOURCE_DIR/zig-out/lib" ]]; then
             mkdir -p "$build_dir$INSTALL_PREFIX/lib"
             cp -Lr "$SOURCE_DIR/zig-out/lib/"* "$build_dir$INSTALL_PREFIX/lib/" 2>/dev/null || true
         fi
-        
+
         # Copy share directory if exists
         if [[ -d "$SOURCE_DIR/zig-out/share" ]]; then
             mkdir -p "$build_dir$INSTALL_PREFIX/share"
             cp -Lr "$SOURCE_DIR/zig-out/share/"* "$build_dir$INSTALL_PREFIX/share/" 2>/dev/null || true
         fi
-        
+
         return
     fi
-    
+
     # Skip build if no build.zig exists (non-Zig project)
     if [[ ! -f "$SOURCE_DIR/build.zig" ]]; then
         log_info "No build.zig found, skipping Zig build"
@@ -350,15 +350,15 @@ build_zig() {
 # Create the DEBIAN control file
 create_control() {
     local debian_dir="$1/DEBIAN"
-    
+
     mkdir -p "$debian_dir"
-    
+
     # Calculate installed size (in KB)
     local installed_size
     installed_size=$(du -sk "$1" | cut -f1)
-    
+
     log_info "Creating DEBIAN/control..."
-    
+
     cat > "$debian_dir/control" << EOF
 Package: $PKG_NAME
 Version: $PKG_VERSION
@@ -374,7 +374,7 @@ EOF
     if [[ -n "$PKG_DEPENDS" ]]; then
         echo "Depends: $PKG_DEPENDS" >> "$debian_dir/control"
     fi
-    
+
     if [[ -n "$PKG_HOMEPAGE" ]]; then
         echo "Homepage: $PKG_HOMEPAGE" >> "$debian_dir/control"
     fi
@@ -383,7 +383,7 @@ EOF
 # Create post-install script (optional)
 create_postinst() {
     local debian_dir="$1/DEBIAN"
-    
+
     cat > "$debian_dir/postinst" << 'EOF'
 #!/bin/sh
 set -e
@@ -395,16 +395,16 @@ fi
 
 exit 0
 EOF
-    
+
     chmod 755 "$debian_dir/postinst"
 }
 
 # Create copyright file
 create_copyright() {
     local doc_dir="$1$INSTALL_PREFIX/share/doc/$PKG_NAME"
-    
+
     mkdir -p "$doc_dir"
-    
+
     # Find license file
     local license_text=""
     if [[ -f "COPYING" ]]; then
@@ -414,13 +414,13 @@ create_copyright() {
     else
         echo "No COPYING or LICENSE file found"
     fi
-    
+
     # Format license text for Debian copyright format (indent lines, replace blank lines with " .")
     local formatted_license=""
     if [[ -n "$license_text" ]]; then
         formatted_license=$(echo "$license_text" | sed 's/^$/ ./; s/^/ /')
     fi
-    
+
     cat > "$doc_dir/copyright" << EOF
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: $PKG_NAME
@@ -460,25 +460,25 @@ build_venv(){
 build_deb() {
     local build_dir="$1"
     local deb_file="$OUTPUT_DIR/${PKG_NAME}_${PKG_VERSION}_${PKG_ARCH}.deb"
-    
+
     log_info "Building .deb package..."
-    
+
     # Set proper permissions
     find "$build_dir" -type d -exec chmod 755 {} \;
     find "$build_dir$INSTALL_PREFIX" -type f -exec chmod 644 {} \; 2>/dev/null || true
     find "$build_dir$INSTALL_PREFIX/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true
     find "$build_dir$INSTALL_PREFIX/lib" -name "*.so*" -exec chmod 755 {} \; 2>/dev/null || true
-    
+
     # Build the package
     dpkg-deb --build --root-owner-group "$build_dir" "$deb_file"
-    
+
     log_success "Package created: $deb_file"
-    
+
     # Show package info
     echo ""
     log_info "Package information:"
     dpkg-deb --info "$deb_file"
-    
+
     echo ""
     log_info "Package contents:"
     dpkg-deb --contents "$deb_file"
@@ -514,23 +514,23 @@ main() {
 
     # Try to get package info from build.zig.zon
     parse_zon "$SOURCE_DIR/build.zig.zon"
-    
+
     # Set defaults if still not set
     if [[ -z "$PKG_NAME" ]]; then
         PKG_NAME=$(basename "$(cd "$SOURCE_DIR" && pwd)")
     fi
-    
+
     if [[ -z "$PKG_VERSION" ]]; then
         PKG_VERSION="0.1.0"
     fi
-    
+
     if [[ -z "$PKG_ARCH" ]]; then
         PKG_ARCH=$(detect_arch)
     fi
-    
+
     # Sanitize package name (lowercase, replace underscores)
     PKG_NAME=$(echo "$PKG_NAME" | tr '[:upper:]' '[:lower:]' | tr '_' '-')
-    
+
     echo ""
     echo "========================================"
     echo "  Debian Package Builder"
@@ -541,19 +541,19 @@ main() {
     log_info "Architecture: $PKG_ARCH"
     log_info "Description: $PKG_DESCRIPTION"
     echo ""
-    
+
     check_requirements
-    
+
     # Create build directory
     local build_dir
     build_dir=$(mktemp -d)
     # trap "rm -rf '$build_dir'" EXIT
-    
+
     # Create Output Directory
-    
+
     rm $OUTPUT_DIR/*.deb 2>/dev/null || true
     mkdir -p "$OUTPUT_DIR"
-    
+
     # Build the project
     build_zig "$build_dir"
 
@@ -564,11 +564,11 @@ main() {
 
     # Copy root directory hierarchy into package root
     install_root_hierarchy "$build_dir"
-    
+
     # Build the .deb
     build_venv $build_dir
     build_deb "$build_dir"
-    
+
     echo ""
     log_success "Done! Install with: sudo dpkg -i $OUTPUT_DIR/${PKG_NAME}_${PKG_VERSION}_${PKG_ARCH}.deb"
 }

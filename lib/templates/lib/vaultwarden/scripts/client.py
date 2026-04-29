@@ -62,7 +62,12 @@ class VaultwardenClient:
 
     # --- Bitwarden CipherString decryption ---
 
-    def _decrypt(self, cipher_string: str | None, enc_key: bytes | None = None, mac_key: bytes | None = None) -> str:
+    def _decrypt(
+        self,
+        cipher_string: str | None,
+        enc_key: bytes | None = None,
+        mac_key: bytes | None = None,
+    ) -> str:
         if not cipher_string:
             return ""
         if enc_key is None:
@@ -166,7 +171,9 @@ class VaultwardenClient:
         priv_key_str = body.get("PrivateKey") or body.get("privateKey")
         if priv_key_str:
             priv_key_der = self._decrypt_raw(priv_key_str)
-            self._private_key = serialization.load_der_private_key(priv_key_der, password=None)
+            self._private_key = serialization.load_der_private_key(
+                priv_key_der, password=None
+            )
 
     def sync(self) -> dict:
         resp = self.session.get(self._api("api/sync"))
@@ -252,26 +259,40 @@ class VaultwardenClient:
             if uris:
                 uri = self._decrypt(uris[0].get("uri"), enc_key, mac_key)
 
-            if search and search.lower() not in name.lower() and search.lower() not in uri.lower():
+            if (
+                search
+                and search.lower() not in name.lower()
+                and search.lower() not in uri.lower()
+            ):
                 continue
 
-            results.append({
-                "name": name,
-                "username": username,
-                "password": password,
-                "uri": uri,
-            })
+            results.append(
+                {
+                    "name": name,
+                    "username": username,
+                    "password": password,
+                    "uri": uri,
+                }
+            )
         return results
 
 
 def main():
     parser = argparse.ArgumentParser(description="Query Vaultwarden vault items")
-    parser.add_argument("--url", required=True, help="Vaultwarden base URL (e.g. https://vault.example.com)")
+    parser.add_argument(
+        "--url",
+        required=True,
+        help="Vaultwarden base URL (e.g. https://vault.example.com)",
+    )
     parser.add_argument("--email", required=True, help="Account email")
     parser.add_argument("--search", "-s", default=None, help="Filter by name or URI")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
-    parser.add_argument("--verify", action="store_true", help="Enable TLS certificate verification")
-    parser.add_argument("--pass-file", default=None, help="Read master password from file")
+    parser.add_argument(
+        "--verify", action="store_true", help="Enable TLS certificate verification"
+    )
+    parser.add_argument(
+        "--pass-file", default=None, help="Read master password from file"
+    )
     args = parser.parse_args()
 
     if args.pass_file:

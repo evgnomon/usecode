@@ -83,4 +83,3 @@
   args:
     chdir: "{{ workspace }}"
   when: not github_event
-
