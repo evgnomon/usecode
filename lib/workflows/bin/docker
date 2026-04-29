@@ -1,18 +1,13 @@
 #!/bin/sh
-
-DOCKER_BIN=/Applications/Docker.app/Contents/Resources/bin/docker
-if [ -f $DOCKER_BIN ]; then
-  $DOCKER_BIN --config $HOME/.docker $@
-  exit $?
+for DOCKER_BIN in /usr/bin/docker; do
+  [ -x "$DOCKER_BIN" ] && break
+done
+# Use sudo only when we can't reach the daemon socket as the current user
+SOCKET=${DOCKER_HOST#unix://}
+[ -n "$SOCKET" ] && [ "$SOCKET" = "$DOCKER_HOST" ] && SOCKET=""   # non-unix DOCKER_HOST → no sudo
+[ -z "$SOCKET" ] && [ -S /var/run/docker.sock ] && SOCKET=/var/run/docker.sock
+[ -z "$SOCKET" ] && [ -S /run/docker.sock ]     && SOCKET=/run/docker.sock
+if [ "$(id -u)" -ne 0 ] && [ -n "$SOCKET" ] && [ ! -w "$SOCKET" ]; then
+  exec sudo "$DOCKER_BIN" --config "$HOME/.docker" "$@"
 fi
-
-
-DOCKER_BIN=/usr/local/bin/docker
-if [ -f $DOCKER_BIN ]; then
-  sudo $DOCKER_BIN --config $HOME/.docker $@
-  exit $?
-fi
-
-
-DOCKER_BIN=/usr/bin/docker
-sudo $DOCKER_BIN --config $HOME/.docker $@
+exec "$DOCKER_BIN" --config "$HOME/.docker" "$@"
