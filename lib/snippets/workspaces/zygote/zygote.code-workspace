@@ -1,0 +1,39 @@
+{
+  "folders": [
+    {
+      "path": "../../../.."
+    },
+    {
+      "path": "../../../actrt/ansible_collections/evgnomon/catamaran"
+    },
+    {
+      "path": "../../../../clusterlean/zygote.run"
+    },
+    {
+      "path": "../../../configurator"
+    },
+    {
+      "path": "../../../snippets"
+    }
+  ],
+  "settings": {
+    "terminal.integrated.tabs.enabled": true,
+    "terminal.integrated.persistentSessionReviveProcess": "onExit",
+    "terminal.integrated.persistentSessionScrollback": 1000
+  },
+  "tasks": {
+    "version": "2.0.0",
+    "tasks": [
+      {
+        "label": "Start Zygote Backend Servers",
+        "type": "shell",
+        "command": "node start.js",
+        "isBackground": true,
+        "problemMatcher": [],
+        "options": {
+          "cwd": "${workspaceFolder:nuggets}/workspaces/zygote"
+        },
+      }
+    ]
+  }
+}

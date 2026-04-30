@@ -1,0 +1,38 @@
+snippet afile "Ansible: Create file" b
+- name: $1
+  file:
+    path: /etc/foo.conf
+    owner: foo
+    group: foo
+    mode: u=rw,g=r,o=r
+endsnippet
+
+snippet adir "Ansible: Create directory" b
+- name: $1
+  file:
+    path: /work
+    owner: root
+    group: root
+    mode: u+rw,g-wx,o-rwx
+		state: directory
+endsnippet
+
+snippet alink "Ansible: Create link" b
+- name: $1
+  file:
+    src: /file/to/link/to
+    dest: /path/to/symlink
+    owner: foo
+    group: foo
+    state: link
+endsnippet
+
+snippet adebug "Ansible debug message" b
+- name: $1
+  debug:
+    msg: $2
+endsnippet
+
+snippet ab "Put Jinja2 Braces" i
+"{{ $1 }}"
+endsnippet

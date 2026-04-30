@@ -1,0 +1,35 @@
+version: 1.0.0
+title: Git Commit with Descriptive Message
+description: This recipe helps create structured git commits featuring concise titles and summaries for staged changes, ensuring clear documentation of code modifications.
+instructions: Inspect the current git index using shell commands to identify staged changes without altering them. Craft a commit message with a brief title (5-10 words) capturing the essence of the changes, followed by a 1-2 sentence body summarizing the modifications. Execute the commit using git commands in the shell, ensuring the message format includes title and body separated appropriately. Requires access to git via a shell tool for execution.
+extensions:
+- type: builtin
+  name: developer
+  description: Code editing and shell access
+  display_name: Developer Tools
+  timeout: 10
+  bundled: true
+  available_tools: []
+- type: platform
+  name: Extension Manager
+  description: Enable extension management tools for discovering, enabling, and disabling extensions
+  bundled: true
+  available_tools: []
+- type: platform
+  name: todo
+  description: Enable a todo list for Goose so it can keep track of what it is doing
+  bundled: true
+  available_tools: []
+settings:
+  goose_provider: xai
+  goose_model: grok-code-fast-1
+  temperature: 0.0
+activities:
+- Check git status
+- View staged diff
+- Craft commit message
+- Execute git commit
+- Verify commit log
+author:
+  contact: evgnomon
+prompt: You are an expert software developer proficient in using git for version control. Your task is to create a structured git commit message for the current staged changes in the repository.
