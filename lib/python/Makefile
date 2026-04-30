@@ -10,17 +10,17 @@ LIB_BUILD_DIR := $(CURDIR)/build
 LIB_BUILD_PREFIX := $(LIB_BUILD_DIR)/usr/local
 STAMP_DIR := $(ROOT_DIR)/.stamps/$(patsubst $(ROOT_DIR)/%,%,$(CURDIR))
 
-PYTHON_VERSION ?= 3.14.3
+PYTHON_VERSION ?= 3.14.4
 PY_MAJMIN := $(basename $(PYTHON_VERSION))
 CPYTHON_SRC := $(ROOT_DIR)/third_party/python/cpython
 
-$(STAMP_DIR)/configure.$(PYTHON_VERSION): $(CPYTHON_SRC)/.git/HEAD
+$(STAMP_DIR)/configure.$(PYTHON_VERSION):
 	@mkdir -p $(dir $@)
 	git -C $(CPYTHON_SRC) fetch --depth 1 origin refs/tags/v$(PYTHON_VERSION):refs/tags/v$(PYTHON_VERSION)
 	git -C $(CPYTHON_SRC) checkout v$(PYTHON_VERSION)
 	$(MAKE) -C $(CPYTHON_SRC) distclean 2>/dev/null || true
 	cd $(CPYTHON_SRC) && ./configure \
-		--prefix=$(LIB_BUILD_PREFIX) \
+		--prefix=$(INSTALL_PREFIX) \
 		--enable-shared \
 		--enable-optimizations \
 		--with-lto \
@@ -32,7 +32,7 @@ $(STAMP_DIR)/build.$(PYTHON_VERSION): $(STAMP_DIR)/configure.$(PYTHON_VERSION)
 	@touch $@
 
 $(STAMP_DIR)/install.$(PYTHON_VERSION): $(STAMP_DIR)/build.$(PYTHON_VERSION)
-	$(MAKE) -C $(CPYTHON_SRC) install
+	$(MAKE) -C $(CPYTHON_SRC) install DESTDIR=$(LIB_BUILD_DIR)
 	@touch $@
 
 BIN_LINKS := \
@@ -64,7 +64,8 @@ DST_LINKS   = $(addprefix $(BUILD_PREFIX)/,$(LINK_ITEMS))
 
 $(BUILD_PREFIX)/%: $(LIB_BUILD_PREFIX)/% | $(STAMP_DIR)/install.$(PYTHON_VERSION)
 	@mkdir -p $(@D)
-	ln -sfn $$(realpath --relative-to=$(@D) $<) $@
+	@ln -sfn $$(realpath --relative-to=$(@D) $<) $@
+
 
 $(STAMP_DIR)/link.$(PYTHON_VERSION): $(STAMP_DIR)/install.$(PYTHON_VERSION) $(DST_LINKS)
 	@touch $@

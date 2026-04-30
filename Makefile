@@ -1,4 +1,4 @@
-.PHONY: all ci deploy publish build version install clean
+.PHONY: all ci deploy publish build version install clean submodules
 
 $(eval $(shell ./scripts/ci_wrapper.sh --env 2>/dev/null))
 
@@ -75,6 +75,9 @@ publish:
 			$(MAKE) -C $$d publish || exit $$?; \
 		fi; \
 	done
+
+submodules:
+	git submodule update --init --recursive
 
 clean:
 	@rm -rf $(BUILD_DIR) $(ROOT_DIR)/.stamps
