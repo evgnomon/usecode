@@ -12,11 +12,7 @@ STAMP_DIR := $(ROOT_DIR)/.stamps/$(patsubst $(ROOT_DIR)/%,%,$(CURDIR))
 
 PYTHON_VERSION ?= 3.14.3
 PY_MAJMIN := $(basename $(PYTHON_VERSION))
-CPYTHON_SRC := $(ROOT_DIR)/third_party/cpython
-
-$(CPYTHON_SRC)/.git/HEAD:
-	@mkdir -p $(ROOT_DIR)/third_party
-	git clone --depth 1 --branch v$(PYTHON_VERSION) https://github.com/python/cpython.git $(CPYTHON_SRC)
+CPYTHON_SRC := $(ROOT_DIR)/third_party/python/cpython
 
 $(STAMP_DIR)/configure.$(PYTHON_VERSION): $(CPYTHON_SRC)/.git/HEAD
 	@mkdir -p $(dir $@)
@@ -39,13 +35,38 @@ $(STAMP_DIR)/install.$(PYTHON_VERSION): $(STAMP_DIR)/build.$(PYTHON_VERSION)
 	$(MAKE) -C $(CPYTHON_SRC) install
 	@touch $@
 
-$(STAMP_DIR)/link.$(PYTHON_VERSION): $(STAMP_DIR)/install.$(PYTHON_VERSION)
-	@find $(LIB_BUILD_PREFIX) \( -type f -o -type l \) | while IFS= read -r src; do \
-		rel="$${src#$(LIB_BUILD_PREFIX)/}"; \
-		dst="$(BUILD_PREFIX)/$$rel"; \
-		mkdir -p "$$(dirname "$$dst")"; \
-		ln -sf "$$(realpath --relative-to="$$(dirname "$$dst")" "$$src")" "$$dst"; \
-	done
+BIN_LINKS := \
+	bin/idle3 \
+	bin/idle$(PY_MAJMIN) \
+	bin/pip3 \
+	bin/pip$(PY_MAJMIN) \
+	bin/pydoc3 \
+	bin/pydoc$(PY_MAJMIN) \
+	bin/python3 \
+	bin/python3-config \
+	bin/python$(PY_MAJMIN) \
+	bin/python$(PY_MAJMIN)-config
+
+LIB_LINKS := \
+	lib/libpython$(PY_MAJMIN).so \
+	lib/libpython$(PY_MAJMIN).so.1.0 \
+	lib/libpython3.so \
+	lib/pkgconfig \
+	lib/python$(PY_MAJMIN)
+
+INCLUDE_LINKS := \
+	include/python$(PY_MAJMIN)
+
+MAN_LINKS = $(patsubst $(LIB_BUILD_PREFIX)/%,%,$(wildcard $(LIB_BUILD_PREFIX)/share/man/man1/python*))
+
+LINK_ITEMS = $(BIN_LINKS) $(LIB_LINKS) $(INCLUDE_LINKS) $(MAN_LINKS)
+DST_LINKS   = $(addprefix $(BUILD_PREFIX)/,$(LINK_ITEMS))
+
+$(BUILD_PREFIX)/%: $(LIB_BUILD_PREFIX)/% | $(STAMP_DIR)/install.$(PYTHON_VERSION)
+	@mkdir -p $(@D)
+	ln -sfn $$(realpath --relative-to=$(@D) $<) $@
+
+$(STAMP_DIR)/link.$(PYTHON_VERSION): $(STAMP_DIR)/install.$(PYTHON_VERSION) $(DST_LINKS)
 	@touch $@
 
 build: $(STAMP_DIR)/link.$(PYTHON_VERSION) ## Build CPython from source and link into build prefix

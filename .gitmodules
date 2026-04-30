@@ -1,0 +1,6 @@
+[submodule "third_party/vim/vim"]
+	path = third_party/vim/vim
+	url = https://github.com/vim/vim.git
+[submodule "third_party/python/cpython"]
+	path = third_party/python/cpython
+	url = https://github.com/python/cpython.git
