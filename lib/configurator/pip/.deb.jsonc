@@ -1,0 +1,14 @@
+{
+  "name": "ppkgs",
+  "version": "0.1.0",
+  "description": "Standard pip packages for usecode.dev",
+  "maintainer": "hg@evgnomon.org",
+  // No deps
+  "depends": "",
+  "section": "devel",
+  "priority": "optional",
+  "homepage": "https://github.com/evgnomon/usecode",
+  "license": "HGL",
+  "root": "build"
+}
+

@@ -1,0 +1,240 @@
+.TH MKDEB 1 "2026-05-01" "mkdeb 0.3.0" "User Commands"
+.SH NAME
+mkdeb \- package files into a Debian (.deb) package
+.SH SYNOPSIS
+.B mkdeb
+.RI [ OPTIONS ]
+.SH DESCRIPTION
+.B mkdeb
+is a small wrapper around
+.BR dpkg-deb (1)
+that assembles a Debian binary package from a source directory. It can read
+package metadata from a
+.I .deb.json
+or
+.I .deb.jsonc
+file in the source directory, and copies a pre-staged file hierarchy into
+the package root before invoking
+.BR dpkg-deb .
+.PP
+A
+.B DEBIAN/control
+file is generated from the resolved metadata, a default
+.B postinst
+script that runs
+.BR ldconfig (8)
+is installed, and a
+.B copyright
+file in Debian copyright-format 1.0 is written to
+.IR PREFIX/share/doc/PACKAGE/copyright .
+.PP
+Command-line options take precedence over values read from
+.I .deb.json
+or
+.IR .deb.jsonc .
+.SH OPTIONS
+.TP
+.BR \-n ", " \-\-name " " \fINAME\fR
+Package name. Defaults to the value from
+.I .deb.json
+or the basename of the source directory. The name is lowercased and
+underscores are replaced with hyphens.
+.TP
+.BR \-v ", " \-\-version " " \fIVERSION\fR
+Package version. Defaults to the value from
+.I .deb.json
+or
+.BR 0.1.0 .
+.TP
+.BR \-d ", " \-\-description " " \fIDESC\fR
+One-line package description.
+.TP
+.BR \-m ", " \-\-maintainer " " \fIEMAIL\fR
+Maintainer email. Defaults to
+.BR maintainer@example.com .
+.TP
+.BR \-a ", " \-\-arch " " \fIARCH\fR
+Target Debian architecture. Auto-detected from
+.BR uname (1)
+when omitted (e.g.\&
+.B x86_64
+maps to
+.BR amd64 ,
+.B aarch64
+to
+.BR arm64 ).
+.TP
+.BR \-o ", " \-\-output " " \fIDIR\fR
+Output directory for the resulting
+.I .deb
+file. Defaults to
+.BR ./dist .
+Existing
+.I *.deb
+files in this directory are removed before the build.
+.TP
+.BR \-p ", " \-\-prefix " " \fIPREFIX\fR
+Installation prefix used when locating documentation and adjusting
+permissions. Defaults to
+.BR /usr .
+.TP
+.BR \-s ", " \-\-source " " \fIDIR\fR
+Source directory containing
+.I .deb.json
+/
+.I .deb.jsonc
+and the pre-staged root hierarchy. Defaults to
+.BR . .
+.TP
+.BR \-\-depends " " \fIDEPS\fR
+Comma-separated list of package dependencies, written verbatim into the
+.B Depends
+control field.
+.TP
+.BR \-\-section " " \fISECTION\fR
+Package section. Defaults to
+.BR utils .
+.TP
+.BR \-\-priority " " \fIPRIORITY\fR
+Package priority. Defaults to
+.BR optional .
+.TP
+.BR \-\-homepage " " \fIURL\fR
+Project homepage URL, written into the
+.B Homepage
+control field.
+.TP
+.BR \-\-license " " \fILICENSE\fR
+License identifier, used in the generated
+.B copyright
+file. Defaults to
+.BR MIT .
+.TP
+.BR \-h ", " \-\-help
+Print the embedded usage summary and exit.
+.SH CONFIGURATION FILE
+If a
+.I .deb.jsonc
+file is present in the source directory it is preferred over
+.IR .deb.json .
+.I .deb.jsonc
+may contain comments and is preprocessed via
+.IR jsonc .
+.PP
+Recognized keys:
+.BR name ", "
+.BR version ", "
+.BR description ", "
+.BR maintainer ", "
+.BR arch ", "
+.BR depends ", "
+.BR section ", "
+.BR priority ", "
+.BR homepage ", "
+.BR license ", "
+.BR root .
+.PP
+The
+.B root
+key names a directory whose contents are copied into the package root.
+For example, with
+.B "root"
+set to
+.I ./pkg-root
+and a file at
+.IR pkg-root/usr/bin/myapp ,
+the resulting package installs
+.IR /usr/bin/myapp .
+Symbolic links are dereferenced when copying.
+.SH EXAMPLE
+.PP
+A minimal layout:
+.PP
+.RS 4
+.nf
+myapp/
+\(em\(em .deb.json
+\(em\(em pkg-root/
+   \(em\(em usr/bin/myapp
+.fi
+.RE
+.PP
+With
+.I .deb.json
+containing:
+.PP
+.RS 4
+.nf
+{
+  "name": "myapp",
+  "version": "1.0.0",
+  "description": "My app",
+  "maintainer": "user@example.com",
+  "root": "./pkg-root"
+}
+.fi
+.RE
+.PP
+Build the package:
+.PP
+.RS 4
+.nf
+mkdeb \-s myapp \-o dist
+.fi
+.RE
+.PP
+Override the version on the command line:
+.PP
+.RS 4
+.nf
+mkdeb \-s myapp \-v 1.0.1 \-\-depends "libc6, libssl3"
+.fi
+.RE
+.SH OUTPUT
+The built package is written to
+.IR OUTPUT_DIR/NAME_VERSION_ARCH.deb .
+After a successful build,
+.B mkdeb
+prints the output of
+.B "dpkg-deb \-\-info"
+and
+.B "dpkg-deb \-\-contents"
+for the produced file.
+.SH FILES
+.TP
+.I ./.deb.json
+Package metadata in JSON.
+.TP
+.I ./.deb.jsonc
+Package metadata in JSON-with-comments. Preferred when both files exist.
+.TP
+.I ./dist/
+Default output directory.
+.SH REQUIREMENTS
+.BR dpkg-deb (1)
+must be available on
+.IR PATH .
+.BR jq (1)
+is required when a
+.I .deb.json
+or
+.I .deb.jsonc
+file is present.
+.I jsonc
+is required to parse
+.I .deb.jsonc
+files.
+.SH EXIT STATUS
+.B mkdeb
+exits 0 on success and a non-zero status on any error, including missing
+tools, an unreadable source directory, or a failure inside
+.BR dpkg-deb .
+.SH SEE ALSO
+.BR dpkg-deb (1),
+.BR dpkg (1),
+.BR jq (1),
+.BR ldconfig (8)
+.SH AUTHOR
+Written by Hamed Ghasemzadeh <hg@evgnomon.org>.
+.SH REPORTING BUGS
+Report bugs at <https://github.com/evgnomon/usecode>.

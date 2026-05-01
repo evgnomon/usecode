@@ -1,57 +1,38 @@
 #!/usr/bin/env bash
 #
-# build-zig-deb.sh - Package a Zig project as a Debian (.deb) package
+# mkdeb - Package files into a Debian (.deb) package
 #
-# Usage: ./build-zig-deb.sh [OPTIONS]
+# Usage: mkdeb [OPTIONS]
 #
 # Options:
-#   -n, --name NAME           Package name (default: from build.zig.zon or directory name)
-#   -v, --version VERSION     Package version (default: from build.zig.zon or "0.1.0")
+#   -n, --name NAME           Package name (default: from .deb.json or directory name)
+#   -v, --version VERSION     Package version (default: from .deb.json or "0.1.0")
 #   -d, --description DESC    Package description
 #   -m, --maintainer EMAIL    Maintainer email (default: "maintainer@example.com")
 #   -a, --arch ARCH           Target architecture (default: auto-detect)
 #   -o, --output DIR          Output directory for .deb file (default: ./dist)
-#   -p, --prefix PREFIX       Installation prefix (default: /usr)
-#   -s, --source DIR          Source directory containing build.zig (default: .)
+#   -p, --prefix PREFIX       Installation prefix for docs (default: /usr)
+#   -s, --source DIR          Source directory (default: .)
 #   --depends DEPS            Comma-separated list of dependencies
 #   --section SECTION         Package section (default: utils)
 #   --priority PRIORITY       Package priority (default: optional)
 #   --homepage URL            Project homepage URL
 #   --license LICENSE         License (default: MIT)
-#   --build-args ARGS         Extra arguments to pass to zig build
-#   --skip-build              Skip building, use pre-built binary from zig-out/
-#   --binary PATH             Path to pre-built binary to package
 #   -h, --help                Show this help message
 #
-# .deb.json:
-#   Place a .deb.json file in the source directory to set package properties:
+# .deb.json / .deb.jsonc:
+#   Place a .deb.json or .deb.jsonc file in the source directory to set
+#   package properties:
 #   { "name": "myapp", "version": "1.0.0", "description": "My app",
 #     "maintainer": "user@example.com", "depends": "libc6",
 #     "section": "utils", "priority": "optional",
 #     "homepage": "https://example.com", "license": "MIT",
 #     "root": "./pkg-root" }
-#   CLI arguments override .deb.json values.
+#   .deb.jsonc may contain comments (stripped via /usr/local/bin/jsonc).
+#   CLI arguments override values from these files.
 #   "root" specifies a directory whose contents are copied into the package
-#   root alongside the binary. E.g. if root is "./pkg-root" and it contains
-#   etc/myapp/config.yaml, the .deb will install /etc/myapp/config.yaml.
-#
-# deb/ directory:
-#   If a deb/ directory exists in the source directory, its contents are
-#   copied into the package root as-is. Use this to install extra files:
-#     deb/etc/myapp/config.yaml  -> /etc/myapp/config.yaml
-#     deb/usr/share/myapp/data   -> /usr/share/myapp/data
-#
-# Example:
-#   ./build-zig-deb.sh -n myapp -v 1.0.0 -d "My awesome Zig application"
-#
-# For projects with system library dependencies:
-#   # First install dev libraries, build natively, then package:
-#   sudo apt install libvirt-dev libisoburn-dev
-#   zig build -Doptimize=ReleaseFast
-#   ./build-zig-deb.sh --skip-build --depends "libvirt0, libisoburn1"
-#
-#   # Or package a pre-built binary:
-#   ./build-zig-deb.sh --binary ./zig-out/bin/myapp --depends "libvirt0, libisoburn1"
+#   root. E.g. if root is "./pkg-root" and it contains
+#   usr/bin/myapp, the .deb will install /usr/bin/myapp.
 #
 
 set -euo pipefail
@@ -66,7 +47,7 @@ NC='\033[0m' # No Color
 # Default values
 PKG_NAME=""
 PKG_VERSION=""
-PKG_DESCRIPTION="A Zig application"
+PKG_DESCRIPTION=""
 PKG_MAINTAINER="maintainer@example.com"
 PKG_ARCH=""
 OUTPUT_DIR="./dist"
@@ -77,9 +58,6 @@ PKG_SECTION="utils"
 PKG_PRIORITY="optional"
 PKG_HOMEPAGE=""
 PKG_LICENSE="MIT"
-BUILD_ARGS=""
-SKIP_BUILD=false
-BINARY_PATH=""
 PKG_ROOT=""
 
 # Helper functions
@@ -105,11 +83,11 @@ die() {
 }
 
 show_help() {
-    head -30 "$0" | tail -28 | sed 's/^# \?//'
+    head -38 "$0" | tail -36 | sed 's/^# \?//'
     exit 0
 }
 
-# Parse .deb.json for package properties
+# Parse .deb.json or .deb.jsonc for package properties
 parse_deb_json() {
     local json_file="$1"
 
@@ -118,42 +96,40 @@ parse_deb_json() {
     fi
 
     if ! command -v jq &>/dev/null; then
-        die "jq is required to parse .deb.json. Please install jq."
+        die "jq is required to parse $json_file. Please install jq."
+    fi
+
+    # Build a command that produces plain JSON on stdout. For .jsonc we strip
+    # comments via /usr/local/bin/jsonc before handing it to jq.
+    local feed
+    if [[ "$json_file" == *.jsonc ]]; then
+        if [[ ! -x /usr/local/bin/jsonc ]]; then
+            die "/usr/local/bin/jsonc is required to parse $json_file."
+        fi
+        feed=(/usr/local/bin/jsonc "$json_file")
+    else
+        feed=(cat "$json_file")
     fi
 
     log_info "Reading package properties from $json_file"
 
+    local content
+    content=$("${feed[@]}")
+
     local val
-    val=$(jq -r '.name // empty' "$json_file") && [[ -z "$PKG_NAME" && -n "$val" ]] && PKG_NAME="$val"
-    val=$(jq -r '.version // empty' "$json_file") && [[ -z "$PKG_VERSION" && -n "$val" ]] && PKG_VERSION="$val"
-    val=$(jq -r '.description // empty' "$json_file") && [[ -n "$val" ]] && PKG_DESCRIPTION="$val"
-    val=$(jq -r '.maintainer // empty' "$json_file") && [[ -n "$val" ]] && PKG_MAINTAINER="$val"
-    val=$(jq -r '.arch // empty' "$json_file") && [[ -z "$PKG_ARCH" && -n "$val" ]] && PKG_ARCH="$val"
-    val=$(jq -r '.depends // empty' "$json_file") && [[ -n "$val" ]] && PKG_DEPENDS="$val"
-    val=$(jq -r '.section // empty' "$json_file") && [[ -n "$val" ]] && PKG_SECTION="$val"
-    val=$(jq -r '.priority // empty' "$json_file") && [[ -n "$val" ]] && PKG_PRIORITY="$val"
-    val=$(jq -r '.homepage // empty' "$json_file") && [[ -n "$val" ]] && PKG_HOMEPAGE="$val"
-    val=$(jq -r '.license // empty' "$json_file") && [[ -n "$val" ]] && PKG_LICENSE="$val"
-    val=$(jq -r '.root // empty' "$json_file") || true
+    val=$(jq -r '.name // empty' <<<"$content") && [[ -z "$PKG_NAME" && -n "$val" ]] && PKG_NAME="$val"
+    val=$(jq -r '.version // empty' <<<"$content") && [[ -z "$PKG_VERSION" && -n "$val" ]] && PKG_VERSION="$val"
+    val=$(jq -r '.description // empty' <<<"$content") && [[ -n "$val" ]] && PKG_DESCRIPTION="$val"
+    val=$(jq -r '.maintainer // empty' <<<"$content") && [[ -n "$val" ]] && PKG_MAINTAINER="$val"
+    val=$(jq -r '.arch // empty' <<<"$content") && [[ -z "$PKG_ARCH" && -n "$val" ]] && PKG_ARCH="$val"
+    val=$(jq -r '.depends // empty' <<<"$content") && [[ -n "$val" ]] && PKG_DEPENDS="$val"
+    val=$(jq -r '.section // empty' <<<"$content") && [[ -n "$val" ]] && PKG_SECTION="$val"
+    val=$(jq -r '.priority // empty' <<<"$content") && [[ -n "$val" ]] && PKG_PRIORITY="$val"
+    val=$(jq -r '.homepage // empty' <<<"$content") && [[ -n "$val" ]] && PKG_HOMEPAGE="$val"
+    val=$(jq -r '.license // empty' <<<"$content") && [[ -n "$val" ]] && PKG_LICENSE="$val"
+    val=$(jq -r '.root // empty' <<<"$content") || true
     if [[ -z "$PKG_ROOT" && -n "$val" ]]; then
       PKG_ROOT="$val"
-    fi
-}
-
-# Parse build.zig.zon for package info
-parse_zon() {
-    local zon_file="$1"
-
-    if [[ -f "$zon_file" ]]; then
-        # Extract name if not set
-        if [[ -z "$PKG_NAME" ]]; then
-            PKG_NAME=$(grep -oP '\.name\s*=\s*"\K[^"]+' "$zon_file" 2>/dev/null || true)
-        fi
-
-        # Extract version if not set
-        if [[ -z "$PKG_VERSION" ]]; then
-            PKG_VERSION=$(grep -oP '\.version\s*=\s*"\K[^"]+' "$zon_file" 2>/dev/null || true)
-        fi
     fi
 }
 
@@ -168,19 +144,6 @@ detect_arch() {
         armv7l)  echo "armhf" ;;
         i686)    echo "i386" ;;
         *)       echo "$machine" ;;
-    esac
-}
-
-# Map Debian arch to Zig target
-debian_to_zig_arch() {
-    local deb_arch="$1"
-
-    case "$deb_arch" in
-        amd64)  echo "x86_64-linux" ;;
-        arm64)  echo "aarch64-linux" ;;
-        armhf)  echo "arm-linux" ;;
-        i386)   echo "x86-linux" ;;
-        *)      echo "native" ;;
     esac
 }
 
@@ -240,18 +203,6 @@ parse_args() {
                 PKG_LICENSE="$2"
                 shift 2
                 ;;
-            --build-args)
-                BUILD_ARGS="$2"
-                shift 2
-                ;;
-            --skip-build)
-                SKIP_BUILD=true
-                shift
-                ;;
-            --binary)
-                BINARY_PATH="$2"
-                shift 2
-                ;;
             -h|--help)
                 show_help
                 ;;
@@ -266,85 +217,9 @@ parse_args() {
 check_requirements() {
     log_info "Checking requirements..."
 
-    # Check for Zig only if this is a Zig project
-    if [[ -f "$SOURCE_DIR/build.zig" ]]; then
-        if ! command -v zig &>/dev/null; then
-            die "Zig compiler not found. Please install Zig first."
-        fi
-        log_info "Found Zig: $(zig version)"
-    fi
-
-    # Check for dpkg-deb
     if ! command -v dpkg-deb &>/dev/null; then
         die "dpkg-deb not found. Please install dpkg."
     fi
-}
-
-# Build the Zig project
-build_zig() {
-    local build_dir="$1"
-    local zig_target
-    local bin_dir="$build_dir$INSTALL_PREFIX/bin"
-
-    mkdir -p "$bin_dir"
-
-    # If a pre-built binary is specified, just copy it
-    if [[ -n "$BINARY_PATH" ]]; then
-        if [[ ! -f "$BINARY_PATH" ]]; then
-            die "Binary not found: $BINARY_PATH"
-        fi
-        log_info "Using pre-built binary: $BINARY_PATH"
-        cp -L "$BINARY_PATH" "$bin_dir/"
-        return
-    fi
-
-    # If skip-build is set, copy from zig-out
-    if [[ "$SKIP_BUILD" == true ]]; then
-        log_info "Skipping build, using existing zig-out/"
-
-        if [[ ! -d "$SOURCE_DIR/zig-out" ]]; then
-            die "zig-out directory not found. Run 'zig build' first or remove --skip-build"
-        fi
-
-        # Copy bin directory
-        if [[ -d "$SOURCE_DIR/zig-out/bin" ]]; then
-            cp -Lr "$SOURCE_DIR/zig-out/bin/"* "$bin_dir/" 2>/dev/null || true
-        fi
-
-        # Copy lib directory if exists
-        if [[ -d "$SOURCE_DIR/zig-out/lib" ]]; then
-            mkdir -p "$build_dir$INSTALL_PREFIX/lib"
-            cp -Lr "$SOURCE_DIR/zig-out/lib/"* "$build_dir$INSTALL_PREFIX/lib/" 2>/dev/null || true
-        fi
-
-        # Copy share directory if exists
-        if [[ -d "$SOURCE_DIR/zig-out/share" ]]; then
-            mkdir -p "$build_dir$INSTALL_PREFIX/share"
-            cp -Lr "$SOURCE_DIR/zig-out/share/"* "$build_dir$INSTALL_PREFIX/share/" 2>/dev/null || true
-        fi
-
-        return
-    fi
-
-    # Skip build if no build.zig exists (non-Zig project)
-    if [[ ! -f "$SOURCE_DIR/build.zig" ]]; then
-        log_info "No build.zig found, skipping Zig build"
-        return
-    fi
-
-    zig_target=$(debian_to_zig_arch "$PKG_ARCH")
-
-    log_info "Building Zig project for $PKG_ARCH ($zig_target)..."
-
-    pushd "$SOURCE_DIR" > /dev/null
-
-    # Build with Zig
-    zig build -Doptimize=ReleaseFast --prefix "$build_dir$INSTALL_PREFIX" $BUILD_ARGS
-
-    popd > /dev/null
-
-
-    log_success "Build completed"
 }
 
 # Create the DEBIAN control file
@@ -433,29 +308,6 @@ $formatted_license
 EOF
 }
 
-build_venv(){
-  local build_dir="$1"
-  if [[ ! -f "$SOURCE_DIR/requirements.txt" ]]; then
-    return
-  fi
-
-  VENV_PATH="$build_dir/usr/share/python/$PKG_NAME"
-
-  # Create virtualenv and install dependencies
-  python3 -m venv "$VENV_PATH"
-  "$VENV_PATH/bin/pip" install --no-cache-dir -r requirements.txt
-
-  # Fix shebangs so they work after installation
-  find "$VENV_PATH/bin" -type f | xargs grep -lE "^#!.*python" | while read f; do
-      sed -i "1s|^#!.*python.*|#!/usr/share/python/$PKG_NAME/bin/python3|" "$f"
-  done
-
-  find "$build_dir/usr/bin" -type f | xargs grep -lE "^#!.*python" | while read f; do
-      sed -i "1s|^#!.*python.*|#!/usr/share/python/$PKG_NAME/bin/python3|" "$f"
-  done
-
-}
-
 # Build the .deb package
 build_deb() {
     local build_dir="$1"
@@ -509,11 +361,13 @@ install_root_hierarchy() {
 main() {
     parse_args "$@"
 
-    # Read properties from .deb.json (CLI args take precedence)
-    parse_deb_json "$SOURCE_DIR/.deb.json"
-
-    # Try to get package info from build.zig.zon
-    parse_zon "$SOURCE_DIR/build.zig.zon"
+    # Read properties from .deb.jsonc / .deb.json (CLI args take precedence).
+    # Prefer .deb.jsonc when both exist.
+    if [[ -f "$SOURCE_DIR/.deb.jsonc" ]]; then
+        parse_deb_json "$SOURCE_DIR/.deb.jsonc"
+    else
+        parse_deb_json "$SOURCE_DIR/.deb.json"
+    fi
 
     # Set defaults if still not set
     if [[ -z "$PKG_NAME" ]]; then
@@ -554,19 +408,15 @@ main() {
     rm $OUTPUT_DIR/*.deb 2>/dev/null || true
     mkdir -p "$OUTPUT_DIR"
 
-    # Build the project
-    build_zig "$build_dir"
+    # Copy root directory hierarchy into package root
+    install_root_hierarchy "$build_dir"
 
     # Create Debian package structure
     create_control "$build_dir"
     create_postinst "$build_dir"
     create_copyright "$build_dir"
 
-    # Copy root directory hierarchy into package root
-    install_root_hierarchy "$build_dir"
-
     # Build the .deb
-    build_venv $build_dir
     build_deb "$build_dir"
 
     echo ""
