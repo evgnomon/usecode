@@ -25,12 +25,14 @@ make_volume(){
   source .env
   sudo mkdir -p "/mnt/z/volumes/$TENANT/$POD"
   sudo chown -R $USER:$USER "/mnt/z/volumes/$TENANT/$POD"
-  mkdir -p "/mnt/z/volumes/$TENANT/$POD/nextcloud_data"
-  mkdir -p "/mnt/z/volumes/$TENANT/$POD/mysql_data"
-  mkdir -p "/mnt/z/volumes/$TENANT/$POD/redis_data"
+  mkdir -p "/mnt/z/volumes/$TENANT/$POD/jitsi_web_config"
+  mkdir -p "/mnt/z/volumes/$TENANT/$POD/jitsi_prosody_config"
+  mkdir -p "/mnt/z/volumes/$TENANT/$POD/jitsi_prosody_plugins"
+  mkdir -p "/mnt/z/volumes/$TENANT/$POD/jitsi_jicofo_config"
+  mkdir -p "/mnt/z/volumes/$TENANT/$POD/jitsi_jvb_config"
 }
 
-DEPLOYMENT="nextcloud"
+DEPLOYMENT="jitsi"
 
 cd $HOME/src/github.com/platforge-cloud/$DEPLOYMENT
 
@@ -48,9 +50,11 @@ while [[ $# -gt 0 ]]; do
     destroy)
       podman-compose -f ../deploy/podman/podman-compose.yaml down -v
       source .env
-      sudo rm -rf "/mnt/z/volumes/$TENANT/$POD/nextcloud_data"
-      sudo rm -rf "/mnt/z/volumes/$TENANT/$POD/mysql_data"
-      sudo rm -rf "/mnt/z/volumes/$TENANT/$POD/redis_data"
+      sudo rm -rf "/mnt/z/volumes/$TENANT/$POD/jitsi_web_config"
+      sudo rm -rf "/mnt/z/volumes/$TENANT/$POD/jitsi_prosody_config"
+      sudo rm -rf "/mnt/z/volumes/$TENANT/$POD/jitsi_prosody_plugins"
+      sudo rm -rf "/mnt/z/volumes/$TENANT/$POD/jitsi_jicofo_config"
+      sudo rm -rf "/mnt/z/volumes/$TENANT/$POD/jitsi_jvb_config"
       shift
       ;;
     restart|logs)

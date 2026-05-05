@@ -25,32 +25,34 @@ make_volume(){
   source .env
   sudo mkdir -p "/mnt/z/volumes/$TENANT/$POD"
   sudo chown -R $USER:$USER "/mnt/z/volumes/$TENANT/$POD"
-  mkdir -p "/mnt/z/volumes/$TENANT/$POD/opensearch_data"
+  mkdir -p "/mnt/z/volumes/$TENANT/$POD/powerdns_data"
 }
 
-DEPLOYMENT="opensearch"
+DEPLOYMENT="powerdns"
 
-cd $HOME/src/github.com/platforge-cloud/$DEPLOYMENT
+TEMPLATE_DIR=$HOME/src/github.com/evgnomon/usecode/lib/templates/lib/core/$DEPLOYMENT
+
+cd $TEMPLATE_DIR
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     up)
       make_volume
-      podman-compose -f ../deploy/podman/podman-compose.yaml up -d
+      podman-compose -f deploy/podman/podman-compose.yaml up -d
       shift
       ;;
     down)
-      podman-compose -f ../deploy/podman/podman-compose.yaml down -v
+      podman-compose -f deploy/podman/podman-compose.yaml down -v
       shift
       ;;
     destroy)
-      podman-compose -f ../deploy/podman/podman-compose.yaml down -v
+      podman-compose -f deploy/podman/podman-compose.yaml down -v
       source .env
-      sudo rm -rf "/mnt/z/volumes/$TENANT/$POD/opensearch_data"
+      sudo rm -rf "/mnt/z/volumes/$TENANT/$POD/powerdns_data"
       shift
       ;;
     restart|logs)
-      podman-compose -f ../deploy/podman/podman-compose.yaml $1
+      podman-compose -f deploy/podman/podman-compose.yaml $1
       shift
       ;;
     backup)
@@ -63,7 +65,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     *)
       DEPLOYMENT="$1"
-      cd $HOME/src/github.com/platforge-cloud/$DEPLOYMENT
+      cd $TEMPLATE_DIR
       shift
       ;;
   esac

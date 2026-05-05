@@ -1,0 +1,87 @@
+version: "3.9"
+
+services:
+  jitsi-web:
+    image: docker.io/jitsi/web:latest
+    container_name: jitsi_web
+    restart: unless-stopped
+    environment:
+      PUBLIC_URL: http://${DOMAIN}:${PORT:-8443}
+      TZ: UTC
+      ENABLE_AUTH: "0"
+      XMPP_SERVER: prosody
+      XMPP_BOSH_URL_BASE: http://prosody:5280
+      JVB_WS_SERVER_ID: jvb
+    ports:
+      - "127.0.0.1:${PORT:-8443}:80"
+    depends_on:
+      - prosody
+    volumes:
+      - /mnt/z/volumes/${TENANT}/${POD}/jitsi_web_config:/config
+    networks:
+      - ${TENANT}_${POD}_jitsi_net
+
+  prosody:
+    image: docker.io/jitsi/prosody:latest
+    container_name: jitsi_prosody
+    restart: unless-stopped
+    environment:
+      PUBLIC_URL: http://${DOMAIN}:${PORT:-8443}
+      TZ: UTC
+      ENABLE_AUTH: "0"
+      XMPP_DOMAIN: meet.jitsi
+      XMPP_AUTH_DOMAIN: auth.meet.jitsi
+      XMPP_MUC_DOMAIN: muc.meet.jitsi
+      XMPP_INTERNAL_MUC_DOMAIN: internal-muc.meet.jitsi
+      XMPP_GUEST_DOMAIN: guest.meet.jitsi
+      XMPP_RECORDER_DOMAIN: recorder.meet.jitsi
+      JVB_BREWERY_MUC: jvbbrewery
+    volumes:
+      - /mnt/z/volumes/${TENANT}/${POD}/jitsi_prosody_config:/config
+      - /mnt/z/volumes/${TENANT}/${POD}/jitsi_prosody_plugins:/prosody-plugins-custom
+    networks:
+      - ${TENANT}_${POD}_jitsi_net
+
+  jicofo:
+    image: docker.io/jitsi/jicofo:latest
+    container_name: jitsi_jicofo
+    restart: unless-stopped
+    environment:
+      TZ: UTC
+      XMPP_SERVER: prosody
+      XMPP_DOMAIN: meet.jitsi
+      XMPP_AUTH_DOMAIN: auth.meet.jitsi
+      XMPP_MUC_DOMAIN: muc.meet.jitsi
+      XMPP_INTERNAL_MUC_DOMAIN: internal-muc.meet.jitsi
+      JVB_BREWERY_MUC: jvbbrewery
+    depends_on:
+      - prosody
+    volumes:
+      - /mnt/z/volumes/${TENANT}/${POD}/jitsi_jicofo_config:/config
+    networks:
+      - ${TENANT}_${POD}_jitsi_net
+
+  jvb:
+    image: docker.io/jitsi/jvb:latest
+    container_name: jitsi_jvb
+    restart: unless-stopped
+    environment:
+      TZ: UTC
+      XMPP_SERVER: prosody
+      XMPP_DOMAIN: meet.jitsi
+      XMPP_AUTH_DOMAIN: auth.meet.jitsi
+      XMPP_INTERNAL_MUC_DOMAIN: internal-muc.meet.jitsi
+      JVB_BREWERY_MUC: jvbbrewery
+      JVB_WS_SERVER_ID: jvb
+    depends_on:
+      - prosody
+    ports:
+      - "127.0.0.1:10000:10000/udp"
+    volumes:
+      - /mnt/z/volumes/${TENANT}/${POD}/jitsi_jvb_config:/config
+    networks:
+      - ${TENANT}_${POD}_jitsi_net
+
+networks:
+  ${TENANT}_${POD}_jitsi_net:
+    driver: bridge
