@@ -74,6 +74,7 @@ apt_packages:
     - skopeo # Tool for inspecting and copying container images between registries and local storage
     - tmux # Terminal multiplexer for managing multiple terminal sessions in one window
     - wl-clipboard # Command-line copy/paste utilities (wl-copy, wl-paste) for Wayland clipboard integration
+    - ffmpeg # Command-line multimedia framework for converting and streaming audio/video files
 
   ubuntu:
     - mysql-client  # MySQL database client tools for connecting to MySQL servers
