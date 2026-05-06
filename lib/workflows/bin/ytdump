@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+
+ yt-dlp -f bestaudio --no-playlist  \
+   --extract-audio --audio-format opus   --embed-metadata --embed-thumbnail --js-runtimes node:/home/evgnomon/.local/bin/node \
+   --remote-components ejs:github --match-filter "duration > 60" --download-archive .files "$@"
