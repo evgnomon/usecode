@@ -40,11 +40,13 @@ $(STAMPS_DIR)/pip-upgrade: requirements.txt | $(STAMPS_DIR) $(PREFIX)
 
 $(STAMPS_DIR)/pipx-install: pipx-requirements.txt | $(STAMPS_DIR) $(PREFIX)
 	PIPX_HOME=$(PREFIX)/share/pipx PIPX_BIN_DIR=$(PREFIX)/bin python -m pipx install $(PIPX_PACKAGES)
+	PIPX_HOME=$(PREFIX)/share/pipx PIPX_BIN_DIR=$(PREFIX)/bin python -m pipx inject yt-dlp mutagen
 	@touch $@
 
 $(STAMPS_DIR)/pipx-upgrade: pipx-requirements.txt | $(STAMPS_DIR) $(PREFIX)
 	PIPX_HOME=$(PREFIX)/share/pipx PIPX_BIN_DIR=$(PREFIX)/bin python -m pipx install $(PIPX_PACKAGES)
 	PIPX_HOME=$(PREFIX)/share/pipx PIPX_BIN_DIR=$(PREFIX)/bin python -m pipx upgrade-all
+	PIPX_HOME=$(PREFIX)/share/pipx PIPX_BIN_DIR=$(PREFIX)/bin python -m pipx inject yt-dlp mutagen --force
 	@touch $@
 
 $(STAMPS_DIR)/pyenv-rehash: $(_pip_stamp) $(_pipx_stamp) | $(STAMPS_DIR)
