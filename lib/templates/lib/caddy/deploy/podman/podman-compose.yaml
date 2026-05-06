@@ -8,7 +8,7 @@ services:
     ports:
       - "127.0.0.1:${PORT}:443"
     volumes:
-      - ./configs/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/caddy_sites:/etc/caddy/sites:ro
       - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/caddy_data:/data
       - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/caddy_config:/config

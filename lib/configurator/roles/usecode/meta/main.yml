@@ -1,0 +1,16 @@
+---
+galaxy_info:
+  author: evgnomon
+  description: Build, install, and link the already-checked-out usecode repository
+  company:
+  license: MIT
+  min_ansible_version: "2.9"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - all
+    - name: Debian
+      versions:
+        - all
+
+dependencies: []

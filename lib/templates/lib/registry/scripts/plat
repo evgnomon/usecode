@@ -21,8 +21,34 @@ ensure_networks() {
   podman network exists "z-${TENANT}-${NAMESPACE}-${POD}" 2>/dev/null || podman network create "z-${TENANT}-${NAMESPACE}-${POD}"
 }
 
+ensure_caddy() {
+  load_env
+  local container="${TENANT}_${NAMESPACE}_${CADDY_POD}_caddy"
+  local running
+  running="$(podman container inspect "$container" --format '{{.State.Running}}' 2>/dev/null || true)"
+  if [[ "$running" != "true" ]]; then
+    plat -t "$TENANT" -n "$NAMESPACE" -p "$CADDY_POD" caddy up
+  fi
+}
+
 caddy_sites_dir() {
   echo "/mnt/z/volumes/$TENANT/$NAMESPACE/$CADDY_POD/caddy_sites"
+}
+
+caddy_port() {
+  load_env
+  local caddy_env="$PLAT_HOME/$TENANT/$NAMESPACE/$CADDY_POD/caddy.env"
+  if [[ ! -f "$caddy_env" ]]; then
+    echo "Error: caddy env file not found at $caddy_env" >&2
+    exit 1
+  fi
+  local port
+  port="$(grep '^PORT=' "$caddy_env" | cut -d= -f2)"
+  if [[ -z "$port" ]]; then
+    echo "Error: PORT not set in $caddy_env" >&2
+    exit 1
+  fi
+  echo "$port"
 }
 
 register_site() {
@@ -141,6 +167,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     up)
       ensure_networks
+      ensure_caddy
       make_volume
       compose up -d
       register_site
@@ -192,13 +219,15 @@ while [[ $# -gt 0 ]]; do
     push)
       load_env
       [[ -z "${2:-}" ]] && echo "Usage: $0 push <image> (e.g. library/redis:latest)" && exit 1
-      podman push --format=v2s2 "${DOMAIN}:${PORT}/$2"
+      CADDY_PORT="$(caddy_port)"
+      podman push --format=v2s2 "${DOMAIN}:${CADDY_PORT}/$2"
       shift 2
       ;;
     pull)
       load_env
       [[ -z "${2:-}" ]] && echo "Usage: $0 pull <image> (e.g. library/redis:latest)" && exit 1
-      podman pull "${DOMAIN}:${PORT}/$2"
+      CADDY_PORT="$(caddy_port)"
+      podman pull "${DOMAIN}:${CADDY_PORT}/$2"
       shift 2
       ;;
     *)

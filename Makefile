@@ -1,4 +1,4 @@
-.PHONY: all ci deploy publish build version install clean submodules
+.PHONY: all ci deploy publish build version install link clean submodules
 
 $(eval $(shell ./scripts/ci_wrapper.sh --env 2>/dev/null))
 
@@ -66,6 +66,13 @@ install:
 	@for d in $(LIB_DIRS); do \
 		if $(MAKE) -C $$d -n install >/dev/null 2>&1; then \
 			$(MAKE) -C $$d install || exit $$?; \
+		fi; \
+	done
+
+link:
+	@for d in $(LIB_DIRS); do \
+		if $(MAKE) -C $$d -n link >/dev/null 2>&1; then \
+			$(MAKE) -C $$d link || exit $$?; \
 		fi; \
 	done
 

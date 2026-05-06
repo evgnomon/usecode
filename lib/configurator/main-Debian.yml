@@ -32,6 +32,7 @@
   gather_facts: false
   hosts: localhost
   roles:
+    - usecode
     - install_flow
     - terminal
     - vscode

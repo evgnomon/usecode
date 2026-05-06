@@ -1,0 +1,21 @@
+---
+- name: Build usecode
+  community.general.make:
+    chdir: "{{ usecode_repo_dir }}"
+  tags:
+    - usecode
+
+- name: Install usecode
+  community.general.make:
+    chdir: "{{ usecode_repo_dir }}"
+    target: install
+  become: true
+  tags:
+    - usecode
+
+- name: Link usecode
+  community.general.make:
+    chdir: "{{ usecode_repo_dir }}"
+    target: link
+  tags:
+    - usecode

@@ -28,6 +28,18 @@ make_volume() {
   mkdir -p "/mnt/z/volumes/$TENANT/$NAMESPACE/$POD/caddy_sites"
 }
 
+clean_stopped_container() {
+  load_env
+  local name="${TENANT}_${NAMESPACE}_${POD}_caddy"
+  if podman container exists "$name" 2>/dev/null; then
+    local running
+    running="$(podman container inspect "$name" --format '{{.State.Running}}' 2>/dev/null || true)"
+    if [[ "$running" != "true" ]]; then
+      podman rm -f "$name" >/dev/null
+    fi
+  fi
+}
+
 backup() {
   load_env
   compose pause
@@ -51,6 +63,7 @@ while [[ $# -gt 0 ]]; do
     up)
       ensure_networks
       make_volume
+      clean_stopped_container
       compose up -d
       shift
       ;;

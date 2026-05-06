@@ -6,7 +6,7 @@ BIN_DIR := $(BUILD_DIR)/usr/local/bin
 INSTALL_BIN_DIR := $(DESTDIR)usr/local/bin
 BUILD_STAMP := $(STAMP_DIR)/build
 
-BINS := annabelle ansidist barge boom btc btctab catalyze certgen confmap diga docker ensure_secret ensure_vault eth extract-tool ff getsecret ghchain git_repos gotorepo imgpress ipmesh k8s_ddl.sh keychain mgo mkarole mkp12 mkpod mkunit natsup num_argv pubdeb rchain repofqn rotate_keychain_pass rotsec secd set_git_conf shole sqlize trust_ca vi wdoctl whcloud x y yacht ykattach ysys zcdump
+BINS := annabelle ansidist barge boom catalyze certgen confmap diga docker ensure_secret ensure_vault extract-tool ff getsecret ghchain git_repos gotorepo imgpress ipmesh k8s_ddl.sh keychain mgo mkarole mkp12 mkpod mkunit natsup num_argv plat pubdeb rchain repofqn rotate_keychain_pass rotsec secd set_git_conf shole sqlize trust_ca vi wdoctl whcloud x y yacht ykattach ysys zcdump
 LINKS := $(addprefix $(BIN_DIR)/,$(BINS))
 INSTALLED := $(addprefix $(INSTALL_BIN_DIR)/,$(BINS))
 

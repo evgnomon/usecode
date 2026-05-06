@@ -1,25 +1,39 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ACTION="add"
-if [ "${1:-}" = "--remove" ]; then
-    ACTION="remove"
-    shift
-elif [ "${1:-}" = "--list" ]; then
-    ACTION="list"
-    shift
-fi
-
 show_usage() {
-    echo "Usage: trust_ca [--remove|--list] <host:port>"
-    echo "       trust_ca --list"
-    echo ""
-    echo "Examples:"
-    echo "  trust_ca cr.main.sys.local.zygote.run:8443"
-    echo "  trust_ca --remove cr.main.sys.local.zygote.run:8443"
-    echo "  trust_ca --list                  # list all custom-trusted CAs"
-    echo "  trust_ca --list example.com:443  # list only CAs for this host"
+    cat <<'EOF'
+Usage: trust_ca <host:port>           Fetch and install the CA serving this endpoint
+       trust_ca --remove <host:port>  Remove the CA installed for this endpoint
+       trust_ca --list [host[:port]]  List custom-trusted CAs (optionally filtered)
+       trust_ca -h|--help             Show this help
+
+What it does:
+  Connects to <host:port> via TLS, extracts the CA cert(s) from the chain
+  (skipping the leaf), and installs them into three trust stores:
+    - /usr/local/share/ca-certificates/   (system-wide; used by curl, Go, openssl)
+    - /etc/containers/certs.d/<host:port>/ca.crt   (podman/skopeo, per-registry)
+    - ~/.pki/nssdb                        (Brave/Chrome, via certutil)
+
+Examples:
+  trust_ca cr.main.sys.local.zygote.run:443
+  trust_ca --remove cr.main.sys.local.zygote.run:443
+  trust_ca --list                  # all custom-trusted CAs across stores
+  trust_ca --list example.com      # only CAs whose host matches "example.com"
+
+Notes:
+  - The endpoint must be live — the cert is scraped from the TLS handshake.
+  - Restart Brave/Chrome after add/remove for browser changes to take effect.
+  - Requires sudo for the system and container trust stores.
+EOF
 }
+
+ACTION="add"
+case "${1:-}" in
+    -h|--help) show_usage; exit 0 ;;
+    --remove)  ACTION="remove"; shift ;;
+    --list)    ACTION="list";   shift ;;
+esac
 
 print_cert_info() {
     local file="$1"

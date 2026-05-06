@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$HOME/src/github.com/$USER/usecode"
+cd "$ROOT"
 PLAT_HOME="${PLAT_HOME:-$HOME/.plat}"
 
 usage() {
@@ -12,7 +13,7 @@ usage() {
   echo "  -n <namespace>   Namespace (default: main)"
   echo "  -p <pod>         Pod name (required)"
   echo ""
-  echo "Actions: up, down, destroy, restart, logs, backup, restore, port, push, pull"
+  echo "Actions: up, down, destroy, restart, logs, backup, restore, port, push, pull, undefine"
   echo ""
   echo "Examples:"
   echo "  $0 -p vault1 vaultwarden up"
@@ -41,7 +42,7 @@ fi
 
 SERVICE="$1"; shift
 
-BLUEPRINT_DIR="$ROOT/../lib/templates/lib/$SERVICE"
+BLUEPRINT_DIR="$ROOT/lib/templates/lib/$SERVICE"
 ENV_FILE="$PLAT_HOME/$TENANT/$NAMESPACE/$POD/$SERVICE.env"
 
 if [[ ! -d "$BLUEPRINT_DIR" ]]; then
@@ -62,6 +63,16 @@ allocate_port() {
   done
 }
 
+if [[ "$1" == "undefine" ]]; then
+  if [[ -f "$ENV_FILE" ]]; then
+    rm -f "$ENV_FILE"
+    echo "Removed $ENV_FILE"
+  else
+    echo "No env file at $ENV_FILE"
+  fi
+  exit 0
+fi
+
 if [[ ! -f "$ENV_FILE" ]]; then
   mkdir -p "$(dirname "$ENV_FILE")"
   PORT=$(allocate_port)
@@ -72,6 +83,7 @@ POD=$POD
 PORT=$PORT
 SUBDOMAIN=$POD
 DOMAIN_SUFFIX=local.zygote.run
+DOMAIN=$POD.$NAMESPACE.$TENANT.local.zygote.run
 CADDY_POD=caddy-1
 EOF
   echo "Created $ENV_FILE with defaults (PORT=$PORT, SUBDOMAIN=$POD)."
@@ -87,16 +99,16 @@ if ! grep -q '^PORT=' "$ENV_FILE"; then
   echo "Assigned PORT=$PORT to $ENV_FILE"
 fi
 
-# Compute DOMAIN from SUBDOMAIN if set.
+# Load env, then derive DOMAIN only if the env file didn't set one (override-friendly).
 set -a
 source "$ENV_FILE"
 set +a
 
-if [[ -n "${SUBDOMAIN:-}" ]]; then
+if [[ -z "${DOMAIN:-}" && -n "${SUBDOMAIN:-}" ]]; then
   DOMAIN_SUFFIX="${DOMAIN_SUFFIX:-local.zygote.run}"
   DOMAIN="${SUBDOMAIN}.${NAMESPACE}.${TENANT}.${DOMAIN_SUFFIX}"
-  export DOMAIN DOMAIN_SUFFIX
 fi
+export DOMAIN DOMAIN_SUFFIX
 
 # Show all resolved port mappings from the compose file.
 if [[ "$1" == "port" ]]; then

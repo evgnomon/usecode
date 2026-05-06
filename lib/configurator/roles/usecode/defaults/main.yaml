@@ -1,0 +1,2 @@
+---
+usecode_repo_dir: "{{ blueprint_user_home }}/src/github.com/evgnomon/usecode"

@@ -11,6 +11,7 @@ dotfiles:
   - .gnupg/gpg.conf
   - .gnupg/scdaemon.conf
   - .eget.toml
+  - .fdignore
   - .ctags.d/javascript.ctags
   - .bashrc
   - .inputrc
