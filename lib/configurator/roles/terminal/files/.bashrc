@@ -148,6 +148,7 @@ else
 fi
 
 # for setting history length see HISTSIZE and HISTFILESIZE in bash(1)
+HISTFILE=~/.history
 HISTSIZE=100000
 HISTFILESIZE=2000000
 HISTCONTROL=ignoreboth:erasedups  # Ignore duplicates

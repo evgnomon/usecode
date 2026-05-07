@@ -35,6 +35,7 @@
     - usecode
     - install_flow
     - terminal
+    - bash_history_backup
     - vscode
     - docker
     - disable_ipv6

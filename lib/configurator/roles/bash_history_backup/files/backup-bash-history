@@ -1,0 +1,17 @@
+#!/bin/bash
+set -euo pipefail
+
+BACKUP_DIR="$HOME/.local/share/bash_history_backups"
+SOURCE="$HOME/.history"
+KEEP=1000
+
+mkdir -p "$BACKUP_DIR"
+
+if [ ! -f "$SOURCE" ]; then
+    echo "No .history found, nothing to back up." >&2
+    exit 0
+fi
+
+gzip -c "$SOURCE" > "$BACKUP_DIR/bash_history.$(date +%Y-%m-%d_%H).gz"
+
+ls -1t "$BACKUP_DIR"/bash_history.* 2>/dev/null | tail -n +$((KEEP + 1)) | xargs -r rm --

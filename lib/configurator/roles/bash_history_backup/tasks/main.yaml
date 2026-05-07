@@ -1,0 +1,35 @@
+---
+- name: Install backup-bash-history script
+  copy:
+    src: backup-bash-history
+    dest: "{{ local_bin_path }}/backup-bash-history"
+    mode: '0755'
+
+- name: Ensure systemd user unit directory exists
+  file:
+    path: "{{ target_home }}/.config/systemd/user"
+    state: directory
+    mode: '0755'
+
+- name: Install backup-bash-history systemd user units
+  copy:
+    src: "{{ item }}"
+    dest: "{{ target_home }}/.config/systemd/user/{{ item }}"
+    mode: '0644'
+  loop:
+    - backup-bash-history.service
+    - backup-bash-history.timer
+  register: backup_units
+
+- name: Reload systemd user daemon
+  systemd:
+    daemon_reload: true
+    scope: user
+  when: backup_units.changed
+
+- name: Enable and start backup-bash-history timer
+  systemd:
+    name: backup-bash-history.timer
+    enabled: true
+    state: started
+    scope: user

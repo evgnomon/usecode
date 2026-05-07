@@ -1,0 +1,6 @@
+[Unit]
+Description=Backup bash history
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/backup-bash-history
