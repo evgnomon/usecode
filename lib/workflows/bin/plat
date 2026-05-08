@@ -7,6 +7,7 @@ PLAT_HOME="${PLAT_HOME:-$HOME/.plat}"
 
 usage() {
   echo "Usage: $0 [options] <service> <action> [action...]"
+  echo "       $0 apply"
   echo ""
   echo "Options:"
   echo "  -t <tenant>      Tenant name (default: sys)"
@@ -15,12 +16,55 @@ usage() {
   echo ""
   echo "Actions: up, down, destroy, restart, logs, backup, restore, port, push, pull, undefine"
   echo ""
+  echo "apply: converge this host to the desired state declared by env files under"
+  echo "       \$PLAT_HOME (driven by STATUS=up|down)."
+  echo ""
   echo "Examples:"
   echo "  $0 -p vault1 vaultwarden up"
   echo "  $0 -t acme -n prod -p vault1 vaultwarden up"
   echo "  $0 -t acme -n prod -p web1 caddy up"
+  echo "  $0 apply"
   exit 1
 }
+
+# Set or replace KEY=VALUE in an env file (idempotent).
+set_env_var() {
+  local file="$1" key="$2" value="$3"
+  if grep -q "^${key}=" "$file"; then
+    sed -i "s|^${key}=.*|${key}=${value}|" "$file"
+  else
+    echo "${key}=${value}" >> "$file"
+  fi
+}
+
+# `apply`: walk env files and converge each to its desired STATUS.
+# Every env under $PLAT_HOME belongs to this host by definition.
+if [[ "${1:-}" == "apply" ]]; then
+  if [[ ! -d "$PLAT_HOME" ]]; then
+    echo "No PLAT_HOME at $PLAT_HOME"
+    exit 0
+  fi
+  rc=0
+  read_env_var() { awk -F= -v k="$2" '$1 == k { sub("^[^=]*=", ""); print; exit }' "$1"; }
+  while IFS= read -r -d '' env_file; do
+    env_status=$(read_env_var "$env_file" STATUS)
+    env_tenant=$(read_env_var "$env_file" TENANT)
+    env_namespace=$(read_env_var "$env_file" NAMESPACE)
+    env_pod=$(read_env_var "$env_file" POD)
+    env_service=$(basename "$env_file" .env)
+    env_status="${env_status:-down}"
+    if [[ "$env_status" != "up" && "$env_status" != "down" ]]; then
+      echo "skip $env_file: STATUS=$env_status (expected up|down)"
+      continue
+    fi
+    echo "==> $env_tenant/$env_namespace/$env_pod $env_service => $env_status"
+    if ! "$0" -t "$env_tenant" -n "$env_namespace" -p "$env_pod" "$env_service" "$env_status"; then
+      rc=1
+      echo "!!  failed: $env_service ($env_status)"
+    fi
+  done < <(find "$PLAT_HOME" -mindepth 4 -maxdepth 4 -type f -name '*.env' -print0 | sort -z)
+  exit "$rc"
+fi
 
 TENANT="sys"
 NAMESPACE="main"
@@ -80,13 +124,14 @@ if [[ ! -f "$ENV_FILE" ]]; then
 TENANT=$TENANT
 NAMESPACE=$NAMESPACE
 POD=$POD
+STATUS=down
 PORT=$PORT
 SUBDOMAIN=$POD
 DOMAIN_SUFFIX=local.zygote.run
 DOMAIN=$POD.$NAMESPACE.$TENANT.local.zygote.run
 CADDY_POD=caddy-1
 EOF
-  echo "Created $ENV_FILE with defaults (PORT=$PORT, SUBDOMAIN=$POD)."
+  echo "Created $ENV_FILE with defaults (STATUS=down, PORT=$PORT, SUBDOMAIN=$POD)."
   if [[ "${1:-}" != "up" ]]; then
     exit 0
   fi
@@ -98,6 +143,12 @@ if ! grep -q '^PORT=' "$ENV_FILE"; then
   echo "PORT=$PORT" >> "$ENV_FILE"
   echo "Assigned PORT=$PORT to $ENV_FILE"
 fi
+
+# Track desired state on the env file for `apply` to consume later.
+case "${1:-}" in
+  up|restart) set_env_var "$ENV_FILE" STATUS up ;;
+  down|destroy) set_env_var "$ENV_FILE" STATUS down ;;
+esac
 
 # Load env, then derive DOMAIN only if the env file didn't set one (override-friendly).
 set -a
