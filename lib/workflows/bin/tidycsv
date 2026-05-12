@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+"""Align CSV columns with padding so the file is readable in plain text editors."""
+
+import argparse
+import csv
+import sys
+from pathlib import Path
+
+
+def detect_dialect(sample: str) -> csv.Dialect:
+    try:
+        return csv.Sniffer().sniff(sample, delimiters=",;\t|")
+    except csv.Error:
+        return csv.excel
+
+
+def display_width(s: str) -> int:
+    # Treat each character as width 1; good enough for typical CSV content.
+    return len(s)
+
+
+def align(input_path: Path, output_path: Path | None, separator: str, padding: int) -> None:
+    raw = input_path.read_text(encoding="utf-8-sig", newline="")
+    dialect = detect_dialect(raw[:8192])
+
+    rows = list(csv.reader(raw.splitlines(), dialect=dialect))
+    if not rows:
+        sys.stderr.write("empty file\n")
+        return
+
+    col_count = max(len(r) for r in rows)
+    rows = [r + [""] * (col_count - len(r)) for r in rows]
+
+    widths = [0] * col_count
+    for row in rows:
+        for i, cell in enumerate(row):
+            w = display_width(cell)
+            if w > widths[i]:
+                widths[i] = w
+
+    lines = []
+    for row in rows:
+        parts = []
+        for i, cell in enumerate(row):
+            if i == col_count - 1:
+                parts.append(cell)
+            else:
+                pad = widths[i] - display_width(cell) + padding
+                parts.append(cell + " " * pad)
+        lines.append(separator.join(parts).rstrip())
+
+    output = "\n".join(lines) + "\n"
+
+    if output_path is None:
+        sys.stdout.write(output)
+    else:
+        output_path.write_text(output, encoding="utf-8")
+
+
+def main() -> None:
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("input", type=Path, help="input CSV file")
+    p.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        help="output file (default: stdout)",
+    )
+    p.add_argument(
+        "-s",
+        "--separator",
+        default=" | ",
+        help="column separator in the aligned output (default: ' | ')",
+    )
+    p.add_argument(
+        "-p",
+        "--padding",
+        type=int,
+        default=2,
+        help="extra spaces between columns (default: 2)",
+    )
+    args = p.parse_args()
+    align(args.input, args.output, args.separator, args.padding)
+
+
+if __name__ == "__main__":
+    main()

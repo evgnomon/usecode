@@ -1,179 +1,323 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/usr/bin/env python3
+"""plat: per-host service deployment driver.
 
-ROOT="$HOME/src/github.com/$USER/usecode"
-cd "$ROOT"
-PLAT_HOME="${PLAT_HOME:-$HOME/.plat}"
+Manages env files under $PLAT_HOME and dispatches actions to per-blueprint
+scripts under $ROOT/lib/templates/lib/<service>/scripts/plat.
 
-usage() {
-  echo "Usage: $0 [options] <service> <action> [action...]"
-  echo "       $0 apply"
-  echo ""
-  echo "Options:"
-  echo "  -t <tenant>      Tenant name (default: sys)"
-  echo "  -n <namespace>   Namespace (default: main)"
-  echo "  -p <pod>         Pod name (required)"
-  echo ""
-  echo "Actions: up, down, destroy, restart, logs, backup, restore, port, push, pull, undefine"
-  echo ""
-  echo "apply: converge this host to the desired state declared by env files under"
-  echo "       \$PLAT_HOME (driven by STATUS=up|down)."
-  echo ""
-  echo "Examples:"
-  echo "  $0 -p vault1 vaultwarden up"
-  echo "  $0 -t acme -n prod -p vault1 vaultwarden up"
-  echo "  $0 -t acme -n prod -p web1 caddy up"
-  echo "  $0 apply"
-  exit 1
-}
+The env file is the source of truth: template defaults are written on first
+use and backfilled if missing, so per-invocation args stay minimal.
+"""
+import os
+import re
+import random
+import subprocess
+import sys
+from pathlib import Path
 
-# Set or replace KEY=VALUE in an env file (idempotent).
-set_env_var() {
-  local file="$1" key="$2" value="$3"
-  if grep -q "^${key}=" "$file"; then
-    sed -i "s|^${key}=.*|${key}=${value}|" "$file"
-  else
-    echo "${key}=${value}" >> "$file"
-  fi
-}
+import click
+from dotenv import dotenv_values
 
-# `apply`: walk env files and converge each to its desired STATUS.
-# Every env under $PLAT_HOME belongs to this host by definition.
-if [[ "${1:-}" == "apply" ]]; then
-  if [[ ! -d "$PLAT_HOME" ]]; then
-    echo "No PLAT_HOME at $PLAT_HOME"
-    exit 0
-  fi
-  rc=0
-  read_env_var() { awk -F= -v k="$2" '$1 == k { sub("^[^=]*=", ""); print; exit }' "$1"; }
-  while IFS= read -r -d '' env_file; do
-    env_status=$(read_env_var "$env_file" STATUS)
-    env_tenant=$(read_env_var "$env_file" TENANT)
-    env_namespace=$(read_env_var "$env_file" NAMESPACE)
-    env_pod=$(read_env_var "$env_file" POD)
-    env_service=$(basename "$env_file" .env)
-    env_status="${env_status:-down}"
-    if [[ "$env_status" != "up" && "$env_status" != "down" ]]; then
-      echo "skip $env_file: STATUS=$env_status (expected up|down)"
-      continue
-    fi
-    echo "==> $env_tenant/$env_namespace/$env_pod $env_service => $env_status"
-    if ! "$0" -t "$env_tenant" -n "$env_namespace" -p "$env_pod" "$env_service" "$env_status"; then
-      rc=1
-      echo "!!  failed: $env_service ($env_status)"
-    fi
-  done < <(find "$PLAT_HOME" -mindepth 4 -maxdepth 4 -type f -name '*.env' -print0 | sort -z)
-  exit "$rc"
-fi
+ROOT = Path.home() / "src" / "github.com" / os.environ.get("USER", "") / "usecode"
+PLAT_HOME = Path(os.environ.get("PLAT_HOME") or Path.home() / ".plat")
+TEMPLATES = ROOT / "lib" / "templates" / "lib"
 
-TENANT="sys"
-NAMESPACE="main"
-POD=""
+PASSTHROUGH_ACTIONS = ("destroy", "restart", "logs", "backup", "restore", "push", "pull")
 
-while getopts "t:n:p:" opt; do
-  case "$opt" in
-    t) TENANT="$OPTARG" ;;
-    n) NAMESPACE="$OPTARG" ;;
-    p) POD="$OPTARG" ;;
-    *) usage ;;
-  esac
-done
-shift $((OPTIND - 1))
 
-if [[ -z "$POD" || $# -lt 2 ]]; then
-  usage
-fi
+def read_env(file: Path) -> dict[str, str]:
+    return {k: v for k, v in dotenv_values(file).items() if v is not None}
 
-SERVICE="$1"; shift
 
-BLUEPRINT_DIR="$ROOT/lib/templates/lib/$SERVICE"
-ENV_FILE="$PLAT_HOME/$TENANT/$NAMESPACE/$POD/$SERVICE.env"
+def set_env_var(file: Path, key: str, value: str) -> None:
+    """Set or replace KEY=VALUE in an env file (idempotent)."""
+    pattern = re.compile(rf"^{re.escape(key)}=")
+    if file.exists():
+        lines = file.read_text().splitlines()
+        for i, line in enumerate(lines):
+            if pattern.match(line):
+                lines[i] = f"{key}={value}"
+                file.write_text("\n".join(lines) + "\n")
+                return
+    with file.open("a") as fh:
+        fh.write(f"{key}={value}\n")
 
-if [[ ! -d "$BLUEPRINT_DIR" ]]; then
-  echo "Error: no blueprint found at $BLUEPRINT_DIR"
-  exit 1
-fi
 
-allocate_port() {
-  local used_ports
-  used_ports=$(grep -rh '^PORT=' "$PLAT_HOME" 2>/dev/null | cut -d= -f2 | sort -un)
-  local port
-  while true; do
-    port=$((RANDOM % 55001 + 10000))
-    if ! echo "$used_ports" | grep -qx "$port"; then
-      echo "$port"
-      return
-    fi
-  done
-}
+def allocate_port() -> int:
+    """Pick a random port not currently used by any env file under PLAT_HOME."""
+    used: set[int] = set()
+    if PLAT_HOME.exists():
+        for env_file in PLAT_HOME.rglob("*.env"):
+            port = dotenv_values(env_file).get("PORT")
+            if port and port.isdigit():
+                used.add(int(port))
+    while True:
+        candidate = random.randint(10000, 65000)
+        if candidate not in used:
+            return candidate
 
-if [[ "$1" == "undefine" ]]; then
-  if [[ -f "$ENV_FILE" ]]; then
-    rm -f "$ENV_FILE"
-    echo "Removed $ENV_FILE"
-  else
-    echo "No env file at $ENV_FILE"
-  fi
-  exit 0
-fi
 
-if [[ ! -f "$ENV_FILE" ]]; then
-  mkdir -p "$(dirname "$ENV_FILE")"
-  PORT=$(allocate_port)
-  cat > "$ENV_FILE" <<EOF
-TENANT=$TENANT
-NAMESPACE=$NAMESPACE
-POD=$POD
-STATUS=down
-PORT=$PORT
-SUBDOMAIN=$POD
-DOMAIN_SUFFIX=local.zygote.run
-DOMAIN=$POD.$NAMESPACE.$TENANT.local.zygote.run
-CADDY_POD=caddy-1
-EOF
-  echo "Created $ENV_FILE with defaults (STATUS=down, PORT=$PORT, SUBDOMAIN=$POD)."
-  if [[ "${1:-}" != "up" ]]; then
-    exit 0
-  fi
-fi
+def list_containers(running_only: bool = False) -> set[str]:
+    """Return the set of podman container names on this host."""
+    args = ["podman", "ps", "--format", "{{.Names}}"]
+    if not running_only:
+        args.insert(2, "-a")
+    result = subprocess.run(args, capture_output=True, text=True)
+    if result.returncode != 0:
+        return set()
+    return {n for n in result.stdout.splitlines() if n.strip()}
 
-# Ensure PORT exists in older env files that predate auto-allocation.
-if ! grep -q '^PORT=' "$ENV_FILE"; then
-  PORT=$(allocate_port)
-  echo "PORT=$PORT" >> "$ENV_FILE"
-  echo "Assigned PORT=$PORT to $ENV_FILE"
-fi
 
-# Track desired state on the env file for `apply` to consume later.
-case "${1:-}" in
-  up|restart) set_env_var "$ENV_FILE" STATUS up ;;
-  down|destroy) set_env_var "$ENV_FILE" STATUS down ;;
-esac
+def env_path(obj: dict, service: str) -> Path:
+    if not obj["pod"]:
+        click.echo("Error: -p pod is required", err=True)
+        sys.exit(1)
+    return PLAT_HOME / obj["tenant"] / obj["namespace"] / obj["pod"] / f"{service}.env"
 
-# Load env, then derive DOMAIN only if the env file didn't set one (override-friendly).
-set -a
-source "$ENV_FILE"
-set +a
 
-if [[ -z "${DOMAIN:-}" && -n "${SUBDOMAIN:-}" ]]; then
-  DOMAIN_SUFFIX="${DOMAIN_SUFFIX:-local.zygote.run}"
-  DOMAIN="${SUBDOMAIN}.${NAMESPACE}.${TENANT}.${DOMAIN_SUFFIX}"
-fi
-export DOMAIN DOMAIN_SUFFIX
+def template_dir(service: str) -> Path:
+    plat_dir = TEMPLATES / service
+    if not plat_dir.is_dir():
+        click.echo(f"Error: no template found at {plat_dir}", err=True)
+        sys.exit(1)
+    return plat_dir
 
-# Show all resolved port mappings from the compose file.
-if [[ "$1" == "port" ]]; then
-  COMPOSE_FILE="$BLUEPRINT_DIR/deploy/podman/podman-compose.yaml"
-  if [[ ! -f "$COMPOSE_FILE" ]]; then
-    echo "Error: no compose file at $COMPOSE_FILE"
-    exit 1
-  fi
-  set -a
-  source "$ENV_FILE"
-  set +a
-  envsubst < "$COMPOSE_FILE" | grep -oP '"\K\d+\.\d+\.\d+\.\d+:\d+:\d+"' | sed 's/"$//' || true
-  exit 0
-fi
 
-export ENV_FILE
-exec "$BLUEPRINT_DIR/scripts/plat" "$@"
+def ensure_env(env_file: Path, obj: dict) -> dict[str, str]:
+    """Ensure env file exists with all template defaults; backfill missing keys."""
+    env_file.parent.mkdir(parents=True, exist_ok=True)
+    is_new = not env_file.is_file()
+    existing = {} if is_new else read_env(env_file)
+
+    suffix = existing.get("DOMAIN_SUFFIX", "local.zygote.run")
+    subdomain = existing.get("SUBDOMAIN", obj["pod"])
+
+    template = {
+        "TENANT": obj["tenant"],
+        "NAMESPACE": obj["namespace"],
+        "POD": obj["pod"],
+        "STATUS": "down",
+        "SUBDOMAIN": subdomain,
+        "DOMAIN_SUFFIX": suffix,
+        "DOMAIN": f"{subdomain}.{obj['namespace']}.{obj['tenant']}.{suffix}",
+        "CADDY_POD": "caddy-1",
+    }
+    added = {k: v for k, v in template.items() if k not in existing}
+    if "PORT" not in existing:
+        added["PORT"] = str(allocate_port())
+
+    if added:
+        with env_file.open("a") as fh:
+            for k, v in added.items():
+                fh.write(f"{k}={v}\n")
+        existing.update(added)
+        verb = "Created" if is_new else "Backfilled"
+        click.echo(f"{verb} {env_file}: {', '.join(added)}")
+    return existing
+
+
+def prepare_dispatch(obj: dict, service: str, actions: list[str], persist: bool):
+    """Prepare env file and values; optionally persist STATUS from action."""
+    plat_dir = template_dir(service)
+    env_file = env_path(obj, service)
+    values = ensure_env(env_file, obj)
+
+    if persist:
+        head = actions[0]
+        if head in ("up", "restart"):
+            set_env_var(env_file, "STATUS", "up")
+            values["STATUS"] = "up"
+        elif head in ("down", "destroy"):
+            set_env_var(env_file, "STATUS", "down")
+            values["STATUS"] = "down"
+
+    return plat_dir, env_file, values
+
+
+def dispatch(obj: dict, service: str, actions: list[str], persist: bool = True) -> None:
+    """Set up env and execv into the per-service plat script."""
+    plat_dir, env_file, values = prepare_dispatch(obj, service, actions, persist)
+    os.environ.update(values)
+    os.environ["ENV_FILE"] = str(env_file)
+    plat_script = plat_dir / "scripts" / "plat"
+    os.execv(str(plat_script), [str(plat_script), *actions])
+
+
+def run_dispatch(obj: dict, service: str, actions: list[str], persist: bool) -> int:
+    """Like dispatch, but subprocess (returns rc) instead of execv (replaces process)."""
+    plat_dir, env_file, values = prepare_dispatch(obj, service, actions, persist)
+    env = os.environ.copy()
+    env.update(values)
+    env["ENV_FILE"] = str(env_file)
+    plat_script = plat_dir / "scripts" / "plat"
+    return subprocess.run([str(plat_script), *actions], env=env).returncode
+
+
+def do_apply(force: str | None = None) -> int:
+    """Walk env files under PLAT_HOME and converge each to its STATUS (or `force`).
+
+    With `force` set (global up/down), STATUS in env files is NOT modified —
+    those are transient force operations. `plat apply` (no force) leaves STATUS
+    in place and just re-converges, so it can "bring back" services that were
+    forced down.
+    """
+    if not PLAT_HOME.is_dir():
+        click.echo(f"No PLAT_HOME at {PLAT_HOME}")
+        return 0
+    containers = list_containers()
+    rc = 0
+    persist = force is None
+    env_files = sorted(p for p in PLAT_HOME.glob("*/*/*/*.env") if p.is_file())
+    for env_file in env_files:
+        values = read_env(env_file)
+        action = force or values.get("STATUS", "down")
+        tenant = values.get("TENANT", "")
+        namespace = values.get("NAMESPACE", "")
+        pod = values.get("POD", "")
+        service = env_file.stem
+        if action not in ("up", "down"):
+            click.echo(f"skip {env_file}: STATUS={action} (expected up|down)")
+            continue
+        primary = f"{tenant}_{namespace}_{pod}_{service}"
+        if action == "down" and primary not in containers:
+            continue
+        click.echo(f"==> {tenant}/{namespace}/{pod} {service} => {action}")
+        obj = {"tenant": tenant, "namespace": namespace, "pod": pod}
+        if run_dispatch(obj, service, [action], persist=persist) != 0:
+            rc = 1
+            click.echo(f"!!  failed: {service} ({action})")
+    return rc
+
+
+def do_port(plat_dir: Path) -> None:
+    """Print resolved IP:port:port mappings from the compose file."""
+    compose = plat_dir / "deploy" / "podman" / "podman-compose.yaml"
+    if not compose.is_file():
+        click.echo(f"Error: no compose file at {compose}", err=True)
+        sys.exit(1)
+    rendered = subprocess.run(
+        ["envsubst"],
+        input=compose.read_text(),
+        capture_output=True,
+        text=True,
+        env=os.environ,
+        check=True,
+    ).stdout
+    for match in re.finditer(r'"(\d+\.\d+\.\d+\.\d+:\d+:\d+)"', rendered):
+        click.echo(match.group(1))
+
+
+def pod_options(f):
+    f = click.option("-p", "pod", default="", help="Pod name")(f)
+    f = click.option("-n", "namespace", default="main", help="Namespace (default: main)")(f)
+    f = click.option("-t", "tenant", default="sys", help="Tenant (default: sys)")(f)
+    return f
+
+
+@click.group(context_settings={"help_option_names": ["-h", "--help"]})
+def cli() -> None:
+    """Driver for per-host service deployments."""
+    os.chdir(ROOT)
+
+
+@cli.command()
+def apply() -> None:
+    """Converge every service to its env file's STATUS."""
+    sys.exit(do_apply())
+
+
+@cli.command()
+def ps() -> None:
+    """Show declared and actual state of every service under PLAT_HOME."""
+    if not PLAT_HOME.is_dir():
+        click.echo(f"No PLAT_HOME at {PLAT_HOME}")
+        return
+    running = list_containers(running_only=True)
+    all_ctrs = list_containers()
+    rows = []
+    for env_file in sorted(PLAT_HOME.glob("*/*/*/*.env")):
+        v = read_env(env_file)
+        primary = f"{v.get('TENANT', '')}_{v.get('NAMESPACE', '')}_{v.get('POD', '')}_{env_file.stem}"
+        if primary in running:
+            state = "running"
+        elif primary in all_ctrs:
+            state = "stopped"
+        else:
+            state = "-"
+        rows.append((
+            f"{v.get('TENANT', '')}/{v.get('NAMESPACE', '')}/{v.get('POD', '')}",
+            env_file.stem,
+            v.get("STATUS", ""),
+            state,
+            v.get("PORT", ""),
+        ))
+    if not rows:
+        click.echo("No services defined.")
+        return
+    headers = ("POD", "SERVICE", "STATUS", "STATE", "PORT")
+    widths = [max(len(h), max(len(r[i]) for r in rows)) for i, h in enumerate(headers)]
+    fmt = "  ".join(f"{{:<{w}}}" for w in widths)
+    click.echo(fmt.format(*headers))
+    for r in rows:
+        click.echo(fmt.format(*r))
+
+
+@cli.command()
+@pod_options
+@click.argument("service", required=False)
+def up(tenant: str, namespace: str, pod: str, service: str | None) -> None:
+    """Bring SERVICE up. With no SERVICE: bring everything up."""
+    if not service:
+        sys.exit(do_apply(force="up"))
+    dispatch({"tenant": tenant, "namespace": namespace, "pod": pod}, service, ["up"])
+
+
+@cli.command()
+@pod_options
+@click.argument("service", required=False)
+def down(tenant: str, namespace: str, pod: str, service: str | None) -> None:
+    """Bring SERVICE down. With no SERVICE: bring everything down."""
+    if not service:
+        sys.exit(do_apply(force="down"))
+    dispatch({"tenant": tenant, "namespace": namespace, "pod": pod}, service, ["down"])
+
+
+@cli.command()
+@pod_options
+@click.argument("service")
+def port(tenant: str, namespace: str, pod: str, service: str) -> None:
+    """Print resolved IP:port:port mappings for SERVICE."""
+    obj = {"tenant": tenant, "namespace": namespace, "pod": pod}
+    plat_dir = template_dir(service)
+    values = ensure_env(env_path(obj, service), obj)
+    os.environ.update(values)
+    do_port(plat_dir)
+
+
+@cli.command()
+@pod_options
+@click.argument("service")
+def undefine(tenant: str, namespace: str, pod: str, service: str) -> None:
+    """Remove SERVICE's env file."""
+    obj = {"tenant": tenant, "namespace": namespace, "pod": pod}
+    env_file = env_path(obj, service)
+    if env_file.is_file():
+        env_file.unlink()
+        click.echo(f"Removed {env_file}")
+    else:
+        click.echo(f"No env file at {env_file}")
+
+
+def _register_passthrough(action: str) -> None:
+    @cli.command(name=action, help=f"Run `{action}` on SERVICE.")
+    @pod_options
+    @click.argument("service")
+    def _cmd(tenant: str, namespace: str, pod: str, service: str) -> None:
+        dispatch({"tenant": tenant, "namespace": namespace, "pod": pod}, service, [action])
+
+
+for _a in PASSTHROUGH_ACTIONS:
+    _register_passthrough(_a)
+
+
+if __name__ == "__main__":
+    cli()
