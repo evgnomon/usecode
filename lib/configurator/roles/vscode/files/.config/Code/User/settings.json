@@ -115,6 +115,7 @@
     },
     "chat.editor.fontSize": 17,
     "chat.fontSize": 17,
+    "window.zoomLevel": 0.6,
     "python.defaultInterpreterPath": "/bin/python3",
 
     // Vim extension settings
