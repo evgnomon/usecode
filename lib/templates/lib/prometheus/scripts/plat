@@ -1,56 +1,99 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
-if [[ $# -eq 0 ]]; then
-  echo "Usage: $0 <deployment> [up|down|restart|logs]"
-  exit 1
-fi
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ENV_FILE="${ENV_FILE:?ENV_FILE must be set}"
+
+compose() {
+  podman-compose -p "${TENANT}_${NAMESPACE}_${POD}_prometheus" --env-file "$ENV_FILE" -f "$SCRIPT_DIR/../deploy/podman/podman-compose.yaml" "$@"
+}
+
+load_env() {
+  set -a
+  source "$ENV_FILE"
+  set +a
+}
+
+ensure_networks() {
+  load_env
+  podman network exists "z-${TENANT}" 2>/dev/null || podman network create "z-${TENANT}"
+  podman network exists "z-${TENANT}-${NAMESPACE}" 2>/dev/null || podman network create "z-${TENANT}-${NAMESPACE}"
+  podman network exists "z-${TENANT}-${NAMESPACE}-${POD}" 2>/dev/null || podman network create "z-${TENANT}-${NAMESPACE}-${POD}"
+}
+
+caddy_sites_dir() {
+  echo "/mnt/z/volumes/$TENANT/$NAMESPACE/$CADDY_POD/caddy_sites"
+}
+
+register_site() {
+  load_env
+  local sites_dir
+  sites_dir="$(caddy_sites_dir)"
+  if [[ -d "$sites_dir" && -n "${DOMAIN:-}" ]]; then
+    cat > "$sites_dir/${TENANT}_${NAMESPACE}_${POD}_prometheus" <<SITE
+${DOMAIN} {
+  tls internal
+  reverse_proxy ${TENANT}_${NAMESPACE}_${POD}_prometheus:9090
+}
+SITE
+    podman exec "${TENANT}_${NAMESPACE}_${CADDY_POD}_caddy" caddy reload --config /etc/caddy/Caddyfile 2>/dev/null || true
+  fi
+}
+
+unregister_site() {
+  load_env
+  local sites_dir
+  sites_dir="$(caddy_sites_dir)"
+  rm -f "$sites_dir/${TENANT}_${NAMESPACE}_${POD}_prometheus"
+  podman exec "${TENANT}_${NAMESPACE}_${CADDY_POD}_caddy" caddy reload --config /etc/caddy/Caddyfile 2>/dev/null || true
+}
+
+make_volume() {
+  load_env
+  mkdir -p "/mnt/z/volumes/$TENANT/$NAMESPACE/$POD/prometheus_data"
+  podman unshare chown -R 65534:65534 "/mnt/z/volumes/$TENANT/$NAMESPACE/$POD/prometheus_data"
+}
 
 backup() {
-  source .env
-  podman-compose -f ../deploy/podman/podman-compose.yaml pause
-  sudo tar -czf "pod_backup.tar.gz" -C "/mnt/z/volumes/$TENANT/$POD" .
-  podman-compose -f ../deploy/podman/podman-compose.yaml unpause
+  load_env
+  compose pause
+  sudo tar -czf "$PLAT_HOME/$TENANT/$NAMESPACE/$POD/prometheus_backup.tar.gz" -C "/mnt/z/volumes/$TENANT/$NAMESPACE/$POD" .
+  compose unpause
 }
 
 restore() {
-  podman-compose -f ../deploy/podman/podman-compose.yaml down -v
-  source .env
-  sudo rm -rf "/mnt/z/volumes/$TENANT/$POD"
+  load_env
+  compose down -v
+  sudo rm -rf "/mnt/z/volumes/$TENANT/$NAMESPACE/$POD"
   make_volume
-  sudo tar -xpzf "pod_backup.tar.gz" -C "/mnt/z/volumes/$TENANT/$POD"
-  podman-compose -f ../deploy/podman/podman-compose.yaml up -d
+  sudo tar -xpzf "$PLAT_HOME/$TENANT/$NAMESPACE/$POD/prometheus_backup.tar.gz" -C "/mnt/z/volumes/$TENANT/$NAMESPACE/$POD"
+  compose up -d
 }
 
-make_volume(){
-  source .env
-  sudo mkdir -p "/mnt/z/volumes/$TENANT/$POD"
-  sudo chown -R $USER:$USER "/mnt/z/volumes/$TENANT/$POD"
-  mkdir -p "/mnt/z/volumes/$TENANT/$POD/prometheus_data"
-}
-
-DEPLOYMENT="prometheus"
-
-cd $HOME/src/github.com/platforge-cloud/$DEPLOYMENT
+PLAT_HOME="${PLAT_HOME:-$HOME/.plat}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     up)
+      ensure_networks
       make_volume
-      podman-compose -f ../deploy/podman/podman-compose.yaml up -d
+      compose up -d
+      register_site
       shift
       ;;
     down)
-      podman-compose -f ../deploy/podman/podman-compose.yaml down -v
+      unregister_site
+      compose down -v
       shift
       ;;
     destroy)
-      podman-compose -f ../deploy/podman/podman-compose.yaml down -v
-      source .env
-      sudo rm -rf "/mnt/z/volumes/$TENANT/$POD/prometheus_data"
+      unregister_site
+      compose down -v
+      sudo rm -rf "/mnt/z/volumes/$TENANT/$NAMESPACE/$POD/prometheus_data"
       shift
       ;;
     restart|logs)
-      podman-compose -f ../deploy/podman/podman-compose.yaml $1
+      compose "$1"
       shift
       ;;
     backup)
@@ -62,9 +105,8 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     *)
-      DEPLOYMENT="$1"
-      cd $HOME/src/github.com/platforge-cloud/$DEPLOYMENT
-      shift
+      echo "Unknown action: $1"
+      exit 1
       ;;
   esac
 done

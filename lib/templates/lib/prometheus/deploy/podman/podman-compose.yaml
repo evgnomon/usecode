@@ -3,15 +3,18 @@ version: "3.9"
 services:
   prometheus:
     image: docker.io/prom/prometheus:latest
-    container_name: prometheus
+    container_name: ${TENANT}_${NAMESPACE}_${POD}_prometheus
     restart: unless-stopped
     ports:
-      - "127.0.0.1:${PORT:-9090}:9090"
+      - "127.0.0.1:${PORT}:9090"
     volumes:
-      - /mnt/z/volumes/${TENANT}/${POD}/prometheus_data:/prometheus
+      - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/prometheus_data:/prometheus
     networks:
-      - ${TENANT}_${POD}_prometheus_net
+      - z-${TENANT}-${NAMESPACE}-${POD}
+      - z-${TENANT}
 
 networks:
-  ${TENANT}_${POD}_prometheus_net:
-    driver: bridge
+  z-${TENANT}-${NAMESPACE}-${POD}:
+    external: true
+  z-${TENANT}:
+    external: true
