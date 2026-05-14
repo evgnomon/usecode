@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ENV_FILE="${ENV_FILE:?ENV_FILE must be set}"
 
 compose() {
-  podman-compose --env-file "$ENV_FILE" -f "$SCRIPT_DIR/../deploy/podman/podman-compose.yaml" "$@"
+  podman-compose -p "${TENANT}_${NAMESPACE}_${POD}_rocketchat" --env-file "$ENV_FILE" -f "$SCRIPT_DIR/../deploy/podman/podman-compose.yaml" "$@"
 }
 
 load_env() {

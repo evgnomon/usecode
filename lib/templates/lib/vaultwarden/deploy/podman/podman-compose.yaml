@@ -7,7 +7,7 @@ services:
     restart: unless-stopped
     environment:
       DOMAIN: https://${DOMAIN}
-      SIGNUPS_ALLOWED: "false"
+      SIGNUPS_ALLOWED: ${SIGNUPS_ALLOWED}
       INVITATIONS_ALLOWED: "true"
       ADMIN_TOKEN: ${ADMIN_TOKEN}
     ports:
