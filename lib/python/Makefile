@@ -1,21 +1,45 @@
-.PHONY: build clean clean-stamps clean-stamp-configure clean-stamp-build clean-stamp-install clean-stamp-link install uninstall help
+.PHONY: build build-deps verify clean clean-stamps clean-stamp-configure clean-stamp-build clean-stamp-install clean-stamp-link install uninstall help
 
 DESTDIR ?= /
 INSTALL_PREFIX ?= /usr/local
 
 ROOT_DIR ?= $(abspath $(CURDIR)/../..)
 BUILD_DIR ?= $(ROOT_DIR)/build
-BUILD_PREFIX := $(BUILD_DIR)/usr/local
+PREFIX := $(BUILD_DIR)/usr/local
 LIB_BUILD_DIR := $(CURDIR)/build
 LIB_BUILD_PREFIX := $(LIB_BUILD_DIR)/usr/local
 STAMP_DIR := $(CURDIR)/.stamps
 
-PYTHON_VERSION ?= 3.14.4
+PYTHON_VERSION ?= $(shell cat .deb.jsonc | jsonc | jq -r '.version')
 PY_MAJMIN := $(basename $(PYTHON_VERSION))
 CPYTHON_SRC := $(ROOT_DIR)/third_party/python/cpython
 
+APT_BUILD_DEPS := \
+	build-essential pkg-config \
+	libssl-dev zlib1g-dev libbz2-dev liblzma-dev \
+	libffi-dev libsqlite3-dev libreadline-dev \
+	libncurses-dev tk-dev uuid-dev \
+	libgdbm-dev libgdbm-compat-dev libexpat1-dev
+
+# stdlib modules that must import in a full-flag build
+VERIFY_MODULES := ssl hashlib zlib bz2 lzma ctypes sqlite3 readline \
+	curses _curses_panel dbm.gnu dbm.ndbm uuid tkinter decimal \
+	xml.parsers.expat _socket zoneinfo
+
+build-deps: ## Install Debian build-time deps for a full-featured CPython
+	sudo apt-get update
+	sudo apt-get install -y --no-install-recommends $(APT_BUILD_DEPS)
+
 $(STAMP_DIR)/configure.$(PYTHON_VERSION):
 	@mkdir -p $(dir $@)
+	@missing=""; for p in $(APT_BUILD_DEPS); do \
+		dpkg-query -W -f='$${Status}' $$p 2>/dev/null | grep -q "install ok installed" || missing="$$missing $$p"; \
+	done; \
+	if [ -n "$$missing" ]; then \
+		echo "ERROR: missing build deps:$$missing"; \
+		echo "Run: make build-deps"; \
+		exit 1; \
+	fi
 	git -C $(CPYTHON_SRC) fetch --depth 1 origin refs/tags/v$(PYTHON_VERSION):refs/tags/v$(PYTHON_VERSION)
 	git -C $(CPYTHON_SRC) checkout v$(PYTHON_VERSION)
 	$(MAKE) -C $(CPYTHON_SRC) distclean 2>/dev/null || true
@@ -24,7 +48,11 @@ $(STAMP_DIR)/configure.$(PYTHON_VERSION):
 		--enable-shared \
 		--enable-optimizations \
 		--with-lto \
-		--with-ensurepip=install
+		--with-ensurepip=install \
+		--enable-loadable-sqlite-extensions \
+		--with-dbmliborder=gdbm:ndbm \
+		--with-readline=readline \
+		--with-computed-gotos
 	@touch $@
 
 $(STAMP_DIR)/build.$(PYTHON_VERSION): $(STAMP_DIR)/configure.$(PYTHON_VERSION)
@@ -33,13 +61,21 @@ $(STAMP_DIR)/build.$(PYTHON_VERSION): $(STAMP_DIR)/configure.$(PYTHON_VERSION)
 
 $(STAMP_DIR)/install.$(PYTHON_VERSION): $(STAMP_DIR)/build.$(PYTHON_VERSION)
 	$(MAKE) -C $(CPYTHON_SRC) install DESTDIR=$(LIB_BUILD_DIR)
+	@PYTHONHOME=$(LIB_BUILD_PREFIX) \
+	 LD_LIBRARY_PATH=$(LIB_BUILD_PREFIX)/lib \
+	 $(LIB_BUILD_PREFIX)/bin/python$(PY_MAJMIN) -c \
+	 "import sys, importlib.util; missing=[m for m in '$(VERIFY_MODULES)'.split() if not importlib.util.find_spec(m)]; sys.exit('MISSING MODULES: '+' '.join(missing)) if missing else print('all modules present')"
 	@touch $@
+
+verify: $(STAMP_DIR)/install.$(PYTHON_VERSION) ## Re-run the stdlib module verification
+	@PYTHONHOME=$(LIB_BUILD_PREFIX) \
+	 LD_LIBRARY_PATH=$(LIB_BUILD_PREFIX)/lib \
+	 $(LIB_BUILD_PREFIX)/bin/python$(PY_MAJMIN) -c \
+	 "import sys, importlib.util; missing=[m for m in '$(VERIFY_MODULES)'.split() if not importlib.util.find_spec(m)]; sys.exit('MISSING MODULES: '+' '.join(missing)) if missing else print('all modules present')"
 
 BIN_LINKS := \
 	bin/idle3 \
 	bin/idle$(PY_MAJMIN) \
-	bin/pip3 \
-	bin/pip$(PY_MAJMIN) \
 	bin/pydoc3 \
 	bin/pydoc$(PY_MAJMIN) \
 	bin/python3 \
@@ -60,9 +96,9 @@ INCLUDE_LINKS := \
 MAN_LINKS = $(patsubst $(LIB_BUILD_PREFIX)/%,%,$(wildcard $(LIB_BUILD_PREFIX)/share/man/man1/python*))
 
 LINK_ITEMS = $(BIN_LINKS) $(LIB_LINKS) $(INCLUDE_LINKS) $(MAN_LINKS)
-DST_LINKS   = $(addprefix $(BUILD_PREFIX)/,$(LINK_ITEMS))
+DST_LINKS   = $(addprefix $(PREFIX)/,$(LINK_ITEMS))
 
-$(BUILD_PREFIX)/%: $(LIB_BUILD_PREFIX)/% | $(STAMP_DIR)/install.$(PYTHON_VERSION)
+$(PREFIX)/%: $(LIB_BUILD_PREFIX)/% | $(STAMP_DIR)/install.$(PYTHON_VERSION)
 	@mkdir -p $(@D)
 	@ln -sfn $$(realpath --relative-to=$(@D) $<) $@
 
@@ -71,6 +107,9 @@ $(STAMP_DIR)/link.$(PYTHON_VERSION): $(STAMP_DIR)/install.$(PYTHON_VERSION) $(DS
 	@touch $@
 
 build: $(STAMP_DIR)/link.$(PYTHON_VERSION) ## Build CPython from source and link into build prefix
+
+dist: 
+	@mkdeb
 
 install: ## Copy Python files into DESTDIR/INSTALL_PREFIX
 	@mkdir -p $(DESTDIR)$(patsubst /%,%,$(INSTALL_PREFIX))

@@ -325,11 +325,12 @@ build_deb() {
 
     log_info "Building .deb package..."
 
-    # Set proper permissions
+    # Ensure directories are traversable; preserve file permissions from the
+    # source tree (executable bits, etc.) but strip setuid/setgid/sticky bits
+    # from every entry for security.
     find "$build_dir" -type d -exec chmod 755 {} \;
-    find "$build_dir$INSTALL_PREFIX" -type f -exec chmod 644 {} \; 2>/dev/null || true
-    find "$build_dir$INSTALL_PREFIX/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true
-    find "$build_dir$INSTALL_PREFIX/lib" -name "*.so*" -exec chmod 755 {} \; 2>/dev/null || true
+    find "$build_dir" \( -perm -4000 -o -perm -2000 -o -perm -1000 \) \
+        -exec chmod a-s,-t {} \;
 
     # Build the package
     dpkg-deb --build --root-owner-group "$build_dir" "$deb_file"
@@ -364,7 +365,10 @@ install_root_hierarchy() {
     fi
 
     log_info "Installing root hierarchy from $root_dir/"
-    cp -rL "$root_dir/." "$build_dir/"
+    # Preserve mode bits (executable, etc.) from the source tree. Ownership is
+    # reset by dpkg-deb --root-owner-group; setuid/setgid/sticky bits are
+    # stripped later in build_deb for security.
+    cp -rL --preserve=mode "$root_dir/." "$build_dir/"
 }
 
 # Main function

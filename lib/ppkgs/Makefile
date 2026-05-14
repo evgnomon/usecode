@@ -8,6 +8,7 @@ PREFIX			:= $(BUILD_DIR)/usr/local
 
 SPEC := .deb.jsonc
 VERSION := $(shell cat .deb.jsonc | jsonc | jq -r '.version')
+PY_MAJMIN := $(basename $(PYTHON_VERSION))
 
 DEB_PKG := dist/ppkgs_$(VERSION)_amd64.deb
 
@@ -23,7 +24,7 @@ _pipx_stamp := $(STAMPS_DIR)/pipx-upgrade
 endif
 
 
-PYTHON := "/usr/local/bin/python3"
+PYTHON := "/usr/local/bin/python$(PY_MAJMIN)"
 
 PIPX_PKG := $(shell $(PYTHON) -m site --user-site)/pipx
 
