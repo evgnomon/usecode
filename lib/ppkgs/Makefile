@@ -22,7 +22,7 @@ _pip_stamp  := $(STAMPS_DIR)/pip-upgrade
 _pipx_stamp := $(STAMPS_DIR)/pipx-upgrade
 endif
 
-all: $(_pip_stamp) $(_pipx_stamp) $(STAMPS_DIR)/pyenv-rehash $(DEB_PKG)
+build: $(_pip_stamp) $(_pipx_stamp) $(STAMPS_DIR)/pyenv-rehash $(DEB_PKG)
 
 $(STAMPS_DIR):
 	@mkdir -p $@
