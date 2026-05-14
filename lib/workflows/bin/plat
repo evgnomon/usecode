@@ -174,6 +174,7 @@ def do_apply(force: str | None = None) -> int:
         namespace = values.get("NAMESPACE", "")
         pod = values.get("POD", "")
         service = env_file.stem
+
         if action not in ("up", "down"):
             click.echo(f"skip {env_file}: STATUS={action} (expected up|down)")
             continue
@@ -182,6 +183,7 @@ def do_apply(force: str | None = None) -> int:
             continue
         click.echo(f"==> {tenant}/{namespace}/{pod} {service} => {action}")
         obj = {"tenant": tenant, "namespace": namespace, "pod": pod}
+
         if run_dispatch(obj, service, [action], persist=persist) != 0:
             rc = 1
             click.echo(f"!!  failed: {service} ({action})")

@@ -21,16 +21,6 @@ ensure_networks() {
   podman network exists "z-${TENANT}-${NAMESPACE}-${POD}" 2>/dev/null || podman network create "z-${TENANT}-${NAMESPACE}-${POD}"
 }
 
-ensure_caddy() {
-  load_env
-  local container="${TENANT}_${NAMESPACE}_${CADDY_POD}_caddy"
-  local running
-  running="$(podman container inspect "$container" --format '{{.State.Running}}' 2>/dev/null || true)"
-  if [[ "$running" != "true" ]]; then
-    plat -t "$TENANT" -n "$NAMESPACE" -p "$CADDY_POD" caddy up
-  fi
-}
-
 caddy_sites_dir() {
   echo "/mnt/z/volumes/$TENANT/$NAMESPACE/$CADDY_POD/caddy_sites"
 }
@@ -167,7 +157,6 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     up)
       ensure_networks
-      ensure_caddy
       make_volume
       compose up -d
       register_site
