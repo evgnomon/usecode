@@ -3,7 +3,7 @@ VERSION ?= $(shell git describe --tags --match 'v*' --abbrev=0 2>/dev/null | sed
 COLLECTION_ARTIFACT := $(COLLECTION_DIR)/evgnomon-catamaran-$(VERSION).tar.gz
 ROOT_DIR ?= $(abspath $(CURDIR)/../..)
 BUILD_DIR ?= $(ROOT_DIR)/build
-STAMP_DIR := $(ROOT_DIR)/.stamps/$(patsubst $(ROOT_DIR)/%,%,$(CURDIR))
+STAMP_DIR := $(CURDIR)/.stamps
 PYTHON_ARTIFACT := dist/catamaran-$(VERSION).tar.gz
 PYPI_STAMP := $(STAMP_DIR)/pypi-$(VERSION)
 GALAXY_STAMP := $(STAMP_DIR)/galaxy-$(VERSION)

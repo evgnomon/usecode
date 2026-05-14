@@ -6,9 +6,7 @@ const libvirt = @import("libvirt.zig");
 const version = "0.7.0";
 
 pub fn main(init: std.process.Init) !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+    const allocator = init.gpa;
 
     const argv = init.minimal.args;
     const args = try argv.toSlice(allocator);

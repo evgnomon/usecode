@@ -3,7 +3,7 @@
 ROOT_DIR ?= $(abspath $(CURDIR)/../..)
 BUILD_DIR ?= $(ROOT_DIR)/build
 DESTDIR ?= /
-STAMP_DIR := $(ROOT_DIR)/.stamps/$(patsubst $(ROOT_DIR)/%,%,$(CURDIR))
+STAMP_DIR := $(CURDIR)/.stamps
 COMPONENT_BUILD_DIR := $(CURDIR)/build
 COMPONENT_STAGE_ROOT := $(COMPONENT_BUILD_DIR)/stage
 COMPONENT_STAGE_PREFIX := $(COMPONENT_STAGE_ROOT)/usr/local
@@ -44,7 +44,6 @@ clean: clean-build ## Remove build artifacts and staged tree
 	@if [ -f $(DIRS_MANIFEST) ]; then while IFS= read -r d; do rmdir "$(BUILD_DIR)/$$d" 2>/dev/null || true; done < $(DIRS_MANIFEST); fi
 	@rm -rf $(COMPONENT_BUILD_DIR)
 	@rm -rf $(STAMP_DIR)
-	@rmdir $(ROOT_DIR)/.stamps 2>/dev/null || true
 
 build: $(BUILD_STAMP) ## Build wheel and stage package + deps into the shared build tree
 

@@ -1,10 +1,10 @@
 .PHONY: build install clean
 
 build:
-	$(MAKE) -C bin build
+	@$(MAKE) -C bin build
 
 install:
-	$(MAKE) -C bin install
+	@$(MAKE) -C bin install
 
 clean:
-	$(MAKE) -C bin clean
+	@$(MAKE) -C bin clean

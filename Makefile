@@ -87,4 +87,9 @@ submodules:
 	git submodule update --init --recursive
 
 clean:
-	@rm -rf $(BUILD_DIR) $(ROOT_DIR)/.stamps
+	@rm -rf $(BUILD_DIR)
+	@for d in $(LIB_DIRS); do \
+		if $(MAKE) -C $$d -n clean >/dev/null 2>&1; then \
+			$(MAKE) -C $$d clean || exit $$?; \
+		fi; \
+	done

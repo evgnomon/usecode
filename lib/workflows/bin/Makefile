@@ -1,7 +1,7 @@
 ROOT_DIR ?= $(abspath $(CURDIR)/../../..)
 BUILD_DIR ?= $(ROOT_DIR)/build
 DESTDIR ?= /
-STAMP_DIR := $(ROOT_DIR)/.stamps/$(patsubst $(ROOT_DIR)/%,%,$(CURDIR))
+STAMP_DIR := $(CURDIR)/.stamps
 BIN_DIR := $(BUILD_DIR)/usr/local/bin
 INSTALL_BIN_DIR := $(DESTDIR)usr/local/bin
 BUILD_STAMP := $(STAMP_DIR)/build

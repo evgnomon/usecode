@@ -6,7 +6,7 @@ IMAGE ?= $(REGISTRY)/$(OWNER)/$(NAME):$(TAG)
 
 ROOT_DIR ?= $(abspath $(CURDIR)/../..)
 BUILD_DIR ?= $(ROOT_DIR)/build
-STAMP_DIR := $(ROOT_DIR)/.stamps/$(patsubst $(ROOT_DIR)/%,%,$(CURDIR))
+STAMP_DIR := $(CURDIR)/.stamps
 BUILD_STAMP := $(STAMP_DIR)/build
 PUBLISH_STAMP := $(STAMP_DIR)/publish
 SOURCES := Dockerfile evgnomon.asc evgnomon.sources SHA512SUMS $(shell find playbooks -type f 2>/dev/null)

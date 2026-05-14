@@ -8,7 +8,7 @@ BUILD_DIR ?= $(ROOT_DIR)/build
 BUILD_PREFIX := $(BUILD_DIR)/usr/local
 LIB_BUILD_DIR := $(CURDIR)/build
 LIB_BUILD_PREFIX := $(LIB_BUILD_DIR)/usr/local
-STAMP_DIR := $(ROOT_DIR)/.stamps/$(patsubst $(ROOT_DIR)/%,%,$(CURDIR))
+STAMP_DIR := $(CURDIR)/.stamps
 
 PYTHON_VERSION ?= 3.14.4
 PY_MAJMIN := $(basename $(PYTHON_VERSION))
