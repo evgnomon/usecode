@@ -16,7 +16,7 @@ services:
       - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/gerrit_git:/var/gerrit/git
       - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/gerrit_index:/var/gerrit/index
       - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/gerrit_cache:/var/gerrit/cache
-      - ../scripts/entrypoint.sh:/var/gerrit/entrypoint.sh:ro
+      - ../../scripts/entrypoint.sh:/var/gerrit/entrypoint.sh:ro
       - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/gerrit_etc:/var/gerrit/etc
       - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/gerrit_db:/var/gerrit/db
       - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/gerrit_logs:/var/gerrit/logs
