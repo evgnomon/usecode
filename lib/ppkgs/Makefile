@@ -22,7 +22,12 @@ _pip_stamp  := $(STAMPS_DIR)/pip-upgrade
 _pipx_stamp := $(STAMPS_DIR)/pipx-upgrade
 endif
 
-build: $(_pip_stamp) $(_pipx_stamp) $(STAMPS_DIR)/pyenv-rehash $(DEB_PKG)
+
+PYTHON := "/usr/local/bin/python3"
+
+PIPX_PKG := $(shell $(PYTHON) -m site --user-site)/pipx
+
+build: $(_pip_stamp) $(_pipx_stamp) $(STAMPS_DIR)/compileall $(STAMPS_DIR)/pyenv-rehash $(DEB_PKG)
 
 $(STAMPS_DIR):
 	@mkdir -p $@
@@ -30,26 +35,33 @@ $(STAMPS_DIR):
 $(PREFIX):
 	@mkdir -p $@
 
+PIPX_PKG:
+	$(PYTHON) -m pip install --user pipx
+
 $(STAMPS_DIR)/pip-install: requirements.txt | $(STAMPS_DIR) $(PREFIX)
-	python -m pip install --prefix $(PREFIX) --ignore-installed $(PIP_PACKAGES)
+	$(PYTHON) -m pip install --prefix $(PREFIX) --ignore-installed $(PIP_PACKAGES)
 	@touch $@
 
 $(STAMPS_DIR)/pip-upgrade: requirements.txt | $(STAMPS_DIR) $(PREFIX)
-	python -m pip install --prefix $(PREFIX) --ignore-installed --upgrade $(PIP_PACKAGES)
+	$(PYTHON) -m pip install --prefix $(PREFIX) --ignore-installed --upgrade $(PIP_PACKAGES)
 	@touch $@
 
-$(STAMPS_DIR)/pipx-install: pipx-requirements.txt | $(STAMPS_DIR) $(PREFIX)
-	PIPX_HOME=$(PREFIX)/share/pipx PIPX_BIN_DIR=$(PREFIX)/bin python -m pipx install $(PIPX_PACKAGES)
-	PIPX_HOME=$(PREFIX)/share/pipx PIPX_BIN_DIR=$(PREFIX)/bin python -m pipx inject yt-dlp mutagen
+$(STAMPS_DIR)/pipx-install: pipx-requirements.txt | $(STAMPS_DIR) $(PREFIX) $(PIPX_PKG)
+	PIPX_HOME=$(PREFIX)/share/pipx PIPX_BIN_DIR=$(PREFIX)/bin $(PYTHON) -m pipx install $(PIPX_PACKAGES)
+	PIPX_HOME=$(PREFIX)/share/pipx PIPX_BIN_DIR=$(PREFIX)/bin $(PYTHON) -m pipx inject yt-dlp mutagen
 	@touch $@
 
-$(STAMPS_DIR)/pipx-upgrade: pipx-requirements.txt | $(STAMPS_DIR) $(PREFIX)
-	PIPX_HOME=$(PREFIX)/share/pipx PIPX_BIN_DIR=$(PREFIX)/bin python -m pipx install $(PIPX_PACKAGES)
-	PIPX_HOME=$(PREFIX)/share/pipx PIPX_BIN_DIR=$(PREFIX)/bin python -m pipx upgrade-all
-	PIPX_HOME=$(PREFIX)/share/pipx PIPX_BIN_DIR=$(PREFIX)/bin python -m pipx inject yt-dlp mutagen --force
+$(STAMPS_DIR)/pipx-upgrade: pipx-requirements.txt | $(STAMPS_DIR) $(PREFIX) $(PIPX_PKG)
+	PIPX_HOME=$(PREFIX)/share/pipx PIPX_BIN_DIR=$(PREFIX)/bin $(PYTHON) -m pipx install $(PIPX_PACKAGES)
+	PIPX_HOME=$(PREFIX)/share/pipx PIPX_BIN_DIR=$(PREFIX)/bin $(PYTHON) -m pipx upgrade-all
+	PIPX_HOME=$(PREFIX)/share/pipx PIPX_BIN_DIR=$(PREFIX)/bin $(PYTHON) -m pipx inject yt-dlp mutagen --force
 	@touch $@
 
-$(STAMPS_DIR)/pyenv-rehash: $(_pip_stamp) $(_pipx_stamp) | $(STAMPS_DIR)
+$(STAMPS_DIR)/compileall: $(_pip_stamp) $(_pipx_stamp) | $(STAMPS_DIR)
+	$(PYTHON) -m compileall -q $(PREFIX) --invalidation-mode checked-hash -j 0
+	@touch $@
+
+$(STAMPS_DIR)/pyenv-rehash: $(STAMPS_DIR)/compileall | $(STAMPS_DIR)
 	pyenv rehash
 	@touch $@
 
