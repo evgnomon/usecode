@@ -4,7 +4,7 @@ NO_UPGRADE ?= 0
 
 STAMPS_DIR := .stamps
 BUILD_DIR  := $(CURDIR)/build
-PREFIX			:= $(BUILD_DIR)/local
+PREFIX			:= $(BUILD_DIR)/usr/local
 
 SPEC := .deb.jsonc
 VERSION := $(shell cat .deb.jsonc | jsonc | jq -r '.version')

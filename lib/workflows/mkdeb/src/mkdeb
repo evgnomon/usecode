@@ -57,7 +57,7 @@ PKG_DEPENDS=""
 PKG_SECTION="utils"
 PKG_PRIORITY="optional"
 PKG_HOMEPAGE=""
-PKG_LICENSE="MIT"
+PKG_LICENSE="HGL"
 PKG_ROOT=""
 
 # Helper functions
@@ -99,22 +99,18 @@ parse_deb_json() {
         die "jq is required to parse $json_file. Please install jq."
     fi
 
-    # Build a command that produces plain JSON on stdout. For .jsonc we strip
-    # comments via /usr/local/bin/jsonc before handing it to jq.
-    local feed
+    log_info "Reading package properties from $json_file"
+
+    # For .jsonc we strip comments via /usr/local/bin/jsonc before handing to jq.
+    local content
     if [[ "$json_file" == *.jsonc ]]; then
         if [[ ! -x /usr/local/bin/jsonc ]]; then
             die "/usr/local/bin/jsonc is required to parse $json_file."
         fi
-        feed=(/usr/local/bin/jsonc "$json_file")
+        content=$(/usr/local/bin/jsonc < "$json_file")
     else
-        feed=(cat "$json_file")
+        content=$(cat "$json_file")
     fi
-
-    log_info "Reading package properties from $json_file"
-
-    local content
-    content=$("${feed[@]}")
 
     local val
     val=$(jq -r '.name // empty' <<<"$content") && [[ -z "$PKG_NAME" && -n "$val" ]] && PKG_NAME="$val"
@@ -280,12 +276,26 @@ create_copyright() {
 
     mkdir -p "$doc_dir"
 
-    # Find license file
+    # Find license file by walking up parent directories
     local license_text=""
-    if [[ -f "COPYING" ]]; then
-        license_text=$(cat "COPYING")
-    elif [[ -f "LICENSE" ]]; then
-        license_text=$(cat "LICENSE")
+    local license_file=""
+    local search_dir
+    search_dir=$(cd "$SOURCE_DIR" && pwd)
+    while [[ -n "$search_dir" ]]; do
+        if [[ -f "$search_dir/COPYING" ]]; then
+            license_file="$search_dir/COPYING"
+            break
+        elif [[ -f "$search_dir/LICENSE" ]]; then
+            license_file="$search_dir/LICENSE"
+            break
+        fi
+        [[ "$search_dir" == "/" ]] && break
+        search_dir=$(dirname "$search_dir")
+    done
+
+    if [[ -n "$license_file" ]]; then
+        log_info "Using license file: $license_file"
+        license_text=$(cat "$license_file")
     else
         echo "No COPYING or LICENSE file found"
     fi
