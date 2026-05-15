@@ -1,0 +1,84 @@
+---
+- name: Check podman is installed
+  ansible.builtin.command: podman --version
+  register: logger_podman_version
+  changed_when: false
+
+- name: Check systemd is available
+  ansible.builtin.command: systemctl --version
+  changed_when: false
+
+- name: Create host directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ logger_output_dir }}"
+    - "{{ logger_config_dir }}"
+    - "{{ logger_quadlet_dir }}"
+
+- name: Install vector config
+  ansible.builtin.template:
+    src: vector.yaml.j2
+    dest: "{{ logger_config_dir }}/vector.yaml"
+    mode: "0644"
+  notify:
+    - restart vector
+
+- name: Install vector Quadlet unit
+  ansible.builtin.template:
+    src: vector.container.j2
+    dest: "{{ logger_quadlet_dir }}/vector.container"
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart vector
+
+- name: Install retention service unit
+  ansible.builtin.template:
+    src: vector-retention.service.j2
+    dest: "{{ logger_systemd_dir }}/vector-retention.service"
+    mode: "0644"
+  notify:
+    - reload systemd
+
+- name: Install retention timer unit
+  ansible.builtin.template:
+    src: vector-retention.timer.j2
+    dest: "{{ logger_systemd_dir }}/vector-retention.timer"
+    mode: "0644"
+  notify:
+    - reload systemd
+
+- name: Pre-pull vector image
+  containers.podman.podman_image:
+    name: "{{ logger_image }}"
+
+- name: Validate vector config
+  ansible.builtin.command:
+    argv:
+      - podman
+      - run
+      - --rm
+      - -v
+      - "{{ logger_config_dir }}/vector.yaml:/etc/vector/vector.yaml:ro"
+      - "{{ logger_image }}"
+      - validate
+      - --no-environment
+      - /etc/vector/vector.yaml
+  changed_when: false
+
+- name: Flush handlers so units are reloaded before start
+  ansible.builtin.meta: flush_handlers
+
+- name: Start vector service
+  ansible.builtin.systemd:
+    name: vector.service
+    state: started
+
+- name: Enable and start retention timer
+  ansible.builtin.systemd:
+    name: vector-retention.timer
+    state: started
+    enabled: true

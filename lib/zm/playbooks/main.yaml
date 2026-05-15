@@ -3,7 +3,7 @@
   hosts: localhost
   gather_facts: false
   collections:
-    - evgnomon.catamaran
+    - evgnomon.usecode
   roles:
     - z_build
 
@@ -11,6 +11,6 @@
   hosts: localhost
   gather_facts: false
   collections:
-    - evgnomon.catamaran
+    - evgnomon.usecode
   roles:
     - z_tag_release

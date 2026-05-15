@@ -1,0 +1,29 @@
+---
+galaxy_info:
+  role_name: logger
+  author: evgnomon
+  description: Deploy Vector log collector via podman Quadlet with retention timer
+  license: HGL
+  min_ansible_version: "2.12"
+  platforms:
+    - name: EL
+      versions:
+        - "9"
+    - name: Fedora
+      versions:
+        - all
+    - name: Debian
+      versions:
+        - bookworm
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+  galaxy_tags:
+    - vector
+    - logging
+    - podman
+    - quadlet
+    - systemd
+
+dependencies: []

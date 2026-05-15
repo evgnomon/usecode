@@ -1,0 +1,39 @@
+# {{ ansible_managed }}
+# Quadlet unit — systemctl daemon-reload picks it up, then:
+#   systemctl start vector.service
+[Unit]
+Description=Vector log collector (podman)
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+ContainerName=vector
+Image={{ logger_image }}
+
+# Run as root so Vector can read root-owned /var/log files and write to
+# the host output directory.
+User=0:0
+
+LogDriver=none
+
+Environment=HOST_HOSTNAME=%H
+
+Volume=/var/log/journal:/var/log/journal:ro,z
+Volume=/var/log:/hostlog:ro,z
+Volume={{ logger_output_dir }}:/output:z
+Volume=vector-data:/var/lib/vector:z
+Volume={{ logger_config_dir }}/vector.yaml:/etc/vector/vector.yaml:ro,z
+{% if logger_collect_docker %}
+Volume={{ logger_docker_socket }}:{{ logger_docker_socket }}:ro
+{% endif %}
+
+Exec=--config /etc/vector/vector.yaml
+
+PodmanArgs=--memory={{ logger_memory_limit }} --cpus={{ logger_cpu_limit }}
+
+[Service]
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target default.target

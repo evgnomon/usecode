@@ -1,0 +1,41 @@
+---
+logger_image: docker.io/timberio/vector:latest-debian
+
+logger_config_dir: /mnt/z/volumes/sys/main/vector
+logger_quadlet_dir: /etc/containers/systemd
+logger_output_dir: /mnt/z/volumes/sys/main/collected
+logger_systemd_dir: /etc/systemd/system
+
+logger_memory_limit: 512m
+logger_cpu_limit: "1.0"
+
+logger_retention_days: 3
+logger_retention_on_boot: 10min
+logger_retention_interval: 1h
+
+logger_journal_exclude_containers:
+  - vector
+
+logger_file_include:
+  - /hostlog/**/*.log
+  - /hostlog/syslog
+  - /hostlog/auth.log
+  - /hostlog/kern.log
+  # Debian rsyslog targets without a .log extension
+  - /hostlog/messages
+  - /hostlog/debug
+  - /hostlog/dmesg
+
+logger_file_exclude:
+  - /hostlog/collected/**
+  - /hostlog/vector/**
+
+logger_file_ignore_older_secs: 86400
+
+# Output compression: none | gzip | zstd
+logger_compression: zstd
+
+# Docker container log collection (uses the docker_logs source via socket).
+# Set to false on hosts without Docker (e.g. podman-only) to silence connect errors.
+logger_collect_docker: true
+logger_docker_socket: /var/run/docker.sock

@@ -1,1 +1,0 @@
-# Catamaran's Anisble module

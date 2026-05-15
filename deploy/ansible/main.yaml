@@ -3,7 +3,7 @@
   hosts: localhost
   gather_facts: false
   collections:
-    - evgnomon.catamaran
+    - evgnomon.usecode
   roles:
     - z_build
 
@@ -11,7 +11,7 @@
   hosts: localhost
   gather_facts: false
   collections:
-    - evgnomon.catamaran
+    - evgnomon.usecode
   roles:
     - z_tag_release
 
@@ -19,7 +19,7 @@
   hosts: localhost
   gather_facts: false
   collections:
-    - evgnomon.catamaran
+    - evgnomon.usecode
   roles:
     - z_add_shards
   tags:
@@ -32,7 +32,7 @@
 - name: Add front
   hosts: localhost
   collections:
-    - evgnomon.catamaran
+    - evgnomon.usecode
   tasks:
     - name: Add front
       add_host:
@@ -53,7 +53,7 @@
     - shards
   gather_facts: false
   collections:
-    - evgnomon.catamaran
+    - evgnomon.usecode
   roles:
     - role: z_ca_deploy
       vars:
@@ -74,7 +74,7 @@
     - front
   gather_facts: false
   collections:
-    - evgnomon.catamaran
+    - evgnomon.usecode
   roles:
     - role: z_service
       vars:
@@ -93,7 +93,7 @@
   hosts: shards
   gather_facts: false
   collections:
-    - evgnomon.catamaran
+    - evgnomon.usecode
   roles:
     - role: z_join
   tags:

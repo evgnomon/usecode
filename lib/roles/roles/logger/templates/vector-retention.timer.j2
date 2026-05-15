@@ -1,0 +1,11 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Hourly pruning of Vector collected logs
+
+[Timer]
+OnBootSec={{ logger_retention_on_boot }}
+OnUnitActiveSec={{ logger_retention_interval }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

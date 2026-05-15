@@ -1,0 +1,10 @@
+namespace: evgnomon
+name: usecode
+version: 0.2.22
+readme: README.md
+authors:
+  - Hamed Ghasemzadeh <hg@evgnomon.org>
+description: Usecode Ansible module
+tags: [usecode, github, devops, ansible]
+license_file: COPYING
+repository: https://github.com/evgnomon/usecode

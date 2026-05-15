@@ -74,12 +74,12 @@ RUN apt update && apt install -y docker.io jq
 RUN /opt/python/bin/pip3 install ansible uv
 
 ENV ANSIBLE_COLLECTIONS_PATH=/opt/ansible/collections \
-    CATAMARAN_VERSION=0.2.18 \
+    USECODE_VERSION=0.2.18 \
     EGET_VERSION=v1.3.4 \
     MKDEB_VERSION=0.3.0
 
-RUN /opt/python/bin/pip3 install catamaran==${CATAMARAN_VERSION} hcloud poetry \
-  && ansible-galaxy collection install evgnomon.catamaran --collections-path ${ANSIBLE_COLLECTIONS_PATH} \
+RUN /opt/python/bin/pip3 install usecode==${USECODE_VERSION} hcloud poetry \
+  && ansible-galaxy collection install evgnomon.usecode --collections-path ${ANSIBLE_COLLECTIONS_PATH} \
   && go install github.com/zyedidia/eget@${EGET_VERSION} \
   && go install github.com/digitalocean/doctl/cmd/doctl@latest
 

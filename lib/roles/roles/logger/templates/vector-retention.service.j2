@@ -1,0 +1,9 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Prune Vector collected logs older than {{ logger_retention_days }} days
+After=vector.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/find {{ logger_output_dir }} -type f \( -name '*.ndjson' -o -name '*.ndjson.gz' -o -name '*.ndjson.zst' \) -mtime +{{ logger_retention_days }} -delete
+ExecStartPost=/usr/bin/find {{ logger_output_dir }} -type d -empty -delete

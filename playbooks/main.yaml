@@ -2,7 +2,7 @@
   hosts: localhost
   gather_facts: false
   collections:
-    - evgnomon.catamaran
+    - evgnomon.usecode
   roles:
     - role: z_secrets
     - role: z_defaults
@@ -12,6 +12,6 @@
   hosts: localhost
   gather_facts: false
   collections:
-    - evgnomon.catamaran
+    - evgnomon.usecode
   roles:
     - role: z_galaxy_col

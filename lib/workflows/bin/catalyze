@@ -52,7 +52,7 @@ if [ ! -f playbooks/main.yaml ]; then
   hosts: localhost
   gather_facts: false
   collections:
-    - evgnomon.catamaran
+    - evgnomon.usecode
   roles:
     - role: z_secrets
     - role: z_defaults
@@ -62,7 +62,7 @@ if [ ! -f playbooks/main.yaml ]; then
   hosts: localhost
   gather_facts: false
   collections:
-    - evgnomon.catamaran
+    - evgnomon.usecode
   roles:
     - role: z_galaxy_col
 EOF

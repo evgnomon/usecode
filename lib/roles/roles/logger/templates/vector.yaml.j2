@@ -1,0 +1,89 @@
+# {{ ansible_managed }}
+# Runs inside a podman container. Reads the host journal + host /var/log
+# via bind mounts, writes NDJSON to {{ logger_output_dir }} (also bind-mounted).
+
+data_dir: /var/lib/vector
+
+# ─── Sources ────────────────────────────────────────────────────────────────
+
+sources:
+  journal:
+    type: journald
+    journal_directory: /var/log/journal
+    exclude_matches:
+      CONTAINER_NAME: {{ logger_journal_exclude_containers | to_json }}
+
+  varlog:
+    type: file
+    include:
+{% for path in logger_file_include %}
+      - {{ path }}
+{% endfor %}
+    exclude:
+{% for path in logger_file_exclude %}
+      - {{ path }}
+{% endfor %}
+    read_from: beginning
+    ignore_older_secs: {{ logger_file_ignore_older_secs }}
+{% if logger_collect_docker %}
+
+  docker:
+    type: docker_logs
+    docker_host: "unix://{{ logger_docker_socket }}"
+    exclude_containers:
+      - vector
+{% endif %}
+
+# ─── Transforms ─────────────────────────────────────────────────────────────
+
+transforms:
+  normalize:
+    type: remap
+    inputs: [journal, varlog{% if logger_collect_docker %}, docker{% endif %}]
+    source: |
+      .host, _err = get_env_var("HOST_HOSTNAME") || get_hostname() || "unknown"
+      .ingest_ts = now()
+
+      if exists(.source_type) { .src = .source_type }
+
+      if .src == "journald" {
+        .unit = .SYSTEMD_UNIT || ._SYSTEMD_UNIT || "kernel"
+        .pid  = ._PID
+        .uid  = ._UID
+        if exists(.CONTAINER_NAME) { .container = .CONTAINER_NAME }
+      }
+
+      if .src == "file" {
+        if is_string(.file) {
+          .path = replace!(.file, "/hostlog/", "/var/log/")
+        }
+      }
+
+      if .src == "docker_logs" {
+        .container = .container_name
+        if exists(.image)  { .image  = .image }
+        if exists(.stream) { .stream = .stream }
+      }
+
+      # Per-container routing: container logs land under their name,
+      # everything else under "sys".
+      .log_group = .container || "sys"
+
+      if is_string(.message) {
+        parsed, err = parse_json(.message)
+        if err == null && is_object(parsed) { .parsed = parsed }
+      }
+
+# ─── Sinks ──────────────────────────────────────────────────────────────────
+
+{%- set _ext = {'none': '', 'gzip': '.gz', 'zstd': '.zst'}[logger_compression] -%}
+sinks:
+  collected:
+    type: file
+    inputs: [normalize]
+    path: "/output/{% raw %}{{ host }}/{{ log_group }}{% endraw %}/%Y-%m-%dT%H.ndjson{{ _ext }}"
+    encoding:
+      codec: json
+    framing:
+      method: newline_delimited
+    compression: {{ logger_compression }}
