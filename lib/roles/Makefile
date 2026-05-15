@@ -5,6 +5,7 @@ NAME      := $(shell awk '/^name:/ {print $$2}' galaxy.yml)
 VERSION   := $(shell ucversion)
 DIST_DIR  := dist
 ARTIFACT  := $(DIST_DIR)/$(NAMESPACE)-$(NAME)-$(VERSION).tar.gz
+STAMP     := $(DIST_DIR)/$(NAMESPACE)-$(NAME)-$(VERSION).published
 LINK_DIR  := $(HOME)/.ansible/collections/ansible_collections/$(NAMESPACE)
 LINK_PATH := $(LINK_DIR)/$(NAME)
 
@@ -28,8 +29,11 @@ link:
 unlink:
 	rm -f $(LINK_PATH)
 
-publish: $(ARTIFACT)
+publish: $(STAMP)
+
+$(STAMP): $(ARTIFACT)
 	ansible-galaxy collection publish --token "$$(getsecret | jq -r '.ansible_galaxy.token')" $(ARTIFACT)
+	touch $@
 
 clean:
 	rm -rf $(DIST_DIR)
