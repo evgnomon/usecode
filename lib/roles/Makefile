@@ -29,7 +29,7 @@ unlink:
 	rm -f $(LINK_PATH)
 
 publish: $(ARTIFACT)
-	ansible-galaxy collection publish $(ARTIFACT)
+	ansible-galaxy collection publish --token "$$(getsecret | jq -r '.ansible_galaxy.token')" $(ARTIFACT)
 
 clean:
 	rm -rf $(DIST_DIR)
