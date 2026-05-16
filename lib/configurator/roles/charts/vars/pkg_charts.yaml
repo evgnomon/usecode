@@ -173,30 +173,6 @@ pkg:
           src: *bin_src_bin
         - name: npm
           src: *bin_src_bin
-        - name: claude
-          src: *bin_src_bin
-        - name: copilot
-          src: *bin_src_bin
-        - name: tsx
-          src: *bin_src_bin
-        - name: prettier
-          src: *bin_src_bin
-        - name: bash-language-server
-          src: *bin_src_bin
-        - name: concurrently
-          src: *bin_src_bin
-        - name: amp
-          src: *bin_src_bin
-        - name: yarn # Required by gruvbox
-          src: *bin_src_bin
-        - name: cn
-          src: *bin_src_bin
-        - name: gemini
-          src: *bin_src_bin
-        - name: func
-          src: *bin_src_bin
-        - name: sass
-          src: *bin_src_bin
 
     - name: go
       archs: *archs-node

@@ -1,0 +1,8 @@
+- name: Load development environment
+  hosts: localhost
+  become: false
+  gather_facts: false
+  collections:
+    - evgnomon.usecode
+  roles:
+    - role: logger

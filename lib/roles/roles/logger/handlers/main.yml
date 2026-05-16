@@ -5,6 +5,7 @@
   listen: reload systemd
 
 - name: Restart vector
+  become: true
   ansible.builtin.systemd:
     name: vector.service
     state: restarted

@@ -76,7 +76,7 @@ transforms:
 
 # ─── Sinks ──────────────────────────────────────────────────────────────────
 
-{%- set _ext = {'none': '', 'gzip': '.gz', 'zstd': '.zst'}[logger_compression] -%}
+{% set _ext = {'none': '', 'gzip': '.gz', 'zstd': '.zst'}[logger_compression] %}
 sinks:
   collected:
     type: file

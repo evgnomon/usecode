@@ -1,0 +1,8 @@
+{% set node_os = pkg_templates.node.os | trim %}
+{% set node_arch = pkg_templates.node.arch | trim %}
+{% set node_ver = pkg_versions.node.version %}
+pkg_node_bin="{{ blueprint_home }}/node/{{ node_os }}_{{ node_arch }}/node_{{ node_ver }}/node-v{{ node_ver }}-{{ node_os }}-{{ node_arch }}/bin"
+if [ -d "$pkg_node_bin" ] && [[ ":$PATH:" != *":$pkg_node_bin:"* ]]; then
+    export PATH="$pkg_node_bin:$PATH"
+fi
+unset pkg_node_bin

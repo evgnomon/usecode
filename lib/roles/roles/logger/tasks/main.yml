@@ -27,6 +27,7 @@
     - restart vector
 
 - name: Install vector Quadlet unit
+  become: true
   ansible.builtin.template:
     src: vector.container.j2
     dest: "{{ logger_quadlet_dir }}/vector.container"
@@ -36,6 +37,7 @@
     - restart vector
 
 - name: Install retention service unit
+  become: true
   ansible.builtin.template:
     src: vector-retention.service.j2
     dest: "{{ logger_systemd_dir }}/vector-retention.service"
@@ -44,6 +46,7 @@
     - reload systemd
 
 - name: Install retention timer unit
+  become: true
   ansible.builtin.template:
     src: vector-retention.timer.j2
     dest: "{{ logger_systemd_dir }}/vector-retention.timer"
@@ -73,11 +76,13 @@
   ansible.builtin.meta: flush_handlers
 
 - name: Start vector service
+  become: true
   ansible.builtin.systemd:
     name: vector.service
     state: started
 
 - name: Enable and start retention timer
+  become: true
   ansible.builtin.systemd:
     name: vector-retention.timer
     state: started
