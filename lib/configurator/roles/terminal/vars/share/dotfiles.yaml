@@ -3,6 +3,7 @@ dotfiles:
   - .config/autostart/swap-alt-win.desktop
   - .config/containers/registries.conf
   - .config/foot/foot.ini
+  - .config/goose/config.yaml
   - .config/hcloud/cli.sh
   - .gitignore_global
   - .gitconfig
