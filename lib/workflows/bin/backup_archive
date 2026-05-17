@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+rsync -av --delete --exclude-from=/media/$USER/archive/.exclude-list /media/$USER/archive/ box:/home/archive/
