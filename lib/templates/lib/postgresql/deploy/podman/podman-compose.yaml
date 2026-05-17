@@ -3,17 +3,38 @@ version: "3.9"
 services:
   postgresql:
     image: docker.io/postgres:16
-    container_name: postgresql
+    container_name: ${TENANT}_${NAMESPACE}_${POD}_postgresql
     restart: unless-stopped
     environment:
-      POSTGRES_PASSWORD: changeme
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
     ports:
       - "127.0.0.1:${PORT:-5432}:5432"
     volumes:
-      - /mnt/z/volumes/${TENANT}/${POD}/postgresql_data:/var/lib/postgresql/data
+      - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/postgresql_data:/var/lib/postgresql/data
     networks:
-      - ${TENANT}_${POD}_postgresql_net
+      - z-${TENANT}-${NAMESPACE}-${POD}
+      - z-${TENANT}
+
+  pgadmin:
+    image: docker.io/dpage/pgadmin4:latest
+    container_name: ${TENANT}_${NAMESPACE}_${POD}_pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-changeme}
+      PGADMIN_LISTEN_PORT: 80
+    ports:
+      - "127.0.0.1:${PGADMIN_PORT:-5050}:80"
+    volumes:
+      - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgresql
+    networks:
+      - z-${TENANT}-${NAMESPACE}-${POD}
+      - z-${TENANT}
 
 networks:
-  ${TENANT}_${POD}_postgresql_net:
-    driver: bridge
+  z-${TENANT}-${NAMESPACE}-${POD}:
+    external: true
+  z-${TENANT}:
+    external: true
