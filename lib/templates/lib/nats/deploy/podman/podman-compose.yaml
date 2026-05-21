@@ -3,17 +3,20 @@ version: "3.9"
 services:
   nats:
     image: docker.io/nats:latest
-    container_name: nats
+    container_name: ${TENANT}_${NAMESPACE}_${POD}_nats
     restart: unless-stopped
     command: -js -m 8222
     ports:
       - "127.0.0.1:${PORT:-4222}:4222"
-      - "127.0.0.1:8222:8222"
+      - "127.0.0.1:${MON_PORT:-8222}:8222"
     volumes:
-      - /mnt/z/volumes/${TENANT}/${POD}/nats_data:/data
+      - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/nats_data:/data
     networks:
-      - ${TENANT}_${POD}_nats_net
+      - z-${TENANT}-${NAMESPACE}-${POD}
+      - z-${TENANT}
 
 networks:
-  ${TENANT}_${POD}_nats_net:
-    driver: bridge
+  z-${TENANT}-${NAMESPACE}-${POD}:
+    external: true
+  z-${TENANT}:
+    external: true
