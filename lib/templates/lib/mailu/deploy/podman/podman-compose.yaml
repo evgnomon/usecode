@@ -1,16 +1,25 @@
 version: "3.9"
 
+# Mailu's admin container refuses to start unless its DNS resolver performs
+# DNSSEC validation. Podman's built-in aardvark-dns does not validate, so point
+# every service at DNSSEC-validating upstreams. aardvark-dns forwards to these
+# and preserves the AD flag, while still resolving inter-container names.
+x-mailu-dns: &mailu-dns
+  - 9.9.9.9
+  - 149.112.112.112
+
 services:
   front:
     image: ghcr.io/mailu/nginx:latest
-    container_name: mailu_front
+    container_name: ${TENANT}_${NAMESPACE}_${POD}_mailu
     restart: unless-stopped
     environment:
       TZ: UTC
       LOG_LEVEL: WARNING
+      TLS_FLAVOR: mail-letsencrypt
     ports:
       - "127.0.0.1:${PORT:-8090}:80"
-      - "127.0.0.1:8443:443"
+      # - "127.0.0.1:8443:443"
       - "127.0.0.1:25:25"
       - "127.0.0.1:465:465"
       - "127.0.0.1:587:587"
@@ -19,89 +28,104 @@ services:
       - "127.0.0.1:110:110"
       - "127.0.0.1:995:995"
     volumes:
-      - /mnt/z/volumes/${TENANT}/${POD}/mailu_certs:/certs
-      - /mnt/z/volumes/${TENANT}/${POD}/mailu_overrides/nginx:/overrides:ro
+      - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/mailu_certs:/certs
+      - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/mailu_overrides/nginx:/overrides:ro
     depends_on:
       - admin
       - imap
       - smtp
+    dns: *mailu-dns
     networks:
-      - ${TENANT}_${POD}_mailu_net
+      - z-${TENANT}-${NAMESPACE}-${POD}
+      - z-${TENANT}
 
   admin:
     image: ghcr.io/mailu/admin:latest
-    container_name: mailu_admin
+    container_name: ${TENANT}_${NAMESPACE}_${POD}_mailu_admin
     restart: unless-stopped
     environment:
       TZ: UTC
-      SECRET_KEY: changeme_generate_a_real_secret
+      SECRET_KEY: ${MAILU_SECRET_KEY:-changeme}
       DOMAIN: ${DOMAIN}
       HOSTNAMES: ${DOMAIN}
       POSTMASTER: admin
       AUTH_RATELIMIT_IP: 60/hour
       INITIAL_ADMIN_ACCOUNT: admin
       INITIAL_ADMIN_DOMAIN: ${DOMAIN}
-      INITIAL_ADMIN_PW: changeme
+      INITIAL_ADMIN_PW: ${MAILU_SECRET_KEY:-changeme}
       SUBNET: 172.28.0.0/16
     volumes:
-      - /mnt/z/volumes/${TENANT}/${POD}/mailu_data:/data
-      - /mnt/z/volumes/${TENANT}/${POD}/mailu_dkim:/dkim
+      - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/mailu_data:/data
+      - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/mailu_dkim:/dkim
+      - /dev/null:/.dockerenv:ro
     depends_on:
       - redis
+    dns: *mailu-dns
     networks:
-      - ${TENANT}_${POD}_mailu_net
+      - z-${TENANT}-${NAMESPACE}-${POD}
+      - z-${TENANT}
 
   imap:
     image: ghcr.io/mailu/dovecot:latest
-    container_name: mailu_imap
+    container_name: ${TENANT}_${NAMESPACE}_${POD}_mailu_imap
     restart: unless-stopped
     environment:
       TZ: UTC
     volumes:
-      - /mnt/z/volumes/${TENANT}/${POD}/mailu_mail:/mail
-      - /mnt/z/volumes/${TENANT}/${POD}/mailu_overrides/dovecot:/overrides:ro
+      - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/mailu_mail:/mail
+      - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/mailu_overrides/dovecot:/overrides:ro
     depends_on:
       - admin
+    dns: *mailu-dns
     networks:
-      - ${TENANT}_${POD}_mailu_net
+      - z-${TENANT}-${NAMESPACE}-${POD}
+      - z-${TENANT}
 
   smtp:
     image: ghcr.io/mailu/postfix:latest
-    container_name: mailu_smtp
+    container_name: ${TENANT}_${NAMESPACE}_${POD}_mailu_smtp
     restart: unless-stopped
     environment:
       TZ: UTC
     volumes:
-      - /mnt/z/volumes/${TENANT}/${POD}/mailu_mailqueue:/queue
-      - /mnt/z/volumes/${TENANT}/${POD}/mailu_overrides/postfix:/overrides:ro
+      - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/mailu_mailqueue:/queue
+      - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/mailu_overrides/postfix:/overrides:ro
     depends_on:
       - admin
+    dns: *mailu-dns
     networks:
-      - ${TENANT}_${POD}_mailu_net
+      - z-${TENANT}-${NAMESPACE}-${POD}
+      - z-${TENANT}
 
   antispam:
     image: ghcr.io/mailu/rspamd:latest
-    container_name: mailu_antispam
+    container_name: ${TENANT}_${NAMESPACE}_${POD}_mailu_antispam
     restart: unless-stopped
     environment:
       TZ: UTC
     volumes:
-      - /mnt/z/volumes/${TENANT}/${POD}/mailu_filter:/var/lib/rspamd
-      - /mnt/z/volumes/${TENANT}/${POD}/mailu_overrides/rspamd:/overrides:ro
+      - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/mailu_filter:/var/lib/rspamd
+      - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/mailu_overrides/rspamd:/overrides:ro
     depends_on:
       - admin
+    dns: *mailu-dns
     networks:
-      - ${TENANT}_${POD}_mailu_net
+      - z-${TENANT}-${NAMESPACE}-${POD}
+      - z-${TENANT}
 
   redis:
     image: docker.io/redis:7
-    container_name: mailu_redis
+    container_name: ${TENANT}_${NAMESPACE}_${POD}_mailu_redis
     restart: unless-stopped
     volumes:
-      - /mnt/z/volumes/${TENANT}/${POD}/redis_data:/data
+      - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/mailu_redis_data:/data
+    dns: *mailu-dns
     networks:
-      - ${TENANT}_${POD}_mailu_net
+      - z-${TENANT}-${NAMESPACE}-${POD}
+      - z-${TENANT}
 
 networks:
-  ${TENANT}_${POD}_mailu_net:
-    driver: bridge
+  z-${TENANT}-${NAMESPACE}-${POD}:
+    external: true
+  z-${TENANT}:
+    external: true
