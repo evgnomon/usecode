@@ -3,19 +3,45 @@ version: "3.9"
 services:
   powerdns:
     image: docker.io/powerdns/pdns-auth-49:latest
-    container_name: powerdns
+    container_name: ${TENANT}_${NAMESPACE}_${POD}_powerdns
     restart: unless-stopped
     environment:
-      PDNS_AUTH_API_KEY: changeme
+      PDNS_AUTH_API_KEY: ${PDNS_AUTH_API_KEY:-changeme}
     ports:
       - "127.0.0.1:${PORT:-8081}:8081"
-      - "127.0.0.1:5300:53/tcp"
-      - "127.0.0.1:5300:53/udp"
+      - "127.0.0.1:${DNS_PORT:-5300}:53/tcp"
+      - "127.0.0.1:${DNS_PORT:-5300}:53/udp"
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: 53
     volumes:
-      - /mnt/z/volumes/${TENANT}/${POD}/powerdns_data:/var/lib/powerdns
+      - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/powerdns_data:/var/lib/powerdns
     networks:
-      - ${TENANT}_${POD}_powerdns_net
+      - z-${TENANT}-${NAMESPACE}-${POD}
+      - z-${TENANT}
+
+  powerdns-admin:
+    image: docker.io/powerdnsadmin/pda-legacy:latest
+    container_name: ${TENANT}_${NAMESPACE}_${POD}_powerdns_admin
+    restart: unless-stopped
+    environment:
+      SECRET_KEY: ${PDNS_ADMIN_SECRET_KEY:-changeme}
+      SQLALCHEMY_DATABASE_URI: ${PDNS_ADMIN_DB_URI:-sqlite:////data/pdns-admin.db}
+      GUNICORN_TIMEOUT: ${PDNS_ADMIN_GUNICORN_TIMEOUT:-60}
+      GUNICORN_WORKERS: ${PDNS_ADMIN_GUNICORN_WORKERS:-2}
+      GUNICORN_LOGLEVEL: ${PDNS_ADMIN_GUNICORN_LOGLEVEL:-info}
+      OFFLINE_MODE: ${PDNS_ADMIN_OFFLINE_MODE:-False}
+    ports:
+      - "127.0.0.1:${PDNS_ADMIN_PORT:-9191}:80"
+    volumes:
+      - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/powerdns_admin_data:/data
+    depends_on:
+      - powerdns
+    networks:
+      - z-${TENANT}-${NAMESPACE}-${POD}
+      - z-${TENANT}
 
 networks:
-  ${TENANT}_${POD}_powerdns_net:
-    driver: bridge
+  z-${TENANT}-${NAMESPACE}-${POD}:
+    external: true
+  z-${TENANT}:
+    external: true
