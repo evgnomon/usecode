@@ -3,21 +3,24 @@ version: "3.9"
 services:
   openldap:
     image: docker.io/osixia/openldap:latest
-    container_name: openldap
+    container_name: ${TENANT}_${NAMESPACE}_${POD}_openldap
     restart: unless-stopped
     environment:
-      LDAP_ORGANISATION: PlatForge
+      LDAP_ORGANISATION: ${LDAP_ORGANISATION:-PlatForge}
       LDAP_DOMAIN: ${DOMAIN}
-      LDAP_ADMIN_PASSWORD: changeme
+      LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD:-changeme}
     ports:
-      - "127.0.0.1:${PORT:-389}:389"
-      - "127.0.0.1:636:636"
+      - "127.0.0.1:${PORT:-3389}:389"
+      - "127.0.0.1:${LDAPS_PORT:-6636}:636"
     volumes:
-      - /mnt/z/volumes/${TENANT}/${POD}/openldap_data:/var/lib/ldap
-      - /mnt/z/volumes/${TENANT}/${POD}/openldap_config:/etc/ldap/slapd.d
+      - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/openldap_data:/var/lib/ldap
+      - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/openldap_config:/etc/ldap/slapd.d
     networks:
-      - ${TENANT}_${POD}_openldap_net
+      - z-${TENANT}-${NAMESPACE}-${POD}
+      - z-${TENANT}
 
 networks:
-  ${TENANT}_${POD}_openldap_net:
-    driver: bridge
+  z-${TENANT}-${NAMESPACE}-${POD}:
+    external: true
+  z-${TENANT}:
+    external: true
