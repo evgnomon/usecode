@@ -1,0 +1,225 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ENV_FILE="${ENV_FILE:?ENV_FILE must be set}"
+
+compose() {
+  podman-compose -p "${TENANT}_${NAMESPACE}_${POD}_sftp" --env-file "$ENV_FILE" -f "$SCRIPT_DIR/../deploy/podman/podman-compose.yaml" "$@"
+}
+
+load_env() {
+  set -a
+  source "$ENV_FILE"
+  set +a
+}
+
+ensure_networks() {
+  load_env
+  podman network exists "z-${TENANT}" 2>/dev/null || podman network create "z-${TENANT}"
+  podman network exists "z-${TENANT}-${NAMESPACE}" 2>/dev/null || podman network create "z-${TENANT}-${NAMESPACE}"
+  podman network exists "z-${TENANT}-${NAMESPACE}-${POD}" 2>/dev/null || podman network create "z-${TENANT}-${NAMESPACE}-${POD}"
+}
+
+volume_root() {
+  load_env
+  echo "/mnt/z/volumes/$TENANT/$NAMESPACE/$POD"
+}
+
+make_volume() {
+  local root
+  root="$(volume_root)"
+  mkdir -p "$root/sftp_data"
+  chmod 755 "$root/sftp_data"
+  mkdir -p "$root/sftp_config"
+  touch "$root/sftp_config/users.conf"
+  if [[ ! -f "$root/sftp_config/ssh_host_ed25519_key" ]]; then
+    ssh-keygen -t ed25519 -f "$root/sftp_config/ssh_host_ed25519_key" -N "" < /dev/null
+  fi
+  if [[ ! -f "$root/sftp_config/ssh_host_rsa_key" ]]; then
+    ssh-keygen -t rsa -b 4096 -f "$root/sftp_config/ssh_host_rsa_key" -N "" < /dev/null
+  fi
+}
+
+backup() {
+  load_env
+  compose pause
+  sudo tar -czf "$PLAT_HOME/$TENANT/$NAMESPACE/$POD/sftp_backup.tar.gz" -C "$(volume_root)" .
+  compose unpause
+}
+
+restore() {
+  load_env
+  compose down -v
+  sudo rm -rf "$(volume_root)"
+  make_volume
+  sudo tar -xpzf "$PLAT_HOME/$TENANT/$NAMESPACE/$POD/sftp_backup.tar.gz" -C "$(volume_root)"
+  compose up -d
+}
+
+users_conf() {
+  echo "$(volume_root)/sftp_config/users.conf"
+}
+
+user_keys_dir() {
+  echo "$(volume_root)/sftp_data/${1}/.ssh/keys"
+}
+
+ensure_keys_dir() {
+  local user="$1"
+  local keys
+  keys="$(user_keys_dir "$user")"
+  mkdir -p "$keys"
+  chmod 700 "$(volume_root)/sftp_data/${user}/.ssh"
+  chmod 700 "$keys"
+}
+
+fix_user_perms() {
+  local user="$1"
+  local container="${TENANT}_${NAMESPACE}_${POD}_sftp"
+  for _ in $(seq 1 30); do
+    podman exec "$container" id "$user" >/dev/null 2>&1 && break
+    sleep 1
+  done
+  podman exec "$container" chown -R "$user:users" "/home/$user/.ssh" "/home/$user/upload"
+}
+
+useradd_cmd() {
+  local user="${1:?usage: useradd <username> [pubkey-file]}"
+  local pubkey="${2:-}"
+  load_env
+  local conf
+  conf="$(users_conf)"
+  if grep -q "^${user}:" "$conf" 2>/dev/null; then
+    echo "user '$user' already exists in $conf" >&2
+    exit 1
+  fi
+  echo "${user}:::::upload" >> "$conf"
+  mkdir -p "$(volume_root)/sftp_data/${user}/upload"
+  ensure_keys_dir "$user"
+  local keys
+  keys="$(user_keys_dir "$user")"
+  if [[ -n "$pubkey" ]]; then
+    cp "$pubkey" "$keys/$(basename "$pubkey")"
+    chmod 600 "$keys/$(basename "$pubkey")"
+  else
+    echo "no pubkey supplied; add one with: $0 userkey-add $user <pubkey-file>"
+  fi
+  compose down
+  compose up -d
+  fix_user_perms "$user"
+}
+
+userdel_cmd() {
+  local user="${1:?usage: userdel <username>}"
+  load_env
+  local conf
+  conf="$(users_conf)"
+  sed -i.bak "/^${user}:/d" "$conf"
+  rm -f "${conf}.bak"
+  sudo rm -rf "$(volume_root)/sftp_data/${user}"
+  compose down
+  compose up -d
+}
+
+userlist_cmd() {
+  local conf
+  conf="$(users_conf)"
+  [[ -f "$conf" ]] && cut -d: -f1 "$conf" || true
+}
+
+userkey_add_cmd() {
+  local user="${1:?usage: userkey-add <username> <pubkey-file>}"
+  local pubkey="${2:?usage: userkey-add <username> <pubkey-file>}"
+  load_env
+  ensure_keys_dir "$user"
+  local keys
+  keys="$(user_keys_dir "$user")"
+  cp "$pubkey" "$keys/$(basename "$pubkey")"
+  chmod 600 "$keys/$(basename "$pubkey")"
+  compose down
+  compose up -d
+  fix_user_perms "$user"
+}
+
+userkey_list_cmd() {
+  local user="${1:?usage: userkey-list <username>}"
+  local keys
+  keys="$(user_keys_dir "$user")"
+  [[ -d "$keys" ]] && ls -1 "$keys" || true
+}
+
+userkey_del_cmd() {
+  local user="${1:?usage: userkey-del <username> <key-filename>}"
+  local name="${2:?usage: userkey-del <username> <key-filename>}"
+  load_env
+  rm -f "$(user_keys_dir "$user")/$name"
+  compose down
+  compose up -d
+}
+
+PLAT_HOME="${PLAT_HOME:-$HOME/.plat}"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    up)
+      ensure_networks
+      make_volume
+      compose up -d
+      shift
+      ;;
+    down)
+      load_env
+      compose down -v
+      shift
+      ;;
+    destroy)
+      load_env
+      compose down -v
+      sudo rm -rf "$(volume_root)/sftp_data"
+      sudo rm -rf "$(volume_root)/sftp_config"
+      shift
+      ;;
+    restart|logs)
+      load_env
+      compose "$1"
+      shift
+      ;;
+    backup)
+      backup
+      shift
+      ;;
+    restore)
+      restore
+      shift
+      ;;
+    useradd)
+      useradd_cmd "${2:?usage: $0 useradd <username> [pubkey-file]}" "${3:-}"
+      if [[ $# -ge 3 ]]; then shift 3; else shift 2; fi
+      ;;
+    userdel)
+      userdel_cmd "${2:?usage: $0 userdel <username>}"
+      shift 2
+      ;;
+    userlist)
+      userlist_cmd
+      shift
+      ;;
+    userkey-add)
+      userkey_add_cmd "${2:?}" "${3:?}"
+      shift 3
+      ;;
+    userkey-del)
+      userkey_del_cmd "${2:?}" "${3:?}"
+      shift 3
+      ;;
+    userkey-list)
+      userkey_list_cmd "${2:?usage: $0 userkey-list <username>}"
+      shift 2
+      ;;
+    *)
+      echo "Unknown action: $1"
+      exit 1
+      ;;
+  esac
+done

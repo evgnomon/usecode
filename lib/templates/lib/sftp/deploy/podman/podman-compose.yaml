@@ -1,0 +1,23 @@
+version: "3.9"
+
+services:
+  sftp:
+    image: docker.io/atmoz/sftp:latest
+    container_name: ${TENANT}_${NAMESPACE}_${POD}_sftp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${PORT:-2222}:22"
+    volumes:
+      - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/sftp_data:/home
+      - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/sftp_config/users.conf:/etc/sftp/users.conf:ro
+      - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/sftp_config/ssh_host_ed25519_key:/etc/ssh/ssh_host_ed25519_key
+      - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/sftp_config/ssh_host_rsa_key:/etc/ssh/ssh_host_rsa_key
+    networks:
+      - z-${TENANT}-${NAMESPACE}-${POD}
+      - z-${TENANT}
+
+networks:
+  z-${TENANT}-${NAMESPACE}-${POD}:
+    external: true
+  z-${TENANT}:
+    external: true

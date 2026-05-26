@@ -1,6 +1,11 @@
 {
-  "theme": "dark-ansi",
+  "permissions": {
+    "defaultMode": "auto"
+  },
   "enabledPlugins": {
     "csharp-lsp@claude-plugins-official": true
-  }
+  },
+  "effortLevel": "medium",
+  "theme": "dark-ansi",
+  "skipAutoPermissionPrompt": true
 }
