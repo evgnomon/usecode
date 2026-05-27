@@ -2,14 +2,14 @@ version: "3.9"
 
 services:
   sogo:
-    image: docker.io/sogomail/sogo:latest
-    container_name: sogo
+    image: docker.io/sonroyaalmerol/docker-sogo:latest
+    container_name: ${TENANT}_${NAMESPACE}_${POD}_sogo
     restart: unless-stopped
     environment:
-      MYSQL_HOST: mysql
+      MYSQL_HOST: ${TENANT}_${NAMESPACE}_${POD}_sogo_mysql
       MYSQL_DATABASE: sogo
       MYSQL_USER: sogo
-      MYSQL_PASSWORD: changeme
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-changeme}
     ports:
       - "127.0.0.1:${PORT:-20000}:80"
     depends_on:
@@ -18,21 +18,23 @@ services:
       memcached:
         condition: service_started
     volumes:
-      - /mnt/z/volumes/${TENANT}/${POD}/sogo_config:/etc/sogo
+      - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/sogo_config:/etc/sogo
+      - ./apache-redirect.conf:/etc/apache2/sites-available/000-default.conf:ro
     networks:
-      - ${TENANT}_${POD}_sogo_net
+      - z-${TENANT}-${NAMESPACE}-${POD}
+      - z-${TENANT}
 
   mysql:
     image: docker.io/mariadb:11
-    container_name: sogo_mysql
+    container_name: ${TENANT}_${NAMESPACE}_${POD}_sogo_mysql
     restart: unless-stopped
     environment:
       MYSQL_DATABASE: sogo
       MYSQL_USER: sogo
-      MYSQL_PASSWORD: changeme
-      MYSQL_ROOT_PASSWORD: changeme
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-changeme}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-changeme}
     volumes:
-      - /mnt/z/volumes/${TENANT}/${POD}/mysql_data:/var/lib/mysql
+      - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/sogo_mysql_data:/var/lib/mysql
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 10s
@@ -40,15 +42,17 @@ services:
       retries: 5
       start_period: 30s
     networks:
-      - ${TENANT}_${POD}_sogo_net
+      - z-${TENANT}-${NAMESPACE}-${POD}
 
   memcached:
     image: docker.io/memcached:latest
-    container_name: sogo_memcached
+    container_name: ${TENANT}_${NAMESPACE}_${POD}_sogo_memcached
     restart: unless-stopped
     networks:
-      - ${TENANT}_${POD}_sogo_net
+      - z-${TENANT}-${NAMESPACE}-${POD}
 
 networks:
-  ${TENANT}_${POD}_sogo_net:
-    driver: bridge
+  z-${TENANT}-${NAMESPACE}-${POD}:
+    external: true
+  z-${TENANT}:
+    external: true
