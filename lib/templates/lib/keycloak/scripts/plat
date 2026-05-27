@@ -93,7 +93,7 @@ while [[ $# -gt 0 ]]; do
     destroy)
       unregister_site
       compose down -v
-      rm -rf "/mnt/z/volumes/$TENANT/$NAMESPACE/$POD/postgresql_data"
+      sudo rm -rf "/mnt/z/volumes/$TENANT/$NAMESPACE/$POD"
       shift
       ;;
     restart|logs)
