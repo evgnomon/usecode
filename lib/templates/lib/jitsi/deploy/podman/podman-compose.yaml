@@ -6,9 +6,16 @@ services:
     container_name: ${TENANT}_${NAMESPACE}_${POD}_jitsi
     restart: unless-stopped
     environment:
-      PUBLIC_URL: https://${DOMAIN}
+      PUBLIC_URL: https://${DOMAIN}:${PUBLIC_PORT:-443}
       TZ: UTC
       ENABLE_AUTH: "0"
+      # TLS is terminated by Caddy; the web container must not try to do HTTPS
+      # itself or redirect to it, otherwise the /xmpp-websocket upgrade request
+      # gets a 301 and the browser reports "Websocket closed unexpectedly".
+      DISABLE_HTTPS: "1"
+      ENABLE_HTTP_REDIRECT: "0"
+      ENABLE_XMPP_WEBSOCKET: "1"
+      ENABLE_COLIBRI_WEBSOCKET: "1"
       XMPP_SERVER: ${TENANT}_${NAMESPACE}_${POD}_jitsi_prosody
       XMPP_BOSH_URL_BASE: http://${TENANT}_${NAMESPACE}_${POD}_jitsi_prosody:5280
       XMPP_DOMAIN: meet.jitsi
@@ -34,7 +41,7 @@ services:
     container_name: ${TENANT}_${NAMESPACE}_${POD}_jitsi_prosody
     restart: unless-stopped
     environment:
-      PUBLIC_URL: https://${DOMAIN}
+      PUBLIC_URL: https://${DOMAIN}:${PUBLIC_PORT:-443}
       TZ: UTC
       ENABLE_AUTH: "0"
       XMPP_DOMAIN: meet.jitsi
