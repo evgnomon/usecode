@@ -99,7 +99,7 @@ def ensure_env(env_file: Path, obj: dict) -> dict[str, str]:
         "SUBDOMAIN": subdomain,
         "DOMAIN_SUFFIX": suffix,
         "DOMAIN": f"{subdomain}.{obj['namespace']}.{obj['tenant']}.{suffix}",
-        "CADDY_POD": "caddy-1",
+        "CADDY_POD": "gateway",
     }
     added = {k: v for k, v in template.items() if k not in existing}
     if "PORT" not in existing:
