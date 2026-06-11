@@ -1,4 +1,4 @@
-.PHONY: all build install install-eget uninstall clean
+.PHONY: all build install install-eget link uninstall clean
 
 EGET_VERSION ?= latest
 ROOT_DIR ?= $(abspath $(CURDIR)/../..)
@@ -7,6 +7,7 @@ BIN_DIR := $(BUILD_DIR)/usr/local/bin
 PREFIX ?= /usr/local
 INSTALL_DIR := $(PREFIX)/bin
 EGET ?= $(BIN_DIR)/eget
+STAMPS_DIR := $(CURDIR)/.stamps
 
 
 EGET_BINS := eget gh fd delta rg bat hugo rclone hcloud tflint gvproxy goose kompose csvlens yq
@@ -21,7 +22,17 @@ all: build
 
 build: $(BUILD_BINS)
 
-install: $(INSTALL_BINS)
+install: $(INSTALL_BINS) $(STAMPS_DIR)/install-root.sh
+
+$(STAMPS_DIR)/install-root.sh:
+	$(CURDIR)/install-root.sh
+
+link: $(STAMPS_DIR)/install.sh
+
+$(STAMPS_DIR)/install.sh:
+	$(CURDIR)/install.sh
+	@mkdir -p $(STAMPS_DIR)
+	@touch $@
 
 $(INSTALL_DIR)/%: $(BIN_DIR)/%
 	@install -d $(INSTALL_DIR)

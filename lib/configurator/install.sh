@@ -5,9 +5,6 @@ set -e
 IS_WSL2=$(grep -qi "microsoft" /proc/version 2>/dev/null && echo true || echo false)
 PYTHON_VERSION="3.14.3"
 
-sudo apt update && sudo apt install -y git
-sudo apt upgrade -y
-
 if [ ! -d ~/.pyenv ]; then
 	git clone https://github.com/pyenv/pyenv.git ~/.pyenv
 	echo 'export PYENV_ROOT="$HOME/.pyenv"' >> ~/.bashrc
@@ -22,15 +19,6 @@ export PATH="$PYENV_ROOT/bin:$PATH"
 eval "$(pyenv init --path)"
 export PATH="$HOME/.local/bin:$HOME/go/bin:$PATH"
 
-sudo apt install -y make build-essential libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev curl libncurses5-dev libncursesw5-dev xz-utils tk-dev libffi-dev liblzma-dev hwdata pinentry-tty usbutils unzip libyaml-dev
-
-if [ "$IS_WSL2" != "true" ]; then
-  sudo apt install -y yubikey-manager scdaemon ykcs11 libpcsclite-dev swig pcscd libpam-u2f libpam-yubico
-  USBIP_BIN=$(ls /usr/lib/linux-tools/*/usbip 2>/dev/null | tail -n1)
-  [ -n "$USBIP_BIN" ] && sudo update-alternatives --install /usr/local/bin/usbip usbip "$USBIP_BIN" 20
-  curl -sSL https://raw.githubusercontent.com/Yubico/libfido2/main/udev/70-u2f.rules | sudo tee /etc/udev/rules.d/70-u2f.rules > /dev/null
-fi
-
 [ ! -d ~/.pyenv/versions/2.7.18 ] && PYTHON_CONFIGURE_OPTS="--enable-shared" pyenv install 2.7.18
 [ ! -d ~/.pyenv/versions/$PYTHON_VERSION ] && PYTHON_CONFIGURE_OPTS="--enable-shared" pyenv install $PYTHON_VERSION
 
@@ -44,18 +32,6 @@ which python
 
 eval $(cat "$HOME/.cargo/env")
 [ ! -d $HOME/.local/bin ] && mkdir -p $HOME/.local/bin
-
-if [ "$IS_WSL2" != "true" ]; then
-  sudo mkdir -p /etc/polkit-1/rules.d
-  echo '
-polkit.addRule(function(action, subject) {
-    if ((action.id == "org.debian.pcsc-lite.access_pcsc" || action.id == "org.debian.pcsc-lite.access_card" ) && subject.isInGroup("plugdev")) {
-        return polkit.Result.YES;
-    }
-
-});
-' | sudo tee /etc/polkit-1/rules.d/90-pcscd.rule > /dev/null
-fi
 
 if [ ! -d $HOME/src/github.com/evgnomon ]; then
         mkdir -p $HOME/src/github.com/evgnomon
@@ -83,4 +59,4 @@ if [ ! -z "$ASK_BECOME_PASS" ]; then
   PLAYARGS="$PLAYARGS --ask-become-pass"
 fi
 
-ansible-playbook -i inventory.py -e ansible_python_interpreter=$HOME/.pyenv/shims/python3 $PLAYARGS main.yaml
+# ansible-playbook -i inventory.py -e ansible_python_interpreter=$HOME/.pyenv/shims/python3 $PLAYARGS main.yaml

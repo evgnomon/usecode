@@ -225,16 +225,26 @@ fn cmdCreate(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8,
 fn parseMemory(value: []const u8) !u64 {
     const len = value.len;
 
-    // Check for unit suffix
-    if (len > 2) {
-        const number = value[0 .. len - 2];
-        const unit = value[len - 2 ..];
-
-        const base = try std.fmt.parseInt(u64, number, 10);
-
-        if (std.mem.eql(u8, unit, "GiB")) {
+    // Check for 3-char suffix (GiB, MiB)
+    if (len > 3) {
+        const suffix = value[len - 3 ..];
+        if (std.mem.eql(u8, suffix, "GiB")) {
+            const base = try std.fmt.parseInt(u64, value[0 .. len - 3], 10);
             return base * 1024 * 1024; // Convert GiB to KiB
-        } else if (std.mem.eql(u8, unit, "MiB")) {
+        } else if (std.mem.eql(u8, suffix, "MiB")) {
+            const base = try std.fmt.parseInt(u64, value[0 .. len - 3], 10);
+            return base * 1024; // Convert MiB to KiB
+        }
+    }
+
+    // Check for 1-char suffix (G, M)
+    if (len > 1) {
+        const last = value[len - 1];
+        if (last == 'G') {
+            const base = try std.fmt.parseInt(u64, value[0 .. len - 1], 10);
+            return base * 1024 * 1024; // Convert GiB to KiB
+        } else if (last == 'M') {
+            const base = try std.fmt.parseInt(u64, value[0 .. len - 1], 10);
             return base * 1024; // Convert MiB to KiB
         }
     }
@@ -270,8 +280,9 @@ fn parseDiskSize(value: []const u8) !u64 {
         }
     }
 
-    // Raw bytes
-    return std.fmt.parseInt(u64, value, 10);
+    // Bare number treated as GiB
+    const base = try std.fmt.parseInt(u64, value, 10);
+    return base * 1024 * 1024 * 1024;
 }
 
 fn cmdInfo(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8, conn: *const libvirt.Connection) !void {
