@@ -7,5 +7,6 @@
   },
   "effortLevel": "medium",
   "theme": "dark-ansi",
-  "skipAutoPermissionPrompt": true
+  "skipAutoPermissionPrompt": true,
+  "model": "sonnet"
 }

@@ -1,0 +1,2 @@
+{% set arch = 'amd64' if ansible_facts['architecture'] == 'x86_64' else ansible_facts['architecture'] %}
+deb [arch={{ arch }} signed-by=/etc/apt/trusted.gpg.d/hashicorp-archive-keyring.gpg ] https://apt.releases.hashicorp.com {{ ansible_facts['distribution_release'] }} main
