@@ -31,11 +31,15 @@ $(STAMPS_DIR)/install-root.sh:
 
 bootstrap-playbook: $(STAMPS_DIR)/install.sh
 
-play: bootstrap-playbook
-	$(STAMPS_DIR)/play.sh
+play: bootstrap-playbook $(STAMPS_DIR)/play.sh
 
 $(STAMPS_DIR)/install.sh:
 	$(CURDIR)/install.sh
+	@mkdir -p $(STAMPS_DIR)
+	@touch $@
+
+$(STAMPS_DIR)/play.sh:
+	$(CURDIR)/play.sh
 	@mkdir -p $(STAMPS_DIR)
 	@touch $@
 
