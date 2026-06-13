@@ -7,7 +7,7 @@ sudo apt install -y git make
 mkdir -p ~/src/github.com/evgnomon
 cd ~/src/github.com/evgnomon
 
-git clone git@github.com:evgnomon/usecode.git
+git clone https://github.com/evgnomon/usecode.git
 
 cd usecode/lib/configurator
 sudo make install
