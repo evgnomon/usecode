@@ -22,9 +22,9 @@ all: build
 
 build: $(BUILD_BINS)
 
-install: $(STAMPS_DIR)/install-root.sh $(INSTALL_BINS)
+install: $(INSTALL_BINS)
 
-prepare: $(STAMPS_DIR)/install.sh
+prepare: $(STAMPS_DIR)/install-root.sh
 
 $(STAMPS_DIR)/install-root.sh:
 	$(CURDIR)/install-root.sh

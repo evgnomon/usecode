@@ -13,7 +13,7 @@ if [ ! -d "usecode" ]; then
 fi
 
 cd usecode/lib/configurator
-sudo make install
+sudo make prepare
 make link
 
 cd ../workflows
