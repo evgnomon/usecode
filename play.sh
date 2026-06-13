@@ -10,6 +10,9 @@ cd ~/src/github.com/evgnomon
 if [ ! -d "usecode" ]; then
   git clone https://github.com/evgnomon/usecode.git
   git checkout ubuntu
+else
+  git pull
+  git checkout ubuntu
 fi
 
 cd usecode/lib/configurator
