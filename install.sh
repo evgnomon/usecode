@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+sudo apt update
+sudo apt install -y git make
+
 mkdir -p ~/src/github.com/evgnomon
 cd ~/src/github.com/evgnomon
 
