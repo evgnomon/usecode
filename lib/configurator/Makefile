@@ -1,4 +1,4 @@
-.PHONY: all build install install-eget link uninstall clean
+.PHONY: all build install install-eget link uninstall clean prepare
 
 EGET_VERSION ?= latest
 ROOT_DIR ?= $(abspath $(CURDIR)/../..)
@@ -22,7 +22,9 @@ all: build
 
 build: $(BUILD_BINS)
 
-install: $(INSTALL_BINS) $(STAMPS_DIR)/install-root.sh
+install: $(STAMPS_DIR)/install-root.sh $(INSTALL_BINS)
+
+prepare: $(STAMPS_DIR)/install.sh
 
 $(STAMPS_DIR)/install-root.sh:
 	$(CURDIR)/install-root.sh
@@ -42,7 +44,15 @@ install-eget: $(EGET)
 
 $(EGET):
 	@mkdir -p $(BIN_DIR)
-	GOBIN=$(BIN_DIR) go install github.com/zyedidia/eget@$(EGET_VERSION)
+	@ARCH=$$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/'); \
+	TMPDIR=$$(mktemp -d); \
+	URL=$$(curl -s https://api.github.com/repos/zyedidia/eget/releases/latest \
+	  | grep browser_download_url \
+	  | grep "linux_$${ARCH}.tar.gz" \
+	  | cut -d'"' -f4); \
+	curl -sL "$$URL" | tar -xz -C $$TMPDIR; \
+	mv $$TMPDIR/*/eget $(BIN_DIR)/eget; \
+	rm -rf $$TMPDIR
 
 $(BIN_DIR)/gh: | $(EGET)
 	$(EGET) --to $(BIN_DIR) -a tar.gz cli/cli
