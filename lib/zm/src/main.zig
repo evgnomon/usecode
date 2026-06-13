@@ -53,11 +53,17 @@ pub fn main(init: std.process.Init) !void {
     if (std.mem.eql(u8, command, "create")) {
         try cmdCreate(io, allocator, args[2..], &conn, &cfg);
     } else if (std.mem.eql(u8, command, "list")) {
-        try vm.listVMs(io, allocator, &conn);
+        var list_all = false;
+        for (args[2..]) |arg| {
+            if (std.mem.eql(u8, arg, "-a") or std.mem.eql(u8, arg, "--all")) {
+                list_all = true;
+            }
+        }
+        try vm.listVMs(io, allocator, &conn, list_all);
     } else if (std.mem.eql(u8, command, "info")) {
         try cmdInfo(io, allocator, args[2..], &conn);
     } else if (std.mem.eql(u8, command, "start")) {
-        try cmdStart(io, allocator, args[2..], &conn);
+        try cmdStart(io, allocator, args[2..], &conn, &cfg);
     } else if (std.mem.eql(u8, command, "stop")) {
         try cmdStop(allocator, args[2..], &conn);
     } else if (std.mem.eql(u8, command, "delete")) {
@@ -96,7 +102,7 @@ fn printHelp() !void {
         \\
         \\Commands:
         \\  create <name> [options]            Create a new VM
-        \\  list                               List all running VMs
+        \\  list [-a|--all]                    List running VMs (or all with -a)
         \\  info <name>                        Show VM information
         \\  start <name>                       Start a VM
         \\  stop <name>                        Stop a VM
@@ -295,14 +301,14 @@ fn cmdInfo(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8, c
     try vm.showVMInfo(io, allocator, conn, args[0]);
 }
 
-fn cmdStart(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8, conn: *const libvirt.Connection) !void {
+fn cmdStart(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8, conn: *const libvirt.Connection, cfg: *const config.Config) !void {
     if (args.len == 0) {
         std.log.err("Error: domain name required", .{});
         std.log.err("Usage: zm start <name>", .{});
         std.process.exit(1);
     }
 
-    try vm.startVM(io, allocator, conn, args[0]);
+    try vm.startVM(io, allocator, conn, cfg, args[0]);
 }
 
 fn cmdStop(allocator: std.mem.Allocator, args: []const []const u8, conn: *const libvirt.Connection) !void {

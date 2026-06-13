@@ -2,18 +2,10 @@
 
 # Getting Started
 
-Build `usecode` project with:
+Install `usecode` with a single command:
 
 ```bash
-mkdir -p ~/src/github.com/evgnomon && cd ~/src/github.com/evgnomon
-git clone git@github.com:evgnomon/usecode.git && cd usecode/lib/configurator
-sudo make install
-make link
-cd ../workflows
-sudo make install
-source ~/.bashrc
-
-sudo make install
+bash <(curl -fsSL https://raw.githubusercontent.com/evgnomon/usecode/master/install.sh)
 ```
 
 Everything is ready in `/build` dir after build, you can run `usecode` with.

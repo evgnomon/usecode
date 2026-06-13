@@ -78,25 +78,40 @@ pub const Connection = struct {
         }
     }
 
-    pub fn listDomains(self: *const Connection, allocator: std.mem.Allocator) ![][]const u8 {
-        const max_ids: i32 = 128;
-        var ids: [128]i32 = undefined;
-        const n = c.virConnectListDomains(self.conn, &ids, max_ids);
-
-        if (n < 0) return error.ListFailed;
-
+    pub fn listDomains(self: *const Connection, allocator: std.mem.Allocator, all: bool) ![][]const u8 {
         var domains: std.ArrayList([]const u8) = .empty;
         errdefer {
             for (domains.items) |name| allocator.free(name);
             domains.deinit(allocator);
         }
 
-        for (ids[0..@intCast(n)]) |id| {
-            if (c.virDomainLookupByID(self.conn, id)) |d| {
-                defer _ = c.virDomainFree(d);
-                const name = c.virDomainGetName(d);
-                const name_copy = try allocator.dupe(u8, mem.span(name));
-                try domains.append(allocator, name_copy);
+        if (all) {
+            var doms: [*c]c.virDomainPtr = undefined;
+            const n = c.virConnectListAllDomains(self.conn, &doms, 0);
+            if (n < 0) return error.ListFailed;
+            defer c.free(@ptrCast(doms));
+
+            for (0..@intCast(n)) |i| {
+                defer _ = c.virDomainFree(doms[i]);
+                const name = c.virDomainGetName(doms[i]);
+                const active = c.virDomainIsActive(doms[i]);
+                const status: []const u8 = if (active > 0) "running" else "stopped";
+                const name_line = try std.fmt.allocPrint(allocator, "{s} ({s})", .{ mem.span(name), status });
+                try domains.append(allocator, name_line);
+            }
+        } else {
+            const max_ids: i32 = 128;
+            var ids: [128]i32 = undefined;
+            const n = c.virConnectListDomains(self.conn, &ids, max_ids);
+            if (n < 0) return error.ListFailed;
+
+            for (ids[0..@intCast(n)]) |id| {
+                if (c.virDomainLookupByID(self.conn, id)) |d| {
+                    defer _ = c.virDomainFree(d);
+                    const name = c.virDomainGetName(d);
+                    const name_copy = try allocator.dupe(u8, mem.span(name));
+                    try domains.append(allocator, name_copy);
+                }
             }
         }
 

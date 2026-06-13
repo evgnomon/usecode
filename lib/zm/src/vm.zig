@@ -89,7 +89,7 @@ pub fn createVM(
         std.log.warn("Could not ensure cloud-init template: {}", .{err});
     };
 
-    const cloud_init_iso = try std.fmt.allocPrint(allocator, "/tmp/{s}-cloud-init.iso", .{domain_name});
+    const cloud_init_iso = try std.fmt.allocPrint(allocator, "{s}/{s}-cloud-init.iso", .{ cfg.vm_storage_path, domain_name });
     defer allocator.free(cloud_init_iso);
 
     std.log.info("Creating cloud-init ISO at {s}", .{cloud_init_iso});
@@ -211,9 +211,10 @@ pub fn deleteVM(
 }
 
 pub fn startVM(
-    _: std.Io,
+    io: std.Io,
     allocator: std.mem.Allocator,
     conn: *const libvirt.Connection,
+    cfg: *const config.Config,
     domain_name: []const u8,
 ) !void {
     const dom = try conn.lookupDomain(allocator, domain_name);
@@ -224,9 +225,61 @@ pub fn startVM(
         return;
     }
 
+    // Regenerate cloud-init ISO if referenced path is missing
+    const xml = dom.getXML(allocator) catch null;
+    if (xml) |x| {
+        defer allocator.free(x);
+        if (extractCdromPath(allocator, x)) |iso_path| {
+            defer allocator.free(iso_path);
+            const missing = blk: {
+                _ = std.Io.Dir.cwd().statFile(io, iso_path, .{}) catch {
+                    break :blk true;
+                };
+                break :blk false;
+            };
+            if (missing) {
+                std.log.info("Cloud-init ISO missing at '{s}', regenerating", .{iso_path});
+                const cloud_init_template = std.fs.path.join(allocator, &.{ cfg.cloud_init_template_path, "cloud-init-user-data.yaml" }) catch null;
+                if (cloud_init_template) |tmpl| {
+                    defer allocator.free(tmpl);
+                    ensureCloudInitTemplate(io, allocator, cfg, tmpl) catch |err| {
+                        std.log.warn("Could not ensure cloud-init template: {}", .{err});
+                    };
+                    cloudinit.createCloudInitISO(io, allocator, domain_name, tmpl, iso_path) catch |err| {
+                        std.log.warn("Could not regenerate cloud-init ISO: {}", .{err});
+                    };
+                }
+            }
+        } else |_| {}
+    }
+
     std.log.info("Starting domain '{s}'", .{domain_name});
     try dom.create();
     std.log.info("Domain '{s}' started", .{domain_name});
+}
+
+fn extractCdromPath(allocator: std.mem.Allocator, xml: []const u8) ![]const u8 {
+    const cdrom_marker = "device='cdrom'";
+    const pos = std.mem.indexOf(u8, xml, cdrom_marker) orelse return error.CdromPathNotFound;
+    const after_cdrom = xml[pos..];
+
+    const needle_sq = "<source file='";
+    if (std.mem.indexOf(u8, after_cdrom, needle_sq)) |idx| {
+        const path_start = idx + needle_sq.len;
+        if (std.mem.indexOfScalarPos(u8, after_cdrom, path_start, '\'')) |path_end| {
+            return allocator.dupe(u8, after_cdrom[path_start..path_end]);
+        }
+    }
+
+    const needle_dq = "<source file=\"";
+    if (std.mem.indexOf(u8, after_cdrom, needle_dq)) |idx| {
+        const path_start = idx + needle_dq.len;
+        if (std.mem.indexOfScalarPos(u8, after_cdrom, path_start, '"')) |path_end| {
+            return allocator.dupe(u8, after_cdrom[path_start..path_end]);
+        }
+    }
+
+    return error.CdromPathNotFound;
 }
 
 pub fn stopVM(
@@ -285,19 +338,20 @@ pub fn listVMs(
     _: std.Io,
     allocator: std.mem.Allocator,
     conn: *const libvirt.Connection,
+    all: bool,
 ) !void {
-    const domains = try conn.listDomains(allocator);
+    const domains = try conn.listDomains(allocator, all);
     defer {
         for (domains) |name| allocator.free(name);
         allocator.free(domains);
     }
 
     if (domains.len == 0) {
-        std.log.info("No running domains", .{});
+        std.log.info("No {s}domains", .{if (all) "" else "running "});
         return;
     }
 
-    std.log.info("Running domains:", .{});
+    std.log.info("{s}domains:", .{if (all) "All " else "Running "});
     for (domains) |name| {
         std.log.info("  {s}", .{name});
     }
@@ -502,7 +556,7 @@ pub fn forkVM(
         std.log.warn("Could not ensure cloud-init template: {}", .{err});
     };
 
-    const cloud_init_iso = try std.fmt.allocPrint(allocator, "/tmp/{s}-cloud-init.iso", .{dest_name});
+    const cloud_init_iso = try std.fmt.allocPrint(allocator, "{s}/{s}-cloud-init.iso", .{ cfg.vm_storage_path, dest_name });
     defer allocator.free(cloud_init_iso);
 
     std.log.info("Creating cloud-init ISO at {s}", .{cloud_init_iso});
