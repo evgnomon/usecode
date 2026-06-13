@@ -11,11 +11,13 @@ if [ ! -d "usecode" ]; then
   git clone https://github.com/evgnomon/usecode.git
   git checkout ubuntu
 else
+  cd usecode
   git pull
   git checkout ubuntu
 fi
 
-cd usecode/lib/configurator
+cd lib/configurator
+
 sudo make prepare
 make play
 
