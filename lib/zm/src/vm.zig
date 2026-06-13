@@ -9,6 +9,11 @@ const libvirt = @import("libvirt.zig");
 const network = @import("network.zig");
 const ssh_conf = @import("ssh_conf.zig");
 
+pub const MountSpec = struct {
+    host_path: []const u8,
+    tag: []const u8,
+};
+
 pub const VMSpecs = struct {
     memory: u64 = 1024 * 1024, // in KiB
     vcpus: u32 = 2,
@@ -17,6 +22,7 @@ pub const VMSpecs = struct {
     image_path: ?[]const u8 = null,
     start: bool = true,
     wait_for_ip: bool = true,
+    mounts: []const MountSpec = &.{},
 };
 
 pub const VMError = error{
@@ -598,6 +604,59 @@ pub fn forkVM(
     }
 }
 
+pub fn mountVM(
+    allocator: std.mem.Allocator,
+    conn: *const libvirt.Connection,
+    domain_name: []const u8,
+    mount: MountSpec,
+) !void {
+    const dom = try conn.lookupDomain(allocator, domain_name);
+    defer dom.free();
+
+    // virtiofs requires shared memory backing; patch the persistent XML if missing.
+    const domain_xml = try dom.getXML(allocator);
+    defer allocator.free(domain_xml);
+    if (std.mem.indexOf(u8, domain_xml, "access mode='shared'") == null) {
+        const insert_after = "</currentMemory>";
+        const patch =
+            "\n  <memoryBacking>\n    <source type='memfd'/>\n    <access mode='shared'/>\n  </memoryBacking>";
+        if (std.mem.indexOf(u8, domain_xml, insert_after)) |pos| {
+            const patched = try std.fmt.allocPrint(
+                allocator,
+                "{s}{s}{s}",
+                .{ domain_xml[0 .. pos + insert_after.len], patch, domain_xml[pos + insert_after.len ..] },
+            );
+            defer allocator.free(patched);
+            const new_dom = try libvirt.Domain.defineXML(conn, allocator, patched);
+            new_dom.free();
+            std.log.info("Updated domain '{s}' config to enable virtiofs shared memory.", .{domain_name});
+        }
+        if (dom.isActive()) {
+            std.log.err("Domain '{s}' must be restarted for shared memory to take effect. Run: zm stop {s} && zm start {s}", .{ domain_name, domain_name, domain_name });
+            return error.RestartRequired;
+        }
+    }
+
+    const fs_xml = try std.fmt.allocPrint(allocator,
+        "<filesystem type='mount' accessmode='passthrough'>\n" ++
+            "  <driver type='virtiofs'/>\n" ++
+            "  <source dir='{s}'/>\n" ++
+            "  <target dir='{s}'/>\n" ++
+            "</filesystem>",
+        .{ mount.host_path, mount.tag },
+    );
+    defer allocator.free(fs_xml);
+
+    try dom.attachDevice(allocator, fs_xml);
+
+    if (dom.isActive()) {
+        std.log.info("Mounted '{s}' as tag '{s}' in running domain '{s}'", .{ mount.host_path, mount.tag, domain_name });
+        std.log.info("Inside the VM, run: sudo mkdir -p /mnt/{s} && sudo mount -t virtiofs {s} /mnt/{s}", .{ mount.tag, mount.tag, mount.tag });
+    } else {
+        std.log.info("Mount '{s}' -> tag '{s}' added to domain '{s}'", .{ mount.host_path, mount.tag, domain_name });
+    }
+}
+
 fn ensureCloudInitTemplate(
     io: std.Io,
     allocator: std.mem.Allocator,
@@ -635,6 +694,28 @@ fn ensureCloudInitTemplate(
     };
 }
 
+fn generateFilesystemsXML(allocator: std.mem.Allocator, mounts: []const MountSpec) ![]const u8 {
+    if (mounts.len == 0) return allocator.dupe(u8, "");
+
+    var buf: std.ArrayList(u8) = .empty;
+    errdefer buf.deinit(allocator);
+
+    for (mounts) |mount| {
+        const entry = try std.fmt.allocPrint(allocator,
+            "    <filesystem type='mount' accessmode='passthrough'>\n" ++
+                "      <driver type='virtiofs'/>\n" ++
+                "      <source dir='{s}'/>\n" ++
+                "      <target dir='{s}'/>\n" ++
+                "    </filesystem>\n",
+            .{ mount.host_path, mount.tag },
+        );
+        defer allocator.free(entry);
+        try buf.appendSlice(allocator, entry);
+    }
+
+    return buf.toOwnedSlice(allocator);
+}
+
 fn generateDomainXML(
     allocator: std.mem.Allocator,
     domain_name: []const u8,
@@ -643,6 +724,9 @@ fn generateDomainXML(
     mac_addr: [17]u8,
     specs: VMSpecs,
 ) ![]const u8 {
+    const filesystems_xml = try generateFilesystemsXML(allocator, specs.mounts);
+    defer allocator.free(filesystems_xml);
+
     return std.fmt.allocPrint(allocator,
         \\<domain type='kvm'>
         \\  <name>{s}</name>
@@ -653,6 +737,10 @@ fn generateDomainXML(
         \\  </metadata>
         \\  <memory unit='KiB'>{d}</memory>
         \\  <currentMemory unit='KiB'>{d}</currentMemory>
+        \\  <memoryBacking>
+        \\    <source type='memfd'/>
+        \\    <access mode='shared'/>
+        \\  </memoryBacking>
         \\  <vcpu placement='static'>{d}</vcpu>
         \\  <resource>
         \\    <partition>/machine</partition>
@@ -834,7 +922,7 @@ fn generateDomainXML(
         \\      <backend model='random'>/dev/urandom</backend>
         \\      <address type='pci' domain='0x0000' bus='0x06' slot='0x00' function='0x0'/>
         \\    </rng>
-        \\  </devices>
+        \\{s}  </devices>
         \\</domain>
-    , .{ domain_name, specs.memory, specs.memory, specs.vcpus, specs.machine, disk_path, iso_path, &mac_addr });
+    , .{ domain_name, specs.memory, specs.memory, specs.vcpus, specs.machine, disk_path, iso_path, &mac_addr, filesystems_xml });
 }

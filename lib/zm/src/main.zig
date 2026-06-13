@@ -74,6 +74,8 @@ pub fn main(init: std.process.Init) !void {
         try cmdSnapshot(allocator, args[2..], &conn);
     } else if (std.mem.eql(u8, command, "fork")) {
         try cmdFork(io, allocator, args[2..], &conn, &cfg);
+    } else if (std.mem.eql(u8, command, "mount")) {
+        try cmdMount(allocator, args[2..], &conn);
     } else {
         // Legacy mode: treat as create command
         if (args.len >= 2) {
@@ -113,6 +115,7 @@ fn printHelp() !void {
         \\  snapshot restore <name> <snap>     Revert VM to a snapshot
         \\  snapshot delete <name> <snap>      Delete a snapshot
         \\  fork <source> <new-name> [options] Fork a VM from an external snapshot
+        \\  mount <name> <host-path> [options] Mount a host directory into the VM
         \\
         \\Options for 'create' and 'fork':
         \\  --memory <size>                    Set memory (default: 1GiB)
@@ -122,6 +125,10 @@ fn printHelp() !void {
         \\  --image <path>                     Use custom base image
         \\  --no-start                         Create but don't start VM
         \\  --no-wait-ip                       Don't wait for IP address
+        \\  --mount <host-path>[:<tag>]        Share a host directory (tag defaults to basename)
+        \\
+        \\Options for 'mount':
+        \\  --tag <tag>                        Mount tag visible inside the VM (default: basename)
         \\
         \\Options for 'stop':
         \\  --force                             Force stop (poweroff)
@@ -136,9 +143,13 @@ fn printHelp() !void {
         \\Examples:
         \\  zm create myvm
         \\  zm create myvm --memory 2GiB --vcpus 4 --disk-size 20G
+        \\  zm create myvm --mount /home/user/projects
+        \\  zm create myvm --mount /home/user/projects:src
         \\  zm create myvm --no-start
         \\  zm fork myvm myvm-copy
         \\  zm fork myvm myvm-copy --memory 2GiB --vcpus 4
+        \\  zm mount myvm /home/user/projects
+        \\  zm mount myvm /home/user/projects --tag src
         \\  zm list
         \\  zm start myvm
         \\  zm ip myvm
@@ -165,6 +176,8 @@ fn cmdCreate(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8,
 
     const domain_name = args[0];
     var specs = vm.VMSpecs{};
+    var mounts_list: std.ArrayList(vm.MountSpec) = .empty;
+    defer mounts_list.deinit(allocator);
 
     // Parse options
     var i: usize = 1;
@@ -219,12 +232,24 @@ fn cmdCreate(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8,
         } else if (std.mem.eql(u8, args[i], "--no-wait-ip")) {
             specs.wait_for_ip = false;
             i += 1;
+        } else if (std.mem.eql(u8, args[i], "--mount")) {
+            if (i + 1 >= args.len) {
+                std.log.err("Error: --mount requires a value", .{});
+                std.process.exit(1);
+            }
+            const mount_arg = args[i + 1];
+            const colon_pos = std.mem.lastIndexOfScalar(u8, mount_arg, ':');
+            const host_path = if (colon_pos) |pos| mount_arg[0..pos] else mount_arg;
+            const tag = if (colon_pos) |pos| mount_arg[pos + 1 ..] else std.fs.path.basename(mount_arg);
+            try mounts_list.append(allocator, .{ .host_path = host_path, .tag = tag });
+            i += 2;
         } else {
             std.log.err("Error: unknown option: {s}", .{args[i]});
             std.process.exit(1);
         }
     }
 
+    specs.mounts = mounts_list.items;
     try vm.createVM(io, allocator, conn, cfg, domain_name, specs);
 }
 
@@ -411,6 +436,35 @@ fn cmdFork(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8, c
     }
 
     try vm.forkVM(io, allocator, conn, cfg, source_name, dest_name, specs);
+}
+
+fn cmdMount(allocator: std.mem.Allocator, args: []const []const u8, conn: *const libvirt.Connection) !void {
+    if (args.len < 2) {
+        std.log.err("Error: domain name and host path required", .{});
+        std.log.err("Usage: zm mount <name> <host-path> [--tag <tag>]", .{});
+        std.process.exit(1);
+    }
+
+    const domain_name = args[0];
+    const host_path = args[1];
+    var tag: []const u8 = std.fs.path.basename(host_path);
+
+    var i: usize = 2;
+    while (i < args.len) {
+        if (std.mem.eql(u8, args[i], "--tag")) {
+            if (i + 1 >= args.len) {
+                std.log.err("Error: --tag requires a value", .{});
+                std.process.exit(1);
+            }
+            tag = args[i + 1];
+            i += 2;
+        } else {
+            std.log.err("Error: unknown option: {s}", .{args[i]});
+            std.process.exit(1);
+        }
+    }
+
+    try vm.mountVM(allocator, conn, domain_name, .{ .host_path = host_path, .tag = tag });
 }
 
 fn cmdSnapshot(allocator: std.mem.Allocator, args: []const []const u8, conn: *const libvirt.Connection) !void {

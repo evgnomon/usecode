@@ -5,7 +5,7 @@
 Install `usecode` with a single command:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/evgnomon/usecode/master/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/evgnomon/usecode/refs/heads/master/install.sh)
 ```
 
 Everything is ready in `/build` dir after build, you can run `usecode` with.

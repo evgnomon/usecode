@@ -23,6 +23,7 @@ pub const LibvirtError = error{
     VolumeResizeFailed,
     VolumeCreateFailed,
     PoolCreateFailed,
+    AttachDeviceFailed,
 };
 
 fn xmlEscape(allocator: std.mem.Allocator, input: []const u8) ![]const u8 {
@@ -469,6 +470,26 @@ pub const Domain = struct {
         };
         defer c.free(raw);
         return allocator.dupe(u8, mem.span(raw));
+    }
+
+    /// Attaches a device described by `xml` to the domain.
+    /// If the domain is active the device is attached live and the persistent config is updated.
+    /// If the domain is inactive only the persistent config is updated.
+    pub fn attachDevice(self: *const Domain, allocator: std.mem.Allocator, xml: []const u8) !void {
+        const c_xml = try allocator.dupeZ(u8, xml);
+        defer allocator.free(c_xml);
+
+        const live_flag: c_uint = if (self.isActive())
+            c.VIR_DOMAIN_AFFECT_LIVE | c.VIR_DOMAIN_AFFECT_CONFIG
+        else
+            c.VIR_DOMAIN_AFFECT_CONFIG;
+
+        if (c.virDomainAttachDeviceFlags(self.dom, c_xml, live_flag) < 0) {
+            if (c.virGetLastError()) |err| {
+                std.log.err("Failed to attach device: {s}", .{err.*.message});
+            }
+            return LibvirtError.AttachDeviceFailed;
+        }
     }
 
     /// Creates an external, disk-only snapshot at `snapshot_path` for disk `disk_device`
