@@ -14,7 +14,7 @@ fi
 
 cd usecode/lib/configurator
 sudo make prepare
-make link
+make play
 
 cd ../workflows
 sudo make install
