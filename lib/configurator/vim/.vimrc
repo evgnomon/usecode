@@ -97,7 +97,6 @@ let g:coc_global_extensions = [
       \ 'coc-snippets',
       \ 'coc-pyright',
       \ '@yaegassy/coc-ruff',
-      \ 'coc-toml',
       \ 'coc-clangd'
       \]
 
