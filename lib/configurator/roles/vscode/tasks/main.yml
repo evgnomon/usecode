@@ -27,5 +27,6 @@
   ansible.builtin.shell: xargs -L 1 code --install-extension < {{ role_path }}/files/.config/Code/extensions.txt
   args:
     executable: /bin/bash
+  failed_when: false
   tags:
     - vscode
