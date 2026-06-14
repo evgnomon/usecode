@@ -64,11 +64,20 @@
     - ansible_facts['os_family'] == "Debian"
     - face_file_stat.stat.exists
 
+- name: Check if gsettings is available
+  command: which gsettings
+  register: gsettings_check
+  failed_when: false
+  changed_when: false
+  tags:
+    - dotfiles
+
 - name: Set app switcher to current workspace only
   command: gsettings set org.gnome.shell.app-switcher current-workspace-only true
   when:
     - ansible_facts['os_family'] == "Debian"
     - not wsl2_kernel | default(false)
+    - gsettings_check.rc == 0
   tags:
     - dotfiles
 
