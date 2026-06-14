@@ -2,6 +2,7 @@
 set -euo pipefail
 
 sudo apt update
+sudo apt upgrade
 sudo apt install -y git make
 
 mkdir -p ~/src/github.com/evgnomon
@@ -9,6 +10,7 @@ cd ~/src/github.com/evgnomon
 
 if [ ! -d "usecode" ]; then
   git clone https://github.com/evgnomon/usecode.git
+  cd usecode
   git checkout ubuntu
 else
   cd usecode
