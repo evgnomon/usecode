@@ -21,6 +21,8 @@ fi
 cd lib/configurator
 
 sudo make prepare
+
+source ~/.bashrc
 make play
 
 cd ../workflows
