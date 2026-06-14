@@ -130,7 +130,7 @@ pkg_debian:
       template: &template_zig
         os: *pkg_templates_zig_os
         arch: *pkg_templates_zig_arch
-        url: https://ziglang.org/builds/zig-{{ pkg_templates_debian.zig.arch }}-{{ pkg_templates_debian.zig.os }}-%(version)s.tar.xz
+        url: https://ziglang.org/download/%(version)s/zig-{{ pkg_templates_debian.zig.arch }}-{{ pkg_templates_debian.zig.os }}-%(version)s.tar.xz
         ext: &ext_tarxz tar.xz
         inflate: &inflate_tarxz tar -C %(dest)s -xJf %(src)s
         creates: "zig-{{ pkg_templates_debian.zig.arch }}-{{ pkg_templates_debian.zig.os }}-{{ pkg_versions.zig.version }}/zig"
