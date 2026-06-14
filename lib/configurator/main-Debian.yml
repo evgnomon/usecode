@@ -55,6 +55,9 @@
       include_role:
         name: packer
       when: not wsl2_kernel | default(false)
+    - name: Run system-facts role
+      include_role:
+        name: system-facts
     - name: Run llama-cpp role
       include_role:
         name: llama-cpp
