@@ -2,11 +2,11 @@
   "permissions": {
     "defaultMode": "auto"
   },
+  "model": "sonnet",
   "enabledPlugins": {
     "csharp-lsp@claude-plugins-official": true
   },
   "effortLevel": "medium",
   "theme": "dark-ansi",
-  "skipAutoPermissionPrompt": true,
-  "model": "sonnet"
+  "skipAutoPermissionPrompt": true
 }

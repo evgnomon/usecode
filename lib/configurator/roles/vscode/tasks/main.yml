@@ -5,6 +5,13 @@
   tags:
     - always
 
+- name: Create VS Code config directories
+  ansible.builtin.file:
+    path: "{{ ansible_facts['env']['HOME'] }}/{{ item | dirname }}"
+    state: directory
+    mode: '0755'
+  loop: "{{ vscode_dotfiles }}"
+
 - name: Link VS Code dotfiles
   ansible.builtin.file:
     src: "{{ role_path }}/files/{{ item }}"
