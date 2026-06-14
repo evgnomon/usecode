@@ -316,6 +316,32 @@ pub fn stopVM(
     std.log.info("Domain '{s}' stopped", .{domain_name});
 }
 
+pub fn restartVM(
+    io: std.Io,
+    allocator: std.mem.Allocator,
+    conn: *const libvirt.Connection,
+    cfg: *const config.Config,
+    domain_name: []const u8,
+    force: bool,
+) !void {
+    {
+        const dom = try conn.lookupDomain(allocator, domain_name);
+        defer dom.free();
+
+        if (dom.isActive()) {
+            if (force) {
+                std.log.info("Force stopping domain '{s}'", .{domain_name});
+            } else {
+                std.log.info("Stopping domain '{s}'", .{domain_name});
+            }
+            try dom.destroy();
+            std.log.info("Domain '{s}' stopped", .{domain_name});
+        }
+    }
+
+    try startVM(io, allocator, conn, cfg, domain_name);
+}
+
 pub fn getVMIP(
     allocator: std.mem.Allocator,
     conn: *const libvirt.Connection,
@@ -435,6 +461,31 @@ pub fn inspectVM(
         }
     } else {
         std.log.info("  IP:     (VM is stopped)", .{});
+    }
+}
+
+pub fn configVM(
+    allocator: std.mem.Allocator,
+    conn: *const libvirt.Connection,
+    domain_name: []const u8,
+    memory_kib: u64,
+) !void {
+    const dom = try conn.lookupDomain(allocator, domain_name);
+    defer dom.free();
+
+    const ram_mib = memory_kib / 1024;
+    if (ram_mib >= 1024) {
+        std.log.info("Setting memory of '{s}' to {d} GiB", .{ domain_name, ram_mib / 1024 });
+    } else {
+        std.log.info("Setting memory of '{s}' to {d} MiB", .{ domain_name, ram_mib });
+    }
+
+    const live_applied = try dom.setMemory(memory_kib);
+
+    if (dom.isActive() and !live_applied) {
+        std.log.info("Config updated. Restart the VM for the new memory to take effect.", .{});
+    } else {
+        std.log.info("Memory updated successfully.", .{});
     }
 }
 

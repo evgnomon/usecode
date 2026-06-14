@@ -68,6 +68,8 @@ pub fn main(init: std.process.Init) !void {
         try cmdStart(io, allocator, args[2..], &conn, &cfg);
     } else if (std.mem.eql(u8, command, "stop")) {
         try cmdStop(allocator, args[2..], &conn);
+    } else if (std.mem.eql(u8, command, "restart")) {
+        try cmdRestart(io, allocator, args[2..], &conn, &cfg);
     } else if (std.mem.eql(u8, command, "delete")) {
         try cmdDelete(io, allocator, args[2..], &conn, &cfg);
     } else if (std.mem.eql(u8, command, "ip")) {
@@ -78,6 +80,8 @@ pub fn main(init: std.process.Init) !void {
         try cmdFork(io, allocator, args[2..], &conn, &cfg);
     } else if (std.mem.eql(u8, command, "mount")) {
         try cmdMount(allocator, args[2..], &conn);
+    } else if (std.mem.eql(u8, command, "config")) {
+        try cmdConfig(allocator, args[2..], &conn);
     } else {
         // Legacy mode: treat as create command
         if (args.len >= 2) {
@@ -111,6 +115,7 @@ fn printHelp() !void {
         \\  inspect <name>                     Show detailed VM info (RAM, disk, IP)
         \\  start <name>                       Start a VM
         \\  stop <name>                        Stop a VM
+        \\  restart <name>                     Restart a VM
         \\  delete <name>                      Delete a VM
         \\  ip <name>                          Get VM IP address
         \\  snapshot create <name> <snap>      Create a snapshot
@@ -119,6 +124,7 @@ fn printHelp() !void {
         \\  snapshot delete <name> <snap>      Delete a snapshot
         \\  fork <source> <new-name> [options] Fork a VM from an external snapshot
         \\  mount <name> <host-path> [options] Mount a host directory into the VM
+        \\  config <name> [options]            Reconfigure an existing VM
         \\
         \\Options for 'create' and 'fork':
         \\  --memory <size>                    Set memory (default: 1GiB)
@@ -130,10 +136,13 @@ fn printHelp() !void {
         \\  --no-wait-ip                       Don't wait for IP address
         \\  --mount <host-path>[:<tag>]        Share a host directory (tag defaults to basename)
         \\
+        \\Options for 'config':
+        \\  --memory <size>                    Set memory (e.g. 2GiB, 512MiB)
+        \\
         \\Options for 'mount':
         \\  --tag <tag>                        Mount tag visible inside the VM (default: basename)
         \\
-        \\Options for 'stop':
+        \\Options for 'stop' and 'restart':
         \\  --force                             Force stop (poweroff)
         \\
         \\Options for 'delete':
@@ -371,6 +380,28 @@ fn cmdStop(allocator: std.mem.Allocator, args: []const []const u8, conn: *const 
     try vm.stopVM(allocator, conn, args[0], force);
 }
 
+fn cmdRestart(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8, conn: *const libvirt.Connection, cfg: *const config.Config) !void {
+    if (args.len == 0) {
+        std.log.err("Error: domain name required", .{});
+        std.log.err("Usage: zm restart <name> [--force]", .{});
+        std.process.exit(1);
+    }
+
+    var force = false;
+    var i: usize = 1;
+    while (i < args.len) {
+        if (std.mem.eql(u8, args[i], "--force")) {
+            force = true;
+            i += 1;
+        } else {
+            std.log.err("Error: unknown option: {s}", .{args[i]});
+            std.process.exit(1);
+        }
+    }
+
+    try vm.restartVM(io, allocator, conn, cfg, args[0], force);
+}
+
 fn cmdDelete(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8, conn: *const libvirt.Connection, cfg: *const config.Config) !void {
     if (args.len == 0) {
         std.log.err("Error: domain name required", .{});
@@ -478,6 +509,42 @@ fn cmdMount(allocator: std.mem.Allocator, args: []const []const u8, conn: *const
     }
 
     try vm.mountVM(allocator, conn, domain_name, .{ .host_path = host_path, .tag = tag });
+}
+
+fn cmdConfig(allocator: std.mem.Allocator, args: []const []const u8, conn: *const libvirt.Connection) !void {
+    if (args.len == 0) {
+        std.log.err("Error: domain name required", .{});
+        std.log.err("Usage: zm config <name> --memory <size>", .{});
+        std.process.exit(1);
+    }
+
+    const domain_name = args[0];
+    var memory_kib: ?u64 = null;
+
+    var i: usize = 1;
+    while (i < args.len) {
+        if (std.mem.eql(u8, args[i], "--memory")) {
+            if (i + 1 >= args.len) {
+                std.log.err("Error: --memory requires a value", .{});
+                std.process.exit(1);
+            }
+            memory_kib = parseMemory(args[i + 1]) catch |err| {
+                std.log.err("Error: invalid memory value: {}", .{err});
+                std.process.exit(1);
+            };
+            i += 2;
+        } else {
+            std.log.err("Error: unknown option: {s}", .{args[i]});
+            std.process.exit(1);
+        }
+    }
+
+    if (memory_kib == null) {
+        std.log.err("Error: at least one option required (e.g. --memory 2GiB)", .{});
+        std.process.exit(1);
+    }
+
+    try vm.configVM(allocator, conn, domain_name, memory_kib.?);
 }
 
 fn cmdSnapshot(allocator: std.mem.Allocator, args: []const []const u8, conn: *const libvirt.Connection) !void {

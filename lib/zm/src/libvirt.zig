@@ -25,6 +25,7 @@ pub const LibvirtError = error{
     PoolCreateFailed,
     AttachDeviceFailed,
     GetInfoFailed,
+    SetMemoryFailed,
 };
 
 pub const DomainInfo = struct {
@@ -524,6 +525,31 @@ pub const Domain = struct {
             }
             return LibvirtError.AttachDeviceFailed;
         }
+    }
+
+    /// Sets the memory allocation for the domain.
+    /// Always updates the persistent config. If the domain is running, also attempts
+    /// a live update (requires guest balloon driver); returns true if live update
+    /// succeeded so callers can tell the user whether a restart is needed.
+    pub fn setMemory(self: *const Domain, memory_kib: u64) !bool {
+        const mem_kib: c_ulong = @intCast(memory_kib);
+        const config_flag: c_uint = c.VIR_DOMAIN_AFFECT_CONFIG;
+        const config_max_flag: c_uint = c.VIR_DOMAIN_AFFECT_CONFIG | c.VIR_DOMAIN_MEM_MAXIMUM;
+
+        if (c.virDomainSetMemoryFlags(self.dom, mem_kib, config_max_flag) < 0) {
+            return LibvirtError.SetMemoryFailed;
+        }
+        if (c.virDomainSetMemoryFlags(self.dom, mem_kib, config_flag) < 0) {
+            return LibvirtError.SetMemoryFailed;
+        }
+
+        if (!self.isActive()) return true;
+
+        const live_flag: c_uint = c.VIR_DOMAIN_AFFECT_LIVE;
+        const live_max_flag: c_uint = c.VIR_DOMAIN_AFFECT_LIVE | c.VIR_DOMAIN_MEM_MAXIMUM;
+        if (c.virDomainSetMemoryFlags(self.dom, mem_kib, live_max_flag) < 0) return false;
+        if (c.virDomainSetMemoryFlags(self.dom, mem_kib, live_flag) < 0) return false;
+        return true;
     }
 
     /// Creates an external, disk-only snapshot at `snapshot_path` for disk `disk_device`
