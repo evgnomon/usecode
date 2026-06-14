@@ -379,6 +379,65 @@ pub fn showVMInfo(
     // std.log.info("  State: {s}", .{@tagName(state)});
 }
 
+pub fn inspectVM(
+    _: std.Io,
+    allocator: std.mem.Allocator,
+    conn: *const libvirt.Connection,
+    domain_name: []const u8,
+) !void {
+    const dom = try conn.lookupDomain(allocator, domain_name);
+    defer dom.free();
+
+    std.log.info("Domain: {s}", .{domain_name});
+    std.log.info("  State:  {s}", .{if (dom.isActive()) "running" else "stopped"});
+
+    if (dom.getInfo()) |info| {
+        const ram_mib = info.memory_kib / 1024;
+        if (ram_mib >= 1024) {
+            std.log.info("  RAM:    {d} GiB", .{ram_mib / 1024});
+        } else {
+            std.log.info("  RAM:    {d} MiB", .{ram_mib});
+        }
+        std.log.info("  vCPUs:  {d}", .{info.vcpus});
+    } else |_| {
+        std.log.info("  RAM:    (unavailable)", .{});
+    }
+
+    const xml = dom.getXML(allocator) catch null;
+    if (xml) |x| {
+        defer allocator.free(x);
+        if (extractVdaDiskPath(allocator, x)) |disk_path| {
+            defer allocator.free(disk_path);
+            if (conn.getVolumeSizeByPath(allocator, disk_path)) |cap_bytes| {
+                const cap_gib = cap_bytes / (1024 * 1024 * 1024);
+                const cap_mib = cap_bytes / (1024 * 1024);
+                if (cap_gib > 0) {
+                    std.log.info("  Disk:   {d} GiB", .{cap_gib});
+                } else {
+                    std.log.info("  Disk:   {d} MiB", .{cap_mib});
+                }
+            } else |_| {
+                std.log.info("  Disk:   (unavailable)", .{});
+            }
+        } else |_| {
+            std.log.info("  Disk:   (unavailable)", .{});
+        }
+    }
+
+    if (dom.isActive()) {
+        const mac_addr = network.generateMACAddress(domain_name);
+        const ip = network.getIPAddress(&dom, allocator, &mac_addr, 1) catch null;
+        if (ip) |addr| {
+            defer allocator.free(addr);
+            std.log.info("  IP:     {s}", .{addr});
+        } else {
+            std.log.info("  IP:     (not available)", .{});
+        }
+    } else {
+        std.log.info("  IP:     (VM is stopped)", .{});
+    }
+}
+
 pub fn createSnapshot(
     allocator: std.mem.Allocator,
     conn: *const libvirt.Connection,

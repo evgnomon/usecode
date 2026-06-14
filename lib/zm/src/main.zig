@@ -62,6 +62,8 @@ pub fn main(init: std.process.Init) !void {
         try vm.listVMs(io, allocator, &conn, list_all);
     } else if (std.mem.eql(u8, command, "info")) {
         try cmdInfo(io, allocator, args[2..], &conn);
+    } else if (std.mem.eql(u8, command, "inspect")) {
+        try cmdInspect(io, allocator, args[2..], &conn);
     } else if (std.mem.eql(u8, command, "start")) {
         try cmdStart(io, allocator, args[2..], &conn, &cfg);
     } else if (std.mem.eql(u8, command, "stop")) {
@@ -106,6 +108,7 @@ fn printHelp() !void {
         \\  create <name> [options]            Create a new VM
         \\  list [-a|--all]                    List running VMs (or all with -a)
         \\  info <name>                        Show VM information
+        \\  inspect <name>                     Show detailed VM info (RAM, disk, IP)
         \\  start <name>                       Start a VM
         \\  stop <name>                        Stop a VM
         \\  delete <name>                      Delete a VM
@@ -324,6 +327,16 @@ fn cmdInfo(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8, c
     }
 
     try vm.showVMInfo(io, allocator, conn, args[0]);
+}
+
+fn cmdInspect(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8, conn: *const libvirt.Connection) !void {
+    if (args.len == 0) {
+        std.log.err("Error: domain name required", .{});
+        std.log.err("Usage: zm inspect <name>", .{});
+        std.process.exit(1);
+    }
+
+    try vm.inspectVM(io, allocator, conn, args[0]);
 }
 
 fn cmdStart(io: std.Io, allocator: std.mem.Allocator, args: []const []const u8, conn: *const libvirt.Connection, cfg: *const config.Config) !void {

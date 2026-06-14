@@ -24,6 +24,12 @@ pub const LibvirtError = error{
     VolumeCreateFailed,
     PoolCreateFailed,
     AttachDeviceFailed,
+    GetInfoFailed,
+};
+
+pub const DomainInfo = struct {
+    memory_kib: u64,
+    vcpus: u32,
 };
 
 fn xmlEscape(allocator: std.mem.Allocator, input: []const u8) ![]const u8 {
@@ -222,6 +228,23 @@ pub const Connection = struct {
         return Domain{ .dom = dom };
     }
 
+    pub fn getVolumeSizeByPath(self: *const Connection, allocator: std.mem.Allocator, path: []const u8) !u64 {
+        const c_path = try allocator.dupeZ(u8, path);
+        defer allocator.free(c_path);
+
+        const vol = c.virStorageVolLookupByPath(self.conn, c_path) orelse {
+            return LibvirtError.VolumeLookupFailed;
+        };
+        defer _ = c.virStorageVolFree(vol);
+
+        var vol_info: c.virStorageVolInfo = undefined;
+        if (c.virStorageVolGetInfo(vol, &vol_info) < 0) {
+            return LibvirtError.VolumeLookupFailed;
+        }
+
+        return @intCast(vol_info.capacity);
+    }
+
     pub fn lookUpPool(self: *const Connection, allocator: std.mem.Allocator, name: []const u8) !Pool {
         const c_name = try allocator.dupeZ(u8, name);
         defer allocator.free(c_name);
@@ -372,6 +395,17 @@ pub const Domain = struct {
 
     pub fn isActive(self: *const Domain) bool {
         return c.virDomainIsActive(self.dom) == 1;
+    }
+
+    pub fn getInfo(self: *const Domain) !DomainInfo {
+        var info: c.virDomainInfo = undefined;
+        if (c.virDomainGetInfo(self.dom, &info) < 0) {
+            return LibvirtError.GetInfoFailed;
+        }
+        return DomainInfo{
+            .memory_kib = @intCast(info.maxMem),
+            .vcpus = @intCast(info.nrVirtCpu),
+        };
     }
 
     pub fn createSnapshot(self: *const Domain, allocator: std.mem.Allocator, name: []const u8) !Snapshot {

@@ -63,6 +63,7 @@ common_node_packages:
   - tsx
   - bash-language-server
   - sass
+  - wrangler
   - "@anthropic-ai/claude-code"
   - "@github/copilot"
   - '@google/gemini-cli'
