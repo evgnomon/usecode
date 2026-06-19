@@ -5,7 +5,7 @@ LIB_STAGE     := $(BUILD_DIR)/usr/local
 PREFIX        ?= /usr/local
 VIM_SRC       := $(CURDIR)/third_party/vim
 
-LINK_FILES    := .vimrc .ideavimrc .vim/coc-settings.json
+LINK_FILES    := .vimrc .ideavimrc .vim/coc-settings.json .vim/plugin/wl_clipboard.vim
 LINKS         := $(addprefix $(HOME)/,$(LINK_FILES))
 
 build: $(VIM_SRC)/.git
@@ -46,5 +46,5 @@ init: link
 		curl -fLo "$$plug" --create-dirs \
 		    https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim; \
 	fi
-	@mkdir -p $(HOME)/.vim
+	@mkdir -p $(HOME)/.vim/plugin
 	@ln -sf $(CURDIR)/coc-settings.json $(HOME)/.vim/coc-settings.json

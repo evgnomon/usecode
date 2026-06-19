@@ -26,7 +26,7 @@ source ~/.bashrc
 make play
 
 cd ../workflows
-sudo make install
+sudo make install PREFIX=/usr/local
 
 source ~/.bashrc
 cd ~/src/github.com/evgnomon/usecode
