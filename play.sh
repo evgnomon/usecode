@@ -29,3 +29,8 @@ cd ../workflows
 sudo make install
 
 source ~/.bashrc
+cd ~/src/github.com/evgnomon/usecode
+
+make
+sudo make install
+make link
