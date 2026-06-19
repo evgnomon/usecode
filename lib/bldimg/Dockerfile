@@ -65,7 +65,7 @@ RUN curl -fsSL https://github.com/cli/cli/releases/download/v${GH_CLI_VERSION}/g
 RUN go install github.com/golangci/golangci-lint/cmd/golangci-lint@${GOLANGCI_LINT_VERSION}
 
 # Install Zig
-RUN curl -fsSL https://ziglang.org/builds/zig-x86_64-linux-${ZIG_VERSION}.tar.xz -o - | tar --lzma -xv -C /opt
+RUN curl -fsSL https://ziglang.org/download/${ZIG_VERSION}/zig-x86_64-linux-${ZIG_VERSION}.tar.xz -o - | tar --lzma -xv -C /opt
 
 # Install Docker and jq
 RUN apt update && apt install -y docker.io jq
