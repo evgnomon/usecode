@@ -21,6 +21,9 @@ if [ ! -z "$ASK_BECOME_PASS" ]; then
   PLAYARGS="$PLAYARGS --ask-become-pass"
 fi
 
-source $HOME/.bashrc
+export PYENV_ROOT="$HOME/.pyenv"
+export PATH="$PYENV_ROOT/bin:$PATH"
+eval "$(pyenv init -)"
+. "$HOME/.cargo/env"
 
 ansible-playbook -i inventory.py -e ansible_python_interpreter=$HOME/.pyenv/shims/python3 $PLAYARGS main.yaml

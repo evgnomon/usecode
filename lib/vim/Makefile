@@ -1,19 +1,15 @@
 .PHONY: build clean install init update stage link unlink
 
-ROOT_DIR      ?= $(abspath $(CURDIR)/../../..)
-BUILD_DIR     ?= $(ROOT_DIR)/build
-LIB_BUILD_DIR := $(CURDIR)/build
-LIB_STAGE     := $(LIB_BUILD_DIR)/usr/local
+BUILD_DIR     := $(CURDIR)/build
+LIB_STAGE     := $(BUILD_DIR)/usr/local
 PREFIX        ?= /usr/local
-THIRD_PARTY   := $(ROOT_DIR)/third_party
-VIM_SRC       := $(THIRD_PARTY)/vim/vim
+VIM_SRC       := $(CURDIR)/third_party/vim
 
 LINK_FILES    := .vimrc .ideavimrc
 LINKS         := $(addprefix $(HOME)/,$(LINK_FILES))
 
 build: $(VIM_SRC)/.git
-	@cd $(VIM_SRC) && BUILD_DIR=$(LIB_BUILD_DIR) bash $(CURDIR)/build.sh
-	@$(MAKE) stage
+	@cd $(VIM_SRC) && BUILD_DIR=$(BUILD_DIR) bash $(CURDIR)/build.sh
 
 $(VIM_SRC)/.git:
 	@mkdir -p $(dir $(VIM_SRC))
@@ -23,12 +19,6 @@ update:
 	@git -C $(VIM_SRC) pull --ff-only
 
 stage:
-	@find $(LIB_BUILD_DIR) \( -type f -o -type l \) 2>/dev/null | while IFS= read -r src; do \
-		rel="$${src#$(LIB_BUILD_DIR)/}"; \
-		dest="$(BUILD_DIR)/$$rel"; \
-		mkdir -p "$$(dirname "$$dest")"; \
-		ln -srf "$$src" "$$dest"; \
-	done
 
 link: $(LINKS)
 
@@ -41,7 +31,7 @@ unlink:
 	done
 
 install:
-	@cp -a $(LIB_STAGE)/. $(PREFIX)/
+	@cp -r --preserve=mode $(LIB_STAGE)/. $(PREFIX)/
 
 clean:
 	@rm -rf $(LIB_STAGE)/bin/vim $(LIB_STAGE)/bin/vimdiff $(LIB_STAGE)/bin/vimtutor \
