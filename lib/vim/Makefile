@@ -3,7 +3,7 @@
 BUILD_DIR     := $(CURDIR)/build
 LIB_STAGE     := $(BUILD_DIR)/usr/local
 PREFIX        ?= /usr/local
-VIM_SRC       := $(CURDIR)/third_party/vim
+VIM_SRC       := $(CURDIR)/../../third_party/vim/vim
 
 LINK_FILES    := .vimrc .ideavimrc .vim/coc-settings.json .vim/plugin/wl_clipboard.vim
 LINKS         := $(addprefix $(HOME)/,$(LINK_FILES))
