@@ -7,7 +7,7 @@ IS_WSL2=$(grep -qi "microsoft" /proc/version 2>/dev/null && echo true || echo fa
 apt update && apt install -y git
 apt upgrade -y
 
-apt install -y make build-essential libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev curl libncurses5-dev libncursesw5-dev xz-utils tk-dev libffi-dev liblzma-dev hwdata pinentry-tty usbutils unzip libyaml-dev
+apt install -y make build-essential libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev curl libncurses5-dev libncursesw5-dev xz-utils tk-dev libffi-dev liblzma-dev hwdata pinentry-tty usbutils unzip libyaml-dev pkg-config libgdbm-dev libgdbm-compat-dev
 
 if [ "$IS_WSL2" != "true" ]; then
   apt install -y yubikey-manager scdaemon ykcs11 libpcsclite-dev swig pcscd libpam-u2f libpam-yubico

@@ -18,15 +18,21 @@ else
   git checkout ubuntu
 fi
 
-cd lib/configurator
+git submodule update --init --recursive
 
+cd lib/configurator
 sudo make prepare
 
 source ~/.bashrc
 make play
 
 cd ../workflows
+make
 sudo make install PREFIX=/usr/local
+
+cd ../python
+make
+sudo make install
 
 source ~/.bashrc
 cd ~/src/github.com/evgnomon/usecode
