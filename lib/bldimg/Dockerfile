@@ -1,4 +1,4 @@
-FROM debian:trixie AS python-builder
+FROM docker.io/library/debian:trixie AS python-builder
 
 ENV PYTHON_VERSION=3.14.3
 
@@ -25,7 +25,7 @@ RUN curl -fsSL https://www.python.org/ftp/python/${PYTHON_VERSION}/Python-${PYTH
     make install && \
     rm -rf /tmp/Python-${PYTHON_VERSION}
 
-FROM debian:trixie
+FROM docker.io/library/debian:trixie
 
 # Define environment variables for versions and paths
 ENV NODE_VERSION=v24.13.1 \
