@@ -239,5 +239,7 @@
         { "before": ["<left>"], "commands": [] },
         { "before": ["<right>"], "commands": [] }
     ],
-    "editor.cursorSurroundingLines": 0
+    "editor.cursorSurroundingLines": 0,
+    "chat.mcp.gallery.enabled": true,
+    "claudeCode.preferredLocation": "panel"
 }

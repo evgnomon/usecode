@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 set -e
 
@@ -20,5 +20,7 @@ fi
 if [ ! -z "$ASK_BECOME_PASS" ]; then
   PLAYARGS="$PLAYARGS --ask-become-pass"
 fi
+
+source $HOME/.bashrc
 
 ansible-playbook -i inventory.py -e ansible_python_interpreter=$HOME/.pyenv/shims/python3 $PLAYARGS main.yaml

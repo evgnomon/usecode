@@ -74,7 +74,7 @@ RUN apt update && apt install -y docker.io jq
 RUN /opt/python/bin/pip3 install ansible uv
 
 ENV ANSIBLE_COLLECTIONS_PATH=/opt/ansible/collections \
-    USECODE_VERSION=0.2.18 \
+    USECODE_VERSION=0.2.22 \
     EGET_VERSION=v1.3.4 \
     MKDEB_VERSION=0.3.0
 
