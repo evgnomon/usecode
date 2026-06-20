@@ -7,7 +7,7 @@ PYTHON_ARTIFACT := $(DIST_DIR)/usecode-$(VERSION).tar.gz
 PYPI_STAMP := $(STAMP_DIR)/usecode-$(VERSION).published
 VERSION_STAMP := $(STAMP_DIR)/usecode-$(VERSION).version
 
-.PHONY: all check build build-python install uninstall publish publish-pypi clean
+.PHONY: all check build build-python publish publish-pypi clean link unlink
 
 all: build
 
@@ -26,12 +26,6 @@ build-python: $(PYTHON_ARTIFACT)
 $(PYTHON_ARTIFACT): $(VERSION_STAMP)
 	uv build
 
-install: $(PYTHON_ARTIFACT)
-	uv tool install --reinstall $(PYTHON_ARTIFACT)
-
-uninstall:
-	uv tool uninstall usecode
-
 publish: publish-pypi
 
 publish-pypi: $(PYPI_STAMP)
@@ -40,6 +34,12 @@ $(PYPI_STAMP): $(PYTHON_ARTIFACT)
 	./scripts/publish-pypi.sh $(VERSION)
 	@mkdir -p $(STAMP_DIR)
 	touch $@
+
+link:
+	pip install --user -e .
+
+unlink:
+	pip uninstall -y usecode
 
 clean:
 	rm -rf $(DIST_DIR) $(STAMP_DIR)
