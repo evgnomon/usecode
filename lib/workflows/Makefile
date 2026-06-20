@@ -1,10 +1,8 @@
 .PHONY: build install clean
 
-build:
-	@$(MAKE) -C bin build
+PKGS:= bin fzurls mkdeb pg workd
 
-install:
-	@$(MAKE) -C bin install
-
-clean:
-	@$(MAKE) -C bin clean
+build install clean:
+	@for pkg in $(PKGS); do \
+		[ -f $$pkg/Makefile ] && $(MAKE) -C $$pkg $@ || true; \
+	done
