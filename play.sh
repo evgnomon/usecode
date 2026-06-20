@@ -34,6 +34,10 @@ cd ../python
 make
 sudo make install
 
+cd ../ppkgs
+make
+sudo make install
+
 source ~/.bashrc
 cd ~/src/github.com/evgnomon/usecode
 

@@ -5,6 +5,7 @@ NO_UPGRADE ?= 0
 STAMPS_DIR := .stamps
 BUILD_DIR  := $(CURDIR)/build
 PREFIX			:= $(BUILD_DIR)/usr/local
+PYTHON_VERSION ?= 3.14
 
 SPEC := .deb.jsonc
 VERSION := $(shell cat .deb.jsonc | jsonc | jq -r '.version')
@@ -36,7 +37,7 @@ $(STAMPS_DIR):
 $(PREFIX):
 	@mkdir -p $@
 
-PIPX_PKG:
+$(PIPX_PKG):
 	$(PYTHON) -m pip install --user pipx
 
 $(STAMPS_DIR)/pip-install: requirements.txt | $(STAMPS_DIR) $(PREFIX)
@@ -67,7 +68,7 @@ $(STAMPS_DIR)/pyenv-rehash: $(STAMPS_DIR)/compileall | $(STAMPS_DIR)
 	@touch $@
 
 install:
-	$(MAKE) NO_UPGRADE=1
+	@cp -dR --preserve=mode,timestamps,links $(BUILD_DIR)/usr/local/* /usr/local/
 
 upgrade:
 	$(MAKE) NO_UPGRADE=0

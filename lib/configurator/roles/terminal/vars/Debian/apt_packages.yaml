@@ -63,6 +63,7 @@ apt_packages:
     - libisofs-dev # Library for creating ISO 9660 filesystem images for CD/DVD/Blu-ray media
     - libisoburn-dev # Library for burning ISO 9660 filesystem images to optical media (CD/DVD/Blu-ray)
     - libburn-dev # Library for writing data to optical media (CD/DVD/Blu-ray) from Linux applications
+    - libglib2.0-bin # GLib utilities for working with GObject-based libraries and applications
 
   ubuntu:
     - mysql-client  # MySQL database client tools for connecting to MySQL servers
