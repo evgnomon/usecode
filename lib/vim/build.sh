@@ -24,6 +24,8 @@ if [ ! -f "$STAGE/bin/vim" ] || [ configure -nt "$STAGE/bin/vim" ]; then
         --with-python3-command="/usr/local/bin/python3" \
         --with-python3-config-dir="$PYTHON3_CONFIG_DIR" \
         --enable-cscope \
+        --with-x \
+        --enable-gui=gtk3 \
         --prefix="$PREFIX"
 fi
 

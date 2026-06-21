@@ -5,7 +5,7 @@ LIB_STAGE     := $(BUILD_DIR)/usr/local
 PREFIX        ?= /usr/local
 VIM_SRC       := $(CURDIR)/../../third_party/vim/vim
 
-LINK_FILES    := .vimrc .ideavimrc .vim/coc-settings.json .vim/plugin/wl_clipboard.vim
+LINK_FILES    := .vimrc .ideavimrc .vim/coc-settings.json
 LINKS         := $(addprefix $(HOME)/,$(LINK_FILES))
 
 build: $(VIM_SRC)/.git
