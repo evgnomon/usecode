@@ -91,3 +91,4 @@ zig-out
 *.css.map
 
 third_party
+*.tmp

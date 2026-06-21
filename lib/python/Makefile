@@ -113,7 +113,7 @@ dist:
 
 install: ## Copy Python files into DESTDIR/INSTALL_PREFIX
 	@mkdir -p $(DESTDIR)$(patsubst /%,%,$(INSTALL_PREFIX))
-	cp -aL --no-preserve=ownership --remove-destination $(LIB_BUILD_PREFIX)/. $(DESTDIR)$(patsubst /%,%,$(INSTALL_PREFIX))/
+	@cp -aL --no-preserve=ownership --remove-destination $(LIB_BUILD_PREFIX)/. $(DESTDIR)$(patsubst /%,%,$(INSTALL_PREFIX))/
 
 uninstall: ## Remove Python from DESTDIR/INSTALL_PREFIX
 	@rm -rf \

@@ -26,6 +26,10 @@ sudo make prepare
 source ~/.bashrc
 make play
 
+cd lib/jsonc
+make
+sudo make install
+
 cd ../workflows
 make
 sudo make install PREFIX=/usr/local

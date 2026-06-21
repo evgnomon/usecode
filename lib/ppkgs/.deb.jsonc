@@ -9,6 +9,7 @@
   "priority": "optional",
   "homepage": "https://github.com/evgnomon/usecode",
   "license": "HGL",
-  "root": "build"
+  "root": "build",
+  "tmpDir": "./.tmp"
 }
 
