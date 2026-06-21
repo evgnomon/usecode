@@ -1,4 +1,4 @@
-.PHONY: all build install link unlink publish clean
+.PHONY: all build install-galaxy link unlink publish clean
 
 NAMESPACE := $(shell awk '/^namespace:/ {print $$2}' galaxy.yml)
 NAME      := $(shell awk '/^name:/ {print $$2}' galaxy.yml)
@@ -18,7 +18,7 @@ $(ARTIFACT): galaxy.yml
 	sed -i 's/^version: .*/version: $(VERSION)/' galaxy.yml
 	ansible-galaxy collection build --force --output-path $(DIST_DIR)
 
-install: $(ARTIFACT)
+install-galaxy: $(ARTIFACT)
 	ansible-galaxy collection install --force $(ARTIFACT)
 
 link:

@@ -3,6 +3,7 @@ docker
 setuptools
 pynacl
 aiohttp
+ansible
 pipx
 pyyaml
 hcloud
