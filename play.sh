@@ -26,7 +26,7 @@ sudo make prepare
 source ~/.bashrc
 make play
 
-cd lib/jsonc
+cd ../jsonc
 make
 sudo make install
 
