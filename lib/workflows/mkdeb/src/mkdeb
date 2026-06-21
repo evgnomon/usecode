@@ -13,6 +13,7 @@
 #   -o, --output DIR          Output directory for .deb file (default: ./dist)
 #   -p, --prefix PREFIX       Installation prefix for docs (default: /usr)
 #   -s, --source DIR          Source directory (default: .)
+#   --tmp-dir DIR             Temp build directory (default: auto via mktemp; set to ./.tmp for local)
 #   --depends DEPS            Comma-separated list of dependencies
 #   --section SECTION         Package section (default: utils)
 #   --priority PRIORITY       Package priority (default: optional)
@@ -27,7 +28,7 @@
 #     "maintainer": "user@example.com", "depends": "libc6",
 #     "section": "utils", "priority": "optional",
 #     "homepage": "https://example.com", "license": "MIT",
-#     "root": "./pkg-root" }
+#     "root": "./pkg-root", "tmpDir": "./.tmp" }
 #   .deb.jsonc may contain comments (stripped via /usr/local/bin/jsonc).
 #   CLI arguments override values from these files.
 #   "root" specifies a directory whose contents are copied into the package
@@ -59,6 +60,7 @@ PKG_PRIORITY="optional"
 PKG_HOMEPAGE=""
 PKG_LICENSE="HGL"
 PKG_ROOT=""
+TMP_DIR=""
 
 # Helper functions
 log_info() {
@@ -127,6 +129,10 @@ parse_deb_json() {
     if [[ -z "$PKG_ROOT" && -n "$val" ]]; then
       PKG_ROOT="$val"
     fi
+    val=$(jq -r '.tmpDir // empty' <<<"$content") || true
+    if [[ -z "$TMP_DIR" && -n "$val" ]]; then
+      TMP_DIR="$val"
+    fi
 }
 
 # Detect system architecture and map to Debian arch
@@ -177,6 +183,10 @@ parse_args() {
                 ;;
             -s|--source)
                 SOURCE_DIR="$2"
+                shift 2
+                ;;
+            --tmp-dir)
+                TMP_DIR="$2"
                 shift 2
                 ;;
             --depends)
@@ -414,7 +424,13 @@ main() {
 
     # Create build directory
     local build_dir
-    build_dir=$(mktemp -d)
+    if [[ -n "$TMP_DIR" ]]; then
+        build_dir="$TMP_DIR"
+        rm -rf "$build_dir"
+        mkdir -p "$build_dir"
+    else
+        build_dir=$(mktemp -d)
+    fi
     # trap "rm -rf '$build_dir'" EXIT
 
     # Create Output Directory
