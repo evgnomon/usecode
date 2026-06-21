@@ -342,8 +342,15 @@ build_deb() {
     find "$build_dir" \( -perm -4000 -o -perm -2000 -o -perm -1000 \) \
         -exec chmod a-s,-t {} \;
 
-    # Build the package
-    dpkg-deb --build --root-owner-group "$build_dir" "$deb_file"
+    # Build the package — set TMPDIR so dpkg-deb compression uses the same
+    # space as the build tree rather than the (often small) system /tmp.
+    local dpkg_tmp
+    if [[ -n "$TMP_DIR" ]]; then
+        dpkg_tmp="$(dirname "$(realpath "$build_dir")")"
+    else
+        dpkg_tmp="$(dirname "$build_dir")"
+    fi
+    TMPDIR="$dpkg_tmp" dpkg-deb --build --root-owner-group "$build_dir" "$deb_file"
 
     log_success "Package created: $deb_file"
 
