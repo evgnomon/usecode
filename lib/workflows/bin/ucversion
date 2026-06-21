@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+branch="$(git rev-parse --abbrev-ref HEAD)"
+
+if [ "$branch" = "master" ]; then
+	tag="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+	if [ -n "$tag" ]; then
+		printf '%s\n' "${tag#v}"
+		exit 0
+	fi
+fi
+
+printf '%s\n' "$branch"
