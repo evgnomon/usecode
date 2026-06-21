@@ -69,6 +69,7 @@ $(STAMPS_DIR)/pyenv-rehash: $(STAMPS_DIR)/compileall | $(STAMPS_DIR)
 
 install:
 	@cp -dR --preserve=mode,timestamps,links $(BUILD_DIR)/usr/local/* /usr/local/
+	/sbin/ldconfig
 
 upgrade:
 	$(MAKE) NO_UPGRADE=0
