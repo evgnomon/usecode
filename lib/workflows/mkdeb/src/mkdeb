@@ -357,11 +357,11 @@ build_deb() {
     # Show package info
     echo ""
     log_info "Package information:"
-    dpkg-deb --info "$deb_file"
+    TMPDIR="$dpkg_tmp" dpkg-deb --info "$deb_file"
 
     echo ""
     log_info "Package contents:"
-    dpkg-deb --contents "$deb_file"
+    TMPDIR="$dpkg_tmp" dpkg-deb --contents "$deb_file"
 
     tree $build_dir
 
