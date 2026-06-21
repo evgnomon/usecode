@@ -22,6 +22,9 @@ stage:
 
 link: $(LINKS)
 
+$(HOME)/.vim:
+	@mkdir -p $@
+
 $(LINKS): $(HOME)/%: $(CURDIR)/%
 	@ln -sf $< $@
 
@@ -40,6 +43,7 @@ clean:
 	       $(VIM_SRC)/src/auto/config.h $(VIM_SRC)/src/auto/config.mk
 	@$(MAKE) -C $(VIM_SRC) clean 2>/dev/null || true
 
+init: | $(HOME)/.vim
 init: link
 	@plug="$(HOME)/.vim/autoload/plug.vim"; \
 	if [ ! -f "$$plug" ]; then \

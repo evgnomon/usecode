@@ -23,7 +23,7 @@ git submodule update --init --recursive
 cd lib/configurator
 sudo make prepare
 
-sudo apt autoremove
+sudo apt autoremove -y
 
 source ~/.bashrc
 make play
