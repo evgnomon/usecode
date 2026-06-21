@@ -44,6 +44,9 @@ cd ../ppkgs
 make
 sudo make install
 
+cd ../vim
+make init
+
 source ~/.bashrc
 cd ~/src/github.com/evgnomon/usecode
 
