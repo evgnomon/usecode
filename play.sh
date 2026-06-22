@@ -28,6 +28,7 @@ sudo apt autoremove -y
 source ~/.bashrc
 make play
 
+source ~/.bashrc
 cd ../jsonc
 make
 sudo make install
