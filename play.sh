@@ -28,6 +28,7 @@ sudo apt autoremove -y
 source ~/.bashrc
 make play
 
+export INTERACTIVE_INIT=
 source ~/.bashrc
 cd ../jsonc
 make
