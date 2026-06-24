@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export PATH=/home/$USER/.local/bin:/home/$USER/.rbenv/shims:/home/$USER/.rbenv/bin:/home/$USER/.local/libexec:/home/$USER/bin:/home/$USER/go/bin:/home/$USER/.cargo/bin:/home/$USER/.gem/bin:/home/$USER/.pyenv/shims:/home/$USER/.pyenv/bin:/home/$USER/.cache/blueprint/node/linux_x64/node_24.14.1/node-v24.14.1-linux-x64/bin:/home/$USER/.cargo/bin:/home/$USER/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games:/home/$USER/.dotnet/tools
+
 sudo apt update
 sudo apt upgrade -y
 sudo apt install -y git make
@@ -24,12 +26,8 @@ cd lib/configurator
 sudo make prepare
 
 sudo apt autoremove -y
-
-source ~/.bashrc
 make play
 
-export INTERACTIVE_INIT=
-source ~/.bashrc
 cd ../jsonc
 make
 sudo make install
@@ -49,7 +47,6 @@ sudo make install
 cd ../vim
 make init
 
-source ~/.bashrc
 cd ~/src/github.com/evgnomon/usecode
 
 make
