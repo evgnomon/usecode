@@ -7,6 +7,7 @@
     "csharp-lsp@claude-plugins-official": true
   },
   "effortLevel": "medium",
+  "tui": "fullscreen",
   "theme": "dark-ansi",
   "skipAutoPermissionPrompt": true
 }
