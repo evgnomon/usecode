@@ -8,7 +8,7 @@ STAGE="$BUILD_DIR$PREFIX"
 export CDPATH=
 export CFLAGS="-O3 -pipe -fno-plt -flto -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=1"
 export LDFLAGS="-rdynamic -Wl,-O1 -Wl,--as-needed -flto"
-export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=/usr/local/lib:${LD_LIBRARY_PATH:-}
 
 unset PYENV_VERSION
 unset PYENV_ROOT
