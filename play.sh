@@ -47,7 +47,9 @@ cd ../ppkgs
 make
 sudo make install
 
-mkdir /home/$USER/.vim
+if [[ ! -d "/home/$USER/.vim" ]]; then
+  mkdir /home/$USER/.vim
+fi
 cd ../vim
 make init
 
