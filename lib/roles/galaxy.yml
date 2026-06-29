@@ -1,6 +1,6 @@
 namespace: evgnomon
 name: usecode
-version: ubunutu
+version: ubuntu
 readme: README.md
 authors:
   - Hamed Ghasemzadeh <hg@evgnomon.org>

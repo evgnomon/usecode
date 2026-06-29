@@ -28,7 +28,9 @@ pip install --upgrade ansible pyyaml
 
 which python
 
-[ ! -f  ~/.cargo/bin/rustc ] && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+if [ ! -f ~/.cargo/bin/rustc ]; then
+	curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+fi
 
 eval $(cat "$HOME/.cargo/env")
-[ ! -d $HOME/.local/bin ] && mkdir -p $HOME/.local/bin
+mkdir -p $HOME/.local/bin
