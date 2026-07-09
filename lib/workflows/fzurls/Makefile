@@ -4,9 +4,9 @@ EXT_SRC_DIR = gnome-ext
 EXT_FILES = extension.js metadata.json
 INSTALLED_EXT_FILES = $(addprefix $(EXT_DIR)/,$(EXT_FILES))
 
-.PHONY: install uninstall
+.PHONY: link uninstall
 
-install: $(INSTALLED_EXT_FILES)
+link: $(INSTALLED_EXT_FILES)
 	gsettings set org.gnome.shell disable-user-extensions false
 	gnome-extensions enable $(EXT_UUID) 2>/dev/null || echo "Restart GNOME Shell, then run: gnome-extensions enable $(EXT_UUID)"
 

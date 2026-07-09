@@ -1,4 +1,4 @@
-FROM debian:trixie AS python-builder
+FROM docker.io/library/debian:trixie AS python-builder
 
 ENV PYTHON_VERSION=3.14.3
 
@@ -25,7 +25,7 @@ RUN curl -fsSL https://www.python.org/ftp/python/${PYTHON_VERSION}/Python-${PYTH
     make install && \
     rm -rf /tmp/Python-${PYTHON_VERSION}
 
-FROM debian:trixie
+FROM docker.io/library/debian:trixie
 
 # Define environment variables for versions and paths
 ENV NODE_VERSION=v24.13.1 \
@@ -65,7 +65,7 @@ RUN curl -fsSL https://github.com/cli/cli/releases/download/v${GH_CLI_VERSION}/g
 RUN go install github.com/golangci/golangci-lint/cmd/golangci-lint@${GOLANGCI_LINT_VERSION}
 
 # Install Zig
-RUN curl -fsSL https://ziglang.org/builds/zig-x86_64-linux-${ZIG_VERSION}.tar.xz -o - | tar --lzma -xv -C /opt
+RUN curl -fsSL https://ziglang.org/download/${ZIG_VERSION}/zig-x86_64-linux-${ZIG_VERSION}.tar.xz -o - | tar --lzma -xv -C /opt
 
 # Install Docker and jq
 RUN apt update && apt install -y docker.io jq
@@ -74,7 +74,7 @@ RUN apt update && apt install -y docker.io jq
 RUN /opt/python/bin/pip3 install ansible uv
 
 ENV ANSIBLE_COLLECTIONS_PATH=/opt/ansible/collections \
-    USECODE_VERSION=0.2.18 \
+    USECODE_VERSION=0.2.22 \
     EGET_VERSION=v1.3.4 \
     MKDEB_VERSION=0.3.0
 

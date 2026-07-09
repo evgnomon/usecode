@@ -1,4 +1,4 @@
-.PHONY: all ci deploy publish build version install link clean submodules
+.PHONY: all ci deploy publish build version install link clean submodules play
 
 $(eval $(shell ./scripts/ci_wrapper.sh --env 2>/dev/null))
 

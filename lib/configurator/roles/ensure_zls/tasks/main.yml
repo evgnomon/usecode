@@ -8,15 +8,16 @@
   git:
     repo: https://github.com/zigtools/zls.git
     dest: "{{ zls_repo }}"
-    version: master
+    version: "0.16.0"
     force: yes
     update: yes
+  register: zls_repo_result
 
 - name: Build zls
   command: zig build -Doptimize=ReleaseSafe
   args:
     chdir: "{{ zls_repo }}"
-  when: not zls_binary.stat.exists
+  when: not zls_binary.stat.exists or zls_repo_result.changed
 
 - name: Install zls binary to ~/.local/bin
   copy:
@@ -24,7 +25,7 @@
     dest: "{{ zls_bin }}"
     mode: '0755'
     remote_src: yes
-  when: not zls_binary.stat.exists
+  when: not zls_binary.stat.exists or zls_repo_result.changed
 
 - name: Verify zls installation
   command: "{{ zls_bin }} --version"

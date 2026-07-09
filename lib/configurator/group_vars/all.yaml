@@ -1,6 +1,7 @@
 ---
 blueprint_user: "{{ ansible_facts['user_id'] }}"
 go_latest_version: 1.21.6
+python_version: "3.14.3"
 home: "{{ lookup('env', 'HOME') }}"
 target_home: "{{ ansible_facts['env']['HOME'] }}"
 local_bin_path: "{{ target_home }}/.local/bin"
@@ -62,6 +63,7 @@ common_node_packages:
   - tsx
   - bash-language-server
   - sass
+  - wrangler
   - "@anthropic-ai/claude-code"
   - "@github/copilot"
   - '@google/gemini-cli'

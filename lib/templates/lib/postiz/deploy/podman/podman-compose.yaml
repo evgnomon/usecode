@@ -1,0 +1,59 @@
+version: "3.9"
+
+services:
+  postiz:
+    image: ghcr.io/gitroomhq/postiz-app:latest
+    container_name: ${TENANT}_${NAMESPACE}_${POD}_postiz
+    restart: unless-stopped
+    environment:
+      MAIN_URL: "https://${DOMAIN}"
+      FRONTEND_URL: "https://${DOMAIN}"
+      NEXT_PUBLIC_BACKEND_URL: "https://${DOMAIN}/api"
+      BACKEND_INTERNAL_URL: "http://localhost:3000"
+      JWT_SECRET: "${JWT_SECRET:-change-me-please-generate-a-long-random-secret}"
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-postiz}:${POSTGRES_PASSWORD:-postiz}@${TENANT}_${NAMESPACE}_${POD}_postiz_postgres:5432/${POSTGRES_DB:-postiz}"
+      REDIS_URL: "redis://${TENANT}_${NAMESPACE}_${POD}_postiz_redis:6379"
+      IS_GENERAL: "true"
+      DISABLE_REGISTRATION: "${DISABLE_REGISTRATION:-false}"
+      STORAGE_PROVIDER: "local"
+      UPLOAD_DIRECTORY: "/uploads"
+      NEXT_PUBLIC_UPLOAD_DIRECTORY: "/uploads"
+    volumes:
+      - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/postiz_data/config:/config
+      - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/postiz_data/uploads:/uploads
+    ports:
+      - "127.0.0.1:${PORT:-5000}:5000"
+    depends_on:
+      - postiz_postgres
+      - postiz_redis
+    networks:
+      - z-${TENANT}-${NAMESPACE}-${POD}
+      - z-${TENANT}
+
+  postiz_postgres:
+    image: docker.io/library/postgres:16
+    container_name: ${TENANT}_${NAMESPACE}_${POD}_postiz_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:-postiz}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-postiz}"
+      POSTGRES_DB: "${POSTGRES_DB:-postiz}"
+    volumes:
+      - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/postiz_data/postgres:/var/lib/postgresql/data
+    networks:
+      - z-${TENANT}-${NAMESPACE}-${POD}
+
+  postiz_redis:
+    image: docker.io/library/redis:7
+    container_name: ${TENANT}_${NAMESPACE}_${POD}_postiz_redis
+    restart: unless-stopped
+    volumes:
+      - /mnt/z/volumes/${TENANT}/${NAMESPACE}/${POD}/postiz_data/redis:/data
+    networks:
+      - z-${TENANT}-${NAMESPACE}-${POD}
+
+networks:
+  z-${TENANT}-${NAMESPACE}-${POD}:
+    external: true
+  z-${TENANT}:
+    external: true

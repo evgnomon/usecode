@@ -1,4 +1,4 @@
-.PHONY: all build install install-eget uninstall clean
+.PHONY: all build install install-eget bootstrap-playbook uninstall clean prepare
 
 EGET_VERSION ?= latest
 ROOT_DIR ?= $(abspath $(CURDIR)/../..)
@@ -7,6 +7,7 @@ BIN_DIR := $(BUILD_DIR)/usr/local/bin
 PREFIX ?= /usr/local
 INSTALL_DIR := $(PREFIX)/bin
 EGET ?= $(BIN_DIR)/eget
+STAMPS_DIR := $(CURDIR)/.stamps
 
 
 EGET_BINS := eget gh fd delta rg bat hugo rclone hcloud tflint gvproxy goose kompose csvlens yq
@@ -23,6 +24,25 @@ build: $(BUILD_BINS)
 
 install: $(INSTALL_BINS)
 
+prepare: $(STAMPS_DIR)/install-root.sh
+
+$(STAMPS_DIR)/install-root.sh:
+	$(CURDIR)/install-root.sh
+
+bootstrap-playbook: $(STAMPS_DIR)/install.sh
+
+play: bootstrap-playbook $(STAMPS_DIR)/play.sh
+
+$(STAMPS_DIR)/install.sh:
+	$(CURDIR)/install.sh
+	@mkdir -p $(STAMPS_DIR)
+	@touch $@
+
+$(STAMPS_DIR)/play.sh:
+	$(CURDIR)/play.sh
+	@mkdir -p $(STAMPS_DIR)
+	@touch $@
+
 $(INSTALL_DIR)/%: $(BIN_DIR)/%
 	@install -d $(INSTALL_DIR)
 	@install -m 0755 $(BIN_DIR)/$* $@
@@ -31,7 +51,15 @@ install-eget: $(EGET)
 
 $(EGET):
 	@mkdir -p $(BIN_DIR)
-	GOBIN=$(BIN_DIR) go install github.com/zyedidia/eget@$(EGET_VERSION)
+	@ARCH=$$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/'); \
+	TMPDIR=$$(mktemp -d); \
+	URL=$$(curl -s https://api.github.com/repos/zyedidia/eget/releases/latest \
+	  | grep browser_download_url \
+	  | grep "linux_$${ARCH}.tar.gz" \
+	  | cut -d'"' -f4); \
+	curl -sL "$$URL" | tar -xz -C $$TMPDIR; \
+	mv $$TMPDIR/*/eget $(BIN_DIR)/eget; \
+	rm -rf $$TMPDIR
 
 $(BIN_DIR)/gh: | $(EGET)
 	$(EGET) --to $(BIN_DIR) -a tar.gz cli/cli

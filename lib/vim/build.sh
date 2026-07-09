@@ -8,7 +8,7 @@ STAGE="$BUILD_DIR$PREFIX"
 export CDPATH=
 export CFLAGS="-O3 -pipe -fno-plt -flto -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=1"
 export LDFLAGS="-rdynamic -Wl,-O1 -Wl,--as-needed -flto"
-export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=/usr/local/lib:${LD_LIBRARY_PATH:-}
 
 unset PYENV_VERSION
 unset PYENV_ROOT
@@ -24,6 +24,8 @@ if [ ! -f "$STAGE/bin/vim" ] || [ configure -nt "$STAGE/bin/vim" ]; then
         --with-python3-command="/usr/local/bin/python3" \
         --with-python3-config-dir="$PYTHON3_CONFIG_DIR" \
         --enable-cscope \
+        --with-x \
+        --enable-gui=gtk3 \
         --prefix="$PREFIX"
 fi
 

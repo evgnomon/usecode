@@ -9,6 +9,11 @@ const libvirt = @import("libvirt.zig");
 const network = @import("network.zig");
 const ssh_conf = @import("ssh_conf.zig");
 
+pub const MountSpec = struct {
+    host_path: []const u8,
+    tag: []const u8,
+};
+
 pub const VMSpecs = struct {
     memory: u64 = 1024 * 1024, // in KiB
     vcpus: u32 = 2,
@@ -17,6 +22,7 @@ pub const VMSpecs = struct {
     image_path: ?[]const u8 = null,
     start: bool = true,
     wait_for_ip: bool = true,
+    mounts: []const MountSpec = &.{},
 };
 
 pub const VMError = error{
@@ -89,7 +95,7 @@ pub fn createVM(
         std.log.warn("Could not ensure cloud-init template: {}", .{err});
     };
 
-    const cloud_init_iso = try std.fmt.allocPrint(allocator, "/tmp/{s}-cloud-init.iso", .{domain_name});
+    const cloud_init_iso = try std.fmt.allocPrint(allocator, "{s}/{s}-cloud-init.iso", .{ cfg.vm_storage_path, domain_name });
     defer allocator.free(cloud_init_iso);
 
     std.log.info("Creating cloud-init ISO at {s}", .{cloud_init_iso});
@@ -211,9 +217,10 @@ pub fn deleteVM(
 }
 
 pub fn startVM(
-    _: std.Io,
+    io: std.Io,
     allocator: std.mem.Allocator,
     conn: *const libvirt.Connection,
+    cfg: *const config.Config,
     domain_name: []const u8,
 ) !void {
     const dom = try conn.lookupDomain(allocator, domain_name);
@@ -224,9 +231,61 @@ pub fn startVM(
         return;
     }
 
+    // Regenerate cloud-init ISO if referenced path is missing
+    const xml = dom.getXML(allocator) catch null;
+    if (xml) |x| {
+        defer allocator.free(x);
+        if (extractCdromPath(allocator, x)) |iso_path| {
+            defer allocator.free(iso_path);
+            const missing = blk: {
+                _ = std.Io.Dir.cwd().statFile(io, iso_path, .{}) catch {
+                    break :blk true;
+                };
+                break :blk false;
+            };
+            if (missing) {
+                std.log.info("Cloud-init ISO missing at '{s}', regenerating", .{iso_path});
+                const cloud_init_template = std.fs.path.join(allocator, &.{ cfg.cloud_init_template_path, "cloud-init-user-data.yaml" }) catch null;
+                if (cloud_init_template) |tmpl| {
+                    defer allocator.free(tmpl);
+                    ensureCloudInitTemplate(io, allocator, cfg, tmpl) catch |err| {
+                        std.log.warn("Could not ensure cloud-init template: {}", .{err});
+                    };
+                    cloudinit.createCloudInitISO(io, allocator, domain_name, tmpl, iso_path) catch |err| {
+                        std.log.warn("Could not regenerate cloud-init ISO: {}", .{err});
+                    };
+                }
+            }
+        } else |_| {}
+    }
+
     std.log.info("Starting domain '{s}'", .{domain_name});
     try dom.create();
     std.log.info("Domain '{s}' started", .{domain_name});
+}
+
+fn extractCdromPath(allocator: std.mem.Allocator, xml: []const u8) ![]const u8 {
+    const cdrom_marker = "device='cdrom'";
+    const pos = std.mem.indexOf(u8, xml, cdrom_marker) orelse return error.CdromPathNotFound;
+    const after_cdrom = xml[pos..];
+
+    const needle_sq = "<source file='";
+    if (std.mem.indexOf(u8, after_cdrom, needle_sq)) |idx| {
+        const path_start = idx + needle_sq.len;
+        if (std.mem.indexOfScalarPos(u8, after_cdrom, path_start, '\'')) |path_end| {
+            return allocator.dupe(u8, after_cdrom[path_start..path_end]);
+        }
+    }
+
+    const needle_dq = "<source file=\"";
+    if (std.mem.indexOf(u8, after_cdrom, needle_dq)) |idx| {
+        const path_start = idx + needle_dq.len;
+        if (std.mem.indexOfScalarPos(u8, after_cdrom, path_start, '"')) |path_end| {
+            return allocator.dupe(u8, after_cdrom[path_start..path_end]);
+        }
+    }
+
+    return error.CdromPathNotFound;
 }
 
 pub fn stopVM(
@@ -257,6 +316,32 @@ pub fn stopVM(
     std.log.info("Domain '{s}' stopped", .{domain_name});
 }
 
+pub fn restartVM(
+    io: std.Io,
+    allocator: std.mem.Allocator,
+    conn: *const libvirt.Connection,
+    cfg: *const config.Config,
+    domain_name: []const u8,
+    force: bool,
+) !void {
+    {
+        const dom = try conn.lookupDomain(allocator, domain_name);
+        defer dom.free();
+
+        if (dom.isActive()) {
+            if (force) {
+                std.log.info("Force stopping domain '{s}'", .{domain_name});
+            } else {
+                std.log.info("Stopping domain '{s}'", .{domain_name});
+            }
+            try dom.destroy();
+            std.log.info("Domain '{s}' stopped", .{domain_name});
+        }
+    }
+
+    try startVM(io, allocator, conn, cfg, domain_name);
+}
+
 pub fn getVMIP(
     allocator: std.mem.Allocator,
     conn: *const libvirt.Connection,
@@ -285,19 +370,20 @@ pub fn listVMs(
     _: std.Io,
     allocator: std.mem.Allocator,
     conn: *const libvirt.Connection,
+    all: bool,
 ) !void {
-    const domains = try conn.listDomains(allocator);
+    const domains = try conn.listDomains(allocator, all);
     defer {
         for (domains) |name| allocator.free(name);
         allocator.free(domains);
     }
 
     if (domains.len == 0) {
-        std.log.info("No running domains", .{});
+        std.log.info("No {s}domains", .{if (all) "" else "running "});
         return;
     }
 
-    std.log.info("Running domains:", .{});
+    std.log.info("{s}domains:", .{if (all) "All " else "Running "});
     for (domains) |name| {
         std.log.info("  {s}", .{name});
     }
@@ -317,6 +403,90 @@ pub fn showVMInfo(
 
     // const state = dom.getState() catch "unknown";
     // std.log.info("  State: {s}", .{@tagName(state)});
+}
+
+pub fn inspectVM(
+    _: std.Io,
+    allocator: std.mem.Allocator,
+    conn: *const libvirt.Connection,
+    domain_name: []const u8,
+) !void {
+    const dom = try conn.lookupDomain(allocator, domain_name);
+    defer dom.free();
+
+    std.log.info("Domain: {s}", .{domain_name});
+    std.log.info("  State:  {s}", .{if (dom.isActive()) "running" else "stopped"});
+
+    if (dom.getInfo()) |info| {
+        const ram_mib = info.memory_kib / 1024;
+        if (ram_mib >= 1024) {
+            std.log.info("  RAM:    {d} GiB", .{ram_mib / 1024});
+        } else {
+            std.log.info("  RAM:    {d} MiB", .{ram_mib});
+        }
+        std.log.info("  vCPUs:  {d}", .{info.vcpus});
+    } else |_| {
+        std.log.info("  RAM:    (unavailable)", .{});
+    }
+
+    const xml = dom.getXML(allocator) catch null;
+    if (xml) |x| {
+        defer allocator.free(x);
+        if (extractVdaDiskPath(allocator, x)) |disk_path| {
+            defer allocator.free(disk_path);
+            if (conn.getVolumeSizeByPath(allocator, disk_path)) |cap_bytes| {
+                const cap_gib = cap_bytes / (1024 * 1024 * 1024);
+                const cap_mib = cap_bytes / (1024 * 1024);
+                if (cap_gib > 0) {
+                    std.log.info("  Disk:   {d} GiB", .{cap_gib});
+                } else {
+                    std.log.info("  Disk:   {d} MiB", .{cap_mib});
+                }
+            } else |_| {
+                std.log.info("  Disk:   (unavailable)", .{});
+            }
+        } else |_| {
+            std.log.info("  Disk:   (unavailable)", .{});
+        }
+    }
+
+    if (dom.isActive()) {
+        const mac_addr = network.generateMACAddress(domain_name);
+        const ip = network.getIPAddress(&dom, allocator, &mac_addr, 1) catch null;
+        if (ip) |addr| {
+            defer allocator.free(addr);
+            std.log.info("  IP:     {s}", .{addr});
+        } else {
+            std.log.info("  IP:     (not available)", .{});
+        }
+    } else {
+        std.log.info("  IP:     (VM is stopped)", .{});
+    }
+}
+
+pub fn configVM(
+    allocator: std.mem.Allocator,
+    conn: *const libvirt.Connection,
+    domain_name: []const u8,
+    memory_kib: u64,
+) !void {
+    const dom = try conn.lookupDomain(allocator, domain_name);
+    defer dom.free();
+
+    const ram_mib = memory_kib / 1024;
+    if (ram_mib >= 1024) {
+        std.log.info("Setting memory of '{s}' to {d} GiB", .{ domain_name, ram_mib / 1024 });
+    } else {
+        std.log.info("Setting memory of '{s}' to {d} MiB", .{ domain_name, ram_mib });
+    }
+
+    const live_applied = try dom.setMemory(memory_kib);
+
+    if (dom.isActive() and !live_applied) {
+        std.log.info("Config updated. Restart the VM for the new memory to take effect.", .{});
+    } else {
+        std.log.info("Memory updated successfully.", .{});
+    }
 }
 
 pub fn createSnapshot(
@@ -502,7 +672,7 @@ pub fn forkVM(
         std.log.warn("Could not ensure cloud-init template: {}", .{err});
     };
 
-    const cloud_init_iso = try std.fmt.allocPrint(allocator, "/tmp/{s}-cloud-init.iso", .{dest_name});
+    const cloud_init_iso = try std.fmt.allocPrint(allocator, "{s}/{s}-cloud-init.iso", .{ cfg.vm_storage_path, dest_name });
     defer allocator.free(cloud_init_iso);
 
     std.log.info("Creating cloud-init ISO at {s}", .{cloud_init_iso});
@@ -544,6 +714,59 @@ pub fn forkVM(
     }
 }
 
+pub fn mountVM(
+    allocator: std.mem.Allocator,
+    conn: *const libvirt.Connection,
+    domain_name: []const u8,
+    mount: MountSpec,
+) !void {
+    const dom = try conn.lookupDomain(allocator, domain_name);
+    defer dom.free();
+
+    // virtiofs requires shared memory backing; patch the persistent XML if missing.
+    const domain_xml = try dom.getXML(allocator);
+    defer allocator.free(domain_xml);
+    if (std.mem.indexOf(u8, domain_xml, "access mode='shared'") == null) {
+        const insert_after = "</currentMemory>";
+        const patch =
+            "\n  <memoryBacking>\n    <source type='memfd'/>\n    <access mode='shared'/>\n  </memoryBacking>";
+        if (std.mem.indexOf(u8, domain_xml, insert_after)) |pos| {
+            const patched = try std.fmt.allocPrint(
+                allocator,
+                "{s}{s}{s}",
+                .{ domain_xml[0 .. pos + insert_after.len], patch, domain_xml[pos + insert_after.len ..] },
+            );
+            defer allocator.free(patched);
+            const new_dom = try libvirt.Domain.defineXML(conn, allocator, patched);
+            new_dom.free();
+            std.log.info("Updated domain '{s}' config to enable virtiofs shared memory.", .{domain_name});
+        }
+        if (dom.isActive()) {
+            std.log.err("Domain '{s}' must be restarted for shared memory to take effect. Run: zm stop {s} && zm start {s}", .{ domain_name, domain_name, domain_name });
+            return error.RestartRequired;
+        }
+    }
+
+    const fs_xml = try std.fmt.allocPrint(allocator,
+        "<filesystem type='mount' accessmode='passthrough'>\n" ++
+            "  <driver type='virtiofs'/>\n" ++
+            "  <source dir='{s}'/>\n" ++
+            "  <target dir='{s}'/>\n" ++
+            "</filesystem>",
+        .{ mount.host_path, mount.tag },
+    );
+    defer allocator.free(fs_xml);
+
+    try dom.attachDevice(allocator, fs_xml);
+
+    if (dom.isActive()) {
+        std.log.info("Mounted '{s}' as tag '{s}' in running domain '{s}'", .{ mount.host_path, mount.tag, domain_name });
+        std.log.info("Inside the VM, run: sudo mkdir -p /mnt/{s} && sudo mount -t virtiofs {s} /mnt/{s}", .{ mount.tag, mount.tag, mount.tag });
+    } else {
+        std.log.info("Mount '{s}' -> tag '{s}' added to domain '{s}'", .{ mount.host_path, mount.tag, domain_name });
+    }
+}
+
 fn ensureCloudInitTemplate(
     io: std.Io,
     allocator: std.mem.Allocator,
@@ -581,6 +804,28 @@ fn ensureCloudInitTemplate(
     };
 }
 
+fn generateFilesystemsXML(allocator: std.mem.Allocator, mounts: []const MountSpec) ![]const u8 {
+    if (mounts.len == 0) return allocator.dupe(u8, "");
+
+    var buf: std.ArrayList(u8) = .empty;
+    errdefer buf.deinit(allocator);
+
+    for (mounts) |mount| {
+        const entry = try std.fmt.allocPrint(allocator,
+            "    <filesystem type='mount' accessmode='passthrough'>\n" ++
+                "      <driver type='virtiofs'/>\n" ++
+                "      <source dir='{s}'/>\n" ++
+                "      <target dir='{s}'/>\n" ++
+                "    </filesystem>\n",
+            .{ mount.host_path, mount.tag },
+        );
+        defer allocator.free(entry);
+        try buf.appendSlice(allocator, entry);
+    }
+
+    return buf.toOwnedSlice(allocator);
+}
+
 fn generateDomainXML(
     allocator: std.mem.Allocator,
     domain_name: []const u8,
@@ -589,6 +834,9 @@ fn generateDomainXML(
     mac_addr: [17]u8,
     specs: VMSpecs,
 ) ![]const u8 {
+    const filesystems_xml = try generateFilesystemsXML(allocator, specs.mounts);
+    defer allocator.free(filesystems_xml);
+
     return std.fmt.allocPrint(allocator,
         \\<domain type='kvm'>
         \\  <name>{s}</name>
@@ -599,6 +847,10 @@ fn generateDomainXML(
         \\  </metadata>
         \\  <memory unit='KiB'>{d}</memory>
         \\  <currentMemory unit='KiB'>{d}</currentMemory>
+        \\  <memoryBacking>
+        \\    <source type='memfd'/>
+        \\    <access mode='shared'/>
+        \\  </memoryBacking>
         \\  <vcpu placement='static'>{d}</vcpu>
         \\  <resource>
         \\    <partition>/machine</partition>
@@ -780,7 +1032,7 @@ fn generateDomainXML(
         \\      <backend model='random'>/dev/urandom</backend>
         \\      <address type='pci' domain='0x0000' bus='0x06' slot='0x00' function='0x0'/>
         \\    </rng>
-        \\  </devices>
+        \\{s}  </devices>
         \\</domain>
-    , .{ domain_name, specs.memory, specs.memory, specs.vcpus, specs.machine, disk_path, iso_path, &mac_addr });
+    , .{ domain_name, specs.memory, specs.memory, specs.vcpus, specs.machine, disk_path, iso_path, &mac_addr, filesystems_xml });
 }

@@ -2,13 +2,10 @@
 
 # Getting Started
 
-Build `usecode` project with:
+Install `usecode` with a single command:
 
 ```bash
-git clone
-cd usecode
-make
-sudo make install
+bash <(curl -fsSL https://raw.githubusercontent.com/evgnomon/usecode/refs/heads/master/play.sh)
 ```
 
 Everything is ready in `/build` dir after build, you can run `usecode` with.

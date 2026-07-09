@@ -1,0 +1,13 @@
+---
+- name: Read total memory from /proc/meminfo
+  command: awk '/MemTotal/ { print int($2 / 1024) }' /proc/meminfo
+  register: _memtotal_mb
+  changed_when: false
+  tags:
+    - always
+
+- name: Set ansible_memtotal_mb fact
+  set_fact:
+    ansible_memtotal_mb: "{{ _memtotal_mb.stdout | int }}"
+  tags:
+    - always

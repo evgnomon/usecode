@@ -104,9 +104,10 @@ def check(c):
 
 @task
 def publish(c):
-    """Build documentation for production deployment."""
+    """Build and deploy documentation to Cloudflare Pages via Wrangler."""
     print("Building documentation for production...")
     clean(c)
     c.run(f"sphinx-build -W -b html {DOCS_SOURCE} {BUILD_DIR}", pty=True)
-    print("\nProduction build complete!")
-    print("Documentation ready for deployment in build/")
+    print("\nDeploying to Cloudflare Pages...")
+    c.run("wrangler pages deploy build", pty=True)
+    print("\nDeployment complete!")

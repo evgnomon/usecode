@@ -50,14 +50,16 @@
   args:
     chdir: "{{ llama_cpp_build_dir }}"
   changed_when: true
+  when: ansible_memtotal_mb | int >= llama_cpp_min_ram_mb | int
   tags:
     - llama-cpp
 
 - name: Build llama.cpp
-  shell: cmake --build . --config Release -j$(nproc)
+  shell: cmake --build . --config Release -j$(nproc --ignore=2)
   args:
     chdir: "{{ llama_cpp_build_dir }}"
   changed_when: true
+  when: ansible_memtotal_mb | int >= llama_cpp_min_ram_mb | int
   tags:
     - llama-cpp
 
@@ -67,6 +69,7 @@
     patterns: "llama-*"
     file_type: file
   register: llama_binaries
+  when: ansible_memtotal_mb | int >= llama_cpp_min_ram_mb | int
   tags:
     - llama-cpp
 
@@ -76,7 +79,8 @@
     dest: "{{ llama_bin_link_dir }}/{{ item.path | basename }}"
     state: link
     force: true
-  loop: "{{ llama_binaries.files }}"
+  loop: "{{ llama_binaries.files | default([]) }}"
+  when: ansible_memtotal_mb | int >= llama_cpp_min_ram_mb | int
   tags:
     - llama-cpp
 
@@ -85,11 +89,20 @@
   register: llama_version
   changed_when: false
   failed_when: false
+  when: ansible_memtotal_mb | int >= llama_cpp_min_ram_mb | int
   tags:
     - llama-cpp
 
 - name: Print version
   debug:
     msg: "llama.cpp installed: {{ llama_version.stdout }}"
+  when: ansible_memtotal_mb | int >= llama_cpp_min_ram_mb | int
+  tags:
+    - llama-cpp
+
+- name: Skip llama.cpp build (insufficient RAM)
+  debug:
+    msg: "Skipping llama.cpp build: {{ ansible_memtotal_mb }}MB RAM < {{ llama_cpp_min_ram_mb }}MB required"
+  when: ansible_memtotal_mb | int < llama_cpp_min_ram_mb | int
   tags:
     - llama-cpp

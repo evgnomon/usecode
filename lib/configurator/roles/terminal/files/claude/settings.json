@@ -2,10 +2,12 @@
   "permissions": {
     "defaultMode": "auto"
   },
+  "model": "sonnet",
   "enabledPlugins": {
     "csharp-lsp@claude-plugins-official": true
   },
   "effortLevel": "medium",
+  "tui": "fullscreen",
   "theme": "dark-ansi",
   "skipAutoPermissionPrompt": true
 }

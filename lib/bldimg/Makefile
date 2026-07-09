@@ -17,7 +17,7 @@ build: $(BUILD_STAMP)
 
 $(BUILD_STAMP): $(SOURCES)
 	@mkdir -p $(STAMP_DIR)
-	podman build -t $(IMAGE) .
+	podman build --cgroup-manager=cgroupfs -t $(IMAGE) .
 	@touch $@
 
 publish: $(PUBLISH_STAMP)

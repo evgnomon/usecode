@@ -45,7 +45,9 @@
 - name: Apply sysctl settings
   become: true
   ansible.builtin.command: /usr/sbin/sysctl -p
-  when: ansible_facts['os_family'] == "Debian"
+  when:
+    - ansible_facts['os_family'] == "Debian"
+    - not wsl2_kernel | default(false)
   tags:
     - dotfiles
 
@@ -62,10 +64,31 @@
     - ansible_facts['os_family'] == "Debian"
     - face_file_stat.stat.exists
 
+- name: Check if gsettings is available
+  command: which gsettings
+  register: gsettings_check
+  failed_when: false
+  changed_when: false
+  tags:
+    - dotfiles
+
+- name: Check if GNOME app-switcher schema is available
+  command: gsettings list-schemas
+  register: gsettings_schemas
+  failed_when: false
+  changed_when: false
+  when: gsettings_check.rc == 0
+  tags:
+    - dotfiles
+
 - name: Set app switcher to current workspace only
   command: gsettings set org.gnome.shell.app-switcher current-workspace-only true
   when:
     - ansible_facts['os_family'] == "Debian"
+    - not wsl2_kernel | default(false)
+    - gsettings_check.rc == 0
+    - gsettings_schemas.stdout is defined
+    - "'org.gnome.shell.app-switcher' in gsettings_schemas.stdout"
   tags:
     - dotfiles
 
@@ -95,6 +118,54 @@
     - dict_item in apt_packages
   vars:
     dict_item: "{{ ansible_facts['distribution'] | lower }}"
+  tags:
+    - apt
+
+- name: Install hardware packages using Apt
+  become: true
+  ansible.builtin.apt:
+    name: "{{ apt_packages.hardware }}"
+    state: present
+  when:
+    - ansible_facts['os_family'] == "Debian"
+  tags:
+    - apt
+
+- name: Install hardware packages using Apt for specific distribution
+  become: true
+  ansible.builtin.apt:
+    name: "{{ apt_packages[dict_item] }}"
+    state: present
+  when:
+    - ansible_facts['os_family'] == "Debian"
+    - dict_item in apt_packages
+  vars:
+    dict_item: "{{ ansible_facts['distribution'] | lower }}_hardware"
+  tags:
+    - apt
+
+- name: Install desktop packages using Apt (non-WSL2 only)
+  become: true
+  ansible.builtin.apt:
+    name: "{{ apt_packages.desktop }}"
+    state: present
+  when:
+    - ansible_facts['os_family'] == "Debian"
+    - not wsl2_kernel | default(false)
+  tags:
+    - apt
+
+- name: Install desktop packages using Apt for specific distribution (non-WSL2 only)
+  become: true
+  ansible.builtin.apt:
+    name: "{{ apt_packages[dict_item] }}"
+    state: present
+  when:
+    - ansible_facts['os_family'] == "Debian"
+    - not wsl2_kernel | default(false)
+    - dict_item in apt_packages
+  vars:
+    dict_item: "{{ ansible_facts['distribution'] | lower }}_desktop"
   tags:
     - apt
 

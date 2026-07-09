@@ -23,6 +23,14 @@ pub const LibvirtError = error{
     VolumeResizeFailed,
     VolumeCreateFailed,
     PoolCreateFailed,
+    AttachDeviceFailed,
+    GetInfoFailed,
+    SetMemoryFailed,
+};
+
+pub const DomainInfo = struct {
+    memory_kib: u64,
+    vcpus: u32,
 };
 
 fn xmlEscape(allocator: std.mem.Allocator, input: []const u8) ![]const u8 {
@@ -78,25 +86,40 @@ pub const Connection = struct {
         }
     }
 
-    pub fn listDomains(self: *const Connection, allocator: std.mem.Allocator) ![][]const u8 {
-        const max_ids: i32 = 128;
-        var ids: [128]i32 = undefined;
-        const n = c.virConnectListDomains(self.conn, &ids, max_ids);
-
-        if (n < 0) return error.ListFailed;
-
+    pub fn listDomains(self: *const Connection, allocator: std.mem.Allocator, all: bool) ![][]const u8 {
         var domains: std.ArrayList([]const u8) = .empty;
         errdefer {
             for (domains.items) |name| allocator.free(name);
             domains.deinit(allocator);
         }
 
-        for (ids[0..@intCast(n)]) |id| {
-            if (c.virDomainLookupByID(self.conn, id)) |d| {
-                defer _ = c.virDomainFree(d);
-                const name = c.virDomainGetName(d);
-                const name_copy = try allocator.dupe(u8, mem.span(name));
-                try domains.append(allocator, name_copy);
+        if (all) {
+            var doms: [*c]c.virDomainPtr = undefined;
+            const n = c.virConnectListAllDomains(self.conn, &doms, 0);
+            if (n < 0) return error.ListFailed;
+            defer c.free(@ptrCast(doms));
+
+            for (0..@intCast(n)) |i| {
+                defer _ = c.virDomainFree(doms[i]);
+                const name = c.virDomainGetName(doms[i]);
+                const active = c.virDomainIsActive(doms[i]);
+                const status: []const u8 = if (active > 0) "running" else "stopped";
+                const name_line = try std.fmt.allocPrint(allocator, "{s} ({s})", .{ mem.span(name), status });
+                try domains.append(allocator, name_line);
+            }
+        } else {
+            const max_ids: i32 = 128;
+            var ids: [128]i32 = undefined;
+            const n = c.virConnectListDomains(self.conn, &ids, max_ids);
+            if (n < 0) return error.ListFailed;
+
+            for (ids[0..@intCast(n)]) |id| {
+                if (c.virDomainLookupByID(self.conn, id)) |d| {
+                    defer _ = c.virDomainFree(d);
+                    const name = c.virDomainGetName(d);
+                    const name_copy = try allocator.dupe(u8, mem.span(name));
+                    try domains.append(allocator, name_copy);
+                }
             }
         }
 
@@ -204,6 +227,23 @@ pub const Connection = struct {
         };
 
         return Domain{ .dom = dom };
+    }
+
+    pub fn getVolumeSizeByPath(self: *const Connection, allocator: std.mem.Allocator, path: []const u8) !u64 {
+        const c_path = try allocator.dupeZ(u8, path);
+        defer allocator.free(c_path);
+
+        const vol = c.virStorageVolLookupByPath(self.conn, c_path) orelse {
+            return LibvirtError.VolumeLookupFailed;
+        };
+        defer _ = c.virStorageVolFree(vol);
+
+        var vol_info: c.virStorageVolInfo = undefined;
+        if (c.virStorageVolGetInfo(vol, &vol_info) < 0) {
+            return LibvirtError.VolumeLookupFailed;
+        }
+
+        return @intCast(vol_info.capacity);
     }
 
     pub fn lookUpPool(self: *const Connection, allocator: std.mem.Allocator, name: []const u8) !Pool {
@@ -358,6 +398,17 @@ pub const Domain = struct {
         return c.virDomainIsActive(self.dom) == 1;
     }
 
+    pub fn getInfo(self: *const Domain) !DomainInfo {
+        var info: c.virDomainInfo = undefined;
+        if (c.virDomainGetInfo(self.dom, &info) < 0) {
+            return LibvirtError.GetInfoFailed;
+        }
+        return DomainInfo{
+            .memory_kib = @intCast(info.maxMem),
+            .vcpus = @intCast(info.nrVirtCpu),
+        };
+    }
+
     pub fn createSnapshot(self: *const Domain, allocator: std.mem.Allocator, name: []const u8) !Snapshot {
         const escaped_name = try xmlEscape(allocator, name);
         defer allocator.free(escaped_name);
@@ -454,6 +505,51 @@ pub const Domain = struct {
         };
         defer c.free(raw);
         return allocator.dupe(u8, mem.span(raw));
+    }
+
+    /// Attaches a device described by `xml` to the domain.
+    /// If the domain is active the device is attached live and the persistent config is updated.
+    /// If the domain is inactive only the persistent config is updated.
+    pub fn attachDevice(self: *const Domain, allocator: std.mem.Allocator, xml: []const u8) !void {
+        const c_xml = try allocator.dupeZ(u8, xml);
+        defer allocator.free(c_xml);
+
+        const live_flag: c_uint = if (self.isActive())
+            c.VIR_DOMAIN_AFFECT_LIVE | c.VIR_DOMAIN_AFFECT_CONFIG
+        else
+            c.VIR_DOMAIN_AFFECT_CONFIG;
+
+        if (c.virDomainAttachDeviceFlags(self.dom, c_xml, live_flag) < 0) {
+            if (c.virGetLastError()) |err| {
+                std.log.err("Failed to attach device: {s}", .{err.*.message});
+            }
+            return LibvirtError.AttachDeviceFailed;
+        }
+    }
+
+    /// Sets the memory allocation for the domain.
+    /// Always updates the persistent config. If the domain is running, also attempts
+    /// a live update (requires guest balloon driver); returns true if live update
+    /// succeeded so callers can tell the user whether a restart is needed.
+    pub fn setMemory(self: *const Domain, memory_kib: u64) !bool {
+        const mem_kib: c_ulong = @intCast(memory_kib);
+        const config_flag: c_uint = c.VIR_DOMAIN_AFFECT_CONFIG;
+        const config_max_flag: c_uint = c.VIR_DOMAIN_AFFECT_CONFIG | c.VIR_DOMAIN_MEM_MAXIMUM;
+
+        if (c.virDomainSetMemoryFlags(self.dom, mem_kib, config_max_flag) < 0) {
+            return LibvirtError.SetMemoryFailed;
+        }
+        if (c.virDomainSetMemoryFlags(self.dom, mem_kib, config_flag) < 0) {
+            return LibvirtError.SetMemoryFailed;
+        }
+
+        if (!self.isActive()) return true;
+
+        const live_flag: c_uint = c.VIR_DOMAIN_AFFECT_LIVE;
+        const live_max_flag: c_uint = c.VIR_DOMAIN_AFFECT_LIVE | c.VIR_DOMAIN_MEM_MAXIMUM;
+        if (c.virDomainSetMemoryFlags(self.dom, mem_kib, live_max_flag) < 0) return false;
+        if (c.virDomainSetMemoryFlags(self.dom, mem_kib, live_flag) < 0) return false;
+        return true;
     }
 
     /// Creates an external, disk-only snapshot at `snapshot_path` for disk `disk_device`
