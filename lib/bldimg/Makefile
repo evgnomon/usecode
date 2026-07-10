@@ -1,8 +1,8 @@
 REGISTRY ?= ghcr.io
 OWNER ?= evgnomon
-NAME ?= ark
+IMAGE_NAME ?= ark
 TAG ?= latest
-IMAGE ?= $(shell printf '%s' "$(REGISTRY)/$(OWNER)/$(NAME):$(TAG)" | tr '[:upper:]' '[:lower:]')
+IMAGE ?= $(shell printf '%s' "$(REGISTRY)/$(OWNER)/$(IMAGE_NAME):$(TAG)" | tr '[:upper:]' '[:lower:]')
 
 ROOT_DIR ?= $(abspath $(CURDIR)/../..)
 BUILD_DIR ?= $(ROOT_DIR)/build
