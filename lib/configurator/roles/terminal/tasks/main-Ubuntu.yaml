@@ -1,9 +1,35 @@
-- name: Install Microsoft Repo
+- name: Install Microsoft 2025 GPG key
   become: true
   shell: |
-    curl -sSL https://packages.microsoft.com/config/ubuntu/{{ ansible_facts['distribution_version'] }}/packages-microsoft-prod.deb -o /tmp/packages-microsoft-prod.deb
-    dpkg -i /tmp/packages-microsoft-prod.deb
-    rm -f /tmp/packages-microsoft-prod.deb
+    install -d -m 0755 /etc/apt/keyrings
+    curl -fsSL https://packages.microsoft.com/keys/microsoft-2025.asc -o /etc/apt/keyrings/microsoft-2025.asc
+  args:
+    creates: /etc/apt/keyrings/microsoft-2025.asc
+  tags:
+    - always
+
+- name: Install Microsoft GPG key
+  become: true
+  shell: |
+    curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/microsoft.gpg
+  args:
+    creates: /etc/apt/trusted.gpg.d/microsoft.gpg
+  tags:
+    - always
+
+- name: Remove duplicate dotnetdev.list
+  become: true
+  ansible.builtin.file:
+    path: /etc/apt/sources.list.d/dotnetdev.list
+    state: absent
+  tags:
+    - always
+
+- name: Remove packages-microsoft-prod.list
+  become: true
+  ansible.builtin.file:
+    path: /etc/apt/sources.list.d/packages-microsoft-prod.list
+    state: absent
   tags:
     - always
 
