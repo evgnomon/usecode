@@ -15,11 +15,11 @@ cd ~/src/github.com/evgnomon
 if [ ! -d "usecode" ]; then
   git clone https://github.com/evgnomon/usecode.git
   cd usecode
-  git checkout ubuntu
+  git checkout master
 else
   cd usecode
   git pull
-  git checkout ubuntu
+  git checkout master
 fi
 
 git submodule update --init --recursive
