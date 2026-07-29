@@ -33,6 +33,22 @@
   tags:
     - always
 
+- name: Remove stale microsoft-ubuntu-resolute-prod.list
+  become: true
+  ansible.builtin.file:
+    path: /etc/apt/sources.list.d/microsoft-ubuntu-resolute-prod.list
+    state: absent
+  tags:
+    - always
+
+- name: Configure Azure CLI repository
+  become: true
+  ansible.builtin.copy:
+    content: "deb [arch=amd64 signed-by=/etc/apt/trusted.gpg.d/microsoft.gpg] https://packages.microsoft.com/repos/azure-cli/ noble main\n"
+    dest: /etc/apt/sources.list.d/azure.list
+  tags:
+    - always
+
 - name: Install Microsoft VS Code Repository
   become: true
   shell: |
