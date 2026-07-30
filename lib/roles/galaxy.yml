@@ -1,6 +1,6 @@
 namespace: evgnomon
 name: usecode
-version: ubuntu
+version: 0.2.22
 readme: README.md
 authors:
   - Hamed Ghasemzadeh <hg@evgnomon.org>

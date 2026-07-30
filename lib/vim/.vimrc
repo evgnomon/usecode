@@ -32,6 +32,9 @@ let mapleader=","             " Set the leader key to a comma, allowing custom k
 set background=dark             " Optimize colors for a dark background.
 set belloff=all               " Disable all audible and visual bells, preventing distractions from error notifications.
 
+
+au BufNewFile,BufRead *.html.jinja2 setf htmldjango
+
 :augroup numbertoggle
   :  autocmd!
   :  autocmd BufEnter,FocusGained,InsertLeave * set relativenumber
@@ -132,6 +135,26 @@ autocmd FileType terraform                                  noremap <C-l> :Terra
 " Run Command
 autocmd FileType rust                                       noremap <C-k><C-r> :CocCommand rust-analyzer.testCurrent<CR>
 
+" djLint for Jinja/Django templates
+function! s:DjlintFormat() abort
+  if &modified
+    silent write
+  endif
+  let l:view = winsaveview()
+  let l:out = system('djlint ' . shellescape(expand('%:p'))
+       \ . ' --reformat --profile jinja --indent ' . &shiftwidth)
+  " djLint exits 1 when it *did* reformat, so check for a real error instead
+  if l:out =~? '\v(error|traceback|not found)'
+    echohl ErrorMsg | echom substitute(l:out, '\n', ' ', 'g') | echohl None
+    return
+  endif
+  silent edit!
+  call winrestview(l:view)
+endfunction
+
+autocmd FileType htmldjango,jinja,jinja2
+      \ nnoremap <buffer><silent> <C-l> :call <SID>DjlintFormat()<CR>
+
 " Commands
 map <C-A> :CocCommand<CR>
 map <leader>kp :echo @% <CR>
@@ -190,6 +213,7 @@ endfunction
 inoremap <silent><expr> <c-@> coc#refresh()
 inoremap <silent><expr> <CR> pumvisible() ? coc#_select_confirm() : "\<CR>"
 nmap <S-F6> <Plug>(coc-rename)
+
 
 
 " Remap <C-f> and <C-b> to scroll float windows/popups
