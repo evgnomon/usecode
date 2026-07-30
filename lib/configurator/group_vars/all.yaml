@@ -54,6 +54,7 @@ common_pipx_packages:
   - poethepoet
   - yt-dlp
   - llm
+  - djlint
 
 common_node_packages:
   - npm
