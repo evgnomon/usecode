@@ -75,7 +75,9 @@ alias vv="vim \$(fd . . --type file --type symlink | fzf --preview='bat --color=
 alias v=vim
 alias g=git
 alias gg=goose
-alias a=claude
+alias cc=claude
+alias oc=opencode
+alias co=copilot
 alias i=invoke
 alias c='cd ~ && claude --disallowedTools "Read,Edit,Write,Bash,Glob,Grep"'
 alias mkpass="bp vault gen pass"
