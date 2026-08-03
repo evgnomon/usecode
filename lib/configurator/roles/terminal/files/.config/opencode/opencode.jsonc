@@ -1,0 +1,19 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "rasanak-bot": {
+      "type": "local",
+      "command": [
+        "uv",
+        "run",
+        "--directory",
+        "/home/evgnomon/src/github.com/evgnomon/rasanak/lib/bot",
+        "rasanak-bot"
+      ],
+      "environment": {
+        "RASANAK_BOT_API_BASE_URL": "https://localhost:4430/api"
+      },
+      "enabled": true
+    }
+  }
+}
