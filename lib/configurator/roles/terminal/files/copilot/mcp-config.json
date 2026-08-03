@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "rasanak-bot": {
+      "tools": [
+        "*"
+      ],
+      "type": "local",
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "$HOME/src/github.com/evgnomon/rasanak/lib/bot",
+        "rasanak-bot"
+      ]
+    }
+  }
+}

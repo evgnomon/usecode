@@ -7,7 +7,7 @@
         "uv",
         "run",
         "--directory",
-        "/home/evgnomon/src/github.com/evgnomon/rasanak/lib/bot",
+        "{env:HOME}/src/github.com/evgnomon/rasanak/lib/bot",
         "rasanak-bot"
       ],
       "environment": {

@@ -21,6 +21,8 @@ dotfiles:
   - .bash_aliases
   - .tmux.conf
   - claude/settings.json:.claude/settings.json
+  - copilot/settings.json:.copilot/settings.json
+  - copilot/mcp-config.json:.copilot/mcp-config.json
 
 root_dotfiles:
   - .bashrc
