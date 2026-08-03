@@ -67,9 +67,8 @@ common_node_packages:
   - wrangler
   - "@anthropic-ai/claude-code"
   - "@github/copilot"
-  - '@google/gemini-cli'
+  - "opencode-ai"
   - "azure-functions-core-tools@4"
-  - "@continuedev/cli"
 
 common_git_repos:
   - url: ssh://git@github.com/evgnomon/usecode.git
