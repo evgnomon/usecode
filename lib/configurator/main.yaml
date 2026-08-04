@@ -4,6 +4,7 @@
     - localhost
     - all
   gather_facts: false
+  environment: "{{ proxy_env }}"
   roles:
     - charts
   tags:

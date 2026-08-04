@@ -3,6 +3,7 @@
   hosts:
     - all
     - localhost
+  environment: "{{ proxy_env }}"
   roles:
     - python
 
@@ -11,6 +12,7 @@
   hosts:
     - all
     - localhost
+  environment: "{{ proxy_env }}"
   roles:
     - ensure_rust
   tags:
@@ -21,6 +23,7 @@
   hosts:
     - all
     - localhost
+  environment: "{{ proxy_env }}"
   roles:
     - ensure_csharp_ls
   tags:
@@ -31,6 +34,7 @@
   hosts:
     - all
     - localhost
+  environment: "{{ proxy_env }}"
   roles:
     - goose
   tags:
@@ -41,5 +45,6 @@
   hosts:
     - all
     - localhost
+  environment: "{{ proxy_env }}"
   roles:
     - digitalocean_galaxy_collection

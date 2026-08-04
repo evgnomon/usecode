@@ -98,6 +98,35 @@
   tags:
     - always
 
+- name: Probe optional apt repositories
+  environment: "{{ proxy_env }}"
+  ansible.builtin.uri:
+    url: "{{ item.url }}"
+    method: HEAD
+    timeout: 10
+  register: optional_apt_repo_probe
+  failed_when: false
+  loop: "{{ optional_apt_repos }}"
+  loop_control:
+    label: "{{ item.list }}"
+  when: ansible_facts['os_family'] == "Debian"
+  tags:
+    - always
+
+- name: Drop unreachable optional apt repositories
+  become: true
+  ansible.builtin.file:
+    path: "/etc/apt/sources.list.d/{{ item.item.list }}"
+    state: absent
+  loop: "{{ optional_apt_repo_probe.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.list }}"
+  when:
+    - ansible_facts['os_family'] == "Debian"
+    - item.status | default(0) != 200
+  tags:
+    - always
+
 - name: Install packages using Apt
   become: true
   ansible.builtin.apt:

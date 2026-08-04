@@ -11,6 +11,25 @@ blueprint_config_file_exists: "{{ lookup('fileglob', blueprint_config_file) | le
 
 dev_container: false
 
+# become/sudo drops the caller's proxy variables, which breaks any network task
+# on a proxied network. Re-export them explicitly where they are needed.
+# Empty when no proxy is configured, in which case curl & friends ignore them.
+proxy_env:
+  http_proxy: "{{ lookup('env', 'http_proxy') }}"
+  https_proxy: "{{ lookup('env', 'https_proxy') }}"
+  no_proxy: "{{ lookup('env', 'no_proxy') }}"
+  HTTP_PROXY: "{{ lookup('env', 'http_proxy') }}"
+  HTTPS_PROXY: "{{ lookup('env', 'https_proxy') }}"
+  NO_PROXY: "{{ lookup('env', 'no_proxy') }}"
+
+# A single unreachable source makes apt fail the whole cache refresh, and some
+# networks (e.g. filtering corporate proxies) block these hosts outright. Probe
+# them first and drop the ones that cannot be fetched instead of failing every
+# package task. They come back automatically on a network that allows them.
+optional_apt_repos:
+  - list: mullvad.list
+    url: https://repository.mullvad.net/deb/stable/dists/stable/InRelease
+
 common_pip_packages:
   - pip
   - docker

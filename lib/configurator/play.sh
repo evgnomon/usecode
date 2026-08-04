@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -e
+set -e -x
 
 IS_WSL2=$(grep -qi "microsoft" /proc/version 2>/dev/null && echo true || echo false)
 PYTHON_VERSION="3.14.3"
