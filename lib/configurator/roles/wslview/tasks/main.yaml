@@ -1,0 +1,27 @@
+---
+- name: Link wslview to ~/.local/bin
+  ansible.builtin.file:
+    src: "{{ role_path }}/files/wslview"
+    dest: "{{ local_bin_path }}/wslview"
+    state: link
+    force: true
+    mode: '0755'
+  tags:
+    - wslview
+
+- name: Ensure ~/.bashrc.d directory exists
+  ansible.builtin.file:
+    path: "{{ ansible_facts['env']['HOME'] }}/.bashrc.d"
+    state: directory
+    mode: '0755'
+  tags:
+    - wslview
+
+- name: Set BROWSER to wslview
+  ansible.builtin.copy:
+    dest: "{{ ansible_facts['env']['HOME'] }}/.bashrc.d/wslview.sh"
+    mode: '0644'
+    content: |
+      command -v wslview >/dev/null 2>&1 && export BROWSER=wslview
+  tags:
+    - wslview

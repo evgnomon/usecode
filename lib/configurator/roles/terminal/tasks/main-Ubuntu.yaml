@@ -1,5 +1,6 @@
 - name: Install Microsoft 2025 GPG key
   become: true
+  environment: "{{ proxy_env }}"
   shell: |
     install -d -m 0755 /etc/apt/keyrings
     curl -fsSL https://packages.microsoft.com/keys/microsoft-2025.asc -o /etc/apt/keyrings/microsoft-2025.asc
@@ -10,6 +11,7 @@
 
 - name: Install Microsoft GPG key
   become: true
+  environment: "{{ proxy_env }}"
   shell: |
     curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/microsoft.gpg
   args:
@@ -51,6 +53,7 @@
 
 - name: Install Microsoft VS Code Repository
   become: true
+  environment: "{{ proxy_env }}"
   shell: |
     curl -sSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /etc/apt/trusted.gpg.d/vscode.gpg
     echo "deb [arch=amd64] https://packages.microsoft.com/repos/code stable main" > /etc/apt/sources.list.d/vscode.list

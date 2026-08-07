@@ -12,5 +12,4 @@
   hosts: localhost
   roles:
     - role: terminal
-  environment:
-    PATH: "{{ custom_path }}"
+  environment: "{{ proxy_env | combine({'PATH': custom_path}) }}"

@@ -13,5 +13,4 @@
   roles:
     - role: terminal
     - python
-  environment:
-    PATH: "{{ custom_path }}"
+  environment: "{{ proxy_env | combine({'PATH': custom_path}) }}"

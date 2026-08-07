@@ -2,6 +2,32 @@
 - name: Install packages for Debian family
   hosts: localhost
   gather_facts: false
+  environment: "{{ proxy_env }}"
+  pre_tasks:
+    # apt does not read http_proxy/https_proxy from the environment reliably,
+    # so mirror the caller's proxy into apt's own config. Removed again when
+    # the machine has no proxy, so a stale file can never break plain networks.
+    - name: Configure apt proxy
+      become: true
+      ansible.builtin.copy:
+        dest: /etc/apt/apt.conf.d/99proxy
+        mode: "0644"
+        content: |
+          Acquire::http::Proxy "{{ proxy_env.http_proxy }}";
+          Acquire::https::Proxy "{{ proxy_env.https_proxy | default(proxy_env.http_proxy, true) }}";
+      when: proxy_env.http_proxy | length > 0
+      tags:
+        - always
+
+    - name: Remove apt proxy config when no proxy is configured
+      become: true
+      ansible.builtin.file:
+        path: /etc/apt/apt.conf.d/99proxy
+        state: absent
+      when: proxy_env.http_proxy | length == 0
+      tags:
+        - always
+
   tasks:
     - name: Include pkg role for all packages
       with_items: "{{ pkg.charts }}"
@@ -36,12 +62,11 @@
     - install_flow
     - terminal
     - bash_history_backup
+    - { role: wslview, when: wsl2_kernel | default(false) }
     - vscode
     - docker
     - remove-gnome-packages
-  environment:
-    PATH: "{{ custom_path }}"
-    LD_LIBRARY_PATH: "{{ ansible_facts['env']['HOME'] }}/.pyenv/versions/{{ python_version | default('3.14.3') }}/lib/"
+  environment: "{{ proxy_env | combine({'PATH': custom_path, 'LD_LIBRARY_PATH': ansible_facts['env']['HOME'] ~ '/.pyenv/versions/' ~ (python_version | default('3.14.3')) ~ '/lib/'}) }}"
 
 - name: Localhost roles for Debian family (non-WSL2 only)
   gather_facts: false
@@ -62,17 +87,13 @@
       include_role:
         name: llama-cpp
       when: not wsl2_kernel | default(false)
-  environment:
-    PATH: "{{ custom_path }}"
-    LD_LIBRARY_PATH: "{{ ansible_facts['env']['HOME'] }}/.pyenv/versions/{{ python_version | default('3.14.3') }}/lib/"
+  environment: "{{ proxy_env | combine({'PATH': custom_path, 'LD_LIBRARY_PATH': ansible_facts['env']['HOME'] ~ '/.pyenv/versions/' ~ (python_version | default('3.14.3')) ~ '/lib/'}) }}"
 
 - name: Install ZLS language server
   gather_facts: false
   hosts: localhost
   roles:
     - ensure_zls
-  environment:
-    PATH: "{{ custom_path }}"
-    LD_LIBRARY_PATH: "{{ ansible_facts['env']['HOME'] }}/.pyenv/versions/{{ python_version | default('3.14.3') }}/lib/"
+  environment: "{{ proxy_env | combine({'PATH': custom_path, 'LD_LIBRARY_PATH': ansible_facts['env']['HOME'] ~ '/.pyenv/versions/' ~ (python_version | default('3.14.3')) ~ '/lib/'}) }}"
   tags:
     - zls

@@ -1,0 +1,7 @@
+#!/bin/bash
+set -euo pipefail
+
+case "${1:-}" in
+  http://*|https://*) explorer.exe "$1" ;;
+  *) explorer.exe "$(wslpath -w "$1")" ;;
+esac
