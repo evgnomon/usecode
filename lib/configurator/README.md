@@ -17,6 +17,14 @@ git clone ssh://git@github.com:YOURUSER/config.git ~/.config/usecode
 DEV_CONTAINER=1 make
 ```
 
+## WSL
+
+When running under WSL, switch `sudo` to the Windows-aware alternative:
+
+```bash
+sudo update-alternatives --set sudo /usr/bin/sudo.ws
+```
+
 ## Vim Plugins
 
 After installation, run in Vim:
