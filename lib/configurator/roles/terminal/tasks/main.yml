@@ -344,11 +344,6 @@
   tags:
     - node
 
-- name: Install pi coding agent
-  command: npm install -g --ignore-scripts @earendil-works/pi-coding-agent
-  tags:
-    - node
-
 - name: Clone Git repos
   shell: |
     mkdir -p '{{ repo_dest_dir }}'
