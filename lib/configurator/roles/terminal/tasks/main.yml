@@ -98,6 +98,28 @@
   tags:
     - always
 
+- name: Install Cursor GPG key
+  become: true
+  environment: "{{ proxy_env }}"
+  ansible.builtin.shell: |
+    install -d -m 0755 /etc/apt/keyrings
+    curl -fsSL https://downloads.cursor.com/keys/anysphere.asc | gpg --dearmor --yes -o /etc/apt/keyrings/cursor.gpg
+  args:
+    creates: /etc/apt/keyrings/cursor.gpg
+  when: ansible_facts['os_family'] == "Debian"
+  tags:
+    - always
+
+- name: Configure Cursor repository
+  become: true
+  ansible.builtin.copy:
+    content: "deb [arch=amd64,arm64 signed-by=/etc/apt/keyrings/cursor.gpg] https://downloads.cursor.com/aptrepo stable main\n"
+    dest: /etc/apt/sources.list.d/cursor.list
+    mode: "0644"
+  when: ansible_facts['os_family'] == "Debian"
+  tags:
+    - always
+
 - name: Probe optional apt repositories
   environment: "{{ proxy_env }}"
   ansible.builtin.uri:

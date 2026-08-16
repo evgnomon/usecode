@@ -92,6 +92,7 @@ apt_packages:
     - mdns-scan  # Multicast DNS scanner for discovering services on local network
     - packer # Tool for creating machine images for multiple platforms from a single source
     - gnumeric # Spreadsheet application for data analysis and visualization
+    - cursor  # AI-powered code editor
 
   debian_desktop:
     - qemu-system  # Generic QEMU system emulator meta-package for all architectures
