@@ -1,0 +1,20 @@
+FROM mcr.microsoft.com/devcontainers/base:ubuntu26.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y \
+        build-essential \
+        ca-certificates \
+        curl \
+        git \
+        nftables \
+        pkg-config \
+        podman \
+        uidmap \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+    RUN usermod --add-subuids 100000-165535 --add-subgids 100000-165535 vscode
+
+WORKDIR /workspaces/usecode
