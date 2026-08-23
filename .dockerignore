@@ -1,0 +1,10 @@
+.git
+.cache
+.venv
+build
+dist
+node_modules
+third_party
+zig-out
+.zig-cache
+*.img

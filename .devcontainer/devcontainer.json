@@ -1,8 +1,26 @@
 // For format details, see https://aka.ms/devcontainer.json. For config options, see the
 // README at: https://github.com/devcontainers/templates/tree/main/src/ubuntu
 {
-	"name": "Ubuntu",
-	"image": "mcr.microsoft.com/devcontainers/base:ubuntu26.04"
+	"name": "usecode",
+	"build": {
+		"dockerfile": "Containerfile",
+		"context": ".."
+	},
+	"workspaceFolder": "/workspaces/usecode",
+	"containerEnv": {
+		"HISTFILE": "/commandhistory/.bash_history",
+		"HISTSIZE": "10000",
+		"HISTFILESIZE": "20000",
+		"PROMPT_COMMAND": "history -a"
+	},
+	"mounts": [
+		"source=usecode-bash-history,target=/commandhistory,type=volume"
+	],
+	"postStartCommand": "sudo chown -R vscode:vscode /commandhistory",
+	"runArgs": [
+		"--privileged",
+		"--security-opt=apparmor=unconfined"
+	]
 
 	// Features to add to the dev container. More info: https://containers.dev/features.
 	// "features": {},
