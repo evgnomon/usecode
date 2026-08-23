@@ -14,7 +14,7 @@ if [ "$IS_WSL2" = "true" ]; then
 fi
 
 if [ ! -z "$DEV_CONTAINER" ]; then
-  PLAYARGS="$PLAYARGS -e dev_container=true"
+  PLAYARGS="$PLAYARGS -e dev_container=$DEV_CONTAINER"
 fi
 
 if [ ! -z "$ASK_BECOME_PASS" ]; then

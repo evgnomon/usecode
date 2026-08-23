@@ -48,6 +48,7 @@
   when:
     - ansible_facts['os_family'] == "Debian"
     - not wsl2_kernel | default(false)
+    - not dev_container | default(false)
   tags:
     - dotfiles
 
