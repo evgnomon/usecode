@@ -9,3 +9,4 @@ configs/c.kdbx
 /*.bundle
 /.run
 /.claude
+/graphify-out
