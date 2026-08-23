@@ -1,4 +1,4 @@
-.PHONY: all build install install-eget bootstrap-playbook uninstall clean prepare
+.PHONY: all build install install-eget bootstrap-playbook play uninstall clean prepare update
 
 EGET_VERSION ?= latest
 ROOT_DIR ?= $(abspath $(CURDIR)/../..)

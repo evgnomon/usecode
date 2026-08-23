@@ -218,6 +218,9 @@
     "chat.mcp.gallery.enabled": true,
     "claudeCode.preferredLocation": "panel",
     "workbench.editor.empty.hint": "hidden",
-    "yaml.disableSchemaDetection": [],
+    "yaml.disableSchemaDetection": [
+        "azure-pipelines.yml",
+        "azure-pipelines.yaml"
+    ],
     "remote.autoForwardPortsSource": "hybrid"
 }
