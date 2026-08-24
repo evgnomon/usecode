@@ -90,6 +90,7 @@
     },
     "chat.editor.fontSize": 17,
     "chat.fontSize": 17,
+    "chat.editing.autoAcceptDelay": 1,
     "window.zoomLevel": 0.6,
     "python.defaultInterpreterPath": "/bin/python3",
 
