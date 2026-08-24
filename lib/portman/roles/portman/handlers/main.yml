@@ -1,0 +1,12 @@
+---
+# handlers file for roles/portman
+
+- name: Restart portman
+  ansible.builtin.systemd:
+    name: portman
+    state: restarted
+    daemon_reload: true
+
+- name: Apply sysctl
+  ansible.builtin.command: sysctl --system
+  changed_when: true

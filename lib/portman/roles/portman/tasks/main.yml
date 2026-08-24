@@ -1,0 +1,176 @@
+---
+# tasks file for roles/portman
+#
+# Everything this role installs on a host - the binary, the credentials,
+# the config, the service - is derived from the inventory topology. The
+# role never invents an address or a key.
+
+- name: Assert supported OS family
+  ansible.builtin.assert:
+    that: ansible_os_family == 'Debian'
+    fail_msg: "The portman role only supports Debian-family hosts (found {{ ansible_os_family }})."
+
+- name: Assert this host is described by the topology
+  ansible.builtin.assert:
+    that:
+      - portman_address | length > 0
+      - portman_public_key | length > 0
+    fail_msg: >-
+      {{ inventory_hostname }} has no portman_address/portman_public_key.
+      Hosts join the mesh with `portman add {{ inventory_hostname }}`,
+      which allocates the address and mints the keypair - don't write
+      host_vars by hand.
+
+- name: Assert this host's private key is in the vault
+  ansible.builtin.assert:
+    that: portman_private_keys[inventory_hostname] | default('') | length > 0
+    fail_msg: >-
+      No private key for {{ inventory_hostname }} in
+      group_vars/{{ portman_group }}/secrets.yml. It is written there by
+      `portman add`; if the host predates that, re-add it or insert the
+      key with `ansible-vault edit`.
+  # Deliberately not no_log: the assertion names the variable, never its
+  # value, and hiding the result would hide the message above with it.
+
+# The clash this whole arrangement exists to prevent. Checking it here
+# means a topology edited by hand can't get past the first play either.
+- name: Assert every mesh address is unique
+  ansible.builtin.assert:
+    that: _addresses | length == _addresses | unique | length
+    fail_msg: >-
+      Two hosts in the {{ portman_group }} group claim the same tunnel
+      address: {{ dict(groups[portman_group] | zip(_addresses)) }}.
+      Fix host_vars before applying.
+  vars:
+    _addresses: "{{ groups[portman_group] | map('extract', hostvars, 'portman_address') | list }}"
+  run_once: true
+
+- name: Build this host's peer list from the rest of the mesh
+  ansible.builtin.set_fact:
+    _portman_peers: >-
+      {{ _portman_peers | default([]) + [{
+        'name': item,
+        'public_key': hostvars[item].portman_public_key,
+        'address': hostvars[item].portman_address,
+        'endpoint': hostvars[item].portman_endpoint | default(''),
+      }] }}
+  loop: "{{ groups[portman_group] | difference([inventory_hostname]) | sort }}"
+  loop_control:
+    label: "{{ item }}"
+
+- name: Install WireGuard dependencies
+  ansible.builtin.package:
+    name: "{{ portman_packages[ansible_os_family] }}"
+    state: present
+
+- name: Create the local build cache
+  delegate_to: localhost
+  become: false
+  ansible.builtin.file:
+    path: "{{ portman_build_cache }}/{{ portman_goarch }}"
+    state: directory
+    mode: "0755"
+  changed_when: false
+
+- name: Build the portman binary on the control node
+  delegate_to: localhost
+  become: false
+  environment:
+    GOOS: linux
+    GOARCH: "{{ portman_goarch }}"
+    CGO_ENABLED: "0"
+  ansible.builtin.command:
+    cmd: "go build -o {{ portman_build_cache }}/{{ portman_goarch }}/portman ./cmd/portman"
+    chdir: "{{ portman_repo_dir }}"
+  changed_when: true
+  check_mode: false
+
+- name: Install the portman binary
+  ansible.builtin.copy:
+    src: "{{ portman_build_cache }}/{{ portman_goarch }}/portman"
+    dest: "{{ portman_binary_dest }}"
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart portman
+
+- name: Create /etc/portman
+  ansible.builtin.file:
+    path: "{{ portman_config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Create the key directory
+  ansible.builtin.file:
+    path: "{{ portman_key_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+# The credentials. The private key is the one thing that never appears in
+# the topology in the clear - it comes out of the vault and goes straight
+# to a root-only file, which is exactly where portman would have put a
+# key it generated itself.
+- name: Install this host's WireGuard private key
+  ansible.builtin.copy:
+    content: "{{ portman_private_keys[inventory_hostname] }}\n"
+    dest: "{{ portman_key_dir }}/private.key"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Restart portman
+
+- name: Install this host's WireGuard public key
+  ansible.builtin.copy:
+    content: "{{ portman_public_key }}\n"
+    dest: "{{ portman_key_dir }}/public.key"
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Render config.toml
+  ansible.builtin.template:
+    src: config.toml.j2
+    dest: "{{ portman_config_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+    validate: "{{ portman_binary_dest }} validate -config %s"
+  notify: Restart portman
+
+- name: Persist IPv4 forwarding
+  ansible.builtin.copy:
+    content: "net.ipv4.ip_forward=1\n"
+    dest: /etc/sysctl.d/99-portman.conf
+    owner: root
+    group: root
+    mode: "0644"
+  when: portman_services | selectattr('remote_bind', 'defined') | list | length > 0
+  notify: Apply sysctl
+
+- name: Install the systemd unit
+  ansible.builtin.copy:
+    src: "{{ portman_repo_dir }}/init/systemd/portman.service"
+    dest: "{{ portman_unit_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart portman
+
+- name: Enable and start portman
+  ansible.builtin.systemd:
+    name: portman
+    enabled: true
+    state: started
+    daemon_reload: true
+
+# Handlers run at the end of the play by default, but a peer that was
+# added to this host's config needs the tunnel reloaded before the run
+# reports success - and the next host's tasks may depend on this one
+# being reachable over the mesh.
+- name: Apply pending restarts now
+  ansible.builtin.meta: flush_handlers

@@ -1,0 +1,146 @@
+---
+# Report what portman is actually doing on every mesh member. This
+# playbook only reads, so it is safe to run at any time - including
+# against a mesh mid-converge:
+#
+#   ansible-playbook deploy/playbooks/status.yml
+#
+# It answers the question portman.yml cannot: the inventory says who
+# *should* be a peer of whom, and the handshakes and pings below say who
+# actually is. A host that is unreachable is reported as such rather than
+# ending the run, so one dead host still leaves a picture of the rest.
+- name: Report portman status across the mesh
+  hosts: portman
+  become: true
+  gather_facts: false
+  any_errors_fatal: false
+  ignore_unreachable: true
+  vars:
+    portman_group: portman
+    portman_binary: /usr/local/bin/portman
+    portman_config_path: /etc/portman/config.toml
+    _iface: "{{ portman_interface | default('wg-portman') }}"
+    # WireGuard rehandshakes roughly every two minutes while traffic
+    # flows, so a peer quiet for longer than this is worth flagging.
+    portman_handshake_stale_after: 300
+
+  tasks:
+    - name: Collect the installed version
+      ansible.builtin.command: "{{ portman_binary }} version"
+      register: _version
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Collect the config verdict
+      ansible.builtin.command: "{{ portman_binary }} validate -config {{ portman_config_path }}"
+      register: _validate
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Collect the systemd unit state # noqa: command-instead-of-module
+      # systemctl show rather than service_facts: the unit's substate and
+      # the time it last entered active are the interesting bits here,
+      # and no module reports either.
+      ansible.builtin.command: >-
+        systemctl show portman --value
+        -p ActiveState -p SubState -p UnitFileState -p ActiveEnterTimestamp
+      register: _unit
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Collect the tunnel link state
+      ansible.builtin.command: "ip -brief address show {{ _iface }}"
+      register: _link
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    # `wg show ... dump` rather than portman's own status output: it is
+    # the same facts in a form this playbook can do arithmetic on
+    # (handshake ages, byte counters) instead of reprinting verbatim.
+    - name: Collect the WireGuard peer dump
+      ansible.builtin.command: "wg show {{ _iface }} dump"
+      register: _dump
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Collect the DNAT rules backing this host's forwards
+      # PORTMAN_PRE is the chain portman owns in nat/PREROUTING; it
+      # exists only on a host that actually forwards something.
+      ansible.builtin.command: iptables -t nat -S PORTMAN_PRE
+      register: _nat
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Read the host clock
+      # Handshakes are stamped in the host's own epoch seconds, so ages
+      # have to be computed against that clock, not the control node's.
+      ansible.builtin.command: date +%s
+      register: _now
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Probe every other mesh member over the tunnel
+      ansible.builtin.command: "ping -c 1 -W 1 -I {{ _iface }} {{ hostvars[item].portman_address }}"
+      register: _ping
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      loop: "{{ groups[portman_group] | difference([inventory_hostname]) | sort }}"
+      loop_control:
+        label: "{{ item }} ({{ hostvars[item].portman_address | default('none') }})"
+      when: hostvars[item].portman_address | default('') | length > 0
+
+    # One fact holding everything the report needs, so the template below
+    # is only formatting and the parsing lives in one readable place.
+    - name: Assemble this host's report
+      vars:
+        # dump peer columns: pubkey, psk, endpoint, allowed-ips,
+        # handshake, rx, tx, keepalive - tab-separated, one line per
+        # peer after the interface line. Split on whitespace rather than
+        # on a tab: no field wg emits here ever contains a space, and a
+        # literal '\t' does not survive Ansible's templating intact.
+        _cols: "{{ _dump.stdout_lines[1:] | default([]) | map('split') | list }}"
+        _rows: "{{ dict(_cols | map(attribute=0) | list | zip(_cols)) }}"
+        _pings: >-
+          {{ dict((_ping.results | default([])) | map(attribute='item') | list
+                  | zip((_ping.results | default([])) | map(attribute='rc', default=1) | list)) }}
+        _u: "{{ dict(['active', 'sub', 'enabled', 'since'] | zip(_unit.stdout_lines | default([]))) }}"
+        _others: "{{ groups[portman_group] | difference([inventory_hostname]) | sort }}"
+        _now_epoch: "{{ _now.stdout | default(0) | int }}"
+      ansible.builtin.set_fact:
+        portman_report:
+          host: "{{ inventory_hostname }}"
+          address: "{{ portman_address | default('unknown') }}"
+          endpoint: "{{ portman_endpoint | default('') }}"
+          version: "{{ _version.stdout | default('') | trim | default('portman not installed', true) }}"
+          config: "{{ (_validate.stdout | default('') | trim) | default((_validate.stderr | default('') | trim), true) | default('unreadable', true) }}"
+          active: "{{ _u.active | default('unknown') }}"
+          sub: "{{ _u.sub | default('unknown') }}"
+          enabled: "{{ _u.enabled | default('unknown') }}"
+          since: "{{ _u.since | default('') }}"
+          link: "{{ _link.stdout | default('') | trim }}"
+          nat_rules: "{{ ((_nat.rc | default(1)) == 0) | ternary(_nat.stdout_lines | default([]), []) }}"
+          # [name, public key, tunnel address] per expected peer - the
+          # topology's view, which the dump below is then matched against.
+          peers: >-
+            {{ _others
+               | zip(_others | map('extract', hostvars, 'portman_public_key') | list,
+                     _others | map('extract', hostvars, 'portman_address') | list)
+               | map('list') | list }}
+          rows: "{{ _rows }}"
+          pings: "{{ _pings }}"
+          now: "{{ _now_epoch | int }}"
+          stale_after: "{{ portman_handshake_stale_after | int }}"
+
+    - name: Print the report
+      ansible.builtin.debug:
+        # splitlines() rather than split on a newline literal: the
+        # escape would be eaten by YAML before Jinja sees the expression.
+        msg: "{{ lookup('template', 'status.txt.j2').splitlines() }}"

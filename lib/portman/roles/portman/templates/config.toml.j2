@@ -1,0 +1,45 @@
+# {{ ansible_managed }}
+#
+# Derived from the mesh topology in the inventory, not written by hand:
+# the address below was allocated by `portman add`, and every [[peer]] is
+# another member of the {{ portman_group }} group. There is no private_key here by
+# design - it lives root-only in {{ portman_key_dir }}/private.key,
+# installed from the vault.
+
+[wireguard]
+interface   = "{{ portman_interface }}"
+address     = "{{ portman_address }}/{{ portman_network.split('/')[1] }}"
+listen_port = {{ portman_listen_port }}
+{% if portman_mtu | int > 0 %}
+mtu         = {{ portman_mtu | int }}
+{% endif %}
+{% for peer in _portman_peers | default([]) %}
+
+[[peer]]
+name        = "{{ peer.name }}"
+public_key  = "{{ peer.public_key }}"
+allowed_ips = ["{{ peer.address }}/32"]
+{% if peer.endpoint %}
+{# Only a peer that publishes an endpoint can be dialled; towards those,
+   and only those, this host keeps its NAT mapping alive. #}
+endpoint    = "{{ peer.endpoint }}"
+persistent_keepalive = {{ portman_persistent_keepalive | int }}
+{% endif %}
+{% endfor %}
+{% for svc in portman_services %}
+
+[[service]]
+name       = "{{ svc.name }}"
+protocol   = "{{ svc.protocol | default('tcp') }}"
+{% if svc.remote_bind is defined %}
+remote_bind = "{{ svc.remote_bind }}"
+{# A forward names the mesh member it targets, and the topology resolves
+   that to an address - so nothing has to repeat an address by hand. #}
+{% if svc.client_address is defined %}
+client_address = "{{ svc.client_address }}"
+{% else %}
+client_address = "{{ hostvars[svc.peer].portman_address }}"
+{% endif %}
+{% endif %}
+local_port = {{ svc.local_port }}
+{% endfor %}

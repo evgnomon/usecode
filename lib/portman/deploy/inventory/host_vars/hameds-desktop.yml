@@ -1,0 +1,16 @@
+---
+# hameds-desktop - one member of the portman mesh.
+#
+# Created by `portman add localhost` and renamed by hand: it is the
+# control node, so it converges over a local connection rather than ssh.
+# Naming it after its hostname keeps it unambiguous when the mesh is
+# converged from some other machine.
+#
+# Not touched by portman again: edit it freely. portman_address was
+# allocated from portman_network in group_vars/portman/main.yml, and the
+# private key half of portman_public_key is in
+# group_vars/portman/secrets.yml under this host's name.
+ansible_connection: local
+portman_address: 10.10.0.2
+portman_public_key: ZbPUJ253QP/Nbvvim280WPrtZE1Td2zsg0wY+BZPEgM=
+portman_services: []

@@ -1,0 +1,44 @@
+{# Formats the portman_report fact assembled by ../status.yml. All the
+   parsing happens there; this file only decides what a human sees. #}
+{% set r = portman_report %}
+{% set ok = r.active == 'active' and r.link | length > 0 %}
+{{ r.host }}  {{ r.address }}  ({{ r.version }})
+  service : {{ r.active }}/{{ r.sub }}, {{ r.enabled }}{% if r.since %} since {{ r.since }}{% endif %}
+
+  config  : {{ r.config }}
+  link    : {{ r.link | default('interface not present', true) }}
+  endpoint: {{ r.endpoint | default('none (dials out only)', true) }}
+{% if r.peers %}
+  peers   :
+{% for name, key, addr in r.peers %}
+{% set row = r.rows.get(key, []) %}
+{% if not row %}
+    {{ "%-16s %-14s"|format(name, addr) }} NOT IN TUNNEL (peer missing from wg; re-run portman.yml)
+{% else %}
+{% set handshake = row[4] | int %}
+{% set age = (r.now | int) - handshake %}
+    {{ "%-16s %-14s"|format(name, addr) }}
+{#- handshake #}
+{% if handshake == 0 %} never handshaked
+{%- elif age > (r.stale_after | int) %} handshake {{ age }}s ago [STALE]
+{%- else %} handshake {{ age }}s ago
+{%- endif %}
+{#- traffic, as a sanity check that the tunnel carries more than handshakes #}
+, rx {{ (row[5] | int / 1024) | round(1) }}K tx {{ (row[6] | int / 1024) | round(1) }}K
+{#- and the end-to-end answer #}
+, {{ 'ping OK' if r.pings.get(name, 1) | int == 0 else 'PING FAILED' }}
+{% endif %}
+{% endfor %}
+{% else %}
+  peers   : none - this is the only host in the group
+{% endif %}
+{% if r.nat_rules %}
+  forwards:
+{% for rule in r.nat_rules if rule.startswith('-A PORTMAN_PRE') %}
+    {{ rule }}
+{% endfor %}
+{% endif %}
+{% if not ok %}
+  ATTENTION: {% if r.active != 'active' %}service is {{ r.active }}/{{ r.sub }}{% endif %}{% if r.link | length == 0 %}{{ ' / ' if r.active != 'active' else '' }}tunnel interface is not up{% endif %}
+
+{% endif %}

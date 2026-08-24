@@ -1,0 +1,27 @@
+---
+# Mesh-wide inputs. Everything here is a knob you set by hand; everything
+# in host_vars/ is derived per host from these by `portman add`.
+
+# The tunnel network every member draws its address from. `portman add`
+# allocates the lowest free address in this range, so widening it is what
+# you do when the mesh outgrows /24. Changing it after hosts exist means
+# their recorded addresses no longer belong to it - re-address them by
+# hand in host_vars/ if you ever do.
+portman_network: 10.10.0.0/24
+
+# The first host number in portman_network that may be allocated. 1 hands
+# out .1 first; raise it to keep low addresses for something else.
+portman_address_start: 1
+
+# The WireGuard interface and port used on every host. portman_listen_port
+# is also the port `portman add -endpoint HOST` assumes when an endpoint
+# is given without one.
+portman_interface: wg-portman
+portman_listen_port: 51820
+
+# How often a host behind NAT pings a peer it dials, to keep the mapping
+# open. Only applied towards peers that have an endpoint.
+portman_persistent_keepalive: 25
+
+# MTU for the tunnel interface; 0 leaves it to the kernel.
+portman_mtu: 0

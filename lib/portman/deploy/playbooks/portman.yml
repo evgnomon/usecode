@@ -1,0 +1,25 @@
+---
+# Converge every host in the mesh onto the topology recorded in
+# ../inventory. This playbook decides nothing: addresses, keys and
+# endpoints all come from the inventory, and each host's config.toml is
+# derived from the whole group, so peers stay symmetric by construction.
+#
+# Run from the repo root (where ansible.cfg is - it supplies both the
+# inventory and roles_path, so no flags are needed):
+#
+#   ansible-playbook deploy/playbooks/portman.yml
+#
+# Adding a host is `portman add NAME` followed by another run of this;
+# every existing host picks the new member up as a peer.
+- name: Apply the portman mesh topology
+  hosts: portman
+  become: true
+  # Every host's config is built from every other host's facts, so a
+  # failure mid-run would otherwise leave half the mesh knowing about a
+  # peer that the other half doesn't.
+  any_errors_fatal: true
+  # portman_private_keys comes from group_vars/portman/secrets.yml, which
+  # ansible loads and decrypts for this group automatically - it is never
+  # named here, so there is nothing to keep in sync when hosts change.
+  roles:
+    - role: portman

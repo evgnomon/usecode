@@ -1,0 +1,36 @@
+# /etc/portman/config.toml on an EDGE host - one with a public address
+# that DNATs incoming traffic through the WireGuard tunnel to whichever
+# peer owns each service. Keep this file `chmod 600`, owned by root: it
+# may contain a peer preshared_key.
+#
+# This file is what `portman export`/`import`/`forward` end up writing;
+# hand-editing it is fine too, this is just what the result looks like.
+# There is no "mode" - a host becomes an edge simply by having a
+# [[service]] with remote_bind set (a forward rule); `portman up` turns
+# on DNAT/IP-forwarding automatically when it sees one.
+
+[wireguard]
+interface   = "wg-portman"
+address     = "10.10.0.1/24"
+listen_port = 51820
+
+# One [[peer]] block per host allowed to connect. This peer doesn't dial
+# out, so no endpoint is needed here - it connects to us.
+[[peer]]
+name        = "laptop"
+public_key  = "LAPTOP_PUBLIC_KEY_HERE"
+# preshared_key = "OPTIONAL_PSK_HERE"
+allowed_ips = ["10.10.0.2/32"]
+
+# One [[service]] block per forwarded port. remote_bind is the public
+# address:port this host listens on; client_address is the peer's
+# WireGuard address; local_port is the port the process listens on at
+# that peer. (remote_bind's port and local_port may differ, e.g. to
+# expose 443 publicly while the peer's process listens on 8443.)
+# `portman forward web tcp 0.0.0.0:80:laptop:8080` writes this.
+[[service]]
+name           = "web"
+protocol       = "tcp"
+remote_bind    = "0.0.0.0:80"
+client_address = "10.10.0.2"
+local_port     = 8080

@@ -1,0 +1,62 @@
+---
+# defaults file for roles/portman
+#
+# The mesh topology itself is NOT here - it lives in the inventory
+# (deploy/inventory), which is the single place that decides which hosts
+# exist, what address each holds, and what key it uses. What follows is
+# only how to install portman on a host, plus fallbacks for the mesh-wide
+# inputs so the role still runs against an inventory that doesn't set
+# them.
+
+# Where the portman repo checkout lives on the control node - it provides
+# cmd/portman (built there and copied over) and init/systemd/portman.service.
+portman_repo_dir: "{{ (playbook_dir + '/../..') | realpath }}"
+
+# GOARCH to cross-compile for. amd64 covers most Debian VPS hosts; use
+# arm64 for e.g. Raspberry Pi / AWS Graviton. Set it per host in
+# host_vars when the mesh is mixed.
+portman_goarch: amd64
+
+# Built binaries are cached here on the control node, per architecture,
+# so converging twenty hosts doesn't mean twenty compiles.
+portman_build_cache: "{{ lookup('env', 'HOME') }}/.cache/portman/build"
+
+portman_binary_dest: /usr/local/bin/portman
+portman_config_dir: /etc/portman
+portman_config_path: "{{ portman_config_dir }}/config.toml"
+portman_key_dir: "{{ portman_config_dir }}/wireguard"
+portman_unit_path: /etc/systemd/system/portman.service
+
+portman_packages:
+  Debian: [wireguard-tools, iproute2, iptables]
+
+# The inventory group whose members form the mesh. Every host in it
+# becomes a [[peer]] of every other one.
+portman_group: portman
+
+# Fallbacks for the mesh-wide inputs normally set in
+# inventory/group_vars/portman/main.yml.
+portman_network: 10.10.0.0/24
+portman_interface: wg-portman
+portman_listen_port: 51820
+portman_persistent_keepalive: 25
+portman_mtu: 0
+
+# Per-host facts, normally written to host_vars/<host>.yml by
+# `portman add`. portman_address and portman_public_key are required;
+# the role refuses to run without them rather than guessing.
+portman_address: ""
+portman_public_key: ""
+portman_endpoint: ""
+
+# This host's [[service]] declarations: a list of
+# {name, protocol?, local_port, remote_bind?, peer?}. A bare local_port
+# means "I run this here"; remote_bind + peer means "public traffic
+# arriving here goes to that mesh member" - name the member, not its
+# address, and the topology resolves it (client_address still works if
+# you need to point somewhere outside the mesh). Set in host_vars.
+portman_services: []
+
+# host -> WireGuard private key, from the vaulted
+# inventory/group_vars/portman/secrets.yml.
+portman_private_keys: {}

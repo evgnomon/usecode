@@ -1,0 +1,35 @@
+[Unit]
+Description=portman WireGuard tunnel and port-forwarding manager
+Documentation=https://github.com/evgnomon/portman
+After=network-online.target
+Wants=network-online.target
+ConditionFileNotEmpty=/etc/portman/config.toml
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=/usr/local/bin/portman validate
+ExecStart=/usr/local/bin/portman up
+ExecReload=/usr/local/bin/portman reload
+ExecStop=/usr/local/bin/portman down
+
+# portman needs root to create WireGuard interfaces, load private keys
+# and (on the server) manage nftables/ip_forward.
+User=root
+Group=root
+
+# Config holds WireGuard private keys; keep it out of reach of anything
+# this unit doesn't need.
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/proc/sys/net/ipv4/ip_forward
+NoNewPrivileges=false
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

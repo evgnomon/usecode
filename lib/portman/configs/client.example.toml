@@ -1,0 +1,32 @@
+# /etc/portman/config.toml on a LEAF host - one that owns a process that
+# should be reachable through some other host's public address. Keep this
+# file `chmod 600`, owned by root: it may contain a peer preshared_key.
+#
+# This file is what `portman export`/`import`/`forward` end up writing;
+# hand-editing it is fine too, this is just what the result looks like.
+# There is no "mode" - every host runs the same commands, and what a host
+# does follows from its config. See README.md for the recipe that
+# generates a config like this.
+
+[wireguard]
+interface   = "wg-portman"
+address     = "10.10.0.2/24"
+# listen_port is optional for a leaf behind NAT; set it if you want a
+# stable local port for the tunnel.
+listen_port = 51820
+
+[[peer]]
+name                 = "edge"
+public_key           = "EDGE_PUBLIC_KEY_HERE"
+# preshared_key = "OPTIONAL_PSK_HERE"
+endpoint             = "vpn.example.com:51820"
+allowed_ips          = ["10.10.0.1/32"]
+persistent_keepalive = 25
+
+# One [[service]] block per local process you want exposed elsewhere in
+# the mesh. local_port is the port the process actually listens on here.
+# `portman forward web tcp 8080` writes this.
+[[service]]
+name       = "web"
+protocol   = "tcp"
+local_port = 8080
