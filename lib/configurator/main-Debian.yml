@@ -61,7 +61,8 @@
     - usecode
     - install_flow
     - terminal
-    - { role: bash_history_backup, when: installation_profile not in ['dev_container', 'wsl'] }
+    - role: bash_history_backup
+      when: installation_profile not in ['dev_container', 'wsl']
     - { role: wslview, when: installation_profile == 'wsl' }
     - vscode
     - { role: docker, when: installation_profile != 'dev_container' }
