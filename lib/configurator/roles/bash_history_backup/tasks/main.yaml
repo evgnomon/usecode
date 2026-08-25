@@ -25,7 +25,7 @@
   systemd:
     daemon_reload: true
     scope: user
-  when: backup_units.changed
+  when: backup_units.changed and ansible_facts['service_mgr'] == 'systemd'
 
 - name: Enable and start backup-bash-history timer
   systemd:
@@ -33,3 +33,4 @@
     enabled: true
     state: started
     scope: user
+  when: ansible_facts['service_mgr'] == 'systemd'
