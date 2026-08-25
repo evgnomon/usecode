@@ -87,7 +87,6 @@ common_node_packages:
   - "@anthropic-ai/claude-code"
   - "@github/copilot"
   - "opencode-ai"
-  - "azure-functions-core-tools@4"
   - "@earendil-works/pi-coding-agent"
 
 common_git_repos:
