@@ -15,5 +15,6 @@
   shell: fc-cache -f -v
   when:
     - ansible_facts['os_family'] == "Debian"
+    - installation_profile == 'workstation'
   tags:
     - fonts

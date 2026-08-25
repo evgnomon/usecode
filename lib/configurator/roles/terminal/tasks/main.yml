@@ -15,7 +15,12 @@
   include_tasks: j2_inflate.yaml
   vars:
     target: "{{ blueprint_user_home }}"
-  when: item.state == 'file'
+  when:
+    - item.state == 'file'
+    - installation_profile != 'dev_container' or item.path not in [
+        '.config/autostart/swap-alt-win.desktop',
+        '.config/foot/foot.ini'
+      ]
   with_filetree: ../templates/share/home
   tags:
     - dotfiles
@@ -63,6 +68,7 @@
   when:
     - ansible_facts['os_family'] == "Debian"
     - face_file_stat.stat.exists
+    - installation_profile == 'workstation'
 
 - name: Check if gsettings is available
   command: which gsettings
@@ -85,7 +91,7 @@
   command: gsettings set org.gnome.shell.app-switcher current-workspace-only true
   when:
     - ansible_facts['os_family'] == "Debian"
-    - not wsl2_kernel | default(false)
+    - installation_profile == 'workstation'
     - gsettings_check.rc == 0
     - gsettings_schemas.stdout is defined
     - "'org.gnome.shell.app-switcher' in gsettings_schemas.stdout"
@@ -180,7 +186,7 @@
     state: present
   when:
     - ansible_facts['os_family'] == "Debian"
-    - not wsl2_kernel | default(false)
+    - installation_profile == 'workstation'
   tags:
     - apt
 
@@ -191,7 +197,7 @@
     state: present
   when:
     - ansible_facts['os_family'] == "Debian"
-    - not wsl2_kernel | default(false)
+    - installation_profile == 'workstation'
     - dict_item in apt_packages
   vars:
     dict_item: "{{ ansible_facts['distribution'] | lower }}_desktop"
@@ -335,6 +341,7 @@
 
 - name: Install fonts
   include_tasks: fonts_install.yaml
+  when: installation_profile == 'workstation'
   tags:
     - fonts
 
