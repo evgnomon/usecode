@@ -52,7 +52,7 @@
   ansible.builtin.command: /usr/sbin/sysctl -p
   when:
     - ansible_facts['os_family'] == "Debian"
-    - not wsl2_kernel | default(false)
+    - installation_profile == 'workstation'
   tags:
     - dotfiles
 
@@ -75,6 +75,7 @@
   register: gsettings_check
   failed_when: false
   changed_when: false
+  when: installation_profile == 'workstation'
   tags:
     - dotfiles
 
@@ -83,7 +84,9 @@
   register: gsettings_schemas
   failed_when: false
   changed_when: false
-  when: gsettings_check.rc == 0
+  when:
+    - installation_profile == 'workstation'
+    - gsettings_check.rc == 0
   tags:
     - dotfiles
 
@@ -91,7 +94,6 @@
   command: gsettings set org.gnome.shell.app-switcher current-workspace-only true
   when:
     - ansible_facts['os_family'] == "Debian"
-    - installation_profile == 'workstation'
     - gsettings_check.rc == 0
     - gsettings_schemas.stdout is defined
     - "'org.gnome.shell.app-switcher' in gsettings_schemas.stdout"
@@ -150,6 +152,7 @@
     state: present
   when:
     - ansible_facts['os_family'] == "Debian"
+    - installation_profile == 'workstation'
     - dict_item in apt_packages
   vars:
     dict_item: "{{ ansible_facts['distribution'] | lower }}"
@@ -173,6 +176,7 @@
     state: present
   when:
     - ansible_facts['os_family'] == "Debian"
+    - installation_profile == 'workstation'
     - dict_item in apt_packages
   vars:
     dict_item: "{{ ansible_facts['distribution'] | lower }}_hardware"
