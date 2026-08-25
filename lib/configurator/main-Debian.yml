@@ -61,7 +61,7 @@
     - usecode
     - install_flow
     - terminal
-    - bash_history_backup
+    - { role: bash_history_backup, when: not dev_container | default(false) }
     - { role: wslview, when: wsl2_kernel | default(false) }
     - vscode
     - docker
@@ -75,7 +75,7 @@
     - name: Run disable_ipv6 role
       include_role:
         name: disable_ipv6
-      when: not wsl2_kernel | default(false)
+      when: not wsl2_kernel | default(false) and not dev_container | default(false)
     - name: Run packer role
       include_role:
         name: packer

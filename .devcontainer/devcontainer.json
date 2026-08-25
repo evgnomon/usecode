@@ -11,7 +11,8 @@
 		"HISTFILE": "/commandhistory/.bash_history",
 		"HISTSIZE": "10000",
 		"HISTFILESIZE": "20000",
-		"PROMPT_COMMAND": "history -a"
+		"PROMPT_COMMAND": "history -a",
+		"DEV_CONTAINER": "true"
 	},
 	"mounts": [
 		"source=usecode-bash-history,target=/commandhistory,type=volume"
