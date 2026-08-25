@@ -33,10 +33,17 @@
     scope: user
   when: systemd_user_check.rc == 0
 
+- name: Check if timer unit is loadable
+  command: systemctl --user list-unit-files backup-bash-history.timer
+  register: timer_unit_check
+  changed_when: false
+  failed_when: false
+  when: systemd_user_check.rc == 0
+
 - name: Enable and start backup-bash-history timer
   systemd:
     name: backup-bash-history.timer
     enabled: true
     state: started
     scope: user
-  when: systemd_user_check.rc == 0
+  when: systemd_user_check.rc == 0 and timer_unit_check.rc == 0
