@@ -42,22 +42,12 @@
   tags:
     - dotfiles
 
-- name: Check sysctl.conf exists
-  ansible.builtin.stat:
-    path: /etc/sysctl.conf
-  register: sysctl_conf_stat
-  changed_when: false
-  tags:
-    - dotfiles
-
 - name: Apply sysctl settings
   become: true
   ansible.builtin.command: /usr/sbin/sysctl -p
   when:
     - ansible_facts['os_family'] == "Debian"
     - not wsl2_kernel | default(false)
-    - not dev_container | default(false)
-    - sysctl_conf_stat.stat.exists
   tags:
     - dotfiles
 
