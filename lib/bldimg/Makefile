@@ -13,6 +13,16 @@ SOURCES := Dockerfile evgnomon.asc evgnomon.sources SHA512SUMS $(shell find play
 
 .PHONY: build publish clean
 
+ifneq ($(DEV_CONTAINER),)
+
+build:
+	@echo "Skipping $(IMAGE) build in dev container"
+
+publish:
+	@echo "Skipping $(IMAGE) publish in dev container"
+
+else
+
 build: $(BUILD_STAMP)
 
 $(BUILD_STAMP): $(SOURCES)
@@ -28,6 +38,8 @@ $(PUBLISH_STAMP): $(BUILD_STAMP)
 	getsecret | jq -r '.github_pat' | podman login --authfile $$AUTH $(REGISTRY) -u $(OWNER) --password-stdin && \
 	podman push --authfile $$AUTH $(IMAGE)
 	@touch $@
+
+endif
 
 clean:
 	rm -rf $(STAMP_DIR)
