@@ -12,17 +12,13 @@
 		"HISTSIZE": "10000",
 		"HISTFILESIZE": "20000",
 		"PROMPT_COMMAND": "history -a",
-		"DEV_CONTAINER": "true"
+		"DEV_CONTAINER": "true",
+		"INSTALL_PROFILE": "dev_container"
 	},
 	"mounts": [
 		"source=usecode-bash-history,target=/commandhistory,type=volume"
 	],
 	"postStartCommand": "sudo chown -R vscode:vscode /commandhistory",
-	"runArgs": [
-		"--privileged",
-		"--security-opt=apparmor=unconfined"
-	]
-
 	// Features to add to the dev container. More info: https://containers.dev/features.
 	// "features": {},
 

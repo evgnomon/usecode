@@ -10,6 +10,13 @@ The Dev Container is configured for nested Podman use; rebuild it after changing
 configuration with **Dev Containers: Rebuild Container Without Cache** so changes such
 as the rootless `uidmap` dependency are installed.
 
+The default Dev Container is deliberately lightweight: it installs development and CLI
+tooling, but not IntelliJ IDEA, Rider, Nerd Fonts, GUI applications, hardware-token
+packages, QEMU, or host-only image tooling. Set `INSTALL_PROFILE=workstation` only when
+running the configurator on a desktop host. Select `.devcontainer/devcontainer.nested.json`
+when nested Podman is required; it enables privileged mode and unconfined AppArmor,
+which should not be used for untrusted workspaces.
+
 For a standalone Docker or Podman session, build and start it with:
 
 ```bash
