@@ -2,6 +2,8 @@
 
 # Getting Started
 
+Use Debian and/or Ubuntu. You Don't need to replace your Windows tablet or list your MacBook on second hands, you can spin off a Debian/Ubuntu VM on your computer or remote. That way you can just skip Windows and MacOS and get through a Debian/Ubuntu workstation.  
+
 ### Development container
 
 The repository includes a project-owned development image for VS Code Dev Containers.
