@@ -1,0 +1,10 @@
+#SPDX-License-Identifier: MIT-0
+galaxy_info:
+  description: Ensures Podman is installed on the target host
+  license: MIT
+  min_ansible_version: 2.14
+  galaxy_tags:
+    - podman
+    - containers
+
+dependencies: []

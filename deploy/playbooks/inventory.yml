@@ -1,0 +1,11 @@
+all:
+  children:
+    main:
+      hosts:
+        main:
+    protected-servers: # Protected servers are only accessible from bastain host. we use Shadow as the bastain host.
+      hosts:
+        main:
+    gpus:
+      hosts:
+        h100:

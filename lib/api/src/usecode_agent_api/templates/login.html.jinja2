@@ -1,0 +1,10 @@
+{% extends "base.html.jinja2" %}
+{% block body %}
+  <div class="login-screen">
+    <div class="login-card">
+      <h1>usecode agent</h1>
+      <p class="login-subtitle">Sign in with your phone number</p>
+      <div id="auth-flow">{% include "partials/login_phone_form.html.jinja2" %}</div>
+    </div>
+  </div>
+{% endblock %}

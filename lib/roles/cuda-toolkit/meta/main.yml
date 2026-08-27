@@ -1,0 +1,11 @@
+#SPDX-License-Identifier: MIT-0
+galaxy_info:
+  description: Installs the NVIDIA CUDA Toolkit (nvcc + libraries) on a host with an existing NVIDIA driver
+  license: MIT
+  min_ansible_version: 2.14
+  galaxy_tags:
+    - cuda
+    - nvidia
+    - gpu
+
+dependencies: []

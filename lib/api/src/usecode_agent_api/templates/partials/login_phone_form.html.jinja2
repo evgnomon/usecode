@@ -1,0 +1,16 @@
+<form class="login-form"
+      hx-post="/web/auth/request-otp"
+      hx-target="#auth-flow"
+      hx-swap="innerHTML">
+  <input type="tel"
+         name="phone"
+         inputmode="tel"
+         placeholder="+14155552671"
+         value="{{ phone if phone else '' }}"
+         autofocus
+         required />
+  {% if error %}
+    <p class="login-error">{{ error }}</p>
+  {% endif %}
+  <button type="submit">Send code</button>
+</form>

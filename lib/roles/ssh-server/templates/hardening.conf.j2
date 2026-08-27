@@ -1,0 +1,19 @@
+#SPDX-License-Identifier: MIT-0
+# {{ ansible_managed }}
+#
+# Sorted first among /etc/ssh/sshd_config.d/*.conf fragments so these
+# values win: sshd uses the first value it encounters for a given
+# keyword and ignores later ones, whether they come from another
+# drop-in or from the rest of sshd_config.
+
+Port {{ ssh_port }}
+PermitRootLogin {{ ssh_permit_root_login }}
+PasswordAuthentication {{ ssh_password_authentication }}
+{% if ssh_supports_kbd_interactive_authentication %}
+KbdInteractiveAuthentication {{ ssh_kbd_interactive_authentication }}
+{% else %}
+# KbdInteractiveAuthentication unsupported by this host's sshd (< OpenSSH
+# 8.7) - falling back to the legacy keyword it replaced.
+ChallengeResponseAuthentication {{ ssh_challenge_response_authentication }}
+{% endif %}
+PubkeyAuthentication {{ ssh_pubkey_authentication }}

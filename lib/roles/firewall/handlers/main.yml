@@ -1,0 +1,25 @@
+#SPDX-License-Identifier: MIT-0
+---
+# handlers file for roles/firewall
+#
+# Order matters here: handlers run in the order they're defined below
+# (not the order they're notified), so the chain is always rebuilt before
+# the ruleset is persisted.
+
+- name: Apply firewall chain rules
+  # No flush: appending is enough to make the *next reboot* correct (which
+  # is the authoritative cutover point, see README), and it avoids the
+  # brief fail-open window a flush would introduce. The trailing "-j DROP"
+  # from a previous run means a freshly-appended rule set is inert until
+  # then rather than doubly-applied — nothing gets less restrictive live.
+  ansible.builtin.command: "iptables-restore --noflush {{ firewall_rules_file }}"
+  listen: "Apply firewall chain rules"
+
+- name: Apply firewall egress chain rules
+  # Same append-only reasoning as "Apply firewall chain rules" above.
+  ansible.builtin.command: "iptables-restore --noflush {{ firewall_egress_rules_file }}"
+  listen: "Apply firewall egress chain rules"
+
+- name: Persist firewall rules
+  ansible.builtin.command: netfilter-persistent save
+  listen: "Persist firewall rules"

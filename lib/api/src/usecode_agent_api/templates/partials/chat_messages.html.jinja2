@@ -1,0 +1,8 @@
+{% for message in messages %}
+  <div class="bubble-row{% if message.sender == 'user' %} from-user{% endif %}">
+    <div class="bubble {% if message.sender == 'user' %}user{% else %}agent{% endif %}">
+      <p>{{ message.text }}</p>
+      <span class="bubble-time">{{ message.time }}</span>
+    </div>
+  </div>
+{% endfor %}

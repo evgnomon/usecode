@@ -1,0 +1,33 @@
+#SPDX-License-Identifier: MIT-0
+---
+# defaults file for roles/ssh-server
+
+# Port sshd listens on. Non-standard ports don't stop a targeted attacker,
+# but they do cut down on drive-by scans/brute force noise. Remember to
+# open this port in the firewall role's firewall_allow_rules *before*
+# applying this role, and to pass -p when connecting afterwards.
+ssh_port: 2657
+
+# "prohibit-password" still allows root login via an authorized key, just
+# not a password/keyboard-interactive one. Switch to "no" once you have a
+# non-root user with sudo + key-based access provisioned on the host.
+ssh_permit_root_login: "prohibit-password"
+
+ssh_password_authentication: "no"
+ssh_kbd_interactive_authentication: "no"
+ssh_pubkey_authentication: "yes"
+
+# Older OpenSSH (< 8.7, e.g. Debian 11/Ubuntu 20.04 and earlier) doesn't
+# know the KbdInteractiveAuthentication keyword and uses this legacy name
+# instead. Kept in sync with ssh_kbd_interactive_authentication so hosts
+# on either version end up hardened the same way.
+ssh_challenge_response_authentication: "no"
+
+ssh_sshd_config_dir: "/etc/ssh/sshd_config.d"
+
+# Sorted first among sshd_config.d fragments (and read before the rest of
+# /etc/ssh/sshd_config via the Include directive), so these settings win
+# over any other drop-in or default that also sets them.
+ssh_hardening_config_file: "{{ ssh_sshd_config_dir }}/00-usecode-agent-hardening.conf"
+
+ssh_sshd_config_path: "/etc/ssh/sshd_config"

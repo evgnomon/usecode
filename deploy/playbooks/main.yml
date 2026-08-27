@@ -1,0 +1,7 @@
+firewall_bastion_hosts:
+  - 195.201.148.132
+
+container_registry_username: registry
+# Set vault_container_registry_password in a vaulted file (e.g.
+# group_vars/vault.yml) - see lib/roles/container-registry/README.md.
+container_registry_password: "{{ vault_container_registry_password }}"

@@ -92,3 +92,13 @@ zig-out
 
 third_party
 *.tmp
+
+# usecode agent
+*.local
+dist-ssr
+
+# Encrypted/local secrets
+**/.vault_pass
+**/vault.yml
+**/vault.yaml
+**/secrets.yml

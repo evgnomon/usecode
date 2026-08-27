@@ -1,4 +1,4 @@
-.PHONY: all ci deploy publish build version install link clean submodules
+.PHONY: all ci deploy publish build version install link clean submodules fmt-html fmt
 
 $(eval $(shell ./scripts/ci_wrapper.sh --env 2>/dev/null))
 
@@ -93,3 +93,14 @@ clean:
 			$(MAKE) -C $$d clean || exit $$?; \
 		fi; \
 	done
+
+fmt-html:
+	@if ! command -v djlint >/dev/null 2>&1; then \
+		echo "Installing djlint..."; \
+		uv tool install djlint; \
+	fi
+	@echo "Formatting HTML templates with djlint..."; \
+	djlint --extension=jinja2 --reformat "lib/api/src/usecode_agent_api/templates" --indent 2 || true
+
+fmt: fmt-html
+	ruff format lib/api/src/usecode_agent_api

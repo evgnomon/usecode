@@ -1,0 +1,17 @@
+#SPDX-License-Identifier: MIT-0
+---
+# defaults file for roles/container-registry
+
+container_registry_image: "registry:2"
+container_registry_container_name: "container-registry"
+container_registry_port: 5000
+container_registry_data_dir: "/opt/container-registry/data"
+container_registry_auth_dir: "/opt/container-registry/auth"
+container_registry_htpasswd_file: "{{ container_registry_auth_dir }}/htpasswd"
+
+# Credentials for `podman login`. Override container_registry_password via
+# vault (e.g. group_vars/all/vault.yml) rather than committing it in plain text.
+container_registry_username: "registry"
+container_registry_password: ""
+
+container_registry_restart_policy: "unless-stopped"

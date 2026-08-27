@@ -1,0 +1,11 @@
+#SPDX-License-Identifier: MIT-0
+galaxy_info:
+  description: Runs a password-protected OCI Distribution registry container via Podman
+  license: MIT
+  min_ansible_version: 2.14
+  galaxy_tags:
+    - podman
+    - registry
+
+dependencies:
+  - role: ensure-podman

@@ -1,5 +1,8 @@
 # UseCode.dev
 
+This website is deprecated. The documentation has moved to
+<https://evgnomon.org/docs/usecode-dev/>.
+
 
 ## Building the Documentation
 

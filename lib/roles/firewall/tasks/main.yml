@@ -1,0 +1,112 @@
+#SPDX-License-Identifier: MIT-0
+---
+# tasks file for roles/firewall
+
+- name: Preseed iptables-persistent to skip the interactive save prompt
+  ansible.builtin.debconf:
+    name: iptables-persistent
+    question: "{{ item }}"
+    value: "false"
+    vtype: boolean
+  loop:
+    - iptables-persistent/autosave_v4
+    - iptables-persistent/autosave_v6
+  when: ansible_facts['os_family'] == 'Debian'
+
+- name: Install iptables and iptables-persistent
+  ansible.builtin.apt:
+    name:
+      - iptables
+      - iptables-persistent
+    state: present
+    update_cache: true
+  when: ansible_facts['os_family'] == 'Debian'
+
+- name: Create persistent rules directory
+  ansible.builtin.file:
+    path: "{{ firewall_rules_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Generate normalized firewall rule data
+  ansible.builtin.command: python3 {{ role_path }}/files/generate_rules.py
+  args:
+    stdin: >-
+      {{ {'bastion_hosts': firewall_bastion_hosts,
+          'allow_rules': firewall_allow_rules,
+          'egress_allow_rules': firewall_egress_allow_rules} | to_json }}
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  register: firewall_rules_raw
+
+- name: Parse generated firewall rule data
+  ansible.builtin.set_fact:
+    firewall_rules: "{{ firewall_rules_raw.stdout | from_json }}"
+
+- name: Ensure managed firewall chain exists
+  ansible.builtin.iptables:
+    chain: "{{ firewall_chain }}"
+    chain_management: true
+    state: present
+
+- name: Render managed chain ruleset
+  ansible.builtin.template:
+    src: firewall-chain.v4.j2
+    dest: "{{ firewall_rules_file }}"
+    owner: root
+    group: root
+    mode: "0640"
+  notify:
+    - Apply firewall chain rules
+    - Persist firewall rules
+
+- name: Route inbound traffic through the managed chain
+  ansible.builtin.iptables:
+    chain: INPUT
+    jump: "{{ firewall_chain }}"
+    action: insert
+    rule_num: 1
+    state: present
+    comment: "firewall role: dispatch to {{ firewall_chain }}"
+  notify: Persist firewall rules
+
+- name: Ensure managed firewall egress chain exists
+  ansible.builtin.iptables:
+    chain: "{{ firewall_egress_chain }}"
+    chain_management: true
+    state: present
+  when: firewall_rules.egress_allow_rules | length > 0
+
+- name: Render managed egress chain ruleset
+  ansible.builtin.template:
+    src: firewall-egress-chain.v4.j2
+    dest: "{{ firewall_egress_rules_file }}"
+    owner: root
+    group: root
+    mode: "0640"
+  when: firewall_rules.egress_allow_rules | length > 0
+  notify:
+    - Apply firewall egress chain rules
+    - Persist firewall rules
+
+- name: Route outbound traffic through the managed egress chain
+  ansible.builtin.iptables:
+    chain: OUTPUT
+    jump: "{{ firewall_egress_chain }}"
+    action: insert
+    rule_num: 1
+    state: present
+    comment: "firewall role: dispatch to {{ firewall_egress_chain }}"
+  when: firewall_rules.egress_allow_rules | length > 0
+  notify: Persist firewall rules
+
+- name: Remove managed egress chain jump when egress rules are empty
+  ansible.builtin.iptables:
+    chain: OUTPUT
+    jump: "{{ firewall_egress_chain }}"
+    state: absent
+  when: firewall_rules.egress_allow_rules | length == 0
+  notify: Persist firewall rules

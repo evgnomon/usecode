@@ -1,0 +1,179 @@
+# Every tier runs at least two instances, because every tier is meant to
+# scale horizontally:
+#
+#   caddy-1, caddy-2       load balance over the API instances
+#   api-1, api-2           each has a name (USECODE_AGENT_NODE_NAME) and refuses
+#                          to start without one — a task's assignee is a
+#                          node name, so an unnamed instance could neither
+#                          own work nor address it: `tasks` is partitioned
+#                          on the assignee.
+#   postgres-1, postgres-2 identical schema, different rows. postgres-1 is
+#                          the main/first database: it is what a null
+#                          partition key resolves to, and it holds the
+#                          `shard_ranges` table saying which instance owns
+#                          which virtual shards. A row's virtual shard is a
+#                          hash of its owning user's id, so placement is
+#                          computed rather than stored.
+#
+# See lib/api/src/usecode_agent_api/db.py and AGENTS.md ("Horizontal scaling").
+
+x-groups:
+  backend:  [api-01, api-02]
+  frontend: [web-01, web-02]
+  data:     [db-01, db-02]
+
+x-postgres-env: &postgres-env
+  POSTGRES_USER: ${USECODE_AGENT_POSTGRES_USER:-usecode_agent}
+  POSTGRES_PASSWORD: ${USECODE_AGENT_POSTGRES_PASSWORD:-usecode_agent}
+  POSTGRES_DB: ${USECODE_AGENT_POSTGRES_DB:-usecode_agent}
+
+x-postgres: &postgres
+  image: postgres:16-alpine
+  environment: *postgres-env
+  healthcheck:
+    test:
+      [
+        "CMD-SHELL",
+        "pg_isready -U ${USECODE_AGENT_POSTGRES_USER:-usecode_agent} -d ${USECODE_AGENT_POSTGRES_DB:-usecode_agent}",
+      ]
+    interval: 5s
+    timeout: 5s
+    retries: 10
+  restart: unless-stopped
+
+x-api: &api
+  build:
+    context: ../lib/api
+  depends_on:
+    postgres-1:
+      condition: service_healthy
+    postgres-2:
+      condition: service_healthy
+  env_file:
+    - ../lib/api/.env
+  volumes:
+    # Host's rootless podman API socket, so the api container can build
+    # and run the usecode-agent-model container via podman-remote.
+    - ${XDG_RUNTIME_DIR:-/run/user/1000}/podman/podman.sock:/run/podman/podman.sock
+  healthcheck:
+    test:
+      [
+        "CMD",
+        "python",
+        "-c",
+        "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')",
+      ]
+    interval: 5s
+    timeout: 5s
+    retries: 10
+  restart: unless-stopped
+
+x-api-env: &api-env
+  CONTAINER_HOST: unix:///run/podman/podman.sock
+  # The main/first database — what a null partition key resolves to, and
+  # where `shard_ranges` and the phone -> user id directory live.
+  USECODE_AGENT_DATABASE_URL: postgresql+asyncpg://${USECODE_AGENT_POSTGRES_USER:-usecode_agent}:${USECODE_AGENT_POSTGRES_PASSWORD:-usecode_agent}@postgres-1:5432/${USECODE_AGENT_POSTGRES_DB:-usecode_agent}
+  # The other database instances, keyed by partition key. Driver and
+  # credentials are reused from USECODE_AGENT_DATABASE_URL, since every instance
+  # runs the identical schema under the identical role. On the *first* boot
+  # of an empty deployment the virtual shards are split evenly over these
+  # plus the main one and written to `shard_ranges`; afterwards resolution
+  # reads that table and the split is only changed by moving rows.
+  USECODE_AGENT_SHARDS: '{"b": "postgres-2:5432/${USECODE_AGENT_POSTGRES_DB:-usecode_agent}"}'
+
+x-caddy: &caddy
+  build:
+    context: .
+    dockerfile: Containerfile
+  depends_on:
+    api-1:
+      condition: service_healthy
+    api-2:
+      condition: service_healthy
+  healthcheck:
+    test:
+      [
+        "CMD",
+        "wget",
+        "--no-check-certificate",
+        "-q",
+        "-O",
+        "/dev/null",
+        "https://localhost:443",
+      ]
+    interval: 5s
+    timeout: 5s
+    retries: 10
+  restart: unless-stopped
+
+services:
+  # -- Databases ---------------------------------------------------------
+  postgres-1:
+    <<: *postgres
+    volumes:
+      - postgres_1_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    x-placement:
+      group: data
+      servers: ["db-01"]
+
+  postgres-2:
+    <<: *postgres
+    volumes:
+      - postgres_2_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    x-placement:
+      group: data
+      servers: ["db-02"]
+
+  # -- API ---------------------------------------------------------------
+  api-1:
+    <<: *api
+    environment:
+      <<: *api-env
+      USECODE_AGENT_NODE_NAME: api-1
+    x-placement:
+      group: backend
+      servers: ["api-01"]
+
+  api-2:
+    <<: *api
+    environment:
+      <<: *api-env
+      USECODE_AGENT_NODE_NAME: api-2
+    x-placement:
+      group: backend
+      servers: ["api-02"]
+
+  # -- Load balancers ----------------------------------------------------
+  caddy-1:
+    <<: *caddy
+    ports:
+      - "4430:443"
+    volumes:
+      - caddy_1_data:/data
+      - caddy_1_config:/config
+    x-placement:
+      group: frontend
+      servers: ["web-01"]
+
+  caddy-2:
+    <<: *caddy
+    ports:
+      - "4431:443"
+    volumes:
+      - caddy_2_data:/data
+      - caddy_2_config:/config
+    x-placement:
+      group: frontend
+      servers: ["web-02"]
+
+volumes:
+  caddy_1_data:
+  caddy_1_config:
+  caddy_2_data:
+  caddy_2_config:
+  postgres_1_data:
+  postgres_2_data:

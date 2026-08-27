@@ -1,0 +1,11 @@
+#SPDX-License-Identifier: MIT-0
+galaxy_info:
+  description: Hardens OpenSSH server configuration (key-only auth, non-default port)
+  license: MIT
+  min_ansible_version: 2.14
+  galaxy_tags:
+    - ssh
+    - openssh
+    - security
+
+dependencies: []

@@ -1,0 +1,128 @@
+#SPDX-License-Identifier: MIT-0
+---
+# tasks file for roles/cuda-toolkit
+
+- name: Validate inputs
+  ansible.builtin.assert:
+    that:
+      - ansible_os_family in ['Debian', 'RedHat']
+    fail_msg: "Unsupported OS family ({{ ansible_os_family }}) for cuda-toolkit."
+
+- name: Check for the NVIDIA driver
+  ansible.builtin.command: nvidia-smi -L
+  register: _nvidia_smi
+  changed_when: false
+  failed_when: false
+
+- name: Fail early if the NVIDIA driver is missing
+  ansible.builtin.fail:
+    msg: >-
+      No working NVIDIA driver was detected (nvidia-smi failed). Install
+      the NVIDIA driver on this host first (it is not managed by this
+      role).
+  when: _nvidia_smi.rc != 0
+
+- name: Check whether nvcc is already installed
+  ansible.builtin.command: "{{ cuda_toolkit_symlink }}/bin/nvcc --version"
+  register: _nvcc_precheck
+  changed_when: false
+  failed_when: false
+
+- name: Install the CUDA toolkit on Debian/Ubuntu
+  when:
+    - ansible_os_family == 'Debian'
+    - _nvcc_precheck.rc != 0
+  block:
+    - name: Determine the NVIDIA apt repo distro codename
+      ansible.builtin.set_fact:
+        _cuda_distro: >-
+          {{ cuda_toolkit_distro_map.Debian[ansible_distribution_version]
+             | default(cuda_toolkit_distro_map.Debian[ansible_distribution_major_version], true) }}
+
+    - name: Fail if the distro/version isn't mapped
+      ansible.builtin.fail:
+        msg: >-
+          No known NVIDIA CUDA apt repo for {{ ansible_distribution }}
+          {{ ansible_distribution_version }}. Add it to
+          cuda_toolkit_distro_map.Debian.
+      when: not _cuda_distro
+
+    - name: Download the cuda-keyring package
+      ansible.builtin.get_url:
+        url: >-
+          https://developer.download.nvidia.com/compute/cuda/repos/{{ _cuda_distro }}/{{ cuda_toolkit_repo_arch }}/cuda-keyring_{{ cuda_toolkit_keyring_version }}_all.deb
+        dest: "/tmp/cuda-keyring_{{ cuda_toolkit_keyring_version }}_all.deb"
+        mode: "0644"
+
+    - name: Install the cuda-keyring package
+      ansible.builtin.apt:
+        deb: "/tmp/cuda-keyring_{{ cuda_toolkit_keyring_version }}_all.deb"
+
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+
+    - name: Install the CUDA toolkit package
+      ansible.builtin.apt:
+        name: "{{ 'cuda-toolkit-' + cuda_toolkit_version if cuda_toolkit_version | length > 0 else 'cuda-toolkit' }}"
+        state: present
+
+- name: Install the CUDA toolkit on RedHat/CentOS
+  when:
+    - ansible_os_family == 'RedHat'
+    - _nvcc_precheck.rc != 0
+  block:
+    - name: Determine the NVIDIA dnf repo distro codename
+      ansible.builtin.set_fact:
+        _cuda_distro: "{{ cuda_toolkit_distro_map.RedHat[ansible_distribution_major_version] }}"
+
+    - name: Fail if the distro/version isn't mapped
+      ansible.builtin.fail:
+        msg: >-
+          No known NVIDIA CUDA dnf repo for {{ ansible_distribution }}
+          {{ ansible_distribution_major_version }}. Add it to
+          cuda_toolkit_distro_map.RedHat.
+      when: not _cuda_distro
+
+    - name: Add the NVIDIA CUDA dnf repo
+      ansible.builtin.get_url:
+        url: >-
+          https://developer.download.nvidia.com/compute/cuda/repos/{{ _cuda_distro }}/{{ cuda_toolkit_repo_arch }}/cuda-{{ _cuda_distro }}.repo
+        dest: "/etc/yum.repos.d/cuda-{{ _cuda_distro }}.repo"
+        mode: "0644"
+
+    - name: Install the CUDA toolkit package
+      ansible.builtin.dnf:
+        name: "{{ 'cuda-toolkit-' + cuda_toolkit_version if cuda_toolkit_version | length > 0 else 'cuda-toolkit' }}"
+        state: present
+
+- name: Register the CUDA library path with the dynamic linker
+  ansible.builtin.copy:
+    content: "{{ cuda_toolkit_symlink }}/lib64\n"
+    dest: /etc/ld.so.conf.d/cuda.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Run ldconfig
+
+- name: Add the CUDA toolkit to the interactive-shell PATH
+  ansible.builtin.copy:
+    content: |
+      export PATH="{{ cuda_toolkit_symlink }}/bin${PATH:+:$PATH}"
+      export LD_LIBRARY_PATH="{{ cuda_toolkit_symlink }}/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    dest: /etc/profile.d/cuda.sh
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Flush handlers so the linker cache is updated before verification
+  ansible.builtin.meta: flush_handlers
+
+- name: Verify nvcc is usable
+  ansible.builtin.command: "{{ cuda_toolkit_symlink }}/bin/nvcc --version"
+  register: _nvcc_verify
+  changed_when: false
+
+- name: Show installed CUDA compiler version
+  ansible.builtin.debug:
+    msg: "{{ _nvcc_verify.stdout_lines }}"

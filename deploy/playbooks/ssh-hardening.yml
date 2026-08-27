@@ -1,0 +1,13 @@
+---
+# Hardens sshd on every host in the "main" group: locks the firewall down
+# to firewall_bastion_hosts/firewall_allow_rules first (so the new port is
+# open before sshd moves to it), then applies the ssh-server role.
+#
+# Requires working key-based access before running - see
+# lib/roles/ssh-server/README.md. Reboot afterwards so the firewall role's
+# rules persist across a restart, per lib/roles/firewall/README.md.
+- hosts: main
+  become: true
+  roles:
+    - role: firewall
+    - role: ssh-server

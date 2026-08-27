@@ -1,0 +1,61 @@
+#SPDX-License-Identifier: MIT-0
+---
+# defaults file for roles/llama-cpp
+
+# Pin to a release tag (e.g. "b6100") in production; "master" moves daily.
+llama_cpp_version: master
+llama_cpp_repo: https://github.com/ggml-org/llama.cpp.git
+llama_cpp_src_dir: /opt/llama.cpp
+llama_cpp_prefix: /usr/local
+llama_cpp_build_jobs: "{{ ansible_processor_vcpus | default(2) }}"
+llama_cpp_force_rebuild: false
+
+# cpu | cuda | vulkan | hip
+llama_cpp_backend: cpu
+# Where nvcc lives when llama_cpp_backend == 'cuda'. Ansible's
+# command/shell modules don't source /etc/profile.d, so this is looked
+# up explicitly instead of relying on PATH. See roles/cuda-toolkit.
+llama_cpp_cuda_home: /usr/local/cuda
+# -DGGML_NATIVE=ON tunes for the *build* host's CPU. Turn it off if you
+# build once and copy the binaries to machines with different CPUs.
+llama_cpp_native: true
+llama_cpp_extra_cmake_flags: []
+
+# --- optional llama-server service ---------------------------------
+llama_cpp_server_enabled: false
+llama_cpp_user: llama
+llama_cpp_state_dir: /var/lib/llama.cpp
+llama_cpp_server_model: ""        # absolute path to a local .gguf
+llama_cpp_server_hf_repo: ""      # or a HF repo, e.g. ggml-org/gemma-3-1b-it-GGUF
+# Raw contents of an llama.cpp INI preset file (see docs/preset.md upstream).
+# When set, the server runs in router mode via --models-preset instead of a
+# single fixed --model/-hf, and llama_cpp_server_model/_hf_repo are ignored.
+llama_cpp_server_models_preset: ""
+llama_cpp_server_host: 127.0.0.1
+llama_cpp_server_port: 8080
+llama_cpp_server_ctx_size: 32768
+llama_cpp_server_ngl: 0           # layers offloaded to GPU
+llama_cpp_server_extra_args: []
+
+# Bearer tokens. Keep these in ansible-vault, never in plain group_vars.
+# Empty list = no authentication at all (only safe on 127.0.0.1).
+llama_cpp_server_api_keys: []
+
+# Set to true only when something else (a reverse proxy, a firewall, a
+# WireGuard interface) is handling access control for a non-local,
+# unauthenticated listener.
+llama_cpp_allow_open_listener: false
+
+llama_cpp_backend_flags:
+  cpu: []
+  cuda: ["-DGGML_CUDA=ON"]
+  vulkan: ["-DGGML_VULKAN=ON"]
+  hip: ["-DGGML_HIP=ON"]
+
+llama_cpp_packages:
+  Debian:
+    base: [build-essential, cmake, git, ccache, pkg-config, libcurl4-openssl-dev, libssl-dev]
+    vulkan: [libvulkan-dev, glslc, glslang-tools]
+  RedHat:
+    base: [gcc, gcc-c++, make, cmake, git, ccache, pkgconfig, libcurl-devel, openssl-devel]
+    vulkan: [vulkan-loader-devel, glslang, glslc]

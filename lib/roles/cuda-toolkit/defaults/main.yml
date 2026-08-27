@@ -1,0 +1,26 @@
+#SPDX-License-Identifier: MIT-0
+---
+# defaults file for roles/cuda-toolkit
+
+# Empty = install the latest "cuda-toolkit" meta-package. Pin a version
+# (e.g. "12-8") to match a driver/toolkit combo you've validated.
+cuda_toolkit_version: ""
+
+cuda_toolkit_keyring_version: "1.1-1"
+cuda_toolkit_repo_arch: "{{ 'sbsa' if ansible_architecture == 'aarch64' else 'x86_64' }}"
+
+# Where the NVIDIA apt/dnf repo lives for a given OS family + version.
+# Add entries here if your target isn't covered.
+cuda_toolkit_distro_map:
+  Debian:
+    "22.04": ubuntu2204
+    "24.04": ubuntu2404
+    "20.04": ubuntu2004
+    "12": debian12
+    "11": debian11
+  RedHat:
+    "9": rhel9
+    "8": rhel8
+
+# Where the versioned install (e.g. /usr/local/cuda-12.8) is symlinked.
+cuda_toolkit_symlink: /usr/local/cuda

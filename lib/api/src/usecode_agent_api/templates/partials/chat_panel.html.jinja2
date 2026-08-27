@@ -1,0 +1,25 @@
+<div class="chat-view">
+  <header class="chat-header">
+    <span class="avatar" style="background: {{ agent.color }}">
+      {{ agent.avatar }}
+      <span class="status-dot {{ agent.status }}"></span>
+    </span>
+    <div class="chat-header-meta">
+      <span class="agent-name">{{ agent.name }}</span>
+      <span class="agent-status-text">{{ agent.status }}</span>
+    </div>
+  </header>
+  <div class="chat-messages" id="chat-messages">{% include "partials/chat_messages.html.jinja2" %}</div>
+  <form class="composer"
+        hx-post="/web/chat/{{ agent.id }}/messages"
+        hx-target="#chat-messages"
+        hx-swap="innerHTML"
+        hx-on::after-request="this.reset()">
+    <textarea class="composer-input"
+              name="message"
+              placeholder="Message..."
+              rows="1"
+              required></textarea>
+    <button type="submit" class="composer-send" aria-label="Send">➤</button>
+  </form>
+</div>

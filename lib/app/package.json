@@ -1,0 +1,14 @@
+{
+  "name": "usecode-agent-frontend-assets",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "build:css": "sass scss/app.scss ../api/src/usecode_agent_api/static/css/app.css --no-source-map",
+    "watch:css": "sass --watch scss/app.scss:../api/src/usecode_agent_api/static/css/app.css --no-source-map"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "sass": "^1.93.2"
+  }
+}

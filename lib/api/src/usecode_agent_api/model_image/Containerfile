@@ -1,0 +1,11 @@
+ARG BASE_IMAGE=ghcr.io/ggml-org/llama.cpp:server-vulkan
+FROM ${BASE_IMAGE}
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl \
+        bash \
+        procps \
+        iproute2 \
+        less \
+        vim-tiny \
+    && rm -rf /var/lib/apt/lists/*

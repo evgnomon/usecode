@@ -1,0 +1,56 @@
+#SPDX-License-Identifier: MIT-0
+---
+# tasks file for roles/ssh-server
+
+- name: Install OpenSSH server
+  ansible.builtin.apt:
+    name: openssh-server
+    state: present
+    update_cache: true
+  when: ansible_facts['os_family'] == 'Debian'
+
+- name: Create sshd_config.d directory
+  ansible.builtin.file:
+    path: "{{ ssh_sshd_config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Ensure sshd_config includes sshd_config.d fragments
+  ansible.builtin.lineinfile:
+    path: "{{ ssh_sshd_config_path }}"
+    line: "Include {{ ssh_sshd_config_dir }}/*.conf"
+    insertbefore: BOF
+    validate: "sshd -t -f %s"
+  # Debian 11+/Ubuntu 20.04+ ship this by default; only older targets hit
+  # this task. It has to be the effective first Include (BOF is enough
+  # since sshd stops at the first value for a given keyword), otherwise
+  # rest of sshd_config could still win over our fragment.
+
+- name: Check whether this sshd supports KbdInteractiveAuthentication
+  ansible.builtin.command: sshd -t -o KbdInteractiveAuthentication=no
+  register: ssh_kbd_interactive_check
+  changed_when: false
+  failed_when: false
+
+- name: Record KbdInteractiveAuthentication support
+  ansible.builtin.set_fact:
+    ssh_supports_kbd_interactive_authentication: "{{ ssh_kbd_interactive_check.rc == 0 }}"
+
+- name: Deploy SSH hardening configuration
+  ansible.builtin.template:
+    src: hardening.conf.j2
+    dest: "{{ ssh_hardening_config_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+    validate: "sshd -t -f %s"
+  notify: Restart sshd
+
+- name: Validate full sshd configuration
+  ansible.builtin.command: sshd -t
+  changed_when: false
+  # Runs before handlers fire (handlers only run once the play's tasks
+  # all succeed), so a bad merge across fragments fails the play here
+  # instead of sshd refusing to restart and locking access out.

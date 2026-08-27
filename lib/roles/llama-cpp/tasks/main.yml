@@ -1,0 +1,243 @@
+#SPDX-License-Identifier: MIT-0
+---
+# tasks file for roles/llama-cpp
+
+- name: Validate inputs
+  ansible.builtin.assert:
+    that:
+      - ansible_os_family in llama_cpp_packages
+      - llama_cpp_backend in llama_cpp_backend_flags
+      - not llama_cpp_server_enabled
+        or (llama_cpp_server_model | length > 0)
+        or (llama_cpp_server_hf_repo | length > 0)
+        or (llama_cpp_server_models_preset | length > 0)
+    fail_msg: >-
+      Unsupported OS family ({{ ansible_os_family }}), unknown backend
+      ({{ llama_cpp_backend }}), or llama_cpp_server_enabled is true without
+      llama_cpp_server_model / llama_cpp_server_hf_repo / llama_cpp_server_models_preset set.
+
+- name: Warn about an unauthenticated non-local listener
+  ansible.builtin.fail:
+    msg: >-
+      llama-server is set to listen on {{ llama_cpp_server_host }} with no
+      API key. Set llama_cpp_server_api_keys, or set
+      llama_cpp_allow_open_listener=true if something else (a reverse proxy,
+      a firewall, a WireGuard interface) is handling access control.
+  when:
+    - llama_cpp_server_enabled
+    - llama_cpp_server_host not in ['127.0.0.1', 'localhost', '::1']
+    - llama_cpp_server_api_keys | length == 0
+    - not (llama_cpp_allow_open_listener | bool)
+
+- name: Install build dependencies
+  ansible.builtin.package:
+    name: >-
+      {{ llama_cpp_packages[ansible_os_family].base
+         + (llama_cpp_packages[ansible_os_family].vulkan
+            if llama_cpp_backend == 'vulkan' else []) }}
+    state: present
+
+- name: Determine the default gcc's major version
+  ansible.builtin.command: "gcc -dumpversion"
+  register: _gcc_version
+  changed_when: false
+  when: llama_cpp_backend == 'cuda'
+
+- name: Ensure the matching g++ (cc1plus) package is installed for nvcc's host compiler
+  ansible.builtin.package:
+    name: "g++-{{ _gcc_version.stdout.split('.')[0] }}"
+    state: present
+  when:
+    - llama_cpp_backend == 'cuda'
+    - ansible_os_family == 'Debian'
+
+- name: Check for the CUDA compiler
+  ansible.builtin.command: "{{ llama_cpp_cuda_home }}/bin/nvcc --version"
+  register: _nvcc
+  changed_when: false
+  failed_when: false
+  when: llama_cpp_backend == 'cuda'
+
+- name: Fail early if the CUDA toolkit is missing
+  ansible.builtin.fail:
+    msg: >-
+      llama_cpp_backend=cuda but nvcc was not found. Install the NVIDIA
+      CUDA Toolkit on this host first (it is not managed by this role).
+  when:
+    - llama_cpp_backend == 'cuda'
+    - _nvcc.rc != 0
+
+- name: Clone llama.cpp
+  ansible.builtin.git:
+    repo: "{{ llama_cpp_repo }}"
+    dest: "{{ llama_cpp_src_dir }}"
+    version: "{{ llama_cpp_version }}"
+    depth: 1
+    force: true
+  register: _llama_src
+
+- name: Check whether llama-server is already installed
+  ansible.builtin.stat:
+    path: "{{ llama_cpp_prefix }}/bin/llama-server"
+  register: _llama_bin
+
+- name: Decide whether to build
+  ansible.builtin.set_fact:
+    _llama_do_build: "{{ _llama_src.changed
+                         or not _llama_bin.stat.exists
+                         or llama_cpp_force_rebuild }}"
+
+- name: Build and install llama.cpp
+  when: _llama_do_build
+  block:
+    - name: Remove any stale build directory
+      ansible.builtin.file:
+        path: "{{ llama_cpp_src_dir }}/build"
+        state: absent
+      # CMake caches CMAKE_CUDA_COMPILER (and other toolchain paths) on
+      # first configure and won't re-detect it on later runs even if
+      # llama_cpp_cuda_home/PATH changes - reconfiguring against a stale
+      # cache silently keeps building with the old CUDA toolkit.
+
+    - name: Configure with CMake
+      ansible.builtin.command:
+        cmd: >-
+          cmake -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_INSTALL_PREFIX={{ llama_cpp_prefix }}
+          -DGGML_NATIVE={{ 'ON' if llama_cpp_native else 'OFF' }}
+          -DLLAMA_BUILD_TESTS=OFF
+          {{ llama_cpp_backend_flags[llama_cpp_backend] | join(' ') }}
+          {{ llama_cpp_extra_cmake_flags | join(' ') }}
+        chdir: "{{ llama_cpp_src_dir }}"
+      environment:
+        PATH: "{{ llama_cpp_cuda_home }}/bin:{{ ansible_env.PATH }}"
+      changed_when: true
+
+    - name: Compile
+      ansible.builtin.command:
+        cmd: "cmake --build build --config Release -j {{ llama_cpp_build_jobs }}"
+        chdir: "{{ llama_cpp_src_dir }}"
+      changed_when: true
+
+    - name: Install into {{ llama_cpp_prefix }}
+      ansible.builtin.command:
+        cmd: "cmake --install build --config Release"
+        chdir: "{{ llama_cpp_src_dir }}"
+      changed_when: true
+      notify: Run ldconfig
+
+- name: Register the library path with the dynamic linker
+  ansible.builtin.copy:
+    content: "{{ llama_cpp_prefix }}/lib\n"
+    dest: /etc/ld.so.conf.d/llama-cpp.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Run ldconfig
+
+- name: Flush handlers so the linker cache is updated before use
+  ansible.builtin.meta: flush_handlers
+
+# --- optional service ----------------------------------------------
+- name: Configure llama-server service
+  when: llama_cpp_server_enabled
+  block:
+    - name: Create the service account
+      ansible.builtin.user:
+        name: "{{ llama_cpp_user }}"
+        system: true
+        shell: /usr/sbin/nologin
+        home: "{{ llama_cpp_state_dir }}"
+        create_home: false
+
+    - name: Create state directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ llama_cpp_user }}"
+        group: "{{ llama_cpp_user }}"
+        mode: "0750"
+      loop:
+        - "{{ llama_cpp_state_dir }}"
+        - "{{ llama_cpp_state_dir }}/models"
+        - "{{ llama_cpp_state_dir }}/cache"
+
+    - name: Write the API key file
+      ansible.builtin.copy:
+        content: "{{ llama_cpp_server_api_keys | join('\n') }}\n"
+        dest: "{{ llama_cpp_state_dir }}/api-keys"
+        owner: "{{ llama_cpp_user }}"
+        group: "{{ llama_cpp_user }}"
+        mode: "0400"
+      no_log: true
+      when: llama_cpp_server_api_keys | length > 0
+      notify: Restart llama-server
+
+    - name: Remove the API key file when no keys are configured
+      ansible.builtin.file:
+        path: "{{ llama_cpp_state_dir }}/api-keys"
+        state: absent
+      when: llama_cpp_server_api_keys | length == 0
+      notify: Restart llama-server
+
+    - name: Write the models-preset INI file
+      ansible.builtin.copy:
+        content: "{{ llama_cpp_server_models_preset }}"
+        dest: "{{ llama_cpp_state_dir }}/models-preset.ini"
+        owner: "{{ llama_cpp_user }}"
+        group: "{{ llama_cpp_user }}"
+        mode: "0640"
+      when: llama_cpp_server_models_preset | length > 0
+      notify: Restart llama-server
+
+    - name: Remove the models-preset INI file when unused
+      ansible.builtin.file:
+        path: "{{ llama_cpp_state_dir }}/models-preset.ini"
+        state: absent
+      when: llama_cpp_server_models_preset | length == 0
+      notify: Restart llama-server
+
+    - name: Compose the llama-server command line
+      ansible.builtin.set_fact:
+        _llama_server_cmd: >-
+          {{ llama_cpp_prefix }}/bin/llama-server
+          --host {{ llama_cpp_server_host }}
+          --port {{ llama_cpp_server_port }}
+          {{ '' if llama_cpp_server_models_preset | length > 0 else '--ctx-size ' ~ llama_cpp_server_ctx_size }}
+          --n-gpu-layers {{ llama_cpp_server_ngl }}
+          {{ ('--api-key-file ' ~ llama_cpp_state_dir ~ '/api-keys') if llama_cpp_server_api_keys | length > 0 else '' }}
+          {{ ('--models-preset ' ~ llama_cpp_state_dir ~ '/models-preset.ini') if llama_cpp_server_models_preset | length > 0 else (('--model ' ~ llama_cpp_server_model) if llama_cpp_server_model | length > 0 else ('-hf ' ~ llama_cpp_server_hf_repo)) }}
+          {{ llama_cpp_server_extra_args | join(' ') }}
+
+    - name: Install the systemd unit
+      ansible.builtin.template:
+        src: llama-server.service.j2
+        dest: /etc/systemd/system/llama-server.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart llama-server
+
+    - name: Enable and start llama-server
+      ansible.builtin.systemd:
+        name: llama-server
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Restart llama-server after a binary rebuild
+      ansible.builtin.debug:
+        msg: llama.cpp was rebuilt; restarting llama-server.
+      changed_when: true
+      when: _llama_do_build
+      notify: Restart llama-server
+
+- name: Report the installed version
+  ansible.builtin.command: "{{ llama_cpp_prefix }}/bin/llama-cli --version"
+  register: _llama_version
+  changed_when: false
+
+- name: Show version
+  ansible.builtin.debug:
+    msg: "{{ _llama_version.stderr_lines | default(_llama_version.stdout_lines) }}"

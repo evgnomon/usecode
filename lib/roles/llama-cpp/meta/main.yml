@@ -1,0 +1,11 @@
+#SPDX-License-Identifier: MIT-0
+galaxy_info:
+  description: Builds and installs llama.cpp from source, with an optional hardened llama-server systemd service
+  license: MIT
+  min_ansible_version: 2.14
+  galaxy_tags:
+    - llama
+    - llm
+    - ai
+
+dependencies: []

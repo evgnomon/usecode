@@ -1,0 +1,21 @@
+{{ ansible_managed | comment }}
+# iptables-restore fragment for the {{ firewall_egress_chain }} chain only.
+# Applied live via `iptables-restore --noflush` (append-only, no flush —
+# see handlers/main.yml), and persisted so it's (re)loaded at boot before
+# networking comes up. Reboot after a change for it to take effect.
+#
+# Only outbound tcp/udp NEW connections are restricted to the listed
+# destinations; anything else (icmp, other protocols) falls through to
+# OUTPUT's own (default ACCEPT) policy untouched.
+*filter
+:{{ firewall_egress_chain }} - [0:0]
+-A {{ firewall_egress_chain }} -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+{% if firewall_allow_loopback %}
+-A {{ firewall_egress_chain }} -o lo -j ACCEPT
+{% endif %}
+{% for rule in firewall_rules.egress_allow_rules %}
+-A {{ firewall_egress_chain }} -p {{ rule.proto }}{% if rule.port %} -m {{ rule.proto }} --dport {{ rule.port }}{% endif %} -d {{ rule.dest }} -j ACCEPT
+{% endfor %}
+-A {{ firewall_egress_chain }} -p tcp -j DROP
+-A {{ firewall_egress_chain }} -p udp -j DROP
+COMMIT

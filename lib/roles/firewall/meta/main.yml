@@ -1,0 +1,11 @@
+#SPDX-License-Identifier: MIT-0
+galaxy_info:
+  description: Default-deny iptables firewall with a bastion allow-list and explicit port exceptions
+  license: MIT
+  min_ansible_version: 2.14
+  galaxy_tags:
+    - iptables
+    - firewall
+    - security
+
+dependencies: []

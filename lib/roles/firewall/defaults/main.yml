@@ -1,0 +1,52 @@
+#SPDX-License-Identifier: MIT-0
+---
+# defaults file for roles/firewall
+
+# Hosts/subnets that get unrestricted inbound access (the bastion host(s)).
+# Bare IPs are treated as /32. Example: ["203.0.113.10", "10.10.0.0/24"]
+firewall_bastion_hosts: []
+
+# Exceptions to the default-deny policy, evaluated for traffic from ANY
+# source unless a specific source/subnet is given. Format:
+#   "<tcp|udp>:<port|port-range>:<source>"
+# proto/port may also be separated with "/". source may be "*" (any host)
+# or a bare IP/CIDR. Examples:
+#   - "tcp:8080:*"
+#   - "udp:8000:192.168.0.1/24"
+#   - "tcp/443:0.0.0.0/0"
+firewall_allow_rules: []
+
+# Dedicated chain this role owns. Only this chain's contents are ever
+# flushed/rebuilt, so rules other roles/tasks add elsewhere (other chains,
+# the INPUT chain itself past this jump, nat/mangle tables, etc.) are left
+# alone.
+firewall_chain: "USECODE_AGENT-FW"
+
+# Terminal action for traffic that matches neither the bastion allow-list
+# nor firewall_allow_rules.
+firewall_default_action: "DROP"
+
+firewall_allow_loopback: true
+firewall_allow_icmp: true
+
+firewall_rules_dir: "/etc/iptables"
+firewall_rules_file: "{{ firewall_rules_dir }}/{{ firewall_chain | lower }}.v4"
+
+# Restricts OUTBOUND tcp/udp connections initiated by this host to only the
+# destinations listed here. Format: "<tcp|udp>:<port|port-range|*>:<dest>"
+# (proto/port may also be separated with "/"); "*" as the port means any
+# port. dest may be "*" (any host) or a bare IP/CIDR. The special literal
+# "*/*" means "any proto/port/dest" (i.e. explicitly unrestricted).
+# Examples:
+#   - "tcp:443:10.0.0.0/24"
+#   - "udp/53:*"
+#   - "*/*"
+# Leave empty (the default) for unrestricted egress — no OUTPUT chain is
+# touched at all. Non-tcp/udp outbound traffic (e.g. icmp) is never
+# restricted by this role, even when this list is non-empty.
+firewall_egress_allow_rules: []
+
+# Dedicated chain this role owns for egress filtering. Only created/used
+# when firewall_egress_allow_rules is non-empty.
+firewall_egress_chain: "{{ firewall_chain }}-OUT"
+firewall_egress_rules_file: "{{ firewall_rules_dir }}/{{ firewall_egress_chain | lower }}.v4"

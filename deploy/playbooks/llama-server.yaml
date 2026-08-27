@@ -1,0 +1,50 @@
+---
+- hosts: gpus
+  become: true
+  vars_files:
+    - vault.yaml
+  pre_tasks:
+    - name: Install the CUDA toolkit
+      ansible.builtin.include_role:
+        name: cuda-toolkit
+      vars:
+        # Pin to 13.0, not "latest": the H100's driver (580.126.09) only
+        # supports up to CUDA 13.0. A newer toolkit (e.g. 13.3) emits PTX
+        # the driver's ptxas can't JIT, and llama-server crashes on the
+        # first CUDA kernel launch with "the provided PTX was compiled
+        # with an unsupported toolchain". Installed side-by-side with any
+        # other toolkit version already on the host.
+        cuda_toolkit_version: "13-0"
+        cuda_toolkit_symlink: /usr/local/cuda-13.0
+  roles:
+    - role: llama-cpp
+      vars:
+        llama_cpp_cuda_home: /usr/local/cuda-13.0
+        llama_cpp_server_enabled: true
+        # Router mode: models are loaded on demand by the "model" field in
+        # each request, per the preset(s) below. Add more [section] blocks
+        # to make additional models selectable without another deploy.
+        llama_cpp_server_models_preset: |
+          [gemma-3-1b-it]
+          hf = ggml-org/gemma-3-1b-it-GGUF
+          ctx-size = 32768
+
+          [gemma-4-31b]
+          hf = unsloth/gemma-4-31B-it-GGUF:Q8_0
+          ctx-size = 131072
+
+          [qwen3.6-35b-a3b]
+          hf = unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q8_K_XL
+          ctx-size = 131072
+        llama_cpp_server_host: 0.0.0.0
+        llama_cpp_server_port: 8080
+        llama_cpp_backend: cuda
+        llama_cpp_server_ngl: 999
+        # Force rebuild since we're switching backend from cpu -> cuda;
+        # the role won't detect this on its own (see README).
+        llama_cpp_force_rebuild: true
+        # Set vault_llama_cpp_api_key in a vaulted file (e.g. vault.yaml) -
+        # see lib/roles/llama-cpp/README.md. Leave the list empty only if
+        # llama_cpp_server_host stays on 127.0.0.1.
+        llama_cpp_server_api_keys:
+          - "{{ vault_llama_cpp_api_key }}"

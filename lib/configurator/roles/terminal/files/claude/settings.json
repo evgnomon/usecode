@@ -2,7 +2,7 @@
   "permissions": {
     "defaultMode": "auto"
   },
-  "model": "sonnet",
+  "model": "opus[1m]",
   "enabledPlugins": {
     "csharp-lsp@claude-plugins-official": true,
     "gopls-lsp@claude-plugins-official": true

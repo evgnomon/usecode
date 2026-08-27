@@ -1,0 +1,22 @@
+{{ ansible_managed | comment }}
+# iptables-restore fragment for the {{ firewall_chain }} chain only.
+# Applied live via `iptables-restore --noflush` (append-only, no flush —
+# see handlers/main.yml), and persisted so it's (re)loaded at boot before
+# networking comes up. Reboot after a change for it to take effect.
+*filter
+:{{ firewall_chain }} - [0:0]
+-A {{ firewall_chain }} -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+{% if firewall_allow_loopback %}
+-A {{ firewall_chain }} -i lo -j ACCEPT
+{% endif %}
+{% for host in firewall_rules.bastion_hosts %}
+-A {{ firewall_chain }} -s {{ host }} -j ACCEPT
+{% endfor %}
+{% for rule in firewall_rules.allow_rules %}
+-A {{ firewall_chain }} -p {{ rule.proto }} -m {{ rule.proto }} --dport {{ rule.port }} -s {{ rule.source }} -j ACCEPT
+{% endfor %}
+{% if firewall_allow_icmp %}
+-A {{ firewall_chain }} -p icmp -j ACCEPT
+{% endif -%}
+-A {{ firewall_chain }} -j {{ firewall_default_action }}
+COMMIT

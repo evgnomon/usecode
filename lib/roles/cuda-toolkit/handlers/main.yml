@@ -1,0 +1,7 @@
+#SPDX-License-Identifier: MIT-0
+---
+# handlers file for roles/cuda-toolkit
+
+- name: Run ldconfig
+  ansible.builtin.command: ldconfig
+  changed_when: false

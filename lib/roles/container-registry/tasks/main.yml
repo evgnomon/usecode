@@ -1,0 +1,59 @@
+#SPDX-License-Identifier: MIT-0
+---
+# tasks file for roles/container-registry
+
+- name: Assert credentials are set
+  ansible.builtin.assert:
+    that:
+      - container_registry_username | length > 0
+      - container_registry_password | length > 0
+    fail_msg: >-
+      container_registry_username and container_registry_password must be set
+      (e.g. via a vaulted group_vars file) before deploying container-registry.
+
+- name: Create registry data directory
+  ansible.builtin.file:
+    path: "{{ container_registry_data_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Create registry auth directory
+  ansible.builtin.file:
+    path: "{{ container_registry_auth_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Install passlib for htpasswd module
+  ansible.builtin.package:
+    name: python3-passlib
+    state: present
+
+- name: Create htpasswd entry for registry user
+  community.general.htpasswd:
+    path: "{{ container_registry_htpasswd_file }}"
+    name: "{{ container_registry_username }}"
+    password: "{{ container_registry_password }}"
+    crypt_scheme: bcrypt
+    owner: root
+    group: root
+    mode: "0640"
+
+- name: Run container registry
+  containers.podman.podman_container:
+    name: "{{ container_registry_container_name }}"
+    image: "{{ container_registry_image }}"
+    state: started
+    restart_policy: "{{ container_registry_restart_policy }}"
+    published_ports:
+      - "{{ container_registry_port }}:5000"
+    volumes:
+      - "{{ container_registry_data_dir }}:/var/lib/registry"
+      - "{{ container_registry_auth_dir }}:/auth:ro"
+    env:
+      REGISTRY_AUTH: "htpasswd"
+      REGISTRY_AUTH_HTPASSWD_REALM: "Registry Realm"
+      REGISTRY_AUTH_HTPASSWD_PATH: "/auth/htpasswd"

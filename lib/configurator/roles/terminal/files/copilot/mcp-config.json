@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "rasanak-bot": {
+    "usecode-agent-bot": {
       "tools": [
         "*"
       ],
@@ -9,8 +9,8 @@
       "args": [
         "run",
         "--directory",
-        "$HOME/src/github.com/evgnomon/rasanak/lib/bot",
-        "rasanak-bot"
+        "$HOME/src/github.com/evgnomon/usecode/lib/bot",
+        "usecode-agent-bot"
       ]
     }
   }

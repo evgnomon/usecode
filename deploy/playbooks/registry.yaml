@@ -1,0 +1,10 @@
+---
+- hosts: main
+  become: true
+  vars_files:
+    - vault.yaml
+  roles:
+    - role: container-registry
+      vars:
+        container_registry_username: registry
+        container_registry_password: "{{ vault_container_registry_password }}"

@@ -1,0 +1,7 @@
+---
+- hosts: gpus
+  become: true
+  vars_files:
+    - vault.yaml
+  roles:
+    - role: llama-cpp

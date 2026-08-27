@@ -19,17 +19,17 @@
     }
   },
   "mcp": {
-    "rasanak-bot": {
+    "usecode-agent-bot": {
       "type": "local",
       "command": [
         "uv",
         "run",
         "--directory",
-        "{env:HOME}/src/github.com/evgnomon/rasanak/lib/bot",
-        "rasanak-bot"
+        "{env:HOME}/src/github.com/evgnomon/usecode/lib/bot",
+        "usecode-agent-bot"
       ],
       "environment": {
-        "RASANAK_BOT_API_BASE_URL": "https://localhost:4430/api"
+        "USECODE_AGENT_BOT_API_BASE_URL": "https://localhost:4430/api"
       },
       "enabled": true
     }

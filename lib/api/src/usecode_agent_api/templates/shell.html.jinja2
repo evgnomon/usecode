@@ -1,0 +1,51 @@
+{% extends "base.html.jinja2" %}
+{% block body %}
+  <div class="app-shell">
+    <aside class="sidebar">
+      <header class="sidebar-header">
+        <h1>usecode agent</h1>
+        <button class="logout-button"
+                hx-post="/web/auth/logout"
+                hx-trigger="click"
+                hx-swap="none">Log out</button>
+      </header>
+      <ul class="agent-list" id="agent-list">
+        {% for agent in agents %}
+          {% set preview = previews.get(agent.id) %}
+          <li>
+            <button type="button"
+                    class="agent-list-item{% if active_agent_id == agent.id %} active{% endif %}"
+                    hx-get="/web/chat/{{ agent.id }}"
+                    hx-target="#chat-panel"
+                    hx-swap="innerHTML">
+              <span class="avatar" style="background: {{ agent.color }}">
+                {{ agent.avatar }}
+                <span class="status-dot {{ agent.status }}"></span>
+              </span>
+              <span class="agent-list-meta">
+                <span class="agent-list-row">
+                  <span class="agent-name">{{ agent.name }}</span>
+                  {% if preview %}
+                    <span class="agent-time">{{ preview.ago }}</span>
+                  {% endif %}
+                </span>
+                <span class="agent-preview">
+                  {% if preview %}
+                    {{ preview.text }}
+                  {% else %}
+                    {{ agent.tagline }}
+                  {% endif %}
+                </span>
+              </span>
+            </button>
+          </li>
+        {% endfor %}
+      </ul>
+    </aside>
+    <main class="main-panel" id="chat-panel">
+      <div class="empty-state">
+        <p>Select an agent to start chatting</p>
+      </div>
+    </main>
+  </div>
+{% endblock %}

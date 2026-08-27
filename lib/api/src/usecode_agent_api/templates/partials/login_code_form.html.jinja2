@@ -1,0 +1,26 @@
+<p class="login-subtitle">Enter the code sent to {{ phone }}</p>
+<form class="login-form"
+      hx-post="/web/auth/verify-otp"
+      hx-target="#auth-flow"
+      hx-swap="innerHTML">
+  <input type="hidden" name="phone" value="{{ phone }}" />
+  <input type="text"
+         name="code"
+         inputmode="numeric"
+         pattern="[0-9]*"
+         placeholder="6-digit code"
+         autofocus
+         required />
+  {% if debug_code %}
+    <p class="login-hint">Dev mode — code: {{ debug_code }}</p>
+  {% endif %}
+  {% if error %}
+    <p class="login-error">{{ error }}</p>
+  {% endif %}
+  <button type="submit">Verify</button>
+  <button type="button"
+          class="login-link"
+          hx-get="/web/auth/reset"
+          hx-target="body"
+          hx-swap="innerHTML">Use a different number</button>
+</form>

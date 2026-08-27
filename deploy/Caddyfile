@@ -1,0 +1,28 @@
+{$DOMAIN:localhost} {
+	encode gzip
+
+	# Both Caddy instances load balance over every API instance. The API is
+	# stateless per request — a request's rows are found through the
+	# authenticated user's partition key, not through which instance served
+	# the previous request — so any instance can answer anything, and a
+	# failed one is taken out by the passive health check.
+	handle_path /api/* {
+		reverse_proxy api-1:8000 api-2:8000 {
+			lb_policy round_robin
+			health_uri /health
+			health_interval 5s
+			health_timeout 2s
+			fail_duration 10s
+		}
+	}
+
+	handle {
+		reverse_proxy api-1:8000 api-2:8000 {
+			lb_policy round_robin
+			health_uri /health
+			health_interval 5s
+			health_timeout 2s
+			fail_duration 10s
+		}
+	}
+}

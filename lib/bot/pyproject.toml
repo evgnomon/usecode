@@ -1,0 +1,21 @@
+[project]
+name = "usecode-agent-bot"
+version = "0.1.0"
+description = "MCP server for operating usecode agent"
+readme = "README.md"
+authors = [
+    { name = "Hamed Ghasemzadeh", email = "hg@evgnomon.org" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28.1",
+    "mcp[cli]>=1.9.0,<2.0.0",
+    "pydantic-settings>=2.14.2",
+]
+
+[project.scripts]
+usecode-agent-bot = "usecode_agent_bot:main"
+
+[build-system]
+requires = ["uv_build>=0.9.7,<0.10.0"]
+build-backend = "uv_build"

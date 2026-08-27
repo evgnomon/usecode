@@ -1,0 +1,23 @@
+#SPDX-License-Identifier: MIT-0
+# {{ ansible_managed }}
+[Unit]
+Description=llama.cpp HTTP server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User={{ llama_cpp_user }}
+Group={{ llama_cpp_user }}
+Environment=LLAMA_CACHE={{ llama_cpp_state_dir }}/cache
+ExecStart={{ _llama_server_cmd }}
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths={{ llama_cpp_state_dir }}
+
+[Install]
+WantedBy=multi-user.target
