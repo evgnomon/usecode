@@ -15,7 +15,13 @@
   include_tasks: j2_inflate.yaml
   vars:
     target: "{{ blueprint_user_home }}"
-  when: item.state == 'file'
+  when:
+    - item.state == 'file'
+    - installation_profile != 'dev_container' or item.path not in [
+        '.config/autostart/swap-alt-win.desktop',
+        '.config/foot/foot.ini'
+      ]
+    - installation_profile != 'dev_container' or item.path is not search('idea.desktop|rider.desktop')
   with_filetree: ../templates/share/home
   tags:
     - dotfiles
@@ -47,7 +53,7 @@
   ansible.builtin.command: /usr/sbin/sysctl -p
   when:
     - ansible_facts['os_family'] == "Debian"
-    - not wsl2_kernel | default(false)
+    - installation_profile in ['workstation', 'vm']
   tags:
     - dotfiles
 
@@ -63,12 +69,14 @@
   when:
     - ansible_facts['os_family'] == "Debian"
     - face_file_stat.stat.exists
+    - installation_profile in ['workstation', 'vm']
 
 - name: Check if gsettings is available
   command: which gsettings
   register: gsettings_check
   failed_when: false
   changed_when: false
+  when: installation_profile == 'workstation'
   tags:
     - dotfiles
 
@@ -77,7 +85,9 @@
   register: gsettings_schemas
   failed_when: false
   changed_when: false
-  when: gsettings_check.rc == 0
+  when:
+    - installation_profile in ['workstation', 'vm']
+    - gsettings_check.rc == 0
   tags:
     - dotfiles
 
@@ -85,7 +95,6 @@
   command: gsettings set org.gnome.shell.app-switcher current-workspace-only true
   when:
     - ansible_facts['os_family'] == "Debian"
-    - not wsl2_kernel | default(false)
     - gsettings_check.rc == 0
     - gsettings_schemas.stdout is defined
     - "'org.gnome.shell.app-switcher' in gsettings_schemas.stdout"
@@ -157,6 +166,7 @@
     state: present
   when:
     - ansible_facts['os_family'] == "Debian"
+    - installation_profile == 'workstation'
   tags:
     - apt
 
@@ -167,6 +177,7 @@
     state: present
   when:
     - ansible_facts['os_family'] == "Debian"
+    - installation_profile == 'workstation'
     - dict_item in apt_packages
   vars:
     dict_item: "{{ ansible_facts['distribution'] | lower }}_hardware"
@@ -180,7 +191,7 @@
     state: present
   when:
     - ansible_facts['os_family'] == "Debian"
-    - not wsl2_kernel | default(false)
+    - installation_profile in ['workstation', 'vm']
   tags:
     - apt
 
@@ -191,7 +202,7 @@
     state: present
   when:
     - ansible_facts['os_family'] == "Debian"
-    - not wsl2_kernel | default(false)
+    - installation_profile in ['workstation', 'vm']
     - dict_item in apt_packages
   vars:
     dict_item: "{{ ansible_facts['distribution'] | lower }}_desktop"
@@ -335,6 +346,7 @@
 
 - name: Install fonts
   include_tasks: fonts_install.yaml
+  when: installation_profile == 'workstation'
   tags:
     - fonts
 

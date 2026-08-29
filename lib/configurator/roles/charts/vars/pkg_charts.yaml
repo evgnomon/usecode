@@ -214,6 +214,7 @@ pkg:
           src: fzf
 
     - name: jetbrains-mono
+      dev_container: false
       version: "{{ pkg_versions.nerdfonts.version }}"
       template:
         os: all
@@ -224,6 +225,7 @@ pkg:
         creates: JetBrainsMonoNerdFontMono-*.ttf
 
     - name: firamono
+      dev_container: false
       version: "{{ pkg_versions.nerdfonts.version }}"
       template:
         os: all
@@ -234,6 +236,7 @@ pkg:
         creates: FiraMonoNerdFontMono-*.ttf
 
     - name: cascadia-mono
+      dev_container: false
       version: "{{ pkg_versions.nerdfonts.version }}"
       template:
         os: all
@@ -244,6 +247,7 @@ pkg:
         creates: CaskaydiaMonoNerdFontMono-*.ttf
 
     - name: cascadia-code
+      dev_container: false
       version: "{{ pkg_versions.nerdfonts.version }}"
       template:
         os: all
