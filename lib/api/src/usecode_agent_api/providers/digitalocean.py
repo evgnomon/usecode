@@ -134,5 +134,8 @@ async def delete_server(credentials: dict, server_id: str) -> None:
     headers = {"Authorization": f"Bearer {token}"}
     async with httpx.AsyncClient(base_url=API_BASE, headers=headers, timeout=10.0) as client:
         response = await client.delete(f"/droplets/{server_id}")
-    if response.status_code != 204:
+    # 404 means the droplet is already gone, which is the state this call
+    # exists to reach — treat it as success so a delete that is retried
+    # (or raced with itself) converges instead of failing forever.
+    if response.status_code not in (204, 404):
         raise ProviderError("digitalocean", response.status_code, response.text)

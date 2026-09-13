@@ -128,5 +128,7 @@ async def delete_server(credentials: dict, server_id: str) -> None:
     headers = {"Authorization": f"Bearer {token}"}
     async with httpx.AsyncClient(base_url=API_BASE, headers=headers, timeout=10.0) as client:
         response = await client.delete(f"/servers/{server_id}")
-    if response.status_code != 200:
+    # See the note in digitalocean.delete_server: an absent server is the
+    # outcome we want, not an error.
+    if response.status_code not in (200, 404):
         raise ProviderError("hetzner", response.status_code, response.text)

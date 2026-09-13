@@ -1002,13 +1002,24 @@ class Store:
         state: str,
         payload: dict | None = None,
         error: str | None = None,
-    ) -> None:
+        expected_state: str | None = None,
+    ) -> bool:
+        """Move a task to `state`, returning whether the write happened.
+
+        `expected_state` makes this a compare-and-set: the write is skipped
+        if the task has moved on since the caller read it. Two runs of the
+        same step can overlap (the request path advances a task inline while
+        the sweep picks up the same row), and without this the loser's write
+        — in particular the error path, which rewrites the state it started
+        from — silently undoes the winner's progress."""
         async with db.session(await _task_partition(assignee)) as session:
             task = await session.get(
                 Task, {"assignee": assignee, "id": _uuid(task_id)}
             )
             if task is None:
-                return
+                return False
+            if expected_state is not None and task.state != expected_state:
+                return False
             task.state = state
             if payload is not None:
                 task.payload = payload
@@ -1016,6 +1027,7 @@ class Store:
             task.updated_at = datetime.now(timezone.utc)
             session.add(task)
             await session.commit()
+            return True
 
     async def delete_task(self, assignee: str, task_id: str) -> None:
         """Remove a finished task and its index entry. The index goes

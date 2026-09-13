@@ -33,6 +33,7 @@ everything the handler touches on the user's behalf.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Awaitable, Callable
 
@@ -129,7 +130,22 @@ async def advance(assignee: str, task_id: str) -> TaskRecord | None:
     try:
         next_state, payload = await handler(ctx)
     except Exception as exc:  # noqa: BLE001 — keep the task alive at its current state for retry
-        await store.set_task_state(assignee, task.id, task.state, error=str(exc))
+        # A failing step is otherwise invisible: the error is persisted on
+        # the row and nothing reaches the log, so a task retrying forever
+        # looks like silence to an operator.
+        logging.getLogger(__name__).warning(
+            "Task %s (kind=%s) failed at state %s: %s",
+            task.id,
+            task.kind,
+            task.state,
+            exc,
+        )
+        # Compare-and-set on the state we read: if a concurrent run of this
+        # same step already advanced the task, recording our failure here
+        # would drag it back a step and wedge the workflow.
+        await store.set_task_state(
+            assignee, task.id, task.state, error=str(exc), expected_state=task.state
+        )
         return await store.get_task(assignee, task.id)
 
     if next_state is DONE:
@@ -138,7 +154,9 @@ async def advance(assignee: str, task_id: str) -> TaskRecord | None:
         await store.delete_task(assignee, task.id)
         return None
 
-    await store.set_task_state(assignee, task.id, next_state, payload=payload)
+    await store.set_task_state(
+        assignee, task.id, next_state, payload=payload, expected_state=task.state
+    )
     return await store.get_task(assignee, task.id)
 
 
