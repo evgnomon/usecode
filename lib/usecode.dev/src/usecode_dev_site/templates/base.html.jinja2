@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{% block title %}usecode — infrastructure provisioning for your coding agent{% endblock %}</title>
+    <meta name="description" content="{% block description %}usecode is a free, open source MCP server that lets your coding agent provision real infrastructure — servers, volumes, networks, DNS — across Hetzner, AWS, Google Cloud, Azure and more. Without it, the agent writes the app and hands you a console.{% endblock %}" />
+    <link rel="stylesheet" href="/static/css/site.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="wrap topbar-inner">
+        <a class="brand" href="/">usecode<span>.dev</span></a>
+        <nav class="nav">
+          <a href="/getting-started" class="{{ 'active' if page == 'getting-started' }}">Getting started</a>
+          <a href="/team" class="{{ 'active' if page == 'team' }}">Team</a>
+          <a href="{{ repo_url }}">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>{% block body %}{% endblock %}</main>
+
+    <footer class="footer">
+      <div class="wrap footer-inner">
+        <p>usecode — infrastructure provisioning over MCP. All of it public under the {{ license_name }}; nothing waiting behind a sales call.</p>
+        <p class="muted">
+          <a href="{{ repo_url }}">Source</a> ·
+          <a href="/getting-started">Docs</a> ·
+          <a href="/team">Team</a> ·
+          <a href="{{ source_license_url }}">Licence</a>
+        </p>
+      </div>
+    </footer>
+  </body>
+</html>

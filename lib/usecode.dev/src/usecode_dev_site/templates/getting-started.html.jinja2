@@ -1,0 +1,68 @@
+{% extends "base.html.jinja2" %}
+{% import "_macros.html.jinja2" as ui %}
+
+{% block title %}Getting started — usecode{% endblock %}
+{% block description %}Three steps and your agent stops handing infrastructure back to you. Install usecode, export your cloud credentials, connect Claude Code, Cursor, VS Code, Zed or any MCP client.{% endblock %}
+
+{% block body %}
+<section class="page-head">
+  <div class="wrap">
+    <h1>Getting started</h1>
+    <p class="lede">Three steps — install, add credentials, connect your agent — and the next thing you ask for gets built instead of explained.</p>
+  </div>
+</section>
+
+<section class="wrap section">
+  <ol class="steps">
+    {% for step in steps %}
+    <li>
+      <h2>{{ step.title }}</h2>
+      <p>{{ step.body }}</p>
+      {% if step.code %}{{ ui.code(step.code, step.lang) }}{% endif %}
+    </li>
+    {% endfor %}
+  </ol>
+</section>
+
+<section class="wrap section">
+  <h2>Configure your agent</h2>
+  <p class="muted">Every client below talks the same MCP protocol, so nothing here locks you to the agent you pick today.</p>
+  <div class="tabs">
+    {% for agent in agents %}
+    <input class="tab-radio" type="radio" name="agent" id="tab-{{ agent.id }}"{{ ' checked' if loop.first }} />
+    {% endfor %}
+    <div class="tablist" role="tablist">
+      {% for agent in agents %}
+      <label class="tab" for="tab-{{ agent.id }}">{{ agent.name }}</label>
+      {% endfor %}
+    </div>
+    <div class="tabpanels">
+      {% for agent in agents %}
+      <article class="tabpanel card" id="{{ agent.id }}">
+        <p class="muted">{{ agent.note }}</p>
+        {{ ui.code(agent.code, agent.lang) }}
+      </article>
+      {% endfor %}
+    </div>
+  </div>
+  <style>
+    {% for agent in agents %}
+    #tab-{{ agent.id }}:checked ~ .tablist .tab[for="tab-{{ agent.id }}"] { color: var(--fg); border-color: var(--accent); background: var(--accent-soft); }
+    #tab-{{ agent.id }}:focus-visible ~ .tablist .tab[for="tab-{{ agent.id }}"] { outline: 2px solid var(--accent); outline-offset: 2px; }
+    #tab-{{ agent.id }}:checked ~ .tabpanels #{{ agent.id }} { display: block; }
+    {% endfor %}
+  </style>
+</section>
+
+<section class="wrap section">
+  <h2>Confirm it before you need it</h2>
+  <p>Restart the agent so it re-reads its MCP config, then ask it something like:</p>
+  <ul class="prompts">
+    {% for prompt in prompts %}<li>“{{ prompt }}”</li>{% endfor %}
+  </ul>
+  <p class="muted">
+    If the agent says it has no such tool, the server isn't connected — check the
+    client's MCP log, and confirm <code>uvx usecode-mcp</code> starts on its own.
+  </p>
+</section>
+{% endblock %}

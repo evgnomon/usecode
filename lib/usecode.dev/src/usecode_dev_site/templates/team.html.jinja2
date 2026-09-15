@@ -1,0 +1,102 @@
+{% extends "base.html.jinja2" %}
+{% import "_macros.html.jinja2" as ui %}
+
+{% block title %}Team — usecode{% endblock %}
+{% block description %}Run usecode yourself and the uptime, the upgrades, the restore drills and the 3am page are yours. Team is the same public build, operated by us, with an SLA in writing. Nothing is held back from the free release.{% endblock %}
+
+{% block body %}
+<section class="page-head">
+  <div class="wrap">
+    <h1>usecode Team</h1>
+    <p class="lede">
+      All of usecode is released to the public under the {{ license_name }}, so
+      there is no bigger version to buy. There is only the question of whose
+      weekend the upgrade lands on. Team is the same copy, running on our
+      machines, with our name on the uptime.
+    </p>
+  </div>
+</section>
+
+<section class="wrap section">
+  <div class="callout">
+    <h2>The paid plan contains no extra software</h2>
+    <p>
+      Same tools, same providers, same credential vault, same audit log, same
+      drift detection. There is no closed core and no licence key that unlocks a
+      feature. If a capability exists at all, it is in the release you can
+      download right now, for free, forever.
+    </p>
+    <p class="muted">
+      So the honest question is not what you get. It is who does the work, and
+      who is awake when it breaks. Left unanswered, that is you by default.
+    </p>
+  </div>
+</section>
+
+<section class="wrap section">
+  <h2>What you carry if you don't</h2>
+  <div class="grid">
+    {% for value in hosted_values %}
+    <article class="card">
+      <h3>{{ value.title }}</h3>
+      <p>{{ value.body }}</p>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="wrap section">
+  <h2>Plans</h2>
+  <div class="grid three">
+    {% for edition in editions %}{{ ui.edition_card(edition) }}{% endfor %}
+  </div>
+  <p class="muted">
+    Support &amp; warranty applies to a deployment you run yourself, for when moving
+    the infrastructure is not on the table but carrying the risk alone no longer is
+    either. The {{ license_name }} reserves support, warranties and indemnities as
+    things that may be offered for a fee — that is the only thing we sell.
+  </p>
+</section>
+
+<section class="wrap section">
+  <h2>Connect to the hosted endpoint</h2>
+  <p>Nothing to install, nothing to keep patched. Point any MCP client at the endpoint with your API key:</p>
+  {{ ui.code('{
+  "mcpServers": {
+    "usecode": {
+      "type": "http",
+      "url": "https://mcp.usecode.dev",
+      "headers": { "Authorization": "Bearer ${USECODE_API_KEY}" }
+    }
+  }
+}', "json") }}
+</section>
+
+<section class="wrap section">
+  <h2>Or host it yourself</h2>
+  <p>
+    We would rather say this now than have you feel misled later. Everything above
+    runs on your own hardware, from the same repository — the trade is that each
+    line below becomes your job:
+  </p>
+  {{ ui.step_list(self_host_steps) }}
+</section>
+
+<section class="wrap section">
+  <h2>What the licence gives you</h2>
+  <ul class="ticks">
+    {% for point in license_points %}<li>{{ point }}</li>{% endfor %}
+  </ul>
+  <p class="muted">
+    Read the <a href="{{ source_license_url }}">full {{ license_name }}</a>. The
+    public release carries no warranty, as that licence requires — so until you
+    have a plan, an outage has no counterparty. Lifting that disclaimer is what a
+    paid plan is for.
+  </p>
+</section>
+
+<section class="wrap section">
+  <h2>Questions</h2>
+  {{ ui.faq_list(faqs) }}
+</section>
+{% endblock %}

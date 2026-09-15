@@ -1,62 +1,46 @@
-# UseCode.dev
+# usecode.dev
 
-This website is deprecated. The documentation has moved to
-<https://evgnomon.org/docs/usecode-dev/>.
+Website for **usecode**, the infrastructure provisioner MCP, released to the
+public under the HGL General License.
 
+FastAPI + Jinja2, server-rendered, no build step. Content lives in
+`src/usecode_dev_site/content.py`; templates stay presentation-only.
 
-## Building the Documentation
+## Run locally
 
-### Quick Start with Invoke
-
-The easiest way to build and work with the documentation is using invoke commands:
-
-```bash
-# Install dependencies
-inv install
-
-# Build the documentation
-inv build
-
-# Serve documentation locally at http://localhost:8000
-inv serve
-
-# Watch for changes and auto-rebuild (live reload)
-inv watch
-
-# Clean build artifacts
-inv clean
-
-# Clean and rebuild
-inv rebuild
-
-# Check links in documentation
-inv check
-
-# Build for production deployment
-inv publish
+```sh
+cd lib/usecode.dev
+uv sync
+uv run usecode-dev-site   # http://localhost:8080
 ```
 
-### Manual Build (Alternative)
+Or via make:
 
-If you prefer to build manually:
-
-1. Install dependencies:
-```bash
-pip install -r requirements.txt
+```sh
+make serve
 ```
 
-2. Build the docs:
-```bash
-sphinx-build -b html docs/source build
-```
+## Pages
 
-3. View the documentation:
-Open `build/index.html` in your browser.
+| Route              | Template                      |
+| ------------------ | ----------------------------- |
+| `/`                | `index.html.jinja2`           |
+| `/getting-started` | `getting-started.html.jinja2` |
+| `/team`            | `team.html.jinja2`            |
+| `/healthz`         | plain `ok`                    |
 
-## Deployment
+## Editing content
 
-The documentation is automatically built and deployed to GitHub Pages when changes are pushed to the main branch.
+Add a provider, feature, plan, agent config or FAQ entry by editing the
+corresponding list in `content.py` — no template change needed.
 
-## License
+The monetization copy lives in four lists there, and they carry one rule: the
+hosted service is built from the public release, so nothing in a paid plan may
+be described as software the free version lacks.
 
-HGL - The Last Software License
+| List             | Holds                                                     |
+| ---------------- | --------------------------------------------------------- |
+| `EDITIONS`       | The three plans: self-hosted, hosted, support & warranty   |
+| `HOSTED_VALUES`  | What a subscription buys — operation, assurance, uptime    |
+| `SELF_HOST_STEPS`| The real `deploy/compose.yml` path, shown on the paid page |
+| `LICENSE_POINTS` | What HGL grants the reader                                 |

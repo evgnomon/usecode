@@ -1,0 +1,39 @@
+{% macro code(snippet, lang='sh') %}
+<pre class="code" data-lang="{{ lang }}"><code>{{ snippet }}</code></pre>
+{% endmacro %}
+
+{% macro edition_card(edition) %}
+<article class="card edition {{ 'featured' if edition.featured }}">
+  {% if edition.badge %}<span class="badge">{{ edition.badge }}</span>{% endif %}
+  <h3>{{ edition.name }}</h3>
+  <p class="price">{{ edition.price }} <span class="muted">{{ edition.period }}</span></p>
+  <p class="tagline">{{ edition.tagline }}</p>
+  <ul class="ticks">
+    {% for point in edition.points %}<li>{{ point }}</li>{% endfor %}
+  </ul>
+  <a class="btn {{ 'primary' if edition.featured else 'ghost' }}" href="{{ edition.cta.href }}">{{ edition.cta.label }}</a>
+</article>
+{% endmacro %}
+
+{% macro faq_list(faqs) %}
+<div class="faq">
+  {% for item in faqs %}
+  <details>
+    <summary>{{ item.q }}</summary>
+    <p>{{ item.a }}</p>
+  </details>
+  {% endfor %}
+</div>
+{% endmacro %}
+
+{% macro step_list(steps) %}
+<ol class="steps">
+  {% for step in steps %}
+  <li>
+    <h3>{{ step.title }}</h3>
+    <p>{{ step.body }}</p>
+    {% if step.code %}{{ code(step.code, step.lang or 'sh') }}{% endif %}
+  </li>
+  {% endfor %}
+</ol>
+{% endmacro %}

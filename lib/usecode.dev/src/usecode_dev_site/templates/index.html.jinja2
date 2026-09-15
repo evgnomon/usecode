@@ -1,0 +1,88 @@
+{% extends "base.html.jinja2" %}
+{% import "_macros.html.jinja2" as ui %}
+
+{% block body %}
+<section class="hero">
+  <div class="wrap">
+    <p class="eyebrow">Free and open source · {{ license_name }} · MCP server</p>
+    <h1>Infrastructure provisioning for your coding agent.</h1>
+    <p class="lede">
+      usecode is a free, open source MCP server. Point your agent at it and it
+      creates servers, volumes, networks and DNS on Hetzner, AWS, Google Cloud,
+      Azure and the rest — asked for in plain language, planned before applied.
+      Without it, your agent writes the app and hands you a console.
+    </p>
+    <div class="actions">
+      <a class="btn primary" href="/getting-started">Get started — free</a>
+      <a class="btn ghost" href="{{ repo_url }}">View source</a>
+    </div>
+    {{ ui.code("uv tool install usecode-mcp\nclaude mcp add usecode -- uvx usecode-mcp", "sh") }}
+  </div>
+</section>
+
+<section class="wrap section">
+  <h2>Sentences that would otherwise be an afternoon</h2>
+  <ul class="prompts">
+    {% for prompt in prompts %}<li>“{{ prompt }}”</li>{% endfor %}
+  </ul>
+  <p class="muted">
+    Each resolves to ordinary tool calls — plan first, then apply — against whichever
+    provider holds the credentials you exported. No console tab, no ticket, no
+    waiting on the one person who knows the account.
+  </p>
+</section>
+
+<section class="wrap section">
+  <h2>What happens without it</h2>
+  <div class="grid">
+    {% for feature in features %}
+    <article class="card">
+      <h3>{{ feature.title }}</h3>
+      <p>{{ feature.body }}</p>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="wrap section">
+  <h2>Providers</h2>
+  <ul class="chips">
+    {% for provider in providers %}<li>{{ provider }}</li>{% endfor %}
+  </ul>
+</section>
+
+<section class="wrap section">
+  <h2>Free and open source — the whole thing</h2>
+  <p>
+    Open-core tools keep the provider you actually run, or the audit trail your
+    auditor asks for, on the other side of a quote. usecode is published whole
+    under the {{ license_name }} — every tool, every provider, the entire source.
+    The hosted service runs that same build, so a subscription buys operation and
+    assurance, never access.
+  </p>
+  <ul class="ticks">
+    {% for point in license_points %}<li>{{ point }}</li>{% endfor %}
+  </ul>
+  <p class="muted">
+    <a href="{{ source_license_url }}">Read the licence</a> ·
+    <a href="/team">Why anyone pays for it</a>
+  </p>
+</section>
+
+<section class="wrap section">
+  <h2>Somebody operates this. Decide who.</h2>
+  <div class="grid three">
+    {% for edition in editions %}{{ ui.edition_card(edition) }}{% endfor %}
+  </div>
+  <p class="muted">
+    The paid plans add no software. They add an endpoint that stays up, a restore
+    that has been rehearsed, and someone contractually on the hook — otherwise all
+    three are you.
+  </p>
+</section>
+
+<section class="wrap section">
+  <h2>Questions</h2>
+  {{ ui.faq_list(faqs) }}
+</section>
+{% endblock %}
