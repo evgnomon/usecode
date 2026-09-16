@@ -39,13 +39,13 @@
         - pkg
       when:
         - ansible_facts['os_family'] in pkg_versions.get(package.name, {}).get('os_families', [ansible_facts['os_family']])
-        - pkg_versions.get(package.name, {}).get('dev_container', true) or not dev_container | default(false)
+        - package.get('dev_container', pkg_versions.get(package.name, {}).get('dev_container', true)) or installation_profile != 'dev_container'
 
     - name: Include pkg role for Debian specific packages
       with_items: "{{ pkg_debian.charts }}"
       when:
         - ansible_facts['os_family'] in pkg_versions.get(package.name, {}).get('os_families', [ansible_facts['os_family']])
-        - pkg_versions.get(package.name, {}).get('dev_container', true) or not dev_container | default(false)
+        - package.get('dev_container', pkg_versions.get(package.name, {}).get('dev_container', true)) or installation_profile != 'dev_container'
 
       include_role:
         name: pkg
@@ -61,11 +61,12 @@
     - usecode
     - install_flow
     - terminal
-    - { role: bash_history_backup, when: not dev_container | default(false) }
-    - { role: wslview, when: wsl2_kernel | default(false) }
+    - role: bash_history_backup
+      when: installation_profile not in ['dev_container', 'wsl']
+    - { role: wslview, when: installation_profile == 'wsl' }
     - vscode
-    - docker
-    - remove-gnome-packages
+    - { role: docker, when: installation_profile != 'dev_container' }
+    - { role: remove-gnome-packages, when: installation_profile == 'workstation' }
   environment: "{{ proxy_env | combine({'PATH': custom_path, 'LD_LIBRARY_PATH': ansible_facts['env']['HOME'] ~ '/.pyenv/versions/' ~ (python_version | default('3.14.3')) ~ '/lib/'}) }}"
 
 - name: Localhost roles for Debian family (non-WSL2 only)
@@ -75,18 +76,18 @@
     - name: Run disable_ipv6 role
       include_role:
         name: disable_ipv6
-      when: not wsl2_kernel | default(false) and not dev_container | default(false)
+      when: installation_profile == 'workstation'
     - name: Run packer role
       include_role:
         name: packer
-      when: not wsl2_kernel | default(false)
+      when: installation_profile != 'dev_container'
     - name: Run system-facts role
       include_role:
         name: system-facts
     - name: Run llama-cpp role
       include_role:
         name: llama-cpp
-      when: not wsl2_kernel | default(false)
+      when: installation_profile != 'dev_container'
   environment: "{{ proxy_env | combine({'PATH': custom_path, 'LD_LIBRARY_PATH': ansible_facts['env']['HOME'] ~ '/.pyenv/versions/' ~ (python_version | default('3.14.3')) ~ '/lib/'}) }}"
 
 - name: Install ZLS language server
