@@ -1,18 +1,18 @@
-SOURCES := $(shell find . -type f \( -name "*.zig" -o -name "*.c" -o -name "*.h"  \)  ! -path "*/.zig-cache/*")
-OUTPUT := zig-out/bin/jsonc
-OPTIMIZE ?= ReleaseFast
+SOURCES := $(shell find src -type f -name "*.rs") Cargo.toml Cargo.lock
+PROFILE ?= release
+OUTPUT := target/$(PROFILE)/jsonc
 DESTDIR ?= /
 PREFIX ?= /usr/local
 INSTALL_BIN := $(DESTDIR)$(patsubst /%,%,$(PREFIX))/bin/jsonc
 
-.PHONY: install clean uninstall build all dist
+.PHONY: all build check install uninstall test lint fmt dist publish clean
 
 all: build
 
 build: $(OUTPUT)
 
 $(OUTPUT): $(SOURCES)
-	@zig build -Doptimize=$(OPTIMIZE)
+	@cargo build --profile $(PROFILE)
 	@touch $(OUTPUT)
 
 install: $(INSTALL_BIN)
@@ -20,6 +20,20 @@ install: $(INSTALL_BIN)
 $(INSTALL_BIN): $(OUTPUT)
 	@install -d $(@D)
 	@install -m 0755 $(OUTPUT) $@
+
+check:
+	@cargo fmt --check
+	@cargo clippy --all-targets -- -D warnings
+	@cargo test
+
+test:
+	@cargo test
+
+lint:
+	@cargo clippy --all-targets -- -D warnings
+
+fmt:
+	@cargo fmt
 
 dist: build
 	@mkdeb
@@ -31,4 +45,4 @@ uninstall:
 	@rm -f $(INSTALL_BIN)
 
 clean:
-	@rm -rf $(OUTPUT)
+	@cargo clean

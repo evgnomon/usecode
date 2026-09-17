@@ -1,0 +1,17 @@
+[package]
+name = "jsonc"
+version = "0.1.0"
+edition = "2024"
+description = "Strip comments and trailing commas from JSONC, producing valid JSON"
+authors = ["Hamed Ghasemzadeh <hg@evgnomon.org>"]
+
+[lib]
+name = "jsonc"
+path = "src/lib.rs"
+
+[[bin]]
+name = "jsonc"
+path = "src/main.rs"
+
+[profile.release]
+strip = true
