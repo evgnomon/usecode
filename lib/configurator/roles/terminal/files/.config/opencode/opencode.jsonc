@@ -22,10 +22,6 @@
     "usecode": {
       "type": "local",
       "command": [
-        "uv",
-        "run",
-        "--directory",
-        "{env:HOME}/src/github.com/evgnomon/usecode/lib/bot",
         "usecode-mcp"
       ],
       "environment": {

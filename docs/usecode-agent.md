@@ -4,7 +4,7 @@ Messenger for chatting with AI agents.
 
 - `lib/api` — FastAPI backend with server-rendered Jinja2 + HTMX UI and OTP auth API.
 - `lib/app` — SCSS source assets compiled into API static CSS.
-- `lib/bot` — MCP server that operates usecode agent (wraps `lib/api` as tools for AI agents).
+- `lib/bot` — MCP server (Rust) that operates usecode agent (wraps `lib/api` as tools for AI agents).
 
 ## Run locally
 
@@ -30,13 +30,13 @@ See `lib/app/README.md`, `lib/api/README.md`, and `lib/bot/README.md` for detail
 logout) against a running `lib/api` instance.
 
 ```sh
-cd lib/bot && uv sync && uv run usecode-mcp   # starts an MCP server over stdio
+cd lib/bot && make install && usecode-mcp   # starts an MCP server over stdio
 ```
 
 Add it to Claude Code:
 
 ```sh
-claude mcp add usecode -- uv run --directory /path/to/usecode/lib/bot usecode-mcp
+claude mcp add usecode -- usecode-mcp
 ```
 
 See `lib/bot/README.md` for configuration and the full tool list.

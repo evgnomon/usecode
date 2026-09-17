@@ -5,13 +5,8 @@
         "*"
       ],
       "type": "local",
-      "command": "uv",
-      "args": [
-        "run",
-        "--directory",
-        "$HOME/src/github.com/evgnomon/usecode/lib/bot",
-        "usecode-mcp"
-      ]
+      "command": "usecode-mcp",
+      "args": []
     }
   }
 }
