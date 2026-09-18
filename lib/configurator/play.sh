@@ -9,12 +9,12 @@ PYTHON_VERSION="3.14.3"
 
 PLAYARGS="-e python_version=$PYTHON_VERSION"
 
-if [ "$IS_WSL2" = "true" ]; then
-  PLAYARGS="$PLAYARGS -e wsl2=true"
-fi
-
-if [ ! -z "$DEV_CONTAINER" ]; then
-  PLAYARGS="$PLAYARGS -e dev_container=$DEV_CONTAINER"
+if [ -n "${INSTALL_PROFILE:-}" ]; then
+  PLAYARGS="$PLAYARGS -e install_profile=$INSTALL_PROFILE"
+elif [ -n "${DEV_CONTAINER:-}" ]; then
+  PLAYARGS="$PLAYARGS -e install_profile=dev_container"
+elif [ "$IS_WSL2" = "true" ]; then
+  PLAYARGS="$PLAYARGS -e install_profile=wsl"
 fi
 
 if [ ! -z "$ASK_BECOME_PASS" ]; then

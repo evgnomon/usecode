@@ -1,5 +1,22 @@
 # Getting Started
 
+## Installation profiles
+
+The configurator accepts `INSTALL_PROFILE` (or Ansible's `install_profile`) with these
+values:
+
+| Profile | Intended environment | Desktop, fonts, hardware |
+| --- | --- | --- |
+| `workstation` | Physical Linux desktop | Enabled |
+| `dev_container` | VS Code/devcontainer or generic container | Disabled |
+| `wsl` | WSL2 | Disabled |
+| `vm` | Explicit VM installation | Desktop packages enabled; host-only hardware remains disabled |
+
+The profile is selected explicitly when provided, otherwise `DEV_CONTAINER` and WSL2
+detection are used. Dev containers omit JetBrains IDEs, Nerd Fonts, GUI applications,
+QEMU/image tooling, hardware-token packages, and GNOME configuration while retaining
+compilers, language servers, CLI tools, and development libraries.
+
 ```bash
 git clone
 make
