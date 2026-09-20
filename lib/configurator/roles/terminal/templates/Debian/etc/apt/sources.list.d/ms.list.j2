@@ -1,2 +1,6 @@
 {% set arch = 'amd64' if ansible_facts['architecture'] == 'x86_64' else ansible_facts['architecture'] %}
-deb [arch={{ arch }} signed-by=/etc/apt/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/debian/{{ ansible_facts['distribution_major_version'] }}/prod {{ ansible_facts['distribution_release'] }} main
+{% set microsoft_repo = {
+  'bookworm': {'version': '12', 'suite': 'bookworm'},
+  'trixie': {'version': '13', 'suite': 'trixie'},
+}.get(ansible_facts['distribution_release'], {'version': '12', 'suite': 'bookworm'}) %}
+deb [arch={{ arch }} signed-by=/etc/apt/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/debian/{{ microsoft_repo.version }}/prod {{ microsoft_repo.suite }} main
