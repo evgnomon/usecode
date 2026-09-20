@@ -1,0 +1,19 @@
+#!/bin/sh
+set -eu
+
+dest=/etc/apt/keyrings/hashicorp-archive-keyring.gpg
+
+install -d -m 0755 "$(dirname "$dest")"
+
+tmp_key="$(mktemp)"
+cleanup() {
+  rm -f "$tmp_key"
+}
+trap cleanup EXIT INT TERM
+
+curl -fsSL https://apt.releases.hashicorp.com/gpg | gpg --dearmor --batch --yes -o "$tmp_key"
+
+if [ ! -f "$dest" ] || ! cmp -s "$tmp_key" "$dest"; then
+  install -m 0644 "$tmp_key" "$dest"
+  printf 'changed\n'
+fi
