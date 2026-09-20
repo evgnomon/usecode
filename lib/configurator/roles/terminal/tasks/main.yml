@@ -101,27 +101,7 @@
   tags:
     - dotfiles
 
-- name: Install HashiCorp Apt key refresh helper
-  become: true
-  ansible.builtin.copy:
-    src: refresh-hashicorp-apt-key
-    dest: /usr/local/bin/refresh-hashicorp-apt-key
-    mode: "0755"
-  when: ansible_facts['os_family'] == "Debian"
-  tags:
-    - always
-
-- name: Refresh HashiCorp Apt signing key
-  become: true
-  environment: "{{ proxy_env }}"
-  ansible.builtin.command: /usr/local/bin/refresh-hashicorp-apt-key
-  register: terminal_hashicorp_key_refresh
-  changed_when: "'changed' in terminal_hashicorp_key_refresh.stdout"
-  when: ansible_facts['os_family'] == "Debian"
-  tags:
-    - always
-
-- name: Check refreshed HashiCorp Apt keyring
+- name: Check HashiCorp Apt keyring
   become: true
   ansible.builtin.stat:
     path: /etc/apt/keyrings/hashicorp-archive-keyring.gpg
