@@ -8,7 +8,6 @@ sudo DEBIAN_FRONTEND=noninteractive apt upgrade -y \
   -o Dpkg::Options::="--force-confold" \
   -o Dpkg::Options::="--force-confdef"
 sudo apt install -y git make
-git config --global credential.helper store
 
 mkdir -p ~/src/github.com/evgnomon
 cd ~/src/github.com/evgnomon
