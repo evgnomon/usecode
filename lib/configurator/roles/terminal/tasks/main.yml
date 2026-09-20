@@ -101,12 +101,6 @@
   tags:
     - dotfiles
 
-- name: Include distro tasks
-  include_tasks: main-{{ ansible_facts['distribution'] }}.yaml
-  when: ansible_facts['os_family'] == "Debian"
-  tags:
-    - always
-
 - name: Install HashiCorp Apt key refresh helper
   become: true
   ansible.builtin.copy:
@@ -132,6 +126,12 @@
   ansible.builtin.file:
     path: /etc/apt/trusted.gpg.d/hashicorp-archive-keyring.gpg
     state: absent
+  when: ansible_facts['os_family'] == "Debian"
+  tags:
+    - always
+
+- name: Include distro tasks
+  include_tasks: main-{{ ansible_facts['distribution'] }}.yaml
   when: ansible_facts['os_family'] == "Debian"
   tags:
     - always

@@ -2,6 +2,7 @@
 set -eu
 
 dest=/etc/apt/keyrings/hashicorp-archive-keyring.gpg
+expected_fingerprint=D55C0D1AC78A8D8126CB631CFC9CA96ACA026560
 
 install -d -m 0755 "$(dirname "$dest")"
 
@@ -12,6 +13,11 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 curl -fsSL https://apt.releases.hashicorp.com/gpg | gpg --dearmor --batch --yes -o "$tmp_key"
+
+if ! gpg --show-keys --with-colons "$tmp_key" | awk -F: '$1 == "fpr" { print $10 }' | grep -Fxq "$expected_fingerprint"; then
+  printf 'HashiCorp Apt signing key fingerprint mismatch\n' >&2
+  exit 1
+fi
 
 if [ ! -f "$dest" ] || ! cmp -s "$tmp_key" "$dest"; then
   install -m 0644 "$tmp_key" "$dest"
