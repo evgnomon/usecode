@@ -219,9 +219,17 @@
     "chat.mcp.gallery.enabled": true,
     "claudeCode.preferredLocation": "panel",
     "workbench.editor.empty.hint": "hidden",
-    "yaml.disableSchemaDetection": [
-        "azure-pipelines.yml",
-        "azure-pipelines.yaml"
-    ],
-    "remote.autoForwardPortsSource": "hybrid"
+    "yaml.disableSchemaDetection": [],
+    "remote.autoForwardPortsSource": "hybrid",
+    "chat.tools.terminal.autoApprove": {
+        "/^git -C /home/evgnomon/src/github\\.com/bosch/ms-playbook config user\\.name && git -C /home/evgnomon/src/github\\.com/bosch/ms-playbook config user\\.email && date \\+\"%B %d, %Y \\(%A\\)\"$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^git -C /home/evgnomon/src/github\\.com/bosch/ms-playbook log --since=\"2026-08-12 00:00\" --until=\"2026-08-14 00:00\" --author=\"\\$\\(git -C /home/evgnomon/src/github\\.com/bosch/ms-playbook config user\\.name\\)\" --date=iso --pretty=format:'%h%x09%ad%x09%s' --stat$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    },
+    "geminicodeassist.project": "rbprj-100397"
 }
