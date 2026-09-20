@@ -1,0 +1,11 @@
+# Swap Super and Left Alt on the built-in (AT/i8042) laptop keyboard only.
+#
+# GNOME on Wayland applies xkb-options to every keyboard, so the old
+# altwin:swap_alt_win autostart also swapped the external Flow84. Doing it
+# here keeps the swap scoped to the internal keyboard; external keyboards
+# (Flow84, Logitech receiver, dock) are left untouched.
+#
+# 0x38 = left alt, 0xdb = left meta (e0 5b) in AT scancode set 1.
+evdev:atkbd:dmi:bvn*:bvr*:bd*:svnSamsung:pnGalaxyBook6Pro-PAMB:*
+ KEYBOARD_KEY_38=leftmeta
+ KEYBOARD_KEY_db=leftalt

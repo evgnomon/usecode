@@ -18,7 +18,6 @@
   when:
     - item.state == 'file'
     - installation_profile != 'dev_container' or item.path not in [
-        '.config/autostart/swap-alt-win.desktop',
         '.config/foot/foot.ini'
       ]
     - installation_profile != 'dev_container' or item.path is not search('idea.desktop|rider.desktop')
@@ -45,6 +44,18 @@
     - item.state == 'file'
     - ansible_facts['os_family'] == "Debian"
   with_filetree: ../templates/{{ ansible_facts['distribution'] }}/etc
+  tags:
+    - dotfiles
+
+- name: Rebuild hwdb so per-device keyboard maps apply
+  become: true
+  ansible.builtin.shell: |
+    systemd-hwdb update
+    udevadm trigger --subsystem-match=input --action=change
+  changed_when: false
+  when:
+    - ansible_facts['os_family'] == "Debian"
+    - installation_profile in ['workstation', 'vm']
   tags:
     - dotfiles
 

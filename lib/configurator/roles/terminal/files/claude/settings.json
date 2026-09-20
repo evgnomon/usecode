@@ -9,6 +9,6 @@
   },
   "effortLevel": "medium",
   "tui": "fullscreen",
-  "theme": "dark-ansi",
+  "theme": "auto",
   "skipAutoPermissionPrompt": true
 }

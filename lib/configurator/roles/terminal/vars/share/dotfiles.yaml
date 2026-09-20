@@ -1,6 +1,5 @@
 ---
 dotfiles:
-  - .config/autostart/swap-alt-win.desktop
   - .config/containers/registries.conf
   - .config/foot/foot.ini
   - .config/hcloud/cli.sh
