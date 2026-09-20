@@ -117,21 +117,21 @@
   tags:
     - always
 
-- name: Remove legacy HashiCorp Apt keyring
-  become: true
-  ansible.builtin.file:
-    path: /etc/apt/trusted.gpg.d/hashicorp-archive-keyring.gpg
-    state: absent
-  when: ansible_facts['os_family'] == "Debian"
-  tags:
-    - always
-
 - name: Refresh HashiCorp Apt signing key
   become: true
   environment: "{{ proxy_env }}"
   ansible.builtin.command: /usr/local/bin/refresh-hashicorp-apt-key
   register: terminal_hashicorp_key_refresh
   changed_when: "'changed' in terminal_hashicorp_key_refresh.stdout"
+  when: ansible_facts['os_family'] == "Debian"
+  tags:
+    - always
+
+- name: Remove legacy HashiCorp Apt keyring
+  become: true
+  ansible.builtin.file:
+    path: /etc/apt/trusted.gpg.d/hashicorp-archive-keyring.gpg
+    state: absent
   when: ansible_facts['os_family'] == "Debian"
   tags:
     - always
