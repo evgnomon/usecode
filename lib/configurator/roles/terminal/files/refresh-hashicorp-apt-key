@@ -14,8 +14,8 @@ trap cleanup EXIT INT TERM
 
 curl -fsSL https://apt.releases.hashicorp.com/gpg | gpg --dearmor --batch --yes -o "$tmp_key"
 
-fingerprints="$(gpg --show-keys --with-colons "$tmp_key" | awk -F: '$1 == "fpr" { print $10 }' | sort -u)"
-if [ "$fingerprints" != "$expected_fingerprint" ]; then
+primary_fingerprint="$(gpg --show-keys --with-colons "$tmp_key" | awk -F: '$1 == "pub" { primary = 1; next } primary && $1 == "fpr" { print $10; exit }')"
+if [ "$primary_fingerprint" != "$expected_fingerprint" ]; then
   printf 'HashiCorp Apt signing key fingerprint mismatch\n' >&2
   exit 1
 fi
