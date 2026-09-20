@@ -3,6 +3,14 @@
   set_fact:
     wsl2_kernel: "{{ ansible_facts['kernel'] | split('-') | last == 'WSL2' }}"
 
+- name: Select installation profile
+  set_fact:
+    installation_profile: >-
+      {{ install_profile | default(
+           'dev_container' if (dev_container | default(false) | bool)
+           else ('wsl' if wsl2_kernel else 'workstation'),
+           true) }}
+
 - include_vars: "{{ item }}"
   with_first_found:
     - "{{ ansible_facts['distribution'] }}-{{ ansible_facts['distribution_major_version'] }}.yml"

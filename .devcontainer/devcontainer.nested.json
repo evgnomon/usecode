@@ -1,0 +1,24 @@
+{
+	"name": "usecode (nested Podman)",
+	"build": {
+		"dockerfile": "Containerfile",
+		"context": ".."
+	},
+	"workspaceFolder": "/workspaces/usecode",
+	"containerEnv": {
+		"DEV_CONTAINER": "true",
+		"INSTALL_PROFILE": "dev_container",
+		"HISTFILE": "/commandhistory/.bash_history",
+		"HISTSIZE": "10000",
+		"HISTFILESIZE": "20000",
+		"PROMPT_COMMAND": "history -a"
+	},
+	"mounts": [
+		"source=usecode-bash-history,target=/commandhistory,type=volume"
+	],
+	"postStartCommand": "sudo chown -R vscode:vscode /commandhistory",
+	"runArgs": [
+		"--privileged",
+		"--security-opt=apparmor=unconfined"
+	]
+}
