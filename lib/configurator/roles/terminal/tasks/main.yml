@@ -101,6 +101,12 @@
   tags:
     - dotfiles
 
+- name: Include distro tasks
+  include_tasks: main-{{ ansible_facts['distribution'] }}.yaml
+  when: ansible_facts['os_family'] == "Debian"
+  tags:
+    - always
+
 - name: Check HashiCorp Apt keyring
   become: true
   ansible.builtin.stat:
@@ -118,12 +124,6 @@
   when:
     - ansible_facts['os_family'] == "Debian"
     - terminal_hashicorp_keyring.stat.exists | default(false)
-  tags:
-    - always
-
-- name: Include distro tasks
-  include_tasks: main-{{ ansible_facts['distribution'] }}.yaml
-  when: ansible_facts['os_family'] == "Debian"
   tags:
     - always
 
