@@ -1,7 +1,8 @@
-- name: Install Microsoft Repo
+- name: Remove legacy Microsoft Apt keyring
   become: true
-  shell: |
-    curl https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /etc/apt/trusted.gpg.d/microsoft.gpg
+  ansible.builtin.file:
+    path: /etc/apt/trusted.gpg.d/microsoft.gpg
+    state: absent
   tags:
     always
 
