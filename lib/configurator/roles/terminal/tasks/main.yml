@@ -107,26 +107,6 @@
   tags:
     - always
 
-- name: Check HashiCorp Apt keyring
-  become: true
-  ansible.builtin.stat:
-    path: /etc/apt/keyrings/hashicorp-archive-keyring.gpg
-  register: terminal_hashicorp_keyring
-  when: ansible_facts['os_family'] == "Debian"
-  tags:
-    - always
-
-- name: Remove legacy HashiCorp Apt keyring
-  become: true
-  ansible.builtin.file:
-    path: /etc/apt/trusted.gpg.d/hashicorp-archive-keyring.gpg
-    state: absent
-  when:
-    - ansible_facts['os_family'] == "Debian"
-    - terminal_hashicorp_keyring.stat.exists | default(false)
-  tags:
-    - always
-
 - name: Probe optional apt repositories
   environment: "{{ proxy_env }}"
   ansible.builtin.uri:

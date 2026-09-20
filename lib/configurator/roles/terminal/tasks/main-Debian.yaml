@@ -4,3 +4,20 @@
     curl https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /etc/apt/trusted.gpg.d/microsoft.gpg
   tags:
     always
+
+- name: Check HashiCorp Apt keyring
+  become: true
+  ansible.builtin.stat:
+    path: /etc/apt/keyrings/hashicorp-archive-keyring.gpg
+  register: terminal_hashicorp_keyring
+  tags:
+    - always
+
+- name: Remove legacy HashiCorp Apt keyring
+  become: true
+  ansible.builtin.file:
+    path: /etc/apt/trusted.gpg.d/hashicorp-archive-keyring.gpg
+    state: absent
+  when: terminal_hashicorp_keyring.stat.exists | default(false)
+  tags:
+    - always
