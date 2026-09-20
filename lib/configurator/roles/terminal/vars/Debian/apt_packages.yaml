@@ -93,6 +93,10 @@ apt_packages:
     - packer # Tool for creating machine images for multiple platforms from a single source
     - gnumeric # Spreadsheet application for data analysis and visualization
 
+  workstation:
+    - code  # Visual Studio Code editor installed from the Microsoft Apt repository
+    - mullvad-vpn  # Mullvad VPN desktop client installed from the Mullvad Apt repository
+
   debian_desktop:
     - qemu-system  # Generic QEMU system emulator meta-package for all architectures
     # - virtiofsd

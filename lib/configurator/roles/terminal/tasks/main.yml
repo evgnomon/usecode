@@ -209,6 +209,17 @@
   tags:
     - apt
 
+- name: Install workstation-only packages using Apt
+  become: true
+  ansible.builtin.apt:
+    name: "{{ apt_packages.get('workstation', []) }}"
+    state: present
+  when:
+    - ansible_facts['os_family'] == "Debian"
+    - installation_profile == 'workstation'
+  tags:
+    - apt
+
 - name: Install user packages using Apt
   become: true
   ansible.builtin.apt:
