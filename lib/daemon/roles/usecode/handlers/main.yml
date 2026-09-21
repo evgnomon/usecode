@@ -1,0 +1,12 @@
+---
+# handlers file for roles/usecode
+
+- name: Restart usecode
+  ansible.builtin.systemd:
+    name: usecode
+    state: restarted
+    daemon_reload: true
+
+- name: Apply sysctl
+  ansible.builtin.command: sysctl --system
+  changed_when: true

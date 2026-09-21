@@ -1,0 +1,73 @@
+---
+# defaults file for roles/usecode
+#
+# The mesh topology itself is NOT here - it lives in the inventory
+# (deploy/inventory), which is the single place that decides which hosts
+# exist, what address each holds, and what key it uses. What follows is
+# only how to install uc-daemon on a host, plus fallbacks for the mesh-wide
+# inputs so the role still runs against an inventory that doesn't set
+# them.
+
+# Where the usecode repo checkout lives on the control node - it provides
+# the Rust crate (built there and copied over) and
+# init/systemd/usecode.service.
+usecode_repo_dir: "{{ (playbook_dir + '/../..') | realpath }}"
+
+# The architecture to cross-compile for. amd64 covers most Debian VPS
+# hosts; use arm64 for e.g. Raspberry Pi / AWS Graviton. Set it per host
+# in host_vars when the mesh is mixed.
+usecode_arch: "{{ usecode_goarch | default('amd64') }}"
+
+# The Rust target each architecture builds for. musl by default, so the
+# binary is static and runs on a target whose libc is older than the
+# control node's. Install one with `rustup target add <target>` (plus a
+# linker for it when it isn't the control node's own architecture).
+usecode_rust_targets:
+  amd64: x86_64-unknown-linux-musl
+  arm64: aarch64-unknown-linux-musl
+usecode_rust_target: "{{ usecode_rust_targets[usecode_arch] }}"
+usecode_cargo: cargo
+
+# Build artifacts are cached here on the control node, per architecture,
+# so converging twenty hosts doesn't mean twenty compiles.
+usecode_build_cache: "{{ lookup('env', 'HOME') }}/.cache/uc-daemon/build"
+
+usecode_binary_dest: /usr/local/bin/uc-daemon
+usecode_config_dir: /etc/uc
+usecode_config_path: "{{ usecode_config_dir }}/config.toml"
+usecode_key_dir: "{{ usecode_config_dir }}/wireguard"
+usecode_unit_path: /etc/systemd/system/usecode.service
+
+usecode_packages:
+  Debian: [wireguard-tools, iproute2, iptables]
+
+# The inventory group whose members form the mesh. Every host in it
+# becomes a [[peer]] of every other one.
+usecode_group: usecode
+
+# Fallbacks for the mesh-wide inputs normally set in
+# inventory/group_vars/usecode/main.yml.
+usecode_network: 10.10.0.0/24
+usecode_interface: wg-uc
+usecode_listen_port: 51820
+usecode_persistent_keepalive: 25
+usecode_mtu: 0
+
+# Per-host facts, normally written to host_vars/<host>.yml by
+# `uc daemon add`. usecode_address and usecode_public_key are required;
+# the role refuses to run without them rather than guessing.
+usecode_address: ""
+usecode_public_key: ""
+usecode_endpoint: ""
+
+# This host's [[service]] declarations: a list of
+# {name, protocol?, local_port, remote_bind?, peer?}. A bare local_port
+# means "I run this here"; remote_bind + peer means "public traffic
+# arriving here goes to that mesh member" - name the member, not its
+# address, and the topology resolves it (client_address still works if
+# you need to point somewhere outside the mesh). Set in host_vars.
+usecode_services: []
+
+# host -> WireGuard private key, from the vaulted
+# inventory/group_vars/usecode/secrets.yml.
+usecode_private_keys: {}

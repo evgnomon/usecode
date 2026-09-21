@@ -1,0 +1,45 @@
+# {{ ansible_managed }}
+#
+# Derived from the mesh topology in the inventory, not written by hand:
+# the address below was allocated by `uc daemon add`, and every [[peer]] is
+# another member of the {{ usecode_group }} group. There is no private_key here by
+# design - it lives root-only in {{ usecode_key_dir }}/private.key,
+# installed from the vault.
+
+[wireguard]
+interface   = "{{ usecode_interface }}"
+address     = "{{ usecode_address }}/{{ usecode_network.split('/')[1] }}"
+listen_port = {{ usecode_listen_port }}
+{% if usecode_mtu | int > 0 %}
+mtu         = {{ usecode_mtu | int }}
+{% endif %}
+{% for peer in _usecode_peers | default([]) %}
+
+[[peer]]
+name        = "{{ peer.name }}"
+public_key  = "{{ peer.public_key }}"
+allowed_ips = ["{{ peer.address }}/32"]
+{% if peer.endpoint %}
+{# Only a peer that publishes an endpoint can be dialled; towards those,
+   and only those, this host keeps its NAT mapping alive. #}
+endpoint    = "{{ peer.endpoint }}"
+persistent_keepalive = {{ usecode_persistent_keepalive | int }}
+{% endif %}
+{% endfor %}
+{% for svc in usecode_services %}
+
+[[service]]
+name       = "{{ svc.name }}"
+protocol   = "{{ svc.protocol | default('tcp') }}"
+{% if svc.remote_bind is defined %}
+remote_bind = "{{ svc.remote_bind }}"
+{# A forward names the mesh member it targets, and the topology resolves
+   that to an address - so nothing has to repeat an address by hand. #}
+{% if svc.client_address is defined %}
+client_address = "{{ svc.client_address }}"
+{% else %}
+client_address = "{{ hostvars[svc.peer].usecode_address }}"
+{% endif %}
+{% endif %}
+local_port = {{ svc.local_port }}
+{% endfor %}

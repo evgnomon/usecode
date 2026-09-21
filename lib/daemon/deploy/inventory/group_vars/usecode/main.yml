@@ -1,0 +1,27 @@
+---
+# Mesh-wide inputs. Everything here is a knob you set by hand; everything
+# in host_vars/ is derived per host from these by `uc daemon add`.
+
+# The tunnel network every member draws its address from. `uc daemon add`
+# allocates the lowest free address in this range, so widening it is what
+# you do when the mesh outgrows /24. Changing it after hosts exist means
+# their recorded addresses no longer belong to it - re-address them by
+# hand in host_vars/ if you ever do.
+usecode_network: 10.10.0.0/24
+
+# The first host number in usecode_network that may be allocated. 1 hands
+# out .1 first; raise it to keep low addresses for something else.
+usecode_address_start: 1
+
+# The WireGuard interface and port used on every host. usecode_listen_port
+# is also the port `uc daemon add -endpoint HOST` assumes when an endpoint
+# is given without one.
+usecode_interface: wg-usecode
+usecode_listen_port: 51820
+
+# How often a host behind NAT pings a peer it dials, to keep the mapping
+# open. Only applied towards peers that have an endpoint.
+usecode_persistent_keepalive: 25
+
+# MTU for the tunnel interface; 0 leaves it to the kernel.
+usecode_mtu: 0

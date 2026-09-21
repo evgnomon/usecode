@@ -1,0 +1,17 @@
+---
+# shadow - one member of the usecode mesh.
+#
+# Created by `uc daemon add shadow`, and not touched by `uc daemon` again:
+# edit it freely. usecode_address was allocated from usecode_network in
+# group_vars/usecode/main.yml, and the private key half of
+# usecode_public_key is in group_vars/usecode/secrets.yml under this host's
+# name.
+ansible_user: root
+usecode_address: 10.10.0.1
+usecode_public_key: pcXnoHrJs2ht+9NYHxCm6UBJX0PK40u3KSSUuxrLFW0=
+# shadow has a public address, so every other member dials it and it
+# never has to dial out - it learns their endpoints from the handshake.
+# Without this nobody in the mesh has anyone to dial and no handshake
+# ever happens.
+usecode_endpoint: shadow.clusterlean.net:51820
+usecode_services: []

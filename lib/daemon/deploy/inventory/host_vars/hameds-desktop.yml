@@ -1,0 +1,16 @@
+---
+# hameds-desktop - one member of the usecode mesh.
+#
+# Created by `uc daemon add localhost` and renamed by hand: it is the
+# control node, so it converges over a local connection rather than ssh.
+# Naming it after its hostname keeps it unambiguous when the mesh is
+# converged from some other machine.
+#
+# Not touched by `uc daemon` again: edit it freely. usecode_address was
+# allocated from usecode_network in group_vars/usecode/main.yml, and the
+# private key half of usecode_public_key is in
+# group_vars/usecode/secrets.yml under this host's name.
+ansible_connection: local
+usecode_address: 10.10.0.2
+usecode_public_key: ZbPUJ253QP/Nbvvim280WPrtZE1Td2zsg0wY+BZPEgM=
+usecode_services: []

@@ -1,0 +1,198 @@
+---
+# tasks file for roles/usecode
+#
+# Everything this role installs on a host - the binary, the credentials,
+# the config, the service - is derived from the inventory topology. The
+# role never invents an address or a key.
+
+- name: Assert supported OS family
+  ansible.builtin.assert:
+    that: ansible_os_family == 'Debian'
+    fail_msg: "The usecode role only supports Debian-family hosts (found {{ ansible_os_family }})."
+
+- name: Assert this host is described by the topology
+  ansible.builtin.assert:
+    that:
+      - usecode_address | length > 0
+      - usecode_public_key | length > 0
+    fail_msg: >-
+      {{ inventory_hostname }} has no usecode_address/usecode_public_key.
+      Hosts join the mesh with `uc daemon add {{ inventory_hostname }}`,
+      which allocates the address and mints the keypair - don't write
+      host_vars by hand.
+
+- name: Assert this host's private key is in the vault
+  ansible.builtin.assert:
+    that: usecode_private_keys[inventory_hostname] | default('') | length > 0
+    fail_msg: >-
+      No private key for {{ inventory_hostname }} in
+      group_vars/{{ usecode_group }}/secrets.yml. It is written there by
+      `uc daemon add`; if the host predates that, re-add it or insert the
+      key with `ansible-vault edit`.
+  # Deliberately not no_log: the assertion names the variable, never its
+  # value, and hiding the result would hide the message above with it.
+
+# The clash this whole arrangement exists to prevent. Checking it here
+# means a topology edited by hand can't get past the first play either.
+- name: Assert every mesh address is unique
+  ansible.builtin.assert:
+    that: _addresses | length == _addresses | unique | length
+    fail_msg: >-
+      Two hosts in the {{ usecode_group }} group claim the same tunnel
+      address: {{ dict(groups[usecode_group] | zip(_addresses)) }}.
+      Fix host_vars before applying.
+  vars:
+    _addresses: "{{ groups[usecode_group] | map('extract', hostvars, 'usecode_address') | list }}"
+  run_once: true
+
+- name: Build this host's peer list from the rest of the mesh
+  ansible.builtin.set_fact:
+    _usecode_peers: >-
+      {{ _usecode_peers | default([]) + [{
+        'name': item,
+        'public_key': hostvars[item].usecode_public_key,
+        'address': hostvars[item].usecode_address,
+        'endpoint': hostvars[item].usecode_endpoint | default(''),
+      }] }}
+  loop: "{{ groups[usecode_group] | difference([inventory_hostname]) | sort }}"
+  loop_control:
+    label: "{{ item }}"
+
+- name: Install WireGuard dependencies
+  ansible.builtin.package:
+    name: "{{ usecode_packages[ansible_os_family] }}"
+    state: present
+
+- name: Create the local build cache
+  delegate_to: localhost
+  become: false
+  ansible.builtin.file:
+    path: "{{ usecode_build_cache }}/{{ usecode_arch }}"
+    state: directory
+    mode: "0755"
+  changed_when: false
+
+# --target-dir points cargo at the per-architecture cache, so its own
+# incremental build state is what makes the second host cheap.
+- name: Build the uc-daemon binary on the control node
+  delegate_to: localhost
+  become: false
+  ansible.builtin.command:
+    cmd: >-
+      {{ usecode_cargo }} build --release
+      --target {{ usecode_rust_target }}
+      --target-dir {{ usecode_build_cache }}/{{ usecode_arch }}
+    chdir: "{{ usecode_repo_dir }}"
+  changed_when: true
+  check_mode: false
+
+- name: Install the uc-daemon binary
+  ansible.builtin.copy:
+    src: "{{ usecode_build_cache }}/{{ usecode_arch }}/{{ usecode_rust_target }}/release/uc-daemon"
+    dest: "{{ usecode_binary_dest }}"
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart usecode
+
+- name: Create /etc/uc
+  ansible.builtin.file:
+    path: "{{ usecode_config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Create the key directory
+  ansible.builtin.file:
+    path: "{{ usecode_key_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+# The credentials. The private key is the one thing that never appears in
+# the topology in the clear - it comes out of the vault and goes straight
+# to a root-only file, which is exactly where uc daemon would have put a
+# key it generated itself.
+- name: Install this host's WireGuard private key
+  ansible.builtin.copy:
+    content: "{{ usecode_private_keys[inventory_hostname] }}\n"
+    dest: "{{ usecode_key_dir }}/private.key"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Restart usecode
+
+- name: Install this host's WireGuard public key
+  ansible.builtin.copy:
+    content: "{{ usecode_public_key }}\n"
+    dest: "{{ usecode_key_dir }}/public.key"
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Render config.toml
+  ansible.builtin.template:
+    src: config.toml.j2
+    dest: "{{ usecode_config_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+    validate: "{{ usecode_binary_dest }} validate -config %s"
+  notify: Restart usecode
+
+- name: Persist IPv4 forwarding
+  ansible.builtin.copy:
+    content: "net.ipv4.ip_forward=1\n"
+    dest: /etc/sysctl.d/99-uc-daemon.conf
+    owner: root
+    group: root
+    mode: "0644"
+  when: usecode_services | selectattr('remote_bind', 'defined') | list | length > 0
+  notify: Apply sysctl
+
+# The unit used to be called uc-daemon.service. Leaving it behind would
+# mean two units driving the same interface, so a host converged before
+# the rename gets the old one stopped and removed first.
+- name: Look for the pre-rename uc-daemon unit
+  ansible.builtin.stat:
+    path: /etc/systemd/system/uc-daemon.service
+  register: _usecode_old_unit
+
+- name: Stop the pre-rename uc-daemon unit
+  ansible.builtin.systemd:
+    name: uc-daemon
+    state: stopped
+    enabled: false
+  when: _usecode_old_unit.stat.exists
+
+- name: Remove the pre-rename uc-daemon unit
+  ansible.builtin.file:
+    path: /etc/systemd/system/uc-daemon.service
+    state: absent
+  notify: Restart usecode
+
+- name: Install the systemd unit
+  ansible.builtin.copy:
+    src: "{{ usecode_repo_dir }}/init/systemd/usecode.service"
+    dest: "{{ usecode_unit_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart usecode
+
+- name: Enable and start usecode
+  ansible.builtin.systemd:
+    name: usecode
+    enabled: true
+    state: started
+    daemon_reload: true
+
+# Handlers run at the end of the play by default, but a peer that was
+# added to this host's config needs the tunnel reloaded before the run
+# reports success - and the next host's tasks may depend on this one
+# being reachable over the mesh.
+- name: Apply pending restarts now
+  ansible.builtin.meta: flush_handlers
