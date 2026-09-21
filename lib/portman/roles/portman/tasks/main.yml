@@ -67,27 +67,28 @@
   delegate_to: localhost
   become: false
   ansible.builtin.file:
-    path: "{{ portman_build_cache }}/{{ portman_goarch }}"
+    path: "{{ portman_build_cache }}/{{ portman_arch }}"
     state: directory
     mode: "0755"
   changed_when: false
 
+# --target-dir points cargo at the per-architecture cache, so its own
+# incremental build state is what makes the second host cheap.
 - name: Build the portman binary on the control node
   delegate_to: localhost
   become: false
-  environment:
-    GOOS: linux
-    GOARCH: "{{ portman_goarch }}"
-    CGO_ENABLED: "0"
   ansible.builtin.command:
-    cmd: "go build -o {{ portman_build_cache }}/{{ portman_goarch }}/portman ./cmd/portman"
+    cmd: >-
+      {{ portman_cargo }} build --release
+      --target {{ portman_rust_target }}
+      --target-dir {{ portman_build_cache }}/{{ portman_arch }}
     chdir: "{{ portman_repo_dir }}"
   changed_when: true
   check_mode: false
 
 - name: Install the portman binary
   ansible.builtin.copy:
-    src: "{{ portman_build_cache }}/{{ portman_goarch }}/portman"
+    src: "{{ portman_build_cache }}/{{ portman_arch }}/{{ portman_rust_target }}/release/portman"
     dest: "{{ portman_binary_dest }}"
     owner: root
     group: root

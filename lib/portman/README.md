@@ -18,7 +18,7 @@ addresses start to collide once there are more.
 ## Install
 
 ```sh
-go build -o portman ./cmd/portman
+cargo build --release   # the binary lands in target/release/portman
 ```
 
 That is all the control node needs. `portman` itself installs nothing:
@@ -276,12 +276,16 @@ kept as annotated references instead.
 
 ## For developers
 
-- `cmd/portman` contains the CLI.
-- `internal/inventory` reads and extends the mesh topology (address allocation, host_vars, the vault).
-- `internal/config` loads/validates/mutates `config.toml` and the peer descriptor format.
-- `internal/wg` manages the WireGuard interface.
-- `internal/iptables` manages DNAT/forwarding rules for hosts with forward-rule services.
-- `internal/keys` manages this host's persistent WireGuard keypair.
+- `src/main.rs` contains the CLI; `src/flags.rs` is the flag parser behind it.
+- `src/inventory/` reads and extends the mesh topology (address allocation, host_vars, the vault).
+  `src/inventory/yamledit.rs` adds a host to `hosts.yml` as text, so the file's comments survive.
+- `src/config.rs` loads/validates/mutates `config.toml` and the peer descriptor format.
+- `src/wg.rs` manages the WireGuard interface.
+- `src/iptables.rs` manages DNAT/forwarding rules for hosts with forward-rule services.
+- `src/keys.rs` manages this host's persistent WireGuard keypair.
+- `src/remote.rs` runs portman on another host over one ssh connection.
+- `cargo test` covers the parts that decide things: address allocation, config validation,
+  rule building, forward-spec parsing and the `hosts.yml` edit.
 - `init/systemd/portman.service` is the unit the playbook installs.
 - `roles/portman` applies the topology to one host.
 - `deploy/inventory` is the topology itself; `deploy/playbooks/portman.yml` applies it to all of them.

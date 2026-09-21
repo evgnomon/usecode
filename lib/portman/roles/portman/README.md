@@ -2,7 +2,7 @@ portman
 =======
 
 Applies the mesh topology to one host: builds the `portman` binary on the
-control node and copies it over (no Go toolchain needed on the target),
+control node and copies it over (no Rust toolchain needed on the target),
 installs `wireguard-tools`/`iproute2`/`iptables`, installs the host's
 WireGuard credentials from the vault, renders `/etc/portman/config.toml`
 from the topology, and enables the systemd service.
@@ -17,9 +17,14 @@ describe rather than inventing values for it.
 Requirements
 ------------
 
-- Go toolchain on the **control node** (the binary is cross-compiled
-  there, not on the target). Built binaries are cached per architecture
-  under `~/.cache/portman/build`.
+- Rust toolchain on the **control node** (the binary is cross-compiled
+  there, not on the target), plus the target it builds for:
+  `rustup target add x86_64-unknown-linux-musl` for amd64,
+  `aarch64-unknown-linux-musl` for arm64, and a linker for that target
+  when it isn't the control node's own architecture. Build artifacts are
+  cached per architecture under `~/.cache/portman/build`. Set
+  `portman_rust_target` to a `-gnu` target instead if you would rather
+  link against the target's glibc.
 - The vault password, since each host's private key comes out of
   `group_vars/portman/secrets.yml`.
 - Debian-family targets.
@@ -41,7 +46,7 @@ Per host, added by hand afterwards:
   `remote_bind` plus `peer` declares "public traffic arriving here goes
   to that mesh member", and the member's address is resolved from the
   topology (use `client_address` instead to point outside the mesh).
-- `ansible_host`, `ansible_user`, `portman_goarch`, and any other
+- `ansible_host`, `ansible_user`, `portman_arch`, and any other
   Ansible var.
 
 Mesh-wide, in `group_vars/portman/main.yml`: `portman_network`,

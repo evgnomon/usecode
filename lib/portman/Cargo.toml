@@ -1,0 +1,25 @@
+[package]
+name = "portman"
+version = "0.1.0"
+edition = "2021"
+description = "WireGuard mesh + DNAT port forwarding manager"
+license = "MIT"
+publish = false
+
+[[bin]]
+name = "portman"
+path = "src/main.rs"
+
+[dependencies]
+base64 = "0.23"
+libc = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+tempfile = "3"
+toml = "1"
+x25519-dalek = { version = "3", features = ["static_secrets"] }
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
