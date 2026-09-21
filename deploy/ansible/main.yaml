@@ -68,7 +68,7 @@
     - z_deploy
     - never
 
-- name: Deploy Zygote services
+- name: Deploy node services
   hosts:
     - shards
     - front
@@ -76,13 +76,6 @@
   collections:
     - evgnomon.usecode
   roles:
-    - role: z_service
-      vars:
-        z_service_name: "zcore"
-    - role: z_service
-      vars:
-        z_service_name: "zcore"
-        z_use_domain_cert: true
     - role: ensure_fb
     - role: ensure_node_exporter
   tags:

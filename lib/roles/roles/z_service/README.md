@@ -14,5 +14,5 @@ The service is made out of the build outputs of the same repo.
   roles:
     - role: z_service
       vars:
-        z_service_name: "zcore"
+        z_service_name: "myapp"
 ```
