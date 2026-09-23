@@ -10,11 +10,10 @@
 
 - name: Enable extrepo non-free policy
   become: true
-  ansible.builtin.lineinfile:
+  ansible.builtin.replace:
     path: /etc/extrepo/config.yaml
-    regexp: '^#? - non-free$'
-    line: '- non-free'
-    insertafter: '^- main$'
+    regexp: '^# - non-free$'
+    replace: '- non-free'
   tags:
     - always
 
@@ -25,10 +24,14 @@
       - extrepo
       - enable
       - "{{ item.id }}"
-  args:
-    creates: "/etc/apt/sources.list.d/extrepo_{{ item.id }}.sources"
   register: terminal_extrepo_enable
-  failed_when: false
+  failed_when: >-
+    terminal_extrepo_enable.rc != 0 and
+    'does not exist' not in
+    ((terminal_extrepo_enable.stdout | default('')) ~ (terminal_extrepo_enable.stderr | default('')))
+  changed_when: >-
+    terminal_extrepo_enable.rc == 0 and
+    'already existed' not in (terminal_extrepo_enable.stdout | default(''))
   loop: "{{ terminal_extrepo_repositories }}"
   loop_control:
     label: "{{ item.id }}"
