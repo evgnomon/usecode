@@ -61,6 +61,7 @@
     - usecode
     - install_flow
     - terminal
+    - mise
     - role: bash_history_backup
       when: installation_profile not in ['dev_container', 'wsl']
     - { role: wslview, when: installation_profile == 'wsl' }

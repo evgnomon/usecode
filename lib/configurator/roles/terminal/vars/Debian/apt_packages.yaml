@@ -90,7 +90,6 @@ apt_packages:
     - foot # Fast and minimal Wayland terminal emulator for modern Linux desktops
     - dmidecode  # DMI/SMBIOS decoder for reading hardware information from BIOS
     - mdns-scan  # Multicast DNS scanner for discovering services on local network
-    - packer # Tool for creating machine images for multiple platforms from a single source
     - gnumeric # Spreadsheet application for data analysis and visualization
 
   workstation:
