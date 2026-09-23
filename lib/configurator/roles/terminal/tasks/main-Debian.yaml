@@ -52,19 +52,27 @@
   tags:
     - always
 
-- name: Record enabled extrepo repositories
-  vars:
-    terminal_extrepo_successful_results: >-
+- name: Check which extrepo source files are active
+  become: true
+  ansible.builtin.stat:
+    path: "/etc/apt/sources.list.d/extrepo_{{ item.id }}.sources"
+  register: terminal_extrepo_source_files
+  loop: "{{ terminal_extrepo_repositories }}"
+  loop_control:
+    label: "{{ item.id }}"
+  tags:
+    - always
+
+- name: Record active extrepo repositories
+  ansible.builtin.set_fact:
+    terminal_extrepo_successful_repositories: >-
       {{
-        terminal_extrepo_enable.results
-        | selectattr('rc', 'defined')
-        | selectattr('rc', 'eq', 0)
-        | rejectattr('stdout', 'search', 'does not exist')
-        | rejectattr('stderr', 'search', 'does not exist')
+        terminal_extrepo_source_files.results
+        | selectattr('stat.exists', 'defined')
+        | selectattr('stat.exists')
+        | map(attribute='item')
         | list
       }}
-  ansible.builtin.set_fact:
-    terminal_extrepo_successful_repositories: "{{ terminal_extrepo_successful_results | map(attribute='item') | list }}"
   tags:
     - always
 
