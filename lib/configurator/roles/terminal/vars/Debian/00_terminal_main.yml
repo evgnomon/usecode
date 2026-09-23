@@ -1,3 +1,25 @@
 ---
 user_fonts_dir: "{{ ansible_facts['env']['HOME'] }}/.fonts"
 pinentry_bin: /usr/bin/pinentry
+
+terminal_extrepo_repositories:
+  - id: brave_release
+    legacy_paths:
+      - /etc/apt/sources.list.d/brave-browser-release.sources
+      - /etc/apt/trusted.gpg.d/brave-browser-release.gpg
+  - id: docker-ce
+    legacy_paths:
+      - /etc/apt/sources.list.d/docker.list
+      - /etc/apt/keyrings/docker.asc
+  - id: hashicorp
+    legacy_paths:
+      - /etc/apt/sources.list.d/hashicorp.list
+      - /etc/apt/keyrings/hashicorp-archive-keyring.gpg
+  - id: dotnet
+    legacy_paths:
+      - /etc/apt/sources.list.d/ms.list
+  - id: vscode
+    legacy_paths:
+      - /etc/apt/sources.list.d/vscode.sources
+  - id: mise
+    package: mise

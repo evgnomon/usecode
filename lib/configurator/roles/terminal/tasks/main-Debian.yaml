@@ -1,3 +1,91 @@
+- name: Install extrepo
+  become: true
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+    name: extrepo
+    state: present
+  tags:
+    - always
+
+- name: Enable extrepo non-free policy
+  become: true
+  ansible.builtin.lineinfile:
+    path: /etc/extrepo/config.yaml
+    regexp: '^#? - non-free$'
+    line: '- non-free'
+    insertafter: '^- main$'
+  tags:
+    - always
+
+- name: Enable supported third-party repositories with extrepo
+  become: true
+  ansible.builtin.command:
+    argv:
+      - extrepo
+      - enable
+      - "{{ item.id }}"
+  args:
+    creates: "/etc/apt/sources.list.d/extrepo_{{ item.id }}.sources"
+  register: terminal_extrepo_enable
+  failed_when: false
+  loop: "{{ terminal_extrepo_repositories }}"
+  loop_control:
+    label: "{{ item.id }}"
+  tags:
+    - always
+
+- name: Record enabled extrepo repositories
+  ansible.builtin.set_fact:
+    terminal_extrepo_enabled_repo_ids: >-
+      {{
+        terminal_extrepo_enable.results
+        | selectattr('rc', 'defined')
+        | selectattr('rc', 'eq', 0)
+        | map(attribute='item.id')
+        | list
+      }}
+    terminal_extrepo_packages: >-
+      {{
+        terminal_extrepo_enable.results
+        | selectattr('rc', 'defined')
+        | selectattr('rc', 'eq', 0)
+        | selectattr('item.package', 'defined')
+        | map(attribute='item.package')
+        | list
+      }}
+  tags:
+    - always
+
+- name: Remove legacy Apt repository files replaced by extrepo
+  become: true
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: >-
+    {{
+      terminal_extrepo_enable.results
+      | selectattr('rc', 'defined')
+      | selectattr('rc', 'eq', 0)
+      | map(attribute='item.legacy_paths')
+      | select('defined')
+      | flatten
+    }}
+  when: terminal_extrepo_enable is defined
+  tags:
+    - always
+
+- name: Install extrepo-managed packages
+  become: true
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+    name: "{{ terminal_extrepo_packages }}"
+    state: present
+  when: terminal_extrepo_packages | default([]) | length > 0
+  tags:
+    - apt
+
 - name: Ensure Microsoft Apt keyring directory exists
   become: true
   ansible.builtin.file:
