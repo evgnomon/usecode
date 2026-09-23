@@ -29,3 +29,4 @@ terminal_extrepo_repositories:
   - id: mise
     uri: https://mise.jdx.dev/debian
     package: mise
+    required: false

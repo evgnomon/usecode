@@ -97,7 +97,17 @@
   vars:
     terminal_extrepo_missing_repo_ids: >-
       {{
-        terminal_extrepo_repositories | map(attribute='id') | list
+        terminal_extrepo_repositories
+        | rejectattr('required', 'defined')
+        | map(attribute='id')
+        | list
+        + (
+          terminal_extrepo_repositories
+          | selectattr('required', 'defined')
+          | selectattr('required')
+          | map(attribute='id')
+          | list
+        )
         | difference(terminal_extrepo_successful_repositories | map(attribute='id') | list)
       }}
   ansible.builtin.assert:
@@ -130,11 +140,10 @@
     {{
       terminal_extrepo_successful_repositories
       | selectattr('legacy_paths', 'defined')
-      | selectattr('id', 'in', terminal_extrepo_newly_enabled_repo_ids | default([]))
       | map(attribute='legacy_paths')
       | flatten
     }}
-  when: terminal_extrepo_newly_enabled_repo_ids | default([]) | length > 0
+  when: terminal_extrepo_successful_repositories | default([]) | length > 0
   tags:
     - always
 
