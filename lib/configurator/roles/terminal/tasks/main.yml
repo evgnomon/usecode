@@ -384,9 +384,21 @@
   tags:
     - fonts
 
+- name: Install mise tools
+  command: mise install --yes
+  register: mise_install
+  changed_when: mise_install.stderr is search('installed')
+  tags:
+    - mise
+
 - name: Install common Node packages
-  command: npm install -g {{ item }}
+  command: mise exec -- npm install -g {{ item }}
   with_items: "{{ common_node_packages }}"
+  tags:
+    - node
+
+- name: Reshim mise after npm global installs
+  command: mise reshim
   tags:
     - node
 

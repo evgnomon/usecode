@@ -67,7 +67,6 @@ apt_packages:
     - libglib2.0-bin # GLib utilities for working with GObject-based libraries and applications
 
   ubuntu:
-    - mysql-client  # MySQL database client tools for connecting to MySQL servers
 
   # Packages requiring physical hardware (YubiKey, smartcard) — skipped on WSL2
   hardware:

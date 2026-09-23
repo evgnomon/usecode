@@ -17,6 +17,7 @@ extrepo_repositories:
       - /etc/apt/sources.list.d/vscode.list
       - /etc/apt/trusted.gpg.d/vscode.gpg
   - id: mise
+    package: mise
     uri: https://mise.jdx.dev/deb
 
 # HashiCorp tools come from mise, so no HashiCorp Apt repository is used.
