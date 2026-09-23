@@ -50,14 +50,3 @@
     dest: /etc/apt/sources.list.d/azure.list
   tags:
     - always
-
-- name: Install Microsoft VS Code Repository
-  become: true
-  environment: "{{ proxy_env }}"
-  shell: |
-    curl -sSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /etc/apt/trusted.gpg.d/vscode.gpg
-    echo "deb [arch=amd64] https://packages.microsoft.com/repos/code stable main" > /etc/apt/sources.list.d/vscode.list
-  args:
-    creates: /etc/apt/sources.list.d/vscode.list
-  tags:
-    - always

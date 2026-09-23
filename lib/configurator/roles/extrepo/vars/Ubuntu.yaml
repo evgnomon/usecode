@@ -1,26 +1,21 @@
 ---
+# extrepo-data has no Ubuntu tree, so Ubuntu reads the Debian data. Only the
+# repositories whose suite is distro-agnostic ("stable") are enabled here;
+# docker-ce and dotnet publish per-release suites and stay on Ubuntu's own
+# sources.
+extrepo_debian_release: trixie
+
 extrepo_repositories:
   - id: brave_release
     uri: https://brave-browser-apt-release.s3.brave.com
     legacy_paths:
       - /etc/apt/sources.list.d/brave-browser-release.sources
       - /etc/apt/trusted.gpg.d/brave-browser-release.gpg
-  - id: docker-ce
-    uri: https://download.docker.com/linux/debian
-    legacy_paths:
-      - /etc/apt/sources.list.d/docker.list
-      - /etc/apt/keyrings/docker.asc
-  - id: dotnet
-    uri: "{{ ({'bookworm': 'https://packages.microsoft.com/debian/12/prod', 'trixie': 'https://packages.microsoft.com/debian/13/prod'}).get(ansible_facts['distribution_release'], 'https://packages.microsoft.com/debian/12/prod') }}"
-    legacy_paths:
-      - /etc/apt/sources.list.d/ms.list
-      - /etc/apt/keyrings/microsoft-prod.gpg
-      - /etc/apt/trusted.gpg.d/microsoft.gpg
   - id: vscode
     uri: https://packages.microsoft.com/repos/code
     legacy_paths:
-      - /etc/apt/sources.list.d/vscode.sources
-      - /etc/apt/keyrings/microsoft-prod.gpg
+      - /etc/apt/sources.list.d/vscode.list
+      - /etc/apt/trusted.gpg.d/vscode.gpg
   - id: mise
     uri: https://mise.jdx.dev/deb
 
