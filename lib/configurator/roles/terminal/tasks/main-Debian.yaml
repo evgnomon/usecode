@@ -8,13 +8,23 @@
   tags:
     - always
 
+- name: Normalize extrepo enabled_policies main entry
+  become: true
+  ansible.builtin.lineinfile:
+    path: /etc/extrepo/config.yaml
+    regexp: '^[[:space:]]*- main$'
+    line: '  - main'
+    insertafter: '^enabled_policies:$'
+  tags:
+    - always
+
 - name: Enable extrepo non-free policy
   become: true
   ansible.builtin.lineinfile:
     path: /etc/extrepo/config.yaml
     regexp: '^[[:space:]]*#? - non-free$'
-    line: '- non-free'
-    insertafter: '^enabled_policies:$'
+    line: '  - non-free'
+    insertafter: '^  - main$'
   tags:
     - always
 
@@ -32,7 +42,8 @@
     ((terminal_extrepo_enable.stdout | default('')) ~ (terminal_extrepo_enable.stderr | default('')))
   changed_when: >-
     terminal_extrepo_enable.rc == 0 and
-    'already existed' not in (terminal_extrepo_enable.stdout | default(''))
+    'already existed' not in
+    ((terminal_extrepo_enable.stdout | default('')) ~ (terminal_extrepo_enable.stderr | default('')))
   loop: "{{ terminal_extrepo_repositories }}"
   loop_control:
     label: "{{ item.id }}"
