@@ -4,22 +4,28 @@ pinentry_bin: /usr/bin/pinentry
 
 terminal_extrepo_repositories:
   - id: brave_release
+    uri: https://brave-browser-apt-release.s3.brave.com
     legacy_paths:
       - /etc/apt/sources.list.d/brave-browser-release.sources
       - /etc/apt/trusted.gpg.d/brave-browser-release.gpg
   - id: docker-ce
+    uri: https://download.docker.com/linux/debian
     legacy_paths:
       - /etc/apt/sources.list.d/docker.list
       - /etc/apt/keyrings/docker.asc
   - id: hashicorp
+    uri: https://apt.releases.hashicorp.com
     legacy_paths:
       - /etc/apt/sources.list.d/hashicorp.list
       - /etc/apt/keyrings/hashicorp-archive-keyring.gpg
   - id: dotnet
+    uri: https://packages.microsoft.com/debian
     legacy_paths:
       - /etc/apt/sources.list.d/ms.list
   - id: vscode
+    uri: https://packages.microsoft.com/repos/vscode
     legacy_paths:
       - /etc/apt/sources.list.d/vscode.sources
   - id: mise
+    uri: https://mise.jdx.dev/debian
     package: mise

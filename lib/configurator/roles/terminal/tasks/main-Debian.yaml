@@ -8,25 +8,31 @@
   tags:
     - always
 
-- name: Ensure extrepo enabled_policies section exists
+- name: Enable extrepo non-free policy in config
   become: true
-  ansible.builtin.lineinfile:
-    path: /etc/extrepo/config.yaml
-    regexp: '^enabled_policies:$'
-    line: 'enabled_policies:'
-    insertafter: EOF
-  tags:
-    - always
+  ansible.builtin.shell: |
+    python3 - <<'PY'
+    from pathlib import Path
+    import yaml
 
-- name: Normalize extrepo enabled_policies entries
-  become: true
-  ansible.builtin.replace:
-    path: /etc/extrepo/config.yaml
-    regexp: '(?ms)^enabled_policies:\n(?:[ \t]*#?[ \t]*-.*\n)*'
-    replace: |
-      enabled_policies:
-        - main
-        - non-free
+    path = Path("/etc/extrepo/config.yaml")
+    data = yaml.safe_load(path.read_text()) or {}
+    policies = list(data.get("enabled_policies", []))
+
+    if "main" not in policies:
+        policies.insert(0, "main")
+    if "non-free" not in policies:
+        policies.append("non-free")
+
+    data["enabled_policies"] = policies
+    new_content = yaml.safe_dump(data, sort_keys=False)
+    old_content = path.read_text()
+    if new_content != old_content:
+        path.write_text(new_content)
+        print("changed")
+    PY
+  register: terminal_extrepo_config_policy
+  changed_when: "'changed' in terminal_extrepo_config_policy.stdout"
   tags:
     - always
 
@@ -52,10 +58,14 @@
   tags:
     - always
 
-- name: Check which extrepo source files are active
+- name: Discover active extrepo source files
   become: true
-  ansible.builtin.stat:
-    path: "/etc/apt/sources.list.d/extrepo_{{ item.id }}.sources"
+  ansible.builtin.find:
+    paths: /etc/apt/sources.list.d
+    patterns: 'extrepo_*.sources'
+    file_type: file
+    contains: "{{ item.uri }}"
+    read_whole_file: true
   register: terminal_extrepo_source_files
   loop: "{{ terminal_extrepo_repositories }}"
   loop_control:
@@ -68,8 +78,8 @@
     terminal_extrepo_successful_repositories: >-
       {{
         terminal_extrepo_source_files.results
-        | selectattr('stat.exists', 'defined')
-        | selectattr('stat.exists')
+        | selectattr('matched', 'defined')
+        | selectattr('matched', 'gt', 0)
         | map(attribute='item')
         | list
       }}
