@@ -95,7 +95,7 @@
 
 - name: Assert configured extrepo repositories resolved
   vars:
-    terminal_extrepo_missing_repo_ids: >-
+    terminal_extrepo_required_repo_ids: >-
       {{
         terminal_extrepo_repositories
         | rejectattr('required', 'defined')
@@ -108,12 +108,28 @@
           | map(attribute='id')
           | list
         )
+      }}
+    terminal_extrepo_failed_repo_ids: >-
+      {{
+        terminal_extrepo_enable.results
+        | selectattr('rc', 'defined')
+        | rejectattr('rc', 'eq', 0)
+        | map(attribute='item.id')
+        | select('in', terminal_extrepo_required_repo_ids)
+        | list
+      }}
+    terminal_extrepo_missing_repo_ids: >-
+      {{
+        terminal_extrepo_required_repo_ids
         | difference(terminal_extrepo_successful_repositories | map(attribute='id') | list)
       }}
   ansible.builtin.assert:
     that:
+      - terminal_extrepo_failed_repo_ids | length == 0
       - terminal_extrepo_missing_repo_ids | length == 0
-    fail_msg: "extrepo did not produce source files for: {{ terminal_extrepo_missing_repo_ids | join(', ') }}"
+    fail_msg: >-
+      extrepo failed for: {{ terminal_extrepo_failed_repo_ids | join(', ') }};
+      missing source files for: {{ terminal_extrepo_missing_repo_ids | join(', ') }}
   tags:
     - always
 
