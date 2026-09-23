@@ -1,7 +1,6 @@
 ---
 dotfiles:
   - .config/containers/registries.conf
-  - .config/foot/foot.ini
   - .config/hcloud/cli.sh
   - .config/opencode/opencode.jsonc
   - .gitignore_global
@@ -14,6 +13,7 @@ dotfiles:
   - .fdignore
   - .ctags.d/javascript.ctags
   - .bashrc
+  - .bashrc.d/mise-activate.sh
   - .inputrc
   - .local/bin/foot-shell
   - .local/bin/bazel
@@ -27,6 +27,7 @@ dotfiles:
 
 root_dotfiles:
   - .bashrc
+  - .bashrc.d/mise-activate.sh
   - .inputrc
   - .profile
   - .bash_aliases

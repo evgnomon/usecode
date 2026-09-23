@@ -1,7 +1,7 @@
 #!/bin/bash
 
 VAULT_ADDR=$(repofqn)
-SECRET_FILE=$HOME/.config/blueprint/secrets/$VAULT_ADDR.yaml
+SECRET_FILE=$HOME/src/github.com/$USER/config/secrets/$VAULT_ADDR.yaml
 VAULT_FILE=$VAULT_ADDR.vault
 export INPUT_VAULT_PASS=$(vault -d $VAULT_FILE)
 export INPUT_VAULT=$(cat $SECRET_FILE)
@@ -12,7 +12,7 @@ if [ -z "$INPUT_PLAYBOOK" ]; then
 fi
 
 docker run -it --rm -v.:/github/workspace \
-  -v $HOME/.config/blueprint:/root/.config/blueprint \
+  -v $HOME/src/github.com/$USER/config:/root/.config/blueprint \
   -v $HOME/.ssh:/root/.ssh \
   -e "INPUT_VAULT_PASS" \
   -e 'INPUT_VAULT' \

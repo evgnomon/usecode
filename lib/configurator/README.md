@@ -106,5 +106,5 @@ repo_secrets:
   - owner_name: evgnomon
     repo_name: blueprint
     secret_name: VAULT_FILE
-    secret_file: ~/.config/blueprint/secrets/evgnomon_blueprint_github.yaml
+    secret_file: ~/src/github.com/<user>/config/secrets/evgnomon_blueprint_github.yaml
 ```

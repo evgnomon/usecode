@@ -34,7 +34,7 @@ if [[ -n "$1" ]]; then
   fi
   exit 0
 fi
-fzf_output=$(cat ~/.config/blueprint/config.yaml | yj | jq -r '.urls[] | "\(.name)\t\(.url)"' | fzf --print-query --with-nth=1 --delimiter='\t')
+fzf_output=$(cat $HOME/src/github.com/$USER/config/config.yaml | yj | jq -r '.urls[] | "\(.name)\t\(.url)"' | fzf --print-query --with-nth=1 --delimiter='\t')
 query=$(echo "$fzf_output" | sed -n '1p')
 selected=$(echo "$fzf_output" | sed -n '2p')
 if [ -z "$selected" ]; then

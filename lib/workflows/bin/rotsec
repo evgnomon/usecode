@@ -3,9 +3,9 @@ export EDITOR=vi
 
 VAULT_ADDR=$(repofqn)
 
-SECRET_FILE=$HOME/.config/blueprint/secrets/secrets.yaml
+SECRET_FILE=$HOME/src/github.com/$USER/config/secrets/secrets.yaml
 if [ ! -z "$VAULT_ADDR" ]; then
-  SECRET_FILE=$HOME/.config/blueprint/secrets/$VAULT_ADDR.yaml
+  SECRET_FILE=$HOME/src/github.com/$USER/config/secrets/$VAULT_ADDR.yaml
 fi
 
 VAULT_FILE=vault
@@ -13,7 +13,7 @@ if [ ! -z "$VAULT_ADDR" ]; then
   VAULT_FILE=$VAULT_ADDR.vault
 fi
 
-if [ ! -f $HOME/.config/blueprint/secrets/$VAULT_FILE.asc ]; then
+if [ ! -f $HOME/src/github.com/$USER/config/secrets/$VAULT_FILE.asc ]; then
   cat /dev/random | tr -dc 'a-zA-Z0-9' | fold -w 64 | head -n 1 | vault -e $VAULT_FILE
 fi
 

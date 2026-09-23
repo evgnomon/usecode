@@ -5,7 +5,7 @@ python_version: "3.14.3"
 home: "{{ lookup('env', 'HOME') }}"
 target_home: "{{ ansible_facts['env']['HOME'] }}"
 local_bin_path: "{{ target_home }}/.local/bin"
-blueprint_config_dir: "{{ home }}/.config/blueprint"
+blueprint_config_dir: "{{ home }}/src/github.com/{{ blueprint_user }}/config"
 blueprint_config_file: "{{ blueprint_config_dir }}/config.yaml"
 blueprint_config_file_exists: "{{ lookup('fileglob', blueprint_config_file) | length > 0 }}"
 

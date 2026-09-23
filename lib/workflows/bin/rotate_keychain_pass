@@ -2,7 +2,7 @@
 
 set -e
 
-SECRET_PATH=$HOME/.config/blueprint/secrets
+SECRET_PATH=$HOME/src/github.com/$USER/config/secrets
 SECRET_FILE=$SECRET_PATH/secrets.yaml
 
 VAULT_FILE=vault

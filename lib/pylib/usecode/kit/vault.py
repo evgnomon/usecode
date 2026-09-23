@@ -3,6 +3,7 @@ GPG-based secret encryption/decryption utility.
 Processes data in memory without temporary files.
 """
 
+import getpass
 import json
 import os
 import secrets as secretslib
@@ -14,7 +15,7 @@ from pathlib import Path
 
 from usecode.kit.config import blueprint_config
 
-SECRETS_DIR = Path.home() / ".config" / "blueprint" / "secrets"
+SECRETS_DIR = Path.home() / "src" / "github.com" / getpass.getuser() / "config" / "secrets"
 
 
 class GPGNotFoundError(FileNotFoundError):

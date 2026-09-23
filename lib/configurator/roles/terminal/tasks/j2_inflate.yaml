@@ -9,6 +9,7 @@
 - template:
     src: "{{ item.src }}"
     dest: "{{ target }}/{{ item.path | replace('.j2', '') }}"
+    mode: "{{ '0755' if (item.path | dirname) is search('(^|/)bin$') else omit }}"
   become: "{{ (target in ['/etc', '/root']) | bool }}"
   when:
     - item.path[-3:] == '.j2'
@@ -18,6 +19,7 @@
 - copy:
     src: "{{ item.src }}"
     dest: "{{ target }}/{{ item.path }}"
+    mode: "{{ '0755' if (item.path | dirname) is search('(^|/)bin$') else omit }}"
   become: "{{ (target in ['/etc', '/root']) | bool }}"
   when:
     - item.path[-3:] != '.j2'

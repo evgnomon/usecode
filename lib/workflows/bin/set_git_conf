@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CONFIG="$HOME/.config/blueprint/config.yaml"
+CONFIG="$HOME/src/github.com/$USER/config/config.yaml"
 
 usage() {
     echo "Usage: set_git_conf [-p PROFILE] [REPO_PATH]"
