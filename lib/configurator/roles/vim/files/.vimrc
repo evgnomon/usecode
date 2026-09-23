@@ -35,6 +35,8 @@ let mapleader=","             " Set the leader key to a comma, allowing custom k
 set background=dark             " Optimize colors for a dark background.
 set belloff=all               " Disable all audible and visual bells, preventing distractions from error notifications.
 
+set pythonthreehome=/usr/local
+
 :augroup numbertoggle
   :  autocmd!
   :  autocmd BufEnter,FocusGained,InsertLeave * set relativenumber

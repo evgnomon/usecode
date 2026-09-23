@@ -1,0 +1,8 @@
+---
+extrepo_repos:
+  - brave_release
+  - docker-ce
+  - vscode
+  - dotnet
+  - mullvad
+  - mise

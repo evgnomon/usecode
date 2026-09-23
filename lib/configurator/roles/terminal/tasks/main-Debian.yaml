@@ -1,6 +1,68 @@
-- name: Install Microsoft Repo
+- name: Remove hand-rolled apt sources superseded by extrepo
   become: true
-  shell: |
-    curl https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /etc/apt/trusted.gpg.d/microsoft.gpg
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/apt/sources.list.d/brave-browser-release.sources
+    - /etc/apt/sources.list.d/docker.list
+    - /etc/apt/sources.list.d/vscode.sources
+    - /etc/apt/sources.list.d/vscode.list
+    - /etc/apt/sources.list.d/ms.list
+    - /etc/apt/sources.list.d/hashicorp.list
+    - /etc/apt/sources.list.d/extrepo_hashicorp.sources
+    - /etc/apt/sources.list.d/mullvad.list
+    - /etc/apt/trusted.gpg.d/brave-browser-release.gpg
+    - /etc/apt/trusted.gpg.d/microsoft.gpg
+    - /etc/apt/trusted.gpg.d/hashicorp-archive-keyring.gpg
+    - /etc/apt/keyrings/docker.asc
+    - /etc/apt/keyrings/hashicorp-archive-keyring.gpg
+    - /etc/apt/trusted.gpg.d/mullvad-keyring.gpg
+    - /var/lib/extrepo/keys/hashicorp.asc
   tags:
-    always
+    - always
+
+- name: Remove apt packer in favor of the mise-managed one
+  become: true
+  ansible.builtin.apt:
+    name: packer
+    state: absent
+  tags:
+    - always
+
+- name: Stop the VS Code package from adding its own apt source
+  become: true
+  ansible.builtin.debconf:
+    name: code
+    question: code/add-microsoft-repo
+    vtype: boolean
+    value: "false"
+  tags:
+    - always
+
+- name: Install extrepo
+  become: true
+  ansible.builtin.apt:
+    name: extrepo
+    state: present
+  tags:
+    - always
+
+- name: Allow non-free extrepo policies
+  become: true
+  ansible.builtin.lineinfile:
+    path: /etc/extrepo/config.yaml
+    regexp: '^#?\s*- non-free$'
+    line: "  - non-free"
+    insertafter: '^enabled_policies:'
+  tags:
+    - always
+
+- name: Enable external apt repositories with extrepo
+  become: true
+  ansible.builtin.command: extrepo enable {{ item }}
+  loop: "{{ extrepo_repos }}"
+  register: extrepo_enable
+  changed_when: "'already existed' not in extrepo_enable.stdout"
+  tags:
+    - always

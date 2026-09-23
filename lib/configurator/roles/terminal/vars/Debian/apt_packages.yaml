@@ -55,8 +55,9 @@ apt_packages:
     - dotnet-sdk-10.0 # .NET SDK for building and running .NET applications
     - exuberant-ctags  # Code indexing tool for navigating source code in editors
     - podman  # Daemonless container engine as Docker alternative for running containers
-    - packer # Tool for creating machine images for multiple platforms from a single source
     - brave-browser  # Privacy-focused web browser with built-in ad blocking
+    - mullvad-vpn # Mullvad VPN client (from extrepo)
+    - mise # Polyglot dev tool version manager (from extrepo)
     - libisofs-dev # Library for creating ISO 9660 filesystem images
     - libisoburn-dev # Library for burning ISO 9660 filesystem images to optical media
     - libburn-dev # Library for writing data to optical media (CD/DVD/Blu-ray)
@@ -76,7 +77,6 @@ apt_packages:
     - wl-clipboard # Command-line copy/paste utilities (wl-copy, wl-paste) for Wayland clipboard integration
 
   ubuntu:
-    - mysql-client  # MySQL database client tools for connecting to MySQL servers
     - libpam-u2f  # PAM module for FIDO U2F/FIDO2 hardware authentication keys
   debian:
     - qemu-system  # Generic QEMU system emulator meta-package for all architectures
