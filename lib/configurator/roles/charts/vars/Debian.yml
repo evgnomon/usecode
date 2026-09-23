@@ -6,6 +6,7 @@ path_components:
   - "{{ blueprint_user_home }}/.cargo/bin"
   - "{{ local_bin_path }}"
   - "{{ blueprint_user_home }}/.pyenv/shims"
+  - "{{ blueprint_user_home }}/.local/share/mise/shims"
   - "/usr/local/bin"
   - "/usr/bin"
 custom_path: "{{ path_components | join(':') }}:$PATH"

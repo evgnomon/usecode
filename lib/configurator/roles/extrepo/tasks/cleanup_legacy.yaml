@@ -1,0 +1,23 @@
+---
+- name: Remove legacy Apt repository files replaced by extrepo
+  become: true
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  register: extrepo_legacy_cleanup
+  loop: >-
+    {{
+      extrepo_cleanup_repositories
+      | selectattr('legacy_paths', 'defined')
+      | map(attribute='legacy_paths')
+      | flatten
+      | unique
+    }}
+
+- name: Record legacy Apt cleanup changes
+  ansible.builtin.set_fact:
+    extrepo_legacy_cleanup_changed: >-
+      {{
+        (extrepo_legacy_cleanup_changed | default(false))
+        or (extrepo_legacy_cleanup.results | default([]) | selectattr('changed') | list | length > 0)
+      }}

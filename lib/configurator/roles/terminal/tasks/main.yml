@@ -113,10 +113,22 @@
     - dotfiles
 
 - name: Include distro tasks
-  include_tasks: main-{{ ansible_facts['distribution'] }}.yaml
+  include_tasks: "{{ item }}"
+  with_first_found:
+    - files:
+        - "main-{{ ansible_facts['distribution'] }}.yaml"
+      skip: true
   when: ansible_facts['os_family'] == "Debian"
   tags:
     - always
+
+# Runs after the apt files above are inflated and before anything installs from
+# them, so extrepo hands over from the legacy sources in a single pass.
+- name: Enable third-party repositories with extrepo
+  ansible.builtin.include_role:
+    name: extrepo
+  tags:
+    - extrepo
 
 - name: Probe optional apt repositories
   environment: "{{ proxy_env }}"

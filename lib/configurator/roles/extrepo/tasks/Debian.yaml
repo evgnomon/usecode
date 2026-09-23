@@ -1,0 +1,185 @@
+---
+- name: Discover existing extrepo source files
+  become: true
+  ansible.builtin.find:
+    paths: /etc/apt/sources.list.d
+    patterns: 'extrepo_*.sources'
+    file_type: file
+    contains: "{{ item.uri }}"
+    read_whole_file: true
+  register: extrepo_existing_source_files
+  loop: "{{ extrepo_repositories }}"
+  loop_control:
+    label: "{{ item.id }}"
+
+- name: Drop legacy Apt files for repositories extrepo already owns
+  ansible.builtin.include_tasks: cleanup_legacy.yaml
+  vars:
+    extrepo_cleanup_repositories: >-
+      {{
+        extrepo_existing_source_files.results
+        | selectattr('matched', 'defined')
+        | selectattr('matched', 'gt', 0)
+        | map(attribute='item')
+        | list
+      }}
+
+- name: Remove retired Apt repository files
+  become: true
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ extrepo_retired_paths | default([]) }}"
+
+- name: Disable repositories extrepo no longer manages
+  become: true
+  ansible.builtin.command:
+    argv:
+      - extrepo
+      - disable
+      - "{{ item }}"
+    removes: "/etc/apt/sources.list.d/extrepo_{{ item }}.sources"
+  loop: "{{ extrepo_disabled_repositories | default([]) }}"
+
+- name: Install extrepo
+  become: true
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+    name: extrepo
+    state: present
+
+- name: Install extrepo config
+  become: true
+  ansible.builtin.template:
+    src: "{{ role_path }}/templates/etc/extrepo/config.yaml.j2"
+    dest: /etc/extrepo/config.yaml
+    mode: "0644"
+  register: extrepo_config_policy
+
+- name: Enable supported third-party repositories with extrepo
+  become: true
+  ansible.builtin.command:
+    argv:
+      - extrepo
+      - enable
+      - "{{ item.id }}"
+  register: extrepo_enable
+  changed_when: >-
+    extrepo_enable.rc == 0 and
+    (
+      extrepo_existing_source_files.results[extrepo_repo_index].matched == 0 or
+      'already existed' not in
+      ((extrepo_enable.stdout | default('')) ~ (extrepo_enable.stderr | default('')))
+    )
+  loop: "{{ extrepo_repositories }}"
+  loop_control:
+    label: "{{ item.id }}"
+    index_var: extrepo_repo_index
+
+- name: Discover active extrepo source files
+  become: true
+  ansible.builtin.find:
+    paths: /etc/apt/sources.list.d
+    patterns: 'extrepo_*.sources'
+    file_type: file
+    contains: "{{ item.uri }}"
+    read_whole_file: true
+  register: extrepo_source_files
+  loop: "{{ extrepo_repositories }}"
+  loop_control:
+    label: "{{ item.id }}"
+
+- name: Record active extrepo repositories
+  vars:
+    extrepo_newly_enabled_repo_ids: >-
+      {%- set repository_ids = [] -%}
+      {%- for result in extrepo_source_files.results -%}
+      {%- if result.matched | default(0) > 0 and extrepo_existing_source_files.results[loop.index0].matched | default(0) == 0 -%}
+      {%- set _ = repository_ids.append(result.item.id) -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {{ repository_ids }}
+  ansible.builtin.set_fact:
+    extrepo_successful_repositories: >-
+      {{
+        extrepo_source_files.results
+        | selectattr('matched', 'defined')
+        | selectattr('matched', 'gt', 0)
+        | map(attribute='item')
+        | list
+      }}
+    extrepo_newly_enabled_repo_ids: "{{ extrepo_newly_enabled_repo_ids }}"
+
+- name: Assert configured extrepo repositories resolved
+  vars:
+    extrepo_required_repo_ids: >-
+      {{
+        extrepo_repositories
+        | rejectattr('required', 'defined')
+        | map(attribute='id')
+        | list
+        + (
+          extrepo_repositories
+          | selectattr('required', 'defined')
+          | selectattr('required')
+          | map(attribute='id')
+          | list
+        )
+      }}
+    extrepo_failed_repo_ids: >-
+      {{
+        extrepo_enable.results
+        | selectattr('rc', 'defined')
+        | rejectattr('rc', 'eq', 0)
+        | map(attribute='item.id')
+        | select('in', extrepo_required_repo_ids)
+        | list
+      }}
+    extrepo_missing_repo_ids: >-
+      {{
+        extrepo_required_repo_ids
+        | difference(extrepo_successful_repositories | map(attribute='id') | list)
+      }}
+  ansible.builtin.assert:
+    that:
+      - extrepo_failed_repo_ids | length == 0
+      - extrepo_missing_repo_ids | length == 0
+    fail_msg: >-
+      extrepo failed for: {{ extrepo_failed_repo_ids | join(', ') }};
+      missing source files for: {{ extrepo_missing_repo_ids | join(', ') }}
+
+- name: Derive enabled extrepo repository metadata
+  ansible.builtin.set_fact:
+    extrepo_enabled_repo_ids: "{{ extrepo_successful_repositories | map(attribute='id') | list }}"
+    extrepo_packages: >-
+      {{
+        extrepo_successful_repositories
+        | selectattr('package', 'defined')
+        | map(attribute='package')
+        | list
+      }}
+
+- name: Drop legacy Apt files replaced by this run
+  ansible.builtin.include_tasks: cleanup_legacy.yaml
+  vars:
+    extrepo_cleanup_repositories: "{{ extrepo_successful_repositories }}"
+
+- name: Refresh Apt cache after enabling extrepo repositories
+  become: true
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 0
+  when:
+    - >
+      extrepo_config_policy.changed or
+      (extrepo_enable.results | selectattr('changed') | list | length > 0) or
+      (extrepo_newly_enabled_repo_ids | default([]) | length > 0) or
+      (extrepo_legacy_cleanup_changed | default(false))
+
+- name: Install extrepo-managed packages
+  become: true
+  ansible.builtin.apt:
+    name: "{{ extrepo_packages }}"
+    state: present
+  when: extrepo_packages | default([]) | length > 0

@@ -32,7 +32,7 @@ let mapleader=","             " Set the leader key to a comma, allowing custom k
 set background=dark             " Optimize colors for a dark background.
 set belloff=all               " Disable all audible and visual bells, preventing distractions from error notifications.
 
-
+let $PYTHONHOME = '/usr/local'
 au BufNewFile,BufRead *.html.jinja2 setf htmldjango
 
 :augroup numbertoggle
