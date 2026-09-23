@@ -391,17 +391,6 @@
   tags:
     - mise
 
-- name: Install common Node packages
-  command: mise exec -- npm install -g {{ item }}
-  with_items: "{{ common_node_packages }}"
-  tags:
-    - node
-
-- name: Reshim mise after npm global installs
-  command: mise reshim
-  tags:
-    - node
-
 - name: Clone Git repos
   shell: |
     mkdir -p '{{ repo_dest_dir }}'

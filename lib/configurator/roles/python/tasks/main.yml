@@ -1,5 +1,0 @@
----
-- name: Include main tasks
-  include_tasks: tasks/main-all.yaml
-  tags:
-    - always

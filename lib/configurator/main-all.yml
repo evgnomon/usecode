@@ -1,12 +1,3 @@
-- name: Install Pip packages
-  gather_facts: false
-  hosts:
-    - all
-    - localhost
-  environment: "{{ proxy_env }}"
-  roles:
-    - python
-
 - name: Install Rust packages
   gather_facts: false
   hosts:

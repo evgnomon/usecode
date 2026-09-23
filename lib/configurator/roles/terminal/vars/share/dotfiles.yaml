@@ -18,6 +18,7 @@ dotfiles:
   - .local/bin/foot-shell
   - .local/bin/bazel
   - .config/mise/config.toml
+  - .default-python-packages
   - .profile
   - .bash_aliases
   - .tmux.conf

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-export PATH=/home/$USER/.local/bin:/home/$USER/.rbenv/shims:/home/$USER/.rbenv/bin:/home/$USER/.local/libexec:/home/$USER/bin:/home/$USER/go/bin:/home/$USER/.cargo/bin:/home/$USER/.gem/bin:/home/$USER/.pyenv/shims:/home/$USER/.pyenv/bin:/home/$USER/.cache/blueprint/node/linux_x64/node_24.14.1/node-v24.14.1-linux-x64/bin:/home/$USER/.cargo/bin:/home/$USER/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games:/home/$USER/.dotnet/tools
+export PATH=/home/$USER/.local/bin:/home/$USER/.rbenv/shims:/home/$USER/.rbenv/bin:/home/$USER/.local/libexec:/home/$USER/bin:/home/$USER/go/bin:/home/$USER/.cargo/bin:/home/$USER/.gem/bin:/home/$USER/.pyenv/shims:/home/$USER/.pyenv/bin:/home/$USER/.cargo/bin:/home/$USER/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games:/home/$USER/.dotnet/tools
 
 sudo apt update
 sudo DEBIAN_FRONTEND=noninteractive apt upgrade -y \
