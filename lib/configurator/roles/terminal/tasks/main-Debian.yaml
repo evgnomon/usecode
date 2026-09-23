@@ -123,6 +123,7 @@
   ansible.builtin.file:
     path: "{{ item }}"
     state: absent
+  register: terminal_extrepo_legacy_cleanup
   loop: >-
     {{
       terminal_extrepo_successful_repositories
@@ -141,8 +142,9 @@
     cache_valid_time: 0
   when:
     - >
+      terminal_extrepo_config_policy.changed or
       (terminal_extrepo_enable.results | selectattr('changed') | list | length > 0) or
-      (terminal_extrepo_successful_repositories | default([]) | length > 0)
+      (terminal_extrepo_legacy_cleanup.results | default([]) | selectattr('changed') | list | length > 0)
   tags:
     - always
 
