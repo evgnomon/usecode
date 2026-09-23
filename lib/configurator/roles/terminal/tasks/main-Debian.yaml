@@ -12,8 +12,8 @@
   become: true
   ansible.builtin.replace:
     path: /etc/extrepo/config.yaml
-    regexp: '^# - non-free$'
-    replace: '- non-free'
+    regexp: '^([[:space:]]*)# - non-free$'
+    replace: '\1- non-free'
   tags:
     - always
 
@@ -40,21 +40,34 @@
 
 - name: Record enabled extrepo repositories
   ansible.builtin.set_fact:
-    terminal_extrepo_enabled_repo_ids: >-
+    terminal_extrepo_successful_repositories: >-
       {{
         terminal_extrepo_enable.results
         | selectattr('rc', 'defined')
         | selectattr('rc', 'eq', 0)
-        | map(attribute='item.id')
+        | map(attribute='item')
         | list
       }}
+  tags:
+    - always
+
+- name: Refresh Apt cache after enabling extrepo repositories
+  become: true
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 0
+  when: terminal_extrepo_successful_repositories | default([]) | length > 0
+  tags:
+    - always
+
+- name: Derive enabled extrepo repository metadata
+  ansible.builtin.set_fact:
+    terminal_extrepo_enabled_repo_ids: "{{ terminal_extrepo_successful_repositories | map(attribute='id') | list }}"
     terminal_extrepo_packages: >-
       {{
-        terminal_extrepo_enable.results
-        | selectattr('rc', 'defined')
-        | selectattr('rc', 'eq', 0)
-        | selectattr('item.package', 'defined')
-        | map(attribute='item.package')
+        terminal_extrepo_successful_repositories
+        | selectattr('package', 'defined')
+        | map(attribute='package')
         | list
       }}
   tags:
@@ -67,22 +80,18 @@
     state: absent
   loop: >-
     {{
-      terminal_extrepo_enable.results
-      | selectattr('rc', 'defined')
-      | selectattr('rc', 'eq', 0)
-      | map(attribute='item.legacy_paths')
+      terminal_extrepo_successful_repositories
+      | map(attribute='legacy_paths')
       | select('defined')
       | flatten
     }}
-  when: terminal_extrepo_enable is defined
+  when: terminal_extrepo_successful_repositories | default([]) | length > 0
   tags:
     - always
 
 - name: Install extrepo-managed packages
   become: true
   ansible.builtin.apt:
-    update_cache: true
-    cache_valid_time: 3600
     name: "{{ terminal_extrepo_packages }}"
     state: present
   when: terminal_extrepo_packages | default([]) | length > 0
