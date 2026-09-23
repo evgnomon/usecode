@@ -3,7 +3,9 @@
   ansible.builtin.apt:
     update_cache: true
     cache_valid_time: 3600
-    name: extrepo
+    name:
+      - extrepo
+      - python3-yaml
     state: present
   tags:
     - always
@@ -48,10 +50,7 @@
     terminal_extrepo_enable.rc != 0 and
     'does not exist' not in
     ((terminal_extrepo_enable.stdout | default('')) ~ (terminal_extrepo_enable.stderr | default('')))
-  changed_when: >-
-    terminal_extrepo_enable.rc == 0 and
-    'already existed' not in
-    ((terminal_extrepo_enable.stdout | default('')) ~ (terminal_extrepo_enable.stderr | default('')))
+  changed_when: false
   loop: "{{ terminal_extrepo_repositories }}"
   loop_control:
     label: "{{ item.id }}"
@@ -107,8 +106,8 @@
   loop: >-
     {{
       terminal_extrepo_successful_repositories
+      | selectattr('legacy_paths', 'defined')
       | map(attribute='legacy_paths')
-      | select('defined')
       | flatten
     }}
   when: terminal_extrepo_successful_repositories | default([]) | length > 0
