@@ -10,10 +10,11 @@
 
 - name: Enable extrepo non-free policy
   become: true
-  ansible.builtin.replace:
+  ansible.builtin.lineinfile:
     path: /etc/extrepo/config.yaml
-    regexp: '^([[:space:]]*)# - non-free$'
-    replace: '\1- non-free'
+    regexp: '^[[:space:]]*#? - non-free$'
+    line: '- non-free'
+    insertafter: '^enabled_policies:$'
   tags:
     - always
 
@@ -39,16 +40,18 @@
     - always
 
 - name: Record enabled extrepo repositories
+  vars:
+    terminal_extrepo_successful_results: >-
+      {{
+        terminal_extrepo_enable.results
+        | selectattr('rc', 'defined')
+        | selectattr('rc', 'eq', 0)
+        | rejectattr('stdout', 'search', 'does not exist')
+        | rejectattr('stderr', 'search', 'does not exist')
+        | list
+      }}
   ansible.builtin.set_fact:
-    terminal_extrepo_successful_repositories: >-
-      {%- set repositories = [] -%}
-      {%- for result in terminal_extrepo_enable.results -%}
-      {%- set output = (result.stdout | default('')) ~ (result.stderr | default('')) -%}
-      {%- if result.rc is defined and result.rc == 0 and 'does not exist' not in output -%}
-      {%- set _ = repositories.append(result.item) -%}
-      {%- endif -%}
-      {%- endfor -%}
-      {{ repositories }}
+    terminal_extrepo_successful_repositories: "{{ terminal_extrepo_successful_results | map(attribute='item') | list }}"
   tags:
     - always
 
