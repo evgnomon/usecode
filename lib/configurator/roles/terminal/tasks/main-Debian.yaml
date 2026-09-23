@@ -38,6 +38,21 @@
   tags:
     - always
 
+- name: Discover existing extrepo source files
+  become: true
+  ansible.builtin.find:
+    paths: /etc/apt/sources.list.d
+    patterns: 'extrepo_*.sources'
+    file_type: file
+    contains: "{{ item.uri }}"
+    read_whole_file: true
+  register: terminal_extrepo_existing_source_files
+  loop: "{{ terminal_extrepo_repositories }}"
+  loop_control:
+    label: "{{ item.id }}"
+  tags:
+    - always
+
 - name: Enable supported third-party repositories with extrepo
   become: true
   ansible.builtin.command:
@@ -50,10 +65,15 @@
     terminal_extrepo_enable.rc != 0 and
     'does not exist' not in
     ((terminal_extrepo_enable.stdout | default('')) ~ (terminal_extrepo_enable.stderr | default('')))
-  changed_when: false
+  changed_when: >-
+    terminal_extrepo_enable.rc == 0 and
+    terminal_extrepo_existing_source_files.results[extrepo_repo_index].matched == 0 and
+    'does not exist' not in
+    ((terminal_extrepo_enable.stdout | default('')) ~ (terminal_extrepo_enable.stderr | default('')))
   loop: "{{ terminal_extrepo_repositories }}"
   loop_control:
     label: "{{ item.id }}"
+    index_var: extrepo_repo_index
   tags:
     - always
 
@@ -119,7 +139,10 @@
   ansible.builtin.apt:
     update_cache: true
     cache_valid_time: 0
-  when: terminal_extrepo_successful_repositories | default([]) | length > 0
+  when:
+    - >
+      (terminal_extrepo_enable.results | selectattr('changed') | list | length > 0) or
+      (terminal_extrepo_successful_repositories | default([]) | length > 0)
   tags:
     - always
 
