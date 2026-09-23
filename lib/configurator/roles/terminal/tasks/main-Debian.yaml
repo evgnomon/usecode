@@ -65,7 +65,13 @@
     terminal_extrepo_enable.rc != 0 and
     'does not exist' not in
     ((terminal_extrepo_enable.stdout | default('')) ~ (terminal_extrepo_enable.stderr | default('')))
-  changed_when: false
+  changed_when: >-
+    terminal_extrepo_enable.rc == 0 and
+    (
+      terminal_extrepo_existing_source_files.results[extrepo_repo_index].matched == 0 or
+      'already existed' not in
+      ((terminal_extrepo_enable.stdout | default('')) ~ (terminal_extrepo_enable.stderr | default('')))
+    )
   loop: "{{ terminal_extrepo_repositories }}"
   loop_control:
     label: "{{ item.id }}"
@@ -149,6 +155,7 @@
   when:
     - >
       terminal_extrepo_config_policy.changed or
+      (terminal_extrepo_enable.results | selectattr('changed') | list | length > 0) or
       (terminal_extrepo_newly_enabled_repo_ids | default([]) | length > 0) or
       (terminal_extrepo_legacy_cleanup.results | default([]) | selectattr('changed') | list | length > 0)
   tags:
