@@ -3,38 +3,18 @@
   ansible.builtin.apt:
     update_cache: true
     cache_valid_time: 3600
-    name:
-      - extrepo
-      - python3-yaml
+    name: extrepo
     state: present
   tags:
     - always
 
-- name: Enable extrepo non-free policy in config
+- name: Install extrepo config
   become: true
-  ansible.builtin.shell: |
-    python3 - <<'PY'
-    from pathlib import Path
-    import yaml
-
-    path = Path("/etc/extrepo/config.yaml")
-    data = yaml.safe_load(path.read_text()) or {}
-    policies = list(data.get("enabled_policies", []))
-
-    if "main" not in policies:
-        policies.insert(0, "main")
-    if "non-free" not in policies:
-        policies.append("non-free")
-
-    data["enabled_policies"] = policies
-    new_content = yaml.safe_dump(data, sort_keys=False)
-    old_content = path.read_text()
-    if new_content != old_content:
-        path.write_text(new_content)
-        print("changed")
-    PY
+  ansible.builtin.template:
+    src: "{{ role_path }}/templates/Debian/etc/extrepo/config.yaml.j2"
+    dest: /etc/extrepo/config.yaml
+    mode: "0644"
   register: terminal_extrepo_config_policy
-  changed_when: "'changed' in terminal_extrepo_config_policy.stdout"
   tags:
     - always
 
@@ -113,6 +93,20 @@
   tags:
     - always
 
+- name: Assert configured extrepo repositories resolved
+  vars:
+    terminal_extrepo_missing_repo_ids: >-
+      {{
+        terminal_extrepo_repositories | map(attribute='id') | list
+        | difference(terminal_extrepo_successful_repositories | map(attribute='id') | list)
+      }}
+  ansible.builtin.assert:
+    that:
+      - terminal_extrepo_missing_repo_ids | length == 0
+    fail_msg: "extrepo did not produce source files for: {{ terminal_extrepo_missing_repo_ids | join(', ') }}"
+  tags:
+    - always
+
 - name: Derive enabled extrepo repository metadata
   ansible.builtin.set_fact:
     terminal_extrepo_enabled_repo_ids: "{{ terminal_extrepo_successful_repositories | map(attribute='id') | list }}"
@@ -136,10 +130,11 @@
     {{
       terminal_extrepo_successful_repositories
       | selectattr('legacy_paths', 'defined')
+      | selectattr('id', 'in', terminal_extrepo_newly_enabled_repo_ids | default([]))
       | map(attribute='legacy_paths')
       | flatten
     }}
-  when: terminal_extrepo_successful_repositories | default([]) | length > 0
+  when: terminal_extrepo_newly_enabled_repo_ids | default([]) | length > 0
   tags:
     - always
 
