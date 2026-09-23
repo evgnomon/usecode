@@ -51,15 +51,6 @@
   tags:
     - always
 
-- name: Refresh Apt cache after enabling extrepo repositories
-  become: true
-  ansible.builtin.apt:
-    update_cache: true
-    cache_valid_time: 0
-  when: terminal_extrepo_successful_repositories | default([]) | length > 0
-  tags:
-    - always
-
 - name: Derive enabled extrepo repository metadata
   ansible.builtin.set_fact:
     terminal_extrepo_enabled_repo_ids: "{{ terminal_extrepo_successful_repositories | map(attribute='id') | list }}"
@@ -85,6 +76,15 @@
       | select('defined')
       | flatten
     }}
+  when: terminal_extrepo_successful_repositories | default([]) | length > 0
+  tags:
+    - always
+
+- name: Refresh Apt cache after enabling extrepo repositories
+  become: true
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 0
   when: terminal_extrepo_successful_repositories | default([]) | length > 0
   tags:
     - always
