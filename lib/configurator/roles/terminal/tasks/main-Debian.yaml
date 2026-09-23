@@ -41,13 +41,14 @@
 - name: Record enabled extrepo repositories
   ansible.builtin.set_fact:
     terminal_extrepo_successful_repositories: >-
-      {{
-        terminal_extrepo_enable.results
-        | selectattr('rc', 'defined')
-        | selectattr('rc', 'eq', 0)
-        | map(attribute='item')
-        | list
-      }}
+      {%- set repositories = [] -%}
+      {%- for result in terminal_extrepo_enable.results -%}
+      {%- set output = (result.stdout | default('')) ~ (result.stderr | default('')) -%}
+      {%- if result.rc is defined and result.rc == 0 and 'does not exist' not in output -%}
+      {%- set _ = repositories.append(result.item) -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {{ repositories }}
   tags:
     - always
 
