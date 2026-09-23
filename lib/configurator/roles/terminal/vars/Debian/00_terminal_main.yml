@@ -19,7 +19,7 @@ terminal_extrepo_repositories:
       - /etc/apt/sources.list.d/hashicorp.list
       - /etc/apt/keyrings/hashicorp-archive-keyring.gpg
   - id: dotnet
-    uri: https://packages.microsoft.com/debian
+    uri: "{{ ({'bookworm': 'https://packages.microsoft.com/debian/12/prod', 'trixie': 'https://packages.microsoft.com/debian/13/prod'}).get(ansible_facts['distribution_release'], 'https://packages.microsoft.com/debian/12/prod') }}"
     legacy_paths:
       - /etc/apt/sources.list.d/ms.list
   - id: vscode

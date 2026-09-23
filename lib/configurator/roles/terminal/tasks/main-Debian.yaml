@@ -44,7 +44,7 @@
     paths: /etc/apt/sources.list.d
     patterns: 'extrepo_*.sources'
     file_type: file
-    contains: "/var/lib/extrepo/keys/{{ item.id }}.asc"
+    contains: "{{ item.uri }}"
     read_whole_file: true
   register: terminal_extrepo_existing_source_files
   loop: "{{ terminal_extrepo_repositories }}"
@@ -61,10 +61,6 @@
       - enable
       - "{{ item.id }}"
   register: terminal_extrepo_enable
-  failed_when: >-
-    terminal_extrepo_enable.rc != 0 and
-    'does not exist' not in
-    ((terminal_extrepo_enable.stdout | default('')) ~ (terminal_extrepo_enable.stderr | default('')))
   changed_when: >-
     terminal_extrepo_enable.rc == 0 and
     (
@@ -85,7 +81,7 @@
     paths: /etc/apt/sources.list.d
     patterns: 'extrepo_*.sources'
     file_type: file
-    contains: "/var/lib/extrepo/keys/{{ item.id }}.asc"
+    contains: "{{ item.uri }}"
     read_whole_file: true
   register: terminal_extrepo_source_files
   loop: "{{ terminal_extrepo_repositories }}"
