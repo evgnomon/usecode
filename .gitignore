@@ -90,3 +90,5 @@ lib/zm/images/zamin/pkg/debian/usr/share/zm/images/zamin
 zig-out
 .zig-cache
 *.css.map
+target/
+.tmp/

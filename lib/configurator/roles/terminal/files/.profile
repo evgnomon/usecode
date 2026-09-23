@@ -14,6 +14,12 @@
 # for ssh logins, install and configure the libpam-umask package.
 #umask 022
 
+# mise shims for non-interactive shells; interactive shells activate mise
+# in ~/.bashrc.d/mise.sh
+if [ -d "$HOME/.local/share/mise/shims" ] ; then
+    PATH="$HOME/.local/share/mise/shims:$PATH"
+fi
+
 # if running bash
 if [ -n "$BASH_VERSION" ]; then
     # include .bashrc if it exists

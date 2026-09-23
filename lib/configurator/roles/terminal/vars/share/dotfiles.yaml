@@ -15,6 +15,7 @@ dotfiles:
   - .bashrc
   - .inputrc
   - .local/bin/foot-shell
+  - .bashrc.d/mise.sh
   - .profile
   - .bash_aliases
   - .tmux.conf
