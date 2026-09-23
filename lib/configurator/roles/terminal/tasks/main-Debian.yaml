@@ -8,11 +8,21 @@
   tags:
     - always
 
+- name: Ensure extrepo enabled_policies section exists
+  become: true
+  ansible.builtin.lineinfile:
+    path: /etc/extrepo/config.yaml
+    regexp: '^enabled_policies:$'
+    line: 'enabled_policies:'
+    insertafter: EOF
+  tags:
+    - always
+
 - name: Normalize extrepo enabled_policies main entry
   become: true
   ansible.builtin.lineinfile:
     path: /etc/extrepo/config.yaml
-    regexp: '^[[:space:]]*- main$'
+    regexp: '^[[:space:]]*#?[[:space:]]*- main$'
     line: '  - main'
     insertafter: '^enabled_policies:$'
   tags:
@@ -22,7 +32,7 @@
   become: true
   ansible.builtin.lineinfile:
     path: /etc/extrepo/config.yaml
-    regexp: '^[[:space:]]*#? - non-free$'
+    regexp: '^[[:space:]]*#?[[:space:]]*- non-free$'
     line: '  - non-free'
     insertafter: '^  - main$'
   tags:
