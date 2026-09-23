@@ -21,6 +21,11 @@ extrepo_repositories:
     legacy_paths:
       - /etc/apt/sources.list.d/vscode.sources
       - /etc/apt/keyrings/microsoft-prod.gpg
+  - id: mullvad
+    uri: https://repository.mullvad.net/deb/stable
+    legacy_paths:
+      - /etc/apt/sources.list.d/mullvad.list
+      - /etc/apt/trusted.gpg.d/mullvad-keyring.gpg
   - id: mise
     package: mise
     uri: https://mise.jdx.dev/deb

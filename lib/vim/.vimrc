@@ -34,6 +34,7 @@ set belloff=all               " Disable all audible and visual bells, preventing
 
 let $PYTHONHOME = '/usr/local'
 au BufNewFile,BufRead *.html.jinja2 setf htmldjango
+set pythonthreehome=/usr/local
 
 :augroup numbertoggle
   :  autocmd!
