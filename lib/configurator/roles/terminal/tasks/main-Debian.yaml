@@ -18,23 +18,15 @@
   tags:
     - always
 
-- name: Normalize extrepo enabled_policies main entry
+- name: Normalize extrepo enabled_policies entries
   become: true
-  ansible.builtin.lineinfile:
+  ansible.builtin.replace:
     path: /etc/extrepo/config.yaml
-    regexp: '^[[:space:]]*#?[[:space:]]*- main$'
-    line: '  - main'
-    insertafter: '^enabled_policies:$'
-  tags:
-    - always
-
-- name: Enable extrepo non-free policy
-  become: true
-  ansible.builtin.lineinfile:
-    path: /etc/extrepo/config.yaml
-    regexp: '^[[:space:]]*#?[[:space:]]*- non-free$'
-    line: '  - non-free'
-    insertafter: '^  - main$'
+    regexp: '(?ms)^enabled_policies:\n(?:[ \t]*#?[ \t]*-.*\n)*'
+    replace: |
+      enabled_policies:
+        - main
+        - non-free
   tags:
     - always
 
