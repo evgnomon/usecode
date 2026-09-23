@@ -44,7 +44,7 @@
     paths: /etc/apt/sources.list.d
     patterns: 'extrepo_*.sources'
     file_type: file
-    contains: "{{ item.uri }}"
+    contains: "/var/lib/extrepo/keys/{{ item.id }}.asc"
     read_whole_file: true
   register: terminal_extrepo_existing_source_files
   loop: "{{ terminal_extrepo_repositories }}"
@@ -65,11 +65,7 @@
     terminal_extrepo_enable.rc != 0 and
     'does not exist' not in
     ((terminal_extrepo_enable.stdout | default('')) ~ (terminal_extrepo_enable.stderr | default('')))
-  changed_when: >-
-    terminal_extrepo_enable.rc == 0 and
-    terminal_extrepo_existing_source_files.results[extrepo_repo_index].matched == 0 and
-    'does not exist' not in
-    ((terminal_extrepo_enable.stdout | default('')) ~ (terminal_extrepo_enable.stderr | default('')))
+  changed_when: false
   loop: "{{ terminal_extrepo_repositories }}"
   loop_control:
     label: "{{ item.id }}"
@@ -83,7 +79,7 @@
     paths: /etc/apt/sources.list.d
     patterns: 'extrepo_*.sources'
     file_type: file
-    contains: "{{ item.uri }}"
+    contains: "/var/lib/extrepo/keys/{{ item.id }}.asc"
     read_whole_file: true
   register: terminal_extrepo_source_files
   loop: "{{ terminal_extrepo_repositories }}"
@@ -93,6 +89,15 @@
     - always
 
 - name: Record active extrepo repositories
+  vars:
+    terminal_extrepo_newly_enabled_repo_ids: >-
+      {%- set repository_ids = [] -%}
+      {%- for result in terminal_extrepo_source_files.results -%}
+      {%- if result.matched | default(0) > 0 and terminal_extrepo_existing_source_files.results[loop.index0].matched | default(0) == 0 -%}
+      {%- set _ = repository_ids.append(result.item.id) -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {{ repository_ids }}
   ansible.builtin.set_fact:
     terminal_extrepo_successful_repositories: >-
       {{
@@ -102,6 +107,7 @@
         | map(attribute='item')
         | list
       }}
+    terminal_extrepo_newly_enabled_repo_ids: "{{ terminal_extrepo_newly_enabled_repo_ids }}"
   tags:
     - always
 
@@ -143,7 +149,7 @@
   when:
     - >
       terminal_extrepo_config_policy.changed or
-      (terminal_extrepo_enable.results | selectattr('changed') | list | length > 0) or
+      (terminal_extrepo_newly_enabled_repo_ids | default([]) | length > 0) or
       (terminal_extrepo_legacy_cleanup.results | default([]) | selectattr('changed') | list | length > 0)
   tags:
     - always
