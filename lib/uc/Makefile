@@ -4,7 +4,8 @@
 SOURCES := $(shell find src tests -type f -name "*.rs") Cargo.toml Cargo.lock
 PROFILE ?= release
 TARGET ?= x86_64-unknown-linux-musl
-BINS := uc uc-encrypt uc-decrypt uc-configure uc-push uc-pull uc-ghcr uc-secret
+BINS := uc uc-encrypt uc-decrypt uc-configure uc-push uc-pull uc-ghcr uc-secret \
+	uc-image uc-repo uc-cert uc-deb uc-db uc-net uc-vm uc-nats uc-work uc-new uc-cloud
 OUT_DIR := target/$(TARGET)/$(PROFILE)
 OUTPUTS := $(addprefix $(OUT_DIR)/,$(BINS))
 DESTDIR ?= /
@@ -12,7 +13,7 @@ PREFIX ?= /usr/local
 BIN_DIR := $(DESTDIR)$(patsubst /%,%,$(PREFIX))/bin
 INSTALLED := $(addprefix $(BIN_DIR)/,$(BINS))
 # Former standalone tools that uc-secret still answers to by name.
-SECRET_ALIASES := getsecret keychain rchain ghchain ensure_secret ensure_vault rotate_keychain_pass
+SECRET_ALIASES := getsecret keychain rchain ghchain ensure_secret ensure_vault rotate_keychain_pass rotsec
 INSTALLED_ALIASES := $(addprefix $(BIN_DIR)/,$(SECRET_ALIASES))
 
 .PHONY: all build check install uninstall test lint fmt dist publish clean

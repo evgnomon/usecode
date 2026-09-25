@@ -5,12 +5,14 @@
 //!
 //! Installed under the names of the tools it replaces (`getsecret`,
 //! `keychain`, `rchain`, `ghchain`, `ensure_vault`, `ensure_secret`,
-//! `rotate_keychain_pass`), it behaves as they did.
+//! `rotate_keychain_pass`, `rotsec`), it behaves as they did. `encrypt`,
+//! `decrypt` and `serve` hand over to `uc-encrypt`, `uc-decrypt` and `secd`.
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::ffi::OsString;
 use std::path::Path;
 use std::process::ExitCode;
+use uc::dispatch;
 use uc::password::{self, Charset};
 use uc::secret::{self, Store};
 
@@ -76,10 +78,39 @@ enum Cmd {
         print: Print,
     },
     /// Re-encrypt a store under a new random password (was
-    /// `rotate_keychain_pass`).
+    /// `rotate_keychain_pass`), or with --playbook rotate the secrets
+    /// themselves (was `rotsec`).
     Rotate {
         #[command(flatten)]
         name: Name,
+
+        /// Rotate the secrets in the store rather than its password, by
+        /// running the blueprint checkout's rotate.yaml playbook with them.
+        #[arg(long)]
+        playbook: bool,
+
+        /// With --playbook, arguments for ansible-playbook, after `--`.
+        #[arg(last = true, requires = "playbook")]
+        args: Vec<OsString>,
+    },
+    /// Encrypt files with a password (same as `uc encrypt`).
+    #[command(disable_help_flag = true)]
+    Encrypt {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<OsString>,
+    },
+    /// Decrypt files written by `uc secret encrypt` (same as `uc decrypt`).
+    #[command(disable_help_flag = true)]
+    Decrypt {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<OsString>,
+    },
+    /// Serve the SSH key authenticated secret manager over HTTP (was
+    /// `secd serve`).
+    #[command(disable_help_flag = true)]
+    Serve {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<OsString>,
     },
 }
 
@@ -126,12 +157,14 @@ fn legacy(program: &str) -> Option<&'static [&'static str]> {
         "ensure_secret" => &["ensure", "--repo", "--print", "file"],
         "ensure_vault" => &["ensure", "--repo", "--print", "vault"],
         "rotate_keychain_pass" => &["rotate"],
+        "rotsec" => &["rotate", "--repo", "--playbook", "--"],
         _ => return None,
     })
 }
 
 /// The command line with a legacy program name expanded into its
-/// subcommand. The legacy tools took at most a store name, which follows.
+/// subcommand. The legacy tools took at most a store name, which follows,
+/// except `rotsec`, whose arguments go to ansible-playbook.
 fn args() -> Vec<OsString> {
     let mut args: Vec<OsString> = std::env::args_os().collect();
     let program = args
@@ -148,7 +181,7 @@ fn args() -> Vec<OsString> {
     args
 }
 
-fn run(cmd: Cmd) -> anyhow::Result<()> {
+fn run(cmd: Cmd) -> anyhow::Result<ExitCode> {
     match cmd {
         Cmd::Gen {
             length,
@@ -182,9 +215,24 @@ fn run(cmd: Cmd) -> anyhow::Result<()> {
                 Print::Vault => println!("{}", store.vault_name),
             }
         }
-        Cmd::Rotate { name } => name.store().rotate()?,
+        Cmd::Rotate {
+            name,
+            playbook: false,
+            ..
+        } => name.store().rotate()?,
+        Cmd::Rotate { name, args, .. } => {
+            name.store().rotate_secrets(&secret::blueprint(), &args)?
+        }
+        Cmd::Encrypt { args } => return Ok(dispatch::exec("uc-encrypt", args)),
+        Cmd::Decrypt { args } => return Ok(dispatch::exec("uc-decrypt", args)),
+        Cmd::Serve { args } => {
+            return Ok(dispatch::exec(
+                "secd",
+                ["serve".into()].into_iter().chain(args),
+            ));
+        }
     }
-    Ok(())
+    Ok(ExitCode::SUCCESS)
 }
 
 fn main() -> ExitCode {
@@ -197,7 +245,7 @@ fn main() -> ExitCode {
     // SAFETY: no other threads exist yet.
     unsafe { std::env::set_var("EDITOR", "vi") };
     match run(Cli::parse_from(args()).command) {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(code) => code,
         Err(err) => {
             eprintln!("uc-secret: {err:#}");
             ExitCode::FAILURE
@@ -225,11 +273,48 @@ mod tests {
             "ensure_secret",
             "ensure_vault",
             "rotate_keychain_pass",
+            "rotsec",
         ] {
             let mut args = vec!["uc-secret"];
             args.extend(legacy(program).unwrap());
             assert!(Cli::try_parse_from(&args).is_ok(), "{program}");
         }
         assert!(legacy("uc-secret").is_none());
+    }
+
+    #[test]
+    fn rotsec_arguments_reach_ansible_playbook() {
+        let mut args = vec!["uc-secret"];
+        args.extend(legacy("rotsec").unwrap());
+        args.extend(["-t", "db", "--check"]);
+        match Cli::try_parse_from(&args).unwrap().command {
+            Cmd::Rotate {
+                name,
+                playbook,
+                args,
+            } => {
+                assert!(name.repo && name.name.is_none() && playbook);
+                assert_eq!(args, ["-t", "db", "--check"]);
+            }
+            _ => panic!("not rotate"),
+        }
+        assert!(Cli::try_parse_from(["uc-secret", "rotate", "--", "-v"]).is_err());
+    }
+
+    #[test]
+    fn handovers_keep_every_argument() {
+        for (sub, words) in [
+            ("encrypt", vec!["-f", "a.txt"]),
+            ("decrypt", vec!["-h"]),
+            ("serve", vec!["--help"]),
+        ] {
+            let mut argv = vec!["uc-secret", sub];
+            argv.extend(&words);
+            let args = match Cli::try_parse_from(&argv).unwrap().command {
+                Cmd::Encrypt { args } | Cmd::Decrypt { args } | Cmd::Serve { args } => args,
+                _ => panic!("{sub}"),
+            };
+            assert_eq!(args, words, "{sub}");
+        }
     }
 }

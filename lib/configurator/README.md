@@ -104,7 +104,8 @@ echo "$(git config --get user.email) namespaces=\"git\" $(cat ~/.ssh/yourkey.pub
 
 ## Secret Rotation
 
-Run `rotsec` in your repo. Set `repo_secrets` using `rchain`:
+Run `uc secret rotate -r --playbook` (was `rotsec`) in your repo. Set
+`repo_secrets` using `uc secret edit -r` (was `rchain`):
 
 ```yaml
 repo_secrets:

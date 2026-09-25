@@ -8,10 +8,8 @@
 //! `uc-<name>` executable next to `uc` or anywhere on `PATH`.
 
 use std::collections::BTreeSet;
-use std::os::unix::fs::PermissionsExt;
-use std::os::unix::process::CommandExt;
-use std::path::PathBuf;
 use std::process::{Command, ExitCode};
+use uc::dispatch::{self, is_executable, resolve, search_dirs};
 
 const PREFIX: &str = "uc-";
 
@@ -35,16 +33,11 @@ fn main() -> ExitCode {
     };
 
     let program = format!("{PREFIX}{subcommand}");
-    let Some(path) = resolve(&program) else {
+    if resolve(&program).is_none() {
         eprintln!("uc: '{subcommand}' is not a uc command. See 'uc help'.");
         return ExitCode::from(2);
-    };
-
-    // Replaces this process, so signals, exit status and the terminal all
-    // belong to the subcommand exactly as they would to git's.
-    let err = Command::new(&path).args(&args[1..]).exec();
-    eprintln!("uc: failed to run '{}': {err}", path.display());
-    ExitCode::FAILURE
+    }
+    dispatch::exec(&program, &args[1..])
 }
 
 fn print_usage() {
@@ -76,34 +69,6 @@ fn summary(command: &str) -> Option<String> {
     let line = String::from_utf8(output.stdout).ok()?;
     let line = line.lines().next()?.trim();
     (!line.is_empty()).then(|| line.to_string())
-}
-
-/// Directories a subcommand may live in: next to `uc` first, so a build tree
-/// finds its own subcommands before an installed copy, then `PATH`.
-fn search_dirs() -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
-    if let Ok(exe) = std::env::current_exe()
-        && let Some(dir) = exe.parent()
-    {
-        dirs.push(dir.to_path_buf());
-    }
-    if let Some(path) = std::env::var_os("PATH") {
-        dirs.extend(std::env::split_paths(&path));
-    }
-    dirs
-}
-
-fn is_executable(path: &std::path::Path) -> bool {
-    path.metadata()
-        .map(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
-        .unwrap_or(false)
-}
-
-fn resolve(program: &str) -> Option<PathBuf> {
-    search_dirs()
-        .into_iter()
-        .map(|dir| dir.join(program))
-        .find(|candidate| is_executable(candidate))
 }
 
 /// Every `uc-<name>` executable reachable from the search path, deduplicated
