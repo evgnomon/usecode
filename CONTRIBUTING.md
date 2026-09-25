@@ -4,7 +4,7 @@ This project is licensed under the [HGL General License](https://evgnomon.org/do
 
 ## Sign-off
 
-Every commit must include a `Signed-off-by` line certifying the Developer Certificate of Origin (https://developercertificate.org):
+Every commit must include a `Signed-off-by` line certifying the [Developer Certificate of Origin](DCO):
 
 ```bash
 git commit -s
