@@ -66,6 +66,9 @@ pub fn create_vm(
         return Err(Error::vm(format!("VM '{domain_name}' already exists")));
     }
 
+    // Fail before copying anything if cloud-init user-data cannot be provided.
+    ensure_cloud_init_template(cfg)?;
+
     let src_image = match &specs.image_path {
         Some(path) => PathBuf::from(path),
         None => Path::new(&cfg.base_image_path).join(&cfg.image_name),
@@ -104,11 +107,6 @@ pub fn create_vm(
     // 5. Create cloud-init ISO
     let cloud_init_template =
         Path::new(&cfg.cloud_init_template_path).join("cloud-init-user-data.yaml");
-
-    // Ensure cloud-init user-data template exists; create from config if missing.
-    if let Err(err) = ensure_cloud_init_template(cfg, &cloud_init_template) {
-        warn!("Could not ensure cloud-init template: {err}");
-    }
 
     let cloud_init_iso = format!("{}/{domain_name}-cloud-init.iso", cfg.vm_storage_path);
     info!("Creating cloud-init ISO at {cloud_init_iso}");
@@ -231,7 +229,7 @@ pub fn start_vm(conn: &Connection, cfg: &Config, domain_name: &str) -> Result<()
     {
         info!("Cloud-init ISO missing at '{iso_path}', regenerating");
         let template = Path::new(&cfg.cloud_init_template_path).join("cloud-init-user-data.yaml");
-        if let Err(err) = ensure_cloud_init_template(cfg, &template) {
+        if let Err(err) = ensure_cloud_init_template(cfg) {
             warn!("Could not ensure cloud-init template: {err}");
         }
         if let Err(err) = cloudinit::create_cloud_init_iso(domain_name, &template, &iso_path) {
@@ -475,6 +473,8 @@ pub fn fork_vm(
         return Err(Error::vm(format!("VM '{dest_name}' already exists")));
     }
 
+    ensure_cloud_init_template(cfg)?;
+
     let dst_disk = format!("{}/{dest_name}.qcow2", cfg.vm_storage_path);
 
     // Read source persistent XML to find the original disk path (the fork point).
@@ -525,10 +525,6 @@ pub fn fork_vm(
     // Cloud-init ISO for the new VM name
     let cloud_init_template =
         Path::new(&cfg.cloud_init_template_path).join("cloud-init-user-data.yaml");
-    if let Err(err) = ensure_cloud_init_template(cfg, &cloud_init_template) {
-        warn!("Could not ensure cloud-init template: {err}");
-    }
-
     let cloud_init_iso = format!("{}/{dest_name}-cloud-init.iso", cfg.vm_storage_path);
     info!("Creating cloud-init ISO at {cloud_init_iso}");
     cloudinit::create_cloud_init_iso(dest_name, &cloud_init_template, &cloud_init_iso)?;
@@ -605,16 +601,30 @@ pub fn mount_vm(conn: &Connection, domain_name: &str, mount: &MountSpec) -> Resu
 }
 
 /// Writes a cloud-init user-data template from the configured user and SSH key
-/// when none exists yet.
-fn ensure_cloud_init_template(cfg: &Config, template_path: &Path) -> Result<()> {
+/// when none exists yet. Without `ssh_key` in the config, the public half of
+/// `identity_file` (resolved against the invoking user's home) is used.
+fn ensure_cloud_init_template(cfg: &Config) -> Result<()> {
+    let template_path =
+        Path::new(&cfg.cloud_init_template_path).join("cloud-init-user-data.yaml");
     if template_path.exists() {
         return Ok(());
     }
 
-    if cfg.ssh_key.is_empty() {
-        error!("Cloud-init template missing and no ssh_key configured in /etc/vm/config.yaml");
-        return Err(Error::vm("missing ssh_key in config"));
-    }
+    let ssh_key = if cfg.ssh_key.is_empty() {
+        let pub_path = format!("{}.pub", expand_home(&cfg.identity_file));
+        match std::fs::read_to_string(&pub_path) {
+            Ok(key) => key.trim().to_string(),
+            Err(err) => {
+                error!(
+                    "Cloud-init template {} missing, no ssh_key in /etc/vm/config.yaml, and {pub_path} unreadable: {err}",
+                    template_path.display()
+                );
+                return Err(Error::vm("no SSH public key for cloud-init"));
+            }
+        }
+    } else {
+        cfg.ssh_key.clone()
+    };
 
     info!(
         "Creating cloud-init template at {}",
@@ -623,14 +633,36 @@ fn ensure_cloud_init_template(cfg: &Config, template_path: &Path) -> Result<()> 
 
     let content = format!(
         "#cloud-config\nusers:\n  - name: {}\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    shell: /bin/bash\n    ssh_authorized_keys:\n      - {}\n",
-        cfg.username, cfg.ssh_key,
+        cfg.username, ssh_key,
     );
 
     if let Some(parent) = template_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(template_path, content)?;
+    std::fs::write(&template_path, content)?;
     Ok(())
+}
+
+/// Expands a leading `~/` to the home of the user who invoked sudo, or `$HOME`.
+fn expand_home(path: &str) -> String {
+    let Some(rest) = path.strip_prefix("~/") else {
+        return path.to_string();
+    };
+    let home = std::env::var("SUDO_USER")
+        .ok()
+        .and_then(|user| passwd_home(&user))
+        .or_else(|| std::env::var("HOME").ok())
+        .unwrap_or_default();
+    format!("{home}/{rest}")
+}
+
+/// Looks up a user's home directory in /etc/passwd.
+fn passwd_home(user: &str) -> Option<String> {
+    let passwd = std::fs::read_to_string("/etc/passwd").ok()?;
+    passwd.lines().find_map(|line| {
+        let fields: Vec<&str> = line.split(':').collect();
+        (fields.len() >= 6 && fields[0] == user).then(|| fields[5].to_string())
+    })
 }
 
 /// Extracts the source file path for the primary disk (device='disk') from domain XML.
