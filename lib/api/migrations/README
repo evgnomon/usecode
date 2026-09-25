@@ -1,4 +1,0 @@
-License-Identifier: HGL
-Copyright (C) The Usecode Authors (see AUTHORS)
-
-Generic single-database configuration with an async dbapi.

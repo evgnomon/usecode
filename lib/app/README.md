@@ -5,7 +5,7 @@ Copyright (C) The Usecode Authors (see AUTHORS)
 
 # Frontend assets (HTMX + SCSS)
 
-The UI is now rendered server-side by FastAPI + Jinja2 in `lib/api` and enhanced with HTMX.
+The UI is now rendered server-side by `lib/api` (Rust, Jinja2 templates) and enhanced with HTMX.
 
 This directory only keeps SCSS source files used to generate API-served CSS.
 
@@ -17,4 +17,4 @@ npm install
 npm run build:css
 ```
 
-Output: `../api/src/usecode_agent_api/static/css/app.css`
+Output: `../api/static/css/app.css`
