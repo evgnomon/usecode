@@ -1,0 +1,22 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
+[package]
+name = "repofqn"
+version = "0.1.0"
+edition = "2024"
+description = "Print the org_repo name of the current directory"
+license = "HGL"
+authors = ["Hamed Ghasemzadeh <hg@evgnomon.org>"]
+publish = false
+
+[[bin]]
+name = "repofqn"
+path = "src/main.rs"
+
+[dependencies]
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1

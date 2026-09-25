@@ -1,0 +1,23 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
+[package]
+name = "rotate_keychain_pass"
+version = "0.1.0"
+edition = "2024"
+description = "Rotate the vault password of a secret file"
+license = "HGL"
+authors = ["Hamed Ghasemzadeh <hg@evgnomon.org>"]
+publish = false
+
+[[bin]]
+name = "rotate_keychain_pass"
+path = "src/main.rs"
+
+[dependencies]
+libc = "0.2"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1

@@ -1,0 +1,22 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
+[package]
+name = "x"
+version = "0.1.0"
+edition = "2024"
+description = "Shorthand for uc configure"
+license = "HGL"
+authors = ["Hamed Ghasemzadeh <hg@evgnomon.org>"]
+publish = false
+
+[[bin]]
+name = "x"
+path = "src/main.rs"
+
+[dependencies]
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1

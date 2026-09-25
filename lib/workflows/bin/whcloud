@@ -1,5 +1,0 @@
-#!/bin/bash
-# License-Identifier: HGL
-# Copyright (C) The Usecode Authors (see AUTHORS)
-
-hcloud --config <(~/.config/hcloud/cli.sh) "$@"

@@ -1,0 +1,22 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
+[package]
+name = "set_git_conf"
+version = "0.1.0"
+edition = "2024"
+description = "Configure git identity and signing for a repo from the blueprint config"
+license = "HGL"
+authors = ["Hamed Ghasemzadeh <hg@evgnomon.org>"]
+publish = false
+
+[[bin]]
+name = "set_git_conf"
+path = "src/main.rs"
+
+[dependencies]
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1

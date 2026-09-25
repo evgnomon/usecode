@@ -1,0 +1,25 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
+[package]
+name = "ipmesh"
+version = "0.1.0"
+edition = "2024"
+description = "Configure a full-mesh strongSwan IPsec VPN with certificate authentication"
+license = "HGL"
+authors = ["Hamed Ghasemzadeh <hg@evgnomon.org>"]
+publish = false
+
+[[bin]]
+name = "ipmesh"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+libc = "0.2"
+tempfile = "3"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1

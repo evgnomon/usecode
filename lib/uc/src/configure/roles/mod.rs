@@ -21,7 +21,6 @@ pub mod fonts;
 pub mod git;
 pub mod gnome;
 pub mod goose;
-pub mod install_flow;
 pub mod llama_cpp;
 pub mod local_bin;
 pub mod mise;
@@ -47,7 +46,6 @@ pub fn plan(v: &Vars) -> Plan {
     local_bin::tasks(&mut plan, v);
     pkg::tasks(&mut plan, v);
     usecode::tasks(&mut plan, v);
-    install_flow::tasks(&mut plan, v);
     apt::tasks(&mut plan, v);
     extrepo::tasks(&mut plan, v);
     dotfiles::tasks(&mut plan, v);

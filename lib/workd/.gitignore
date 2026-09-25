@@ -1,0 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
+target/
+/dist
+pkg/debian/usr/bin/workd

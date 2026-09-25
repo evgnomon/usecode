@@ -1,0 +1,23 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
+[package]
+name = "csv2pdf"
+version = "0.1.0"
+edition = "2024"
+description = "Render CSV from stdin as a PDF table via weasyprint"
+license = "HGL"
+authors = ["Hamed Ghasemzadeh <hg@evgnomon.org>"]
+publish = false
+
+[[bin]]
+name = "csv2pdf"
+path = "src/main.rs"
+
+[dependencies]
+csv = "1"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1

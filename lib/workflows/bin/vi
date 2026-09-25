@@ -1,5 +1,0 @@
-#!/bin/sh
-# License-Identifier: HGL
-# Copyright (C) The Usecode Authors (see AUTHORS)
-
-vim -Z -u NONE -U NONE --noplugin -c "set secure" -c "set nobackup" -c "set nowritebackup" -c "set nomodeline" -c 'set nocompatible' "$@"

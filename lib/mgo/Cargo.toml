@@ -1,0 +1,26 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
+[package]
+name = "mgo"
+version = "0.1.0"
+edition = "2024"
+description = "MongoDB / Azure Cosmos DB (MongoDB API) CLI for local podman instances, collection management and JSON queries"
+license = "HGL"
+authors = ["Hamed Ghasemzadeh <hg@evgnomon.org>"]
+publish = false
+
+[[bin]]
+name = "mgo"
+path = "src/main.rs"
+
+[dependencies]
+chrono = { version = "0.4", default-features = false, features = ["std", "alloc"] }
+clap = { version = "4", features = ["derive"] }
+mongodb = { version = "3", features = ["sync"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1

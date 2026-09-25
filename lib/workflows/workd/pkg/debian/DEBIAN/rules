@@ -1,6 +1,0 @@
-#!/usr/bin/make -f
-# License-Identifier: HGL
-# Copyright (C) The Usecode Authors (see AUTHORS)
-
-%:
-	dh $@ --with python-virtualenv

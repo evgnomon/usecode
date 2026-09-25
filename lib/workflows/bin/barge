@@ -1,5 +1,0 @@
-#!/bin/sh
-# License-Identifier: HGL
-# Copyright (C) The Usecode Authors (see AUTHORS)
-
-docker run -it --rm -v.:/github/workspace --workdir /github/workspace barge

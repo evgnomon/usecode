@@ -1,8 +1,0 @@
-#!/usr/bin/env bash
-# License-Identifier: HGL
-# Copyright (C) The Usecode Authors (see AUTHORS)
-
-
- yt-dlp -f bestaudio --no-playlist  \
-   --extract-audio --audio-format opus   --embed-metadata --embed-thumbnail --js-runtimes node:/home/evgnomon/.local/bin/node \
-   --remote-components ejs:github --match-filter "duration > 60" --download-archive .files "$@"

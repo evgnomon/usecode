@@ -18,7 +18,7 @@ all: build
 
 build: $(OUTPUTS)
 
-$(OUTPUTS): $(SOURCES)
+$(OUTPUTS) &: $(SOURCES)
 	@scripts/build.sh $(PROFILE) $(TARGET)
 	@touch $(OUTPUTS)
 

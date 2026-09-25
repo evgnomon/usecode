@@ -1,0 +1,11 @@
+{
+  "name": "workd",
+  "version": "0.2.0",
+  "description": "A lightweight, portable, and user-friendly workflow manager for Linux.",
+  "maintainer": "hg@evgnomon.org",
+  "section": "admin",
+  "priority": "optional",
+  "homepage": "https://github.com/evgnomon/flow",
+  "license": "HGL",
+  "root": "pkg/debian"
+}

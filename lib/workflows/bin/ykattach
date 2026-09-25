@@ -1,7 +1,0 @@
-#!/bin/sh
-# License-Identifier: HGL
-# Copyright (C) The Usecode Authors (see AUTHORS)
-
-powershell.exe -c "usbipd attach -i 1050:0407 -w"
-lsusb
-ykman info

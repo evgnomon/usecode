@@ -1,0 +1,23 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
+[package]
+name = "trust_ca"
+version = "0.1.0"
+edition = "2024"
+description = "Fetch the CA serving a TLS endpoint and install it into system, container and NSS trust stores"
+license = "HGL"
+authors = ["Hamed Ghasemzadeh <hg@evgnomon.org>"]
+publish = false
+
+[[bin]]
+name = "trust_ca"
+path = "src/main.rs"
+
+[dependencies]
+regex = "1.13.1"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1

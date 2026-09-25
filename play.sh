@@ -37,10 +37,6 @@ cd ../jsonc
 make
 sudo make install
 
-cd ../workflows
-make
-sudo make install PREFIX=/usr/local
-
 cd ../python
 make
 sudo make install

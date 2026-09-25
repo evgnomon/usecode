@@ -1,0 +1,23 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
+[package]
+name = "ansidist"
+version = "0.1.0"
+edition = "2024"
+description = "Build and install a Poetry project and its Ansible collection"
+license = "HGL"
+authors = ["Hamed Ghasemzadeh <hg@evgnomon.org>"]
+publish = false
+
+[[bin]]
+name = "ansidist"
+path = "src/main.rs"
+
+[dependencies]
+toml = "1"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1

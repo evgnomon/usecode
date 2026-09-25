@@ -1,0 +1,27 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
+[package]
+name = "ysys"
+version = "0.1.0"
+edition = "2024"
+description = "Sync Kubernetes-style resource YAMLs with PostgreSQL"
+license = "HGL"
+authors = ["Hamed Ghasemzadeh <hg@evgnomon.org>"]
+publish = false
+
+[[bin]]
+name = "ysys"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+postgres = { version = "0.19", features = ["with-serde_json-1"] }
+serde = "1"
+serde_json = "1"
+serde_yaml = "0.9"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
