@@ -1,7 +1,7 @@
 # License-Identifier: HGL
 # Copyright (C) The Usecode Authors (see AUTHORS)
 
-.PHONY: all build install install-eget bootstrap-playbook play uninstall clean prepare update
+.PHONY: all build install install-eget bootstrap play uninstall clean prepare update
 
 EGET_VERSION ?= latest
 ROOT_DIR ?= $(abspath $(CURDIR)/../..)
@@ -32,9 +32,9 @@ prepare: $(STAMPS_DIR)/install-root.sh
 $(STAMPS_DIR)/install-root.sh:
 	$(CURDIR)/install-root.sh
 
-bootstrap-playbook: $(STAMPS_DIR)/install.sh
+bootstrap: $(STAMPS_DIR)/install.sh
 
-play: bootstrap-playbook $(STAMPS_DIR)/play.sh
+play: bootstrap $(STAMPS_DIR)/play.sh
 
 $(STAMPS_DIR)/install.sh:
 	$(CURDIR)/install.sh

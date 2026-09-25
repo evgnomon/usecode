@@ -5,9 +5,11 @@
 //!
 //! [`crypto`] carries the OpenSSL-compatible `aes-256-cbc` container format,
 //! [`cli`] the option parsing and terminal helpers shared by `uc-encrypt` and
-//! `uc-decrypt`.
+//! `uc-decrypt`, and [`configure`] the parallel machine configurator behind
+//! `uc-configure`.
 
 pub mod cli;
+pub mod configure;
 pub mod crypto;
 
 use std::fmt;

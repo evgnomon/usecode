@@ -2,8 +2,4 @@
 # License-Identifier: HGL
 # Copyright (C) The Usecode Authors (see AUTHORS)
 
-sudo -v
-cd "$HOME/src/github.com/$USER/usecode/lib/configurator"
-  ansible-playbook -K -i inventory.py  main.yaml -e "ansible_python_interpreter=$(which python3)" "$@"
-cd - > /dev/null
-sudo -K
+exec uc configure "$@"

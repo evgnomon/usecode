@@ -1,6 +1,0 @@
-# License-Identifier: HGL
-# Copyright (C) The Usecode Authors (see AUTHORS)
-
----
-package_src: "{{ blueprint_home }}/{{ package.name }}/{{ package.template.os }}_{{ package.template.arch }}/{{ package.name }}_{{ package.version }}.{{ package.template.ext | default('bin') }}"
-package_dest: "{{ blueprint_home }}/{{ package.name }}/{{ package.template.os }}_{{ package.template.arch }}/{{ package.name }}_{{ package.version }}"

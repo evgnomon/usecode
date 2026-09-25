@@ -5,9 +5,18 @@ Copyright (C) The Usecode Authors (see AUTHORS)
 
 # Getting Started
 
+The machine is configured by `uc configure` (see `lib/uc/README.md`); its role
+files and templates live in `lib/uc/roles`. This directory holds the bootstrap:
+
+```bash
+sudo make prepare   # install-root.sh: base apt packages, YubiKey setup
+make play           # install.sh (rustup), then play.sh: build uc, run uc configure
+./play.sh -C        # dry run; any uc configure flag works, e.g. -t dotfiles,git
+```
+
 ## Installation profiles
 
-The configurator accepts `INSTALL_PROFILE` (or Ansible's `install_profile`) with these
+`uc configure` accepts `-p`/`INSTALL_PROFILE` (or `-e install_profile=…`) with these
 values:
 
 | Profile | Intended environment | Desktop, fonts, hardware |
@@ -17,15 +26,10 @@ values:
 | `wsl` | WSL2 | Disabled |
 | `vm` | Explicit VM installation | Desktop packages enabled; host-only hardware remains disabled |
 
-The profile is selected explicitly when provided, otherwise `DEV_CONTAINER` and WSL2
-detection are used. Dev containers omit JetBrains IDEs, Nerd Fonts, GUI applications,
+The profile is selected explicitly when provided, otherwise `DEV_CONTAINER` and WSL
+detection (a Microsoft kernel) are used. Dev containers omit JetBrains IDEs, Nerd Fonts, GUI applications,
 QEMU/image tooling, hardware-token packages, and GNOME configuration while retaining
 compilers, language servers, CLI tools, and development libraries.
-
-```bash
-git clone
-make
-```
 
 # Provide user configs:
 
@@ -36,7 +40,7 @@ git clone ssh://git@github.com:YOURUSER/config.git ~/.config/usecode
 # Dev Container Setup
 
 ```bash
-DEV_CONTAINER=1 make
+DEV_CONTAINER=1 make play
 ```
 
 ## WSL

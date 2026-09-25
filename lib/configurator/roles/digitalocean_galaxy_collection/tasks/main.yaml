@@ -1,6 +1,0 @@
-# License-Identifier: HGL
-# Copyright (C) The Usecode Authors (see AUTHORS)
-
----
-- command: ansible-galaxy collection install digitalocean.cloud
-  tags: digitalocean
