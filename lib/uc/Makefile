@@ -11,6 +11,9 @@ DESTDIR ?= /
 PREFIX ?= /usr/local
 BIN_DIR := $(DESTDIR)$(patsubst /%,%,$(PREFIX))/bin
 INSTALLED := $(addprefix $(BIN_DIR)/,$(BINS))
+# Former standalone tools that uc-secret still answers to by name.
+SECRET_ALIASES := getsecret keychain rchain ghchain ensure_secret ensure_vault rotate_keychain_pass
+INSTALLED_ALIASES := $(addprefix $(BIN_DIR)/,$(SECRET_ALIASES))
 
 .PHONY: all build check install uninstall test lint fmt dist publish clean
 
@@ -22,11 +25,14 @@ $(OUTPUTS) &: $(SOURCES)
 	@scripts/build.sh $(PROFILE) $(TARGET)
 	@touch $(OUTPUTS)
 
-install: $(INSTALLED)
+install: $(INSTALLED) $(INSTALLED_ALIASES)
 
 $(INSTALLED): $(BIN_DIR)/%: $(OUT_DIR)/%
 	@install -d $(@D)
 	@install -m 0755 $< $@
+
+$(INSTALLED_ALIASES): $(BIN_DIR)/uc-secret
+	@ln -sf uc-secret $@
 
 check:
 	@cargo fmt --check
@@ -49,7 +55,7 @@ publish: dist
 	@pubdeb
 
 uninstall:
-	@rm -f $(INSTALLED)
+	@rm -f $(INSTALLED) $(INSTALLED_ALIASES)
 
 clean:
 	@cargo clean

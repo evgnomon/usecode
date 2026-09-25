@@ -19,7 +19,8 @@ This crate ships the dispatcher, the two file encryption subcommands, which
 replace the former `boom` shell script, and `uc configure`, the machine
 configurator, `uc push`/`uc pull`, which move container images through
 the registry behind the bastion, `uc ghcr`, which builds, pushes and deletes
-GitHub Container Registry images, and `uc secret`, which generates secrets.
+GitHub Container Registry images, and `uc secret`, which generates secrets and
+manages the ansible-vault secret stores.
 The last two replace the former `lib/pylib` Python package (`bp` and the
 `gh_image` Ansible module).
 
@@ -160,15 +161,47 @@ talks to the API through `curl`, so the crate stays free of a TLS stack.
 Slashes in tags become dashes, so a branch name can be passed as is. The
 `z_container` Ansible role runs both.
 
-## Generating secrets
+## Secrets
 
 ```sh
-uc secret gen                   # 32 characters: letters, digits and symbols
+uc secret gen                    # 32 characters: letters, digits and symbols
 uc secret gen -l 16 --no-symbols
+uc secret get                    # the default store as JSON
+uc secret get -r -f github_pat   # one field of this repository's store
+uc secret edit -r                # edit this repository's store in vi
+uc secret ensure -r              # create it if missing, print its path
+uc secret rotate NAME            # re-encrypt under a new vault password
 ```
 
-Characters are drawn uniformly from the OS random source. The dotfiles alias
-`mkpass` runs it.
+`gen` draws characters uniformly from the OS random source; the dotfiles
+alias `mkpass` runs it.
+
+The other subcommands work on the ansible-vault secret stores in
+`~/src/github.com/$USER/config/secrets`. A store `NAME` is `NAME.yaml`,
+encrypted with ansible-vault, and `NAME.vault.asc`, its vault password as kept
+by the `vault` command; without a name it is `secrets.yaml` and `vault.asc`.
+`-r` picks the current repository's store, `<org>_<repo>` from the working
+directory, and a name given with it is appended (`-r github` is
+`<org>_<repo>_github`). Vault passwords reach ansible-vault only through a
+pipe, and stores are always edited with `vi`, the hardened `lib/vi`.
+
+`get` converts the YAML to JSON itself (merge keys included), so `yj` is no
+longer needed, and `-f a.b` prints one field the way `jq -r .a.b` would.
+`rotate` moves the secret file to `NAME.yaml.bak` until the new password is
+in place, so an interrupted rotation can simply be run again.
+
+`uc secret` replaces seven tools, and `make install` links their names to
+`uc-secret`, which behaves as the tool it was called as:
+
+| Old command | Same as |
+|---|---|
+| `getsecret [NAME]` | `uc secret get [NAME]` |
+| `keychain [NAME]` | `uc secret edit [NAME]` |
+| `rchain` | `uc secret edit -r` |
+| `ghchain` | `uc secret edit -r github` |
+| `ensure_secret` | `uc secret ensure -r` |
+| `ensure_vault` | `uc secret ensure -r --print vault` |
+| `rotate_keychain_pass [NAME]` | `uc secret rotate [NAME]` |
 
 ## Build
 

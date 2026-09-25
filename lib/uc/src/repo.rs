@@ -1,7 +1,8 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! Inlined `repofqn`: "<parent-dir-basename>_<cwd-basename>".
+//! The current repository's `<org>_<repo>` name, taken from the working
+//! directory (`.../<org>/<repo>`), as the vault tools key secrets by it.
 
 use std::env;
 use std::os::unix::fs::MetadataExt;
@@ -48,26 +49,26 @@ fn dirname(p: &str) -> &str {
     }
 }
 
-fn fqn(path: &str) -> String {
+fn fqn_of(path: &str) -> String {
     format!("{}_{}", basename(dirname(path)), basename(path))
 }
 
-/// Equivalent of `$(repofqn)` for the current directory.
-pub fn repofqn() -> String {
-    fqn(&pwd().to_string_lossy())
+/// `<org>_<repo>` for the working directory.
+pub fn fqn() -> String {
+    fqn_of(&pwd().to_string_lossy())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::fqn;
+    use super::fqn_of;
 
     #[test]
     fn org_and_repo() {
         assert_eq!(
-            fqn("/home/u/src/github.com/evgnomon/usecode"),
+            fqn_of("/home/u/src/github.com/evgnomon/usecode"),
             "evgnomon_usecode"
         );
-        assert_eq!(fqn("/a"), "/_a");
-        assert_eq!(fqn("/"), "/_/");
+        assert_eq!(fqn_of("/a"), "/_a");
+        assert_eq!(fqn_of("/"), "/_/");
     }
 }
