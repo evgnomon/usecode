@@ -4,7 +4,7 @@
 SOURCES := $(shell find src tests -type f -name "*.rs") Cargo.toml Cargo.lock
 PROFILE ?= release
 TARGET ?= x86_64-unknown-linux-musl
-BINS := uc uc-encrypt uc-decrypt uc-configure uc-push uc-pull
+BINS := uc uc-encrypt uc-decrypt uc-configure uc-push uc-pull uc-ghcr uc-secret
 OUT_DIR := target/$(TARGET)/$(PROFILE)
 OUTPUTS := $(addprefix $(OUT_DIR)/,$(BINS))
 DESTDIR ?= /

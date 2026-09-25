@@ -17,8 +17,11 @@ uc encrypt secrets.txt # runs uc-encrypt
 
 This crate ships the dispatcher, the two file encryption subcommands, which
 replace the former `boom` shell script, and `uc configure`, the machine
-configurator, and `uc push`/`uc pull`, which move container images through
-the registry behind the bastion.
+configurator, `uc push`/`uc pull`, which move container images through
+the registry behind the bastion, `uc ghcr`, which builds, pushes and deletes
+GitHub Container Registry images, and `uc secret`, which generates secrets.
+The last two replace the former `lib/pylib` Python package (`bp` and the
+`gh_image` Ansible module).
 
 ## Encrypting files
 
@@ -141,12 +144,38 @@ container CLI, are options with the same environment variables the scripts
 read (`BASTION_HOST`, `REGISTRY_HOST`, `LOCAL_PORT`, `CONTAINER_CLI`, ...);
 see `uc push -h`.
 
+## GitHub Container Registry
+
+```sh
+uc ghcr build -o evgnomon -i ark -t feature/x --push  # ghcr.io/evgnomon/ark:feature-x
+uc ghcr delete -o evgnomon -i ark -t feature/x        # remove that version
+```
+
+The token comes from `GHCR_TOKEN` (or `--token`). `build` logs the container
+CLI (`CONTAINER_CLI`, default `docker`) in to `ghcr.io`, builds with `--pull`
+and pushes with `--push`; `-f` and `-C` pick the Dockerfile and context.
+`delete` finds the version carrying the tag (or digest) through the GitHub
+packages API, for user and organization owners alike, and deletes it; it
+talks to the API through `curl`, so the crate stays free of a TLS stack.
+Slashes in tags become dashes, so a branch name can be passed as is. The
+`z_container` Ansible role runs both.
+
+## Generating secrets
+
+```sh
+uc secret gen                   # 32 characters: letters, digits and symbols
+uc secret gen -l 16 --no-symbols
+```
+
+Characters are drawn uniformly from the OS random source. The dotfiles alias
+`mkpass` runs it.
+
 ## Build
 
 ```sh
 make build    # cargo build --profile release --target x86_64-unknown-linux-musl
 make check    # fmt --check, clippy -D warnings, tests
-make install  # install uc, uc-encrypt, uc-decrypt, uc-configure, uc-push and uc-pull to /usr/local/bin
+make install  # install uc and its uc-* subcommands to /usr/local/bin
 ```
 
 `make install` honours `DESTDIR` (with a trailing slash) and `PREFIX`, e.g.

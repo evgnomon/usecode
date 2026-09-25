@@ -5,7 +5,7 @@
 name = "uc"
 version = "0.1.0"
 edition = "2024"
-description = "usecode command line tool, its OpenSSL-compatible file encryption subcommands, the parallel machine configurator and the container registry push/pull"
+description = "usecode command line tool, its OpenSSL-compatible file encryption subcommands, the parallel machine configurator and the container registry push/pull, GHCR image management and secret generation"
 license = "HGL"
 authors = ["Hamed Ghasemzadeh <hg@evgnomon.org>"]
 
@@ -37,6 +37,14 @@ path = "src/bin/uc-push.rs"
 name = "uc-pull"
 path = "src/bin/uc-pull.rs"
 
+[[bin]]
+name = "uc-ghcr"
+path = "src/bin/uc-ghcr.rs"
+
+[[bin]]
+name = "uc-secret"
+path = "src/bin/uc-secret.rs"
+
 [dependencies]
 aes = "0.9"
 anyhow = "1"
@@ -49,6 +57,7 @@ minijinja = "2"
 minijinja-contrib = { version = "2", features = ["pycompat"] }
 pbkdf2 = { version = "0.13", default-features = false, features = ["hmac"] }
 rpassword = "7"
+serde_json = "1"
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 sha2 = "0.11"
