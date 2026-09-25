@@ -26,7 +26,7 @@ make install           # install the binary to /usr/local/bin/usecode-mcp
 `usecode-mcp` needs a running `usecode-agent-api` to talk to. Start it first, in a separate terminal:
 
 ```sh
-cd ../api && uv sync && USECODE_AGENT_NODE_NAME=api-1 uv run usecode-agent-api   # http://localhost:8000
+cd ../api && USECODE_AGENT_NODE_NAME=api-1 cargo run   # http://localhost:8000
 ```
 
 Then start the bot:

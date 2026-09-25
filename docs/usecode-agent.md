@@ -7,7 +7,7 @@ Copyright (C) The Usecode Authors (see AUTHORS)
 
 Messenger for chatting with AI agents.
 
-- `lib/api` — FastAPI backend with server-rendered Jinja2 + HTMX UI and OTP auth API.
+- `lib/api` — Rust (axum) backend with server-rendered Jinja2 + HTMX UI and OTP auth API.
 - `lib/app` — SCSS source assets compiled into API static CSS.
 - `lib/bot` — MCP server (Rust) that operates usecode agent (wraps `lib/api` as tools for AI agents).
 
@@ -15,8 +15,7 @@ Messenger for chatting with AI agents.
 
 ```sh
 cd lib/api
-uv sync
-uv run usecode-agent-api   # http://localhost:8000
+USECODE_AGENT_NODE_NAME=api-1 cargo run   # http://localhost:8000
 ```
 
 ### Rebuild UI styles (SCSS)

@@ -64,11 +64,11 @@ against the `users` map, find the range, and that is the instance. **No
 user-owned row can be retrieved without an owning user id** — except the
 one row a user id cannot address, an `api_keys` row, which is why that
 table hashes its own key instead of inheriting a placement.
-`db.session(partition_key)` is the only way to obtain a session,
-`db.partition_for_key` (and its `users` shorthand
-`db.partition_for_user`) is the only way to compute one, and every `store`
+`Db::pool(partition)` is the only way to obtain a connection,
+`Db::partition_for_key` (and its `users` shorthand
+`Db::partition_for_user`) is the only way to compute one, and every `Store`
 method that touches a table with a foreign key either resolves it from a
-user id or takes `partition_key` as its first argument with no default.
+user id or takes the partition as its first argument.
 There is deliberately no "search every instance" path for row data.
 
 Because a user and everything keyed by their id land on the *same*
@@ -106,10 +106,10 @@ exceptions.**
 Because there is a map per table, **every lookup names the table it is
 reading**:
 
-- `db.partition_for_key(table, key)` — hash `key` against `table`'s map.
-- `db.partition_for_user(user_id)` — the `users` shorthand, and what every
+- `Db::partition_for_key(table, key)` — hash `key` against `table`'s map.
+- `Db::partition_for_user(user_id)` — the `users` shorthand, and what every
   table with a foreign key back to `users` is addressed through.
-- `db.partition_for_table(table)` — for a table in `db.WHOLE_SPACE_TABLES`,
+- `Db::partition_for_table(table)` — for a table declared `WholeSpace`,
   whose map is a single range covering every bucket.
 
 A whole-space map is not an exception either; it is a map like any other
@@ -124,9 +124,9 @@ resource this provider has"), which no key hash could address.
 Which tables are which:
 
 - **Hash their own key** (no foreign key): `users`, `user_directory`,
-  `otps`, `api_keys`.
+  `otps`, `api_keys`, `tasks` (on its `assignee`).
 - **Inherit a parent** (first foreign key decides): `user_api_keys`,
-  `web_sessions`, `provider_credentials`, `servers`, `tasks` — all
+  `web_sessions`, `provider_credentials`, `servers`, `user_tasks` — all
   `user_id` -> `users`.
 - **Whole-space map** (one range, main database): `shard_ranges`,
   `server_type_mappings`, `location_mappings`, `provider_resources`.
@@ -173,38 +173,41 @@ deliberate operation rather than a side effect of booting.
 
 ### Implementation
 
-- `lib/api/src/usecode_agent_api/db.py` — the shard registry: `virtual_shard`,
-  `partition_for_user`, `session(partition_key)`, the `shard_ranges`
-  load/seed, and `partition_keys()` (which exists only for work that
-  legitimately spans instances — applying migrations and the task sweep —
-  never for finding a row).
-- `lib/api/src/usecode_agent_api/store.py` — global vs partitioned methods, the
-  phone directory, the API-key index, and the shard prefix on session
+- `lib/api/src/schema.rs` — every table's declared placement (`HashedOn`,
+  `InheritsFrom`, `WholeSpace`), and `check_placements`, which compares the
+  declarations with the live schema at startup and refuses to boot on drift.
+- `lib/api/src/db.rs` — the shard registry: `virtual_shard`,
+  `partition_for_key` / `partition_for_user` / `partition_for_table`,
+  `pool(partition)`, and the `shard_ranges` load/seed. `configured_urls`
+  (static configuration) exists only for applying migrations — never for
+  finding a row.
+- `lib/api/src/store.rs` — partitioned storage methods, the phone
+  directory, the API-key and task indexes, and the shard prefix on session
   cookies.
-- `lib/api/src/usecode_agent_api/config.py` — `node_name` (required),
+- `lib/api/src/config.rs` — `node_name` (required),
   `database_url` (the main instance) and `shards` (the
   others, keyed by partition key). `shards` is bootstrap configuration: it
   seeds `shard_ranges` on first boot, and it is what migrations are applied
   to, since the range table can't be read before it exists. Runtime
   resolution always reads the table.
-- `lib/api/src/usecode_agent_api/app.py` — migrates *every* instance to head on
-  startup, then seeds the shard ranges. Instances boot concurrently, so each
-  upgrade runs under a PostgreSQL advisory lock (`migrations/env.py`); the
-  losers find the database already at head.
+- `lib/api/src/migrate.rs` — migrates *every* instance to head on startup
+  (then `main.rs` seeds the shard ranges). Instances boot concurrently, so
+  each upgrade, and the seeding, runs under a PostgreSQL advisory lock; the
+  losers find the work already done.
 - `deploy/Caddyfile` — both load balancers round-robin over both API
   instances, with `/health` as the health check. `/health` reports the
   instance's own name, which is the simplest way to see which one answered.
 
 When adding a new table, decide *first* how it is addressed. If it holds
 one user's own rows, give it a foreign key to its parent as its first
-foreign-key field — `users` directly, or another table that already
-resolves to the owner — give its store methods a leading `partition_key`
-argument, and pass `client.partition_key` from the route. If it has no
-foreign key it needs its own map, which `db.seed_shard_ranges` will create
-on the next boot because `db.mapped_tables()` derives the list from the
-schema itself; add it to `db.WHOLE_SPACE_TABLES` only if it is read by
-scans rather than by its key. A table whose rows can be reached by neither
-route has no address and is a bug.
+foreign-key column — `users` directly, or another table that already
+resolves to the owner — declare it `InheritsFrom` in `schema::TABLES`,
+give its store methods a leading `partition` argument, and pass
+`client.partition` from the route. If it has no foreign key it needs its
+own map: declare it `HashedOn(key)`, and `Db::seed_shard_ranges` will
+create the map on the next boot; declare it `WholeSpace(why)` only if it is
+read by scans rather than by its key. A table whose rows can be reached by
+neither route has no address and is a bug.
 
 ## Provider resources and tasks
 
@@ -214,7 +217,7 @@ These attributes don't drift on their own; a server's type, region, or
 existence only changes because *we* asked the provider to change it. So
 our database is the source of truth for "what resources exist and what
 their fixed shape is," and the provider is just where they're actually
-hosted. `servers` (`lib/api/src/usecode_agent_api/db_models.py`) is the first
+hosted. `servers` (see `lib/api/src/schema.rs`) is the first
 example of this; volumes, networks, etc. should follow the same pattern
 when they're added.
 
@@ -226,16 +229,16 @@ assumption it can be asynchronous and take hours to actually finish (e.g.
 a slow deprovisioning). An HTTP request handler cannot block on that, so
 the mutation is modeled as a **task**:
 
-- A task is a row in the `tasks` table (`Task` in `db_models.py`):
+- A task is a row in the `tasks` table (`TaskRecord` in `store.rs`):
   `kind` (which workflow, e.g. `"delete_server"`), `state` (which step of
   that workflow it's currently parked at), `assignee` (which API instance
   owns it — see "Horizontal scaling" above), `resources` (which of our own
   resource rows it's acting on), and `payload` (step-local working data).
   The task row lives on the instance its `assignee` hashes to, which is
   *not* where the resources it mutates live: the assignee travels
-  alongside the id everywhere in `tasks.py`, while the rows a step touches
+  alongside the id everywhere in `tasks.rs`, while the rows a step touches
   are reached through the owner's partition (`TaskContext` carries both,
-  as `assignee` and `user_partition_key`).
+  as the task's `assignee` and the context's `user_partition`).
 - Think of a task as a suspended async function. `state` is its program
   counter. Each step is a small handler that does one unit of work —
   typically one provider API call, or one poll of provider state — and
@@ -250,7 +253,7 @@ the mutation is modeled as a **task**:
 - Because a task can be parked mid-workflow for arbitrarily long, nothing
   resumes it from within the request that created it beyond the first
   step. Instead a periodic sweep (`tasks.sweep()`, driven by a background
-  loop started in `app.py`'s lifespan) re-invokes the handler for the
+  loop started in `main.rs`) re-invokes the handler for the
   current step of every outstanding task, so a task waiting on a slow
   provider operation eventually gets resumed and completed on its own.
   Each instance sweeps only the tasks assigned to it, in one query against
@@ -259,13 +262,14 @@ the mutation is modeled as a **task**:
 
 ### Implementation
 
-- `lib/api/src/usecode_agent_api/tasks.py` — the generic engine: `TaskContext`,
-  the `@step(kind, state)` registration decorator, `create_task` (which
-  stamps the handling instance as the assignee), `advance` (run one task's
-  current step once, given its assignee), and `sweep` (advance this
-  instance's outstanding tasks, called on a timer).
-- `lib/api/src/usecode_agent_api/server_tasks.py` — the concrete `create_server`
-  and `delete_server` tasks.
+- `lib/api/src/tasks.rs` — the generic engine: `TaskContext`, the `Next`
+  a step returns (park at a state, or done), `create_task` (which stamps
+  the handling instance as the assignee), `advance` (run one task's current
+  step once, given its assignee), and `sweep` (advance this instance's
+  outstanding tasks, called on a timer).
+- `lib/api/src/server_tasks.rs` — the concrete `create_server` and
+  `delete_server` tasks; `Step::for_task` maps each (kind, state) to its
+  handler.
   - `create_server`: `requested` (issue the provider create call,
     remembering the provider-side id) → `confirming` (poll until the
     provider reports the server reachable — a public IPv4 address — then
@@ -278,18 +282,18 @@ the mutation is modeled as a **task**:
     delete the local `servers` row and finish).
   These are the reference implementations to copy when a new resource type
   needs create/update/delete workflows.
-- `routes/servers.py`'s `POST /servers` and `DELETE /servers/{id}` only
+- `routes/servers.rs`'s `POST /servers` and `DELETE /servers/{id}` only
   *start* their task and return it (`202 Accepted` + the task) instead of
-  mutating synchronously. `routes/tasks.py` exposes the generic task API —
+  mutating synchronously. `routes/tasks.rs` exposes the generic task API —
   `GET /tasks` lists the caller's in-flight tasks, `GET /tasks/{task_id}`
   polls one; once a task finishes, `GET /tasks/{task_id}` 404s (the task
   row is gone). For deletion, `GET /servers/{id}` also 404s at that point
   (the server row is gone); for creation, the new server now shows up in
   `GET /servers`. Any future resource type's routes reuse the same
-  `routes/tasks.py` endpoints instead of growing their own copy.
+  `routes/tasks.rs` endpoints instead of growing their own copy.
 
 Follow this same shape for any future resource type or workflow: define
 the DB row(s) that mirror the provider's fixed state, define the task's
-states as `@step` handlers, start the task from the route instead of
+states as `Step` handlers, start the task from the route instead of
 doing provider work inline, and let the sweep loop carry it to
 completion.

@@ -1,30 +1,31 @@
 # License-Identifier: HGL
 # Copyright (C) The Usecode Authors (see AUTHORS)
 
-FROM python:3.12-slim AS base
+FROM docker.io/library/rust:1-bookworm AS build
+
+WORKDIR /src
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
+COPY migrations ./migrations
+COPY templates ./templates
+COPY static ./static
+COPY model_image ./model_image
+RUN cargo build --release --locked
+
+FROM docker.io/library/debian:bookworm-slim
 
 # podman-remote talks to the host's podman over the socket mounted at
 # /run/podman/podman.sock (see deploy/compose.yml + CONTAINER_HOST env var).
-# It's what model_process.py shells out to as "podman" to build/run/stop the
-# usecode-agent-model container on the host.
-RUN apt-get update && apt-get install -y --no-install-recommends podman-remote \
+# It's what model_process.rs shells out to as "podman" to build/run/stop the
+# usecode-agent-model container on the host. curl is for the healthcheck.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        podman-remote ca-certificates curl \
     && rm -rf /var/lib/apt/lists/* \
     && ln -s /usr/bin/podman-remote /usr/local/bin/podman
 
-RUN pip install --no-cache-dir uv
+COPY --from=build /src/target/release/usecode-agent-api /usr/local/bin/usecode-agent-api
 
-WORKDIR /app
-
-COPY pyproject.toml uv.lock README.md ./
-RUN uv sync --frozen --no-install-project --no-dev
-
-COPY src ./src
-COPY alembic.ini ./alembic.ini
-COPY migrations ./migrations
-RUN uv sync --frozen --no-dev
-
-ENV PATH="/app/.venv/bin:${PATH}"
-
+ENV USECODE_AGENT_BIND=0.0.0.0:8000
 EXPOSE 8000
 
-CMD ["uvicorn", "usecode_agent_api.app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["usecode-agent-api"]

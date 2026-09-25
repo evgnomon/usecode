@@ -103,10 +103,10 @@ fmt-html:
 		uv tool install djlint; \
 	fi
 	@echo "Formatting HTML templates with djlint..."; \
-	djlint --extension=jinja2 --reformat "lib/api/src/usecode_agent_api/templates" --indent 2 || true
+	djlint --extension=jinja2 --reformat "lib/api/templates" --indent 2 || true
 
 fmt: fmt-html
-	ruff format lib/api/src/usecode_agent_api
+	$(MAKE) -C lib/api fmt
 
 HGL := lib/hgl/target/release/hgl
 
