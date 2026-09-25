@@ -24,6 +24,11 @@ manages the ansible-vault secret stores.
 The last two replace the former `lib/pylib` Python package (`bp` and the
 `gh_image` Ansible module).
 
+It also ships the command groups — `uc image`, `uc repo`, `uc cert`,
+`uc deb`, `uc db`, `uc net`, `uc vm`, `uc nats`, `uc work`, `uc new` and
+`uc cloud` — which gather the DevOps tools in `lib/` under one command; see
+[Command groups](#command-groups).
+
 ## Encrypting files
 
 ```sh
@@ -171,6 +176,9 @@ uc secret get -r -f github_pat   # one field of this repository's store
 uc secret edit -r                # edit this repository's store in vi
 uc secret ensure -r              # create it if missing, print its path
 uc secret rotate NAME            # re-encrypt under a new vault password
+uc secret rotate -r --playbook   # rotate this repository's secrets themselves
+uc secret encrypt notes.txt      # same as uc encrypt / uc decrypt
+uc secret serve                  # secd serve
 ```
 
 `gen` draws characters uniformly from the OS random source; the dotfiles
@@ -188,9 +196,16 @@ pipe, and stores are always edited with `vi`, the hardened `lib/vi`.
 `get` converts the YAML to JSON itself (merge keys included), so `yj` is no
 longer needed, and `-f a.b` prints one field the way `jq -r .a.b` would.
 `rotate` moves the secret file to `NAME.yaml.bak` until the new password is
-in place, so an interrupted rotation can simply be run again.
+in place, so an interrupted rotation can simply be run again. With
+`--playbook` it leaves the password alone and rotates the secrets themselves:
+it runs `rotate.yaml` in `~/src/github.com/$USER/blueprint` with the store
+as extra vars, passing anything after `--` to ansible-playbook.
 
-`uc secret` replaces seven tools, and `make install` links their names to
+`encrypt` and `decrypt` are `uc encrypt` and `uc decrypt`, and `serve` runs
+`secd serve`, the SSH key authenticated secret server; its client commands
+stay `secd upsert`/`secd read`.
+
+`uc secret` replaces eight tools, and `make install` links their names to
 `uc-secret`, which behaves as the tool it was called as:
 
 | Old command | Same as |
@@ -202,6 +217,57 @@ in place, so an interrupted rotation can simply be run again.
 | `ensure_secret` | `uc secret ensure -r` |
 | `ensure_vault` | `uc secret ensure -r --print vault` |
 | `rotate_keychain_pass [NAME]` | `uc secret rotate [NAME]` |
+| `rotsec [ARGS]` | `uc secret rotate -r --playbook -- [ARGS]` |
+
+## Command groups
+
+The other DevOps tools keep their own executables and names, so scripts
+calling them carry on working, and are also reached through a group. A group
+is a `uc-<group>` executable that hands the rest of the command line to the
+tool, the way `uc` hands it to the group; `uc <group>` lists its commands and
+flags the ones whose tool is not installed.
+
+| Command | Runs |
+|---|---|
+| `uc image push`, `pull` | `uc push`, `uc pull` |
+| `uc image ghcr build`, `delete` | `uc ghcr` |
+| `uc image run barge`, `yacht` | `barge`, `yacht` |
+| `uc repo fqn` | `repofqn` |
+| `uc repo version` | `ucversion` |
+| `uc repo open` | `gotorepo` |
+| `uc repo status [DIR]` | `git_repos` |
+| `uc repo git-config` | `set_git_conf` |
+| `uc repo extract` | `extract-tool` |
+| `uc repo headers check`, `fix` | `hgl` |
+| `uc repo authors` | built in, was `scripts/authors.sh` (`make authors`) |
+| `uc cert init`, `server`, `client`, ... | `certgen`: any command not below |
+| `uc cert trust HOST:PORT` | `trust_ca` |
+| `uc cert p12 KEYNAME` | `mkp12` |
+| `uc cert p12 fetch` | `zcdump` |
+| `uc deb build`, `publish` | `mkdeb`, `pubdeb` |
+| `uc db pg`, `mongo`, `migrate` | `pg`, `mgo`, `sqlize` |
+| `uc db resources sync`, `dump` | `ysys sync`, `ysys dump` |
+| `uc db resources configmap` | `confmap` |
+| `uc db resources schema` | `k8s_ddl` |
+| `uc db resources pods` | `mkpod` |
+| `uc net mesh` | `uc daemon` |
+| `uc net ipsec`, `dig` | `ipmesh`, `diga` |
+| `uc vm`, `uc nats`, `uc work` | `vm`, `natsup`, `workd`, arguments and all |
+| `uc new role`, `workflow`, `script`, `unit` | `mkarole`, `catalyze`, `shole`, `mkunit` |
+| `uc cloud do`, `hcloud` | `wdoctl`, `whcloud` |
+| `uc cloud play [ARGS]` | `y`: the repository playbook |
+| `uc cloud play host`, `ssh` | `plat`, `annabelle` |
+
+`uc configure` stays as it is, `x` being its shortcut. The personal and
+desktop tools that are not about DevOps — `ff`, `fzurls`, `imgpress`,
+`ytdump`, `backup_archive`, `ykattach`, `vi`, `jsonc`, `tidycsv`, `csv2pdf`,
+`num_argv`, `docker` — are left standalone.
+
+A group's commands are tables in `src/groups.rs`; a command either runs a
+tool, with arguments of its own put in front of the user's, opens a nested
+group, or calls into this crate. A tool is found next to `uc` first, then on
+`PATH`, and replaces the group's process, so its exit status, signals and
+terminal are its own.
 
 ## Build
 

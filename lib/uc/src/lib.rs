@@ -10,11 +10,19 @@
 //! `uc-push` and `uc-pull`, [`ghcr`] the GitHub Container Registry
 //! operations behind `uc-ghcr`, and [`password`], [`secret`] and [`repo`] the
 //! generator and ansible-vault secret stores behind `uc-secret`.
+//!
+//! [`group`] and [`groups`] are the command groups (`uc image`, `uc repo`,
+//! ...) that hand over to the standalone tools, found through [`dispatch`],
+//! and [`authors`] is `uc repo authors`.
 
+pub mod authors;
 pub mod cli;
 pub mod configure;
 pub mod crypto;
+pub mod dispatch;
 pub mod ghcr;
+pub mod group;
+pub mod groups;
 pub mod password;
 pub mod registry;
 pub mod repo;

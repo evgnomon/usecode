@@ -5,7 +5,7 @@
 name = "uc"
 version = "0.1.0"
 edition = "2024"
-description = "usecode command line tool, its OpenSSL-compatible file encryption subcommands, the parallel machine configurator and the container registry push/pull, GHCR image management and the secret stores"
+description = "usecode command line tool, its OpenSSL-compatible file encryption subcommands, the parallel machine configurator and the container registry push/pull, GHCR image management, the secret stores and the command groups over the usecode tools"
 license = "HGL"
 authors = ["Hamed Ghasemzadeh <hg@evgnomon.org>"]
 
@@ -44,6 +44,50 @@ path = "src/bin/uc-ghcr.rs"
 [[bin]]
 name = "uc-secret"
 path = "src/bin/uc-secret.rs"
+
+[[bin]]
+name = "uc-image"
+path = "src/bin/uc-image.rs"
+
+[[bin]]
+name = "uc-repo"
+path = "src/bin/uc-repo.rs"
+
+[[bin]]
+name = "uc-cert"
+path = "src/bin/uc-cert.rs"
+
+[[bin]]
+name = "uc-deb"
+path = "src/bin/uc-deb.rs"
+
+[[bin]]
+name = "uc-db"
+path = "src/bin/uc-db.rs"
+
+[[bin]]
+name = "uc-net"
+path = "src/bin/uc-net.rs"
+
+[[bin]]
+name = "uc-vm"
+path = "src/bin/uc-vm.rs"
+
+[[bin]]
+name = "uc-nats"
+path = "src/bin/uc-nats.rs"
+
+[[bin]]
+name = "uc-work"
+path = "src/bin/uc-work.rs"
+
+[[bin]]
+name = "uc-new"
+path = "src/bin/uc-new.rs"
+
+[[bin]]
+name = "uc-cloud"
+path = "src/bin/uc-cloud.rs"
 
 [dependencies]
 aes = "0.9"

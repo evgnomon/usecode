@@ -118,5 +118,8 @@ headers-check:
 	@$(MAKE) -s -C lib/hgl build
 	@$(HGL) check
 
+UC_REPO := lib/uc/target/x86_64-unknown-linux-musl/release/uc-repo
+
 authors:
-	./scripts/authors.sh
+	@$(MAKE) -s -C lib/uc build
+	@$(UC_REPO) authors
