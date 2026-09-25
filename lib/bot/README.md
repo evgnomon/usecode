@@ -62,7 +62,7 @@ directory, and anything already set in the environment wins over it.
 - `USECODE_MCP_COMPOSE_FILE` — path to the compose file used by `ensure_running` /
   `logs_commands` (default `deploy/compose.yml` at the root of this checkout).
 - `USECODE_MCP_CONTAINER_CLI` — `podman` (default, uses `podman-compose`, matching
-  `deploy/push.sh`/`deploy/pull.sh`) or `docker` (uses `docker compose`).
+  `uc push`/`uc pull`) or `docker` (uses `docker compose`).
 
 ## Tools
 

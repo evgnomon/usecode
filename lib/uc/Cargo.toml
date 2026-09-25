@@ -5,7 +5,7 @@
 name = "uc"
 version = "0.1.0"
 edition = "2024"
-description = "usecode command line tool, its OpenSSL-compatible file encryption subcommands and the parallel machine configurator"
+description = "usecode command line tool, its OpenSSL-compatible file encryption subcommands, the parallel machine configurator and the container registry push/pull"
 license = "HGL"
 authors = ["Hamed Ghasemzadeh <hg@evgnomon.org>"]
 
@@ -28,6 +28,14 @@ path = "src/bin/uc-decrypt.rs"
 [[bin]]
 name = "uc-configure"
 path = "src/bin/uc-configure.rs"
+
+[[bin]]
+name = "uc-push"
+path = "src/bin/uc-push.rs"
+
+[[bin]]
+name = "uc-pull"
+path = "src/bin/uc-pull.rs"
 
 [dependencies]
 aes = "0.9"
