@@ -88,6 +88,6 @@ RUN /opt/python/bin/pip3 install hcloud poetry \
 COPY evgnomon.asc /etc/apt/trusted.gpg.d/
 COPY evgnomon.sources /etc/apt/sources.list.d/
 
-# uc provides `uc ghcr`, which the z_container role builds and deletes
-# images with.
-RUN apt-get update && apt-get install -y mkdeb=$MKDEB_VERSION uc tree
+# TODO: add uc (provides `uc ghcr` for the z_container role) once it is
+# published to archive.evgnomon.org.
+RUN apt-get update && apt-get install -y mkdeb=$MKDEB_VERSION tree
