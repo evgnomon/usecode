@@ -1,0 +1,7 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
+---
+# Push after building. The gh_image module this replaces was given
+# `github_actor is defined`, which z_defaults always makes true.
+z_container_push: true

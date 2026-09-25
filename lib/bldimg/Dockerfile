@@ -77,11 +77,10 @@ RUN apt update && apt install -y docker.io jq
 RUN /opt/python/bin/pip3 install ansible uv
 
 ENV ANSIBLE_COLLECTIONS_PATH=/opt/ansible/collections \
-    USECODE_VERSION=0.2.22 \
     EGET_VERSION=v1.3.4 \
     MKDEB_VERSION=0.3.0
 
-RUN /opt/python/bin/pip3 install usecode==${USECODE_VERSION} hcloud poetry \
+RUN /opt/python/bin/pip3 install hcloud poetry \
   && ansible-galaxy collection install evgnomon.usecode --collections-path ${ANSIBLE_COLLECTIONS_PATH} \
   && go install github.com/zyedidia/eget@${EGET_VERSION} \
   && go install github.com/digitalocean/doctl/cmd/doctl@latest
@@ -89,4 +88,6 @@ RUN /opt/python/bin/pip3 install usecode==${USECODE_VERSION} hcloud poetry \
 COPY evgnomon.asc /etc/apt/trusted.gpg.d/
 COPY evgnomon.sources /etc/apt/sources.list.d/
 
-RUN apt-get update && apt-get install -y mkdeb=$MKDEB_VERSION tree
+# uc provides `uc ghcr`, which the z_container role builds and deletes
+# images with.
+RUN apt-get update && apt-get install -y mkdeb=$MKDEB_VERSION uc tree

@@ -2,14 +2,31 @@
 # Copyright (C) The Usecode Authors (see AUTHORS)
 
 ---
-- gh_image:
-    user: "{{ github_actor or z_repo_owner }}"
-    token: "{{ z_user_token }}"
-    image: "{{ z_repo_name }}"
-    owner: "{{ z_repo_owner }}"
-    state: "{{ z_state }}"
-    tag: "{{ z_track }}"
-    dockerfile: "{{ workspace }}/Dockerfile"
-    context: "{{ workspace }}"
-    publish: "{{ github_actor is defined }}"
+- name: Build and push ghcr.io/{{ z_repo_owner }}/{{ z_repo_name }}:{{ z_track }}
+  ansible.builtin.command:
+    argv: >-
+      {{ ['uc', 'ghcr', 'build',
+          '--owner', z_repo_owner, '--image', z_repo_name,
+          '--user', github_actor or z_repo_owner, '--tag', z_track,
+          '--file', workspace ~ '/Dockerfile', '--context', workspace]
+         + (['--push'] if z_container_push | bool else []) }}
+  environment:
+    GHCR_TOKEN: "{{ z_user_token }}"
+  when: z_state == 'present' and not ansible_check_mode
   become: true
+
+- name: Delete ghcr.io/{{ z_repo_owner }}/{{ z_repo_name }}:{{ z_track }}
+  ansible.builtin.command:
+    argv:
+      - uc
+      - ghcr
+      - delete
+      - --owner
+      - "{{ z_repo_owner }}"
+      - --image
+      - "{{ z_repo_name }}"
+      - --tag
+      - "{{ z_track }}"
+  environment:
+    GHCR_TOKEN: "{{ z_user_token }}"
+  when: z_state == 'absent' and not ansible_check_mode
