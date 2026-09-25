@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 .PHONY: build build-deps verify clean clean-stamps clean-stamp-configure clean-stamp-build clean-stamp-install clean-stamp-link install uninstall help
 
 DESTDIR ?= /

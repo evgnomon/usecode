@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 //! Hand-written FFI declarations for the subset of libvirt that vm uses.
 #![allow(non_camel_case_types, non_snake_case)]
 

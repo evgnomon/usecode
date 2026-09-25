@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 """provider credentials
 
 Revision ID: 0002_provider_credentials

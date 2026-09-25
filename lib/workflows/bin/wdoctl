@@ -1,3 +1,6 @@
 #!/bin/bash
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 export DIGITALOCEAN_ACCESS_TOKEN=$(getsecret $(repofqn) | jq -r '.doctl.prod')
 doctl "$@"

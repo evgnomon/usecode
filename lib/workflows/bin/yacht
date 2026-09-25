@@ -1,4 +1,6 @@
 #!/bin/bash
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
 
 VAULT_ADDR=$(repofqn)
 SECRET_FILE=$HOME/src/github.com/$USER/config/secrets/$VAULT_ADDR.yaml

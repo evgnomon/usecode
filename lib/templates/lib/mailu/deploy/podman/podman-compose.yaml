@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 version: "3.9"
 
 # Mailu's admin container refuses to start unless its DNS resolver performs

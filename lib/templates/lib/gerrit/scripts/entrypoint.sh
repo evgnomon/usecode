@@ -1,4 +1,6 @@
 #!/bin/bash -e
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
 
 JAVA_OPTS='--add-opens java.base/java.net=ALL-UNNAMED --add-opens java.base/java.lang.invoke=ALL-UNNAMED'
 

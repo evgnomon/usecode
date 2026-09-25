@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 .PHONY: build clean install init update stage link unlink
 
 BUILD_DIR     := $(CURDIR)/build

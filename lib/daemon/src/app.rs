@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 //! Orchestrates the WireGuard interface and, on any host that has
 //! forward rules, the DNAT rules that carry traffic into the mesh.
 

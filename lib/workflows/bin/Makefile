@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 DESTDIR ?= /
 PREFIX := $(DESTDIR)usr/local
 BIN_DIR := $(PREFIX)/bin

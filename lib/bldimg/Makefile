@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 REGISTRY ?= ghcr.io
 OWNER ?= evgnomon
 IMAGE_NAME ?= ark
@@ -9,7 +12,7 @@ BUILD_DIR ?= $(ROOT_DIR)/build
 STAMP_DIR := $(CURDIR)/.stamps
 BUILD_STAMP := $(STAMP_DIR)/build
 PUBLISH_STAMP := $(STAMP_DIR)/publish
-SOURCES := Dockerfile evgnomon.asc evgnomon.sources SHA512SUMS $(shell find playbooks -type f 2>/dev/null)
+SOURCES := Dockerfile evgnomon.asc evgnomon.sources $(shell find playbooks -type f 2>/dev/null)
 
 .PHONY: build publish clean
 

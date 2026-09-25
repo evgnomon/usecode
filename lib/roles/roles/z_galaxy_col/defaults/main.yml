@@ -1,2 +1,5 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 ---
 collection_dir : "{{ workspace }}/ansible_collections/evgnomon/usecode"

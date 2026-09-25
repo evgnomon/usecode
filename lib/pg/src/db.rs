@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 use std::process;
 use std::time::Duration;
 

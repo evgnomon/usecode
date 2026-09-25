@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 # Swap Super and Left Alt on the built-in (AT/i8042) laptop keyboard only.
 #
 # GNOME on Wayland applies xkb-options to every keyboard, so the old

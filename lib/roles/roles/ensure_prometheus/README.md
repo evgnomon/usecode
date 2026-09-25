@@ -1,3 +1,8 @@
+<!--
+License-Identifier: HGL
+Copyright (C) The Usecode Authors (see AUTHORS)
+-->
+
 # ensure_prometheus Role
 
 Configures and deploys Prometheus monitoring server with TLS-secured metrics collection.

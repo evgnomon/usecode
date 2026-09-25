@@ -1,2 +1,5 @@
 #!/usr/bin/env bash
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 rsync -av --delete --exclude-from=/media/$USER/archive/.exclude-list /media/$USER/archive/ box:/home/archive/

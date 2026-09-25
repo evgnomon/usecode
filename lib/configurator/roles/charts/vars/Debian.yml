@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 ---
 blueprint_user_home: "{{ ansible_facts['env']['HOME'] }}"
 blueprint_home: "{{ blueprint_user_home }}/.cache/blueprint"

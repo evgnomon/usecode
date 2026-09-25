@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 //! Minimal stderr logging matching the `level: message` format used by vm.
 
 #[macro_export]

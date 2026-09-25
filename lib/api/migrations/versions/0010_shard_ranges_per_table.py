@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 """shard_ranges: one map per table
 
 0009 gave the deployment a single bucket-to-instance map, implicitly the

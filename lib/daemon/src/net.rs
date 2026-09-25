@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 //! The few bits of address parsing uc daemon needs, in the shapes Go's
 //! `net` package offered them: a CIDR splits into an address and a
 //! prefix length, and a `host:port` splits into its two halves with

@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 //! The MCP tool surface: every usecode-agent-api endpoint the bot exposes, plus
 //! the local `deploy/compose.yml` lifecycle.
 

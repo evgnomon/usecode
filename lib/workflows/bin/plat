@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 """plat: per-host service deployment driver.
 
 Manages env files under $PLAT_HOME and dispatches actions to per-blueprint

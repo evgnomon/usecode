@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 version: 1.0.0
 title: Git Commit with Descriptive Message
 description: This recipe helps create structured git commits featuring concise titles and summaries for staged changes, ensuring clear documentation of code modifications.

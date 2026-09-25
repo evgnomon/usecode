@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 ARG BASE_IMAGE=ghcr.io/ggml-org/llama.cpp:server-vulkan
 FROM ${BASE_IMAGE}
 

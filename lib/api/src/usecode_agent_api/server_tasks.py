@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 """`create_server` / `delete_server` tasks: the resumable workflows behind
 POST /servers and DELETE /servers/{id}.
 

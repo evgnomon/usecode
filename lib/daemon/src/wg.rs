@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 //! Manages the WireGuard interface using the ip(8) and wg(8)
 //! command-line tools shipped by the wireguard-tools package.
 

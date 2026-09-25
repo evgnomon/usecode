@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 name: "Setup Python Environment"
 description: "Set up Python environment for the given Python version"
 

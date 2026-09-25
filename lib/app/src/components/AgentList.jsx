@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 function timeAgo(ts) {
   const diffMin = Math.round((Date.now() - ts) / 60000)
   if (diffMin < 1) return 'now'

@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 [Unit]
 Description=usecode WireGuard tunnel and port-forwarding manager
 Documentation=https://github.com/evgnomon/usecode

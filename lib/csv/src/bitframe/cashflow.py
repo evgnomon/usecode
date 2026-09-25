@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 from decimal import Decimal, InvalidOperation
 from typing import Optional
 

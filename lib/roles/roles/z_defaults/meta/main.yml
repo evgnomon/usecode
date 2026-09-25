@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 dependencies:
   - role: evgnomon.usecode.z_facts
 galaxy_info:

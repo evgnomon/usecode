@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 //! A single error type for the whole program. uc daemon's errors are read
 //! by people, not matched on by callers, so an error is just a message
 //! with whatever context the layer that produced it could add.

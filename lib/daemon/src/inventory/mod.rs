@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 //! Reads and extends the mesh topology, which lives in one place: a
 //! multi-file Ansible inventory under deploy/inventory.
 //!

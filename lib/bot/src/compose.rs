@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 //! Drive the `deploy/compose.yml` stack (podman-compose or docker compose).
 
 use std::path::{Path, PathBuf};

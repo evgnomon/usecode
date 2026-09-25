@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 ---
 name_zone: "{{ z_name_zone }}"
 api_token: "{{ secrets.cf_api_token }}"

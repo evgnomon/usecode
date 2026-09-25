@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 SOURCES := $(shell find src -type f -name "*.rs") Cargo.toml Cargo.lock
 PROFILE ?= release
 OUTPUT := target/$(PROFILE)/jsonc

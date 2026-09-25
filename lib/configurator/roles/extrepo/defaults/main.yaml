@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 ---
 # extrepo-data only publishes Debian suites, so this must be a Debian codename.
 extrepo_debian_release: "{{ ansible_facts['distribution_release'] }}"

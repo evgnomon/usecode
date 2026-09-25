@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 prefix := /usr
 version := 0.1.0
 DESTDIR ?= /

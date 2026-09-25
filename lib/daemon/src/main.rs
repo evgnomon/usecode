@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 //! uc daemon sets up a WireGuard mesh and configures DNAT rules so that
 //! traffic to a public address lands on a port running elsewhere in the
 //! mesh. There is no client/server distinction at the command level:

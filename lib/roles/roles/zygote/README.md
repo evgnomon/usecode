@@ -1,3 +1,8 @@
+<!--
+License-Identifier: HGL
+Copyright (C) The Usecode Authors (see AUTHORS)
+-->
+
 # zygote Role
 
 Runs zygote containers and initializes the zygote environment.

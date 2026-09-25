@@ -1,3 +1,8 @@
+<!--
+License-Identifier: HGL
+Copyright (C) The Usecode Authors (see AUTHORS)
+-->
+
 # z\_service
 
 Run a systemd service with a specific user and group.

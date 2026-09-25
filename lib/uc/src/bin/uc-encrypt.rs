@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 //! `uc-encrypt <file>` — encrypt a file to `<file>.asc` and remove the original
 //! once the round trip has been verified.
 

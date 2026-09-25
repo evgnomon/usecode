@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 EXT_UUID = fzurls-focus@org.evgnomon
 EXT_DIR = $(HOME)/.local/share/gnome-shell/extensions/$(EXT_UUID)
 EXT_SRC_DIR = gnome-ext

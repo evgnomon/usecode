@@ -1,4 +1,6 @@
 #!/bin/bash
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
 
 CERT_DIR=/var/lib/zygote/certs
 ssh controller.zygote -t sudo cat $CERT_DIR/ca/ca_cert.pem > ca_cert.pem

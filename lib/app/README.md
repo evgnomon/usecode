@@ -1,3 +1,8 @@
+<!--
+License-Identifier: HGL
+Copyright (C) The Usecode Authors (see AUTHORS)
+-->
+
 # Frontend assets (HTMX + SCSS)
 
 The UI is now rendered server-side by FastAPI + Jinja2 in `lib/api` and enhanced with HTMX.

@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 FROM python:3.12-slim AS base
 
 # podman-remote talks to the host's podman over the socket mounted at

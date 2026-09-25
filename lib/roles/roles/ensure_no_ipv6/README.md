@@ -1,3 +1,8 @@
+<!--
+License-Identifier: HGL
+Copyright (C) The Usecode Authors (see AUTHORS)
+-->
+
 # ensure_no_ipv6
 
 Make sure IPv6 is not enabled on the system.

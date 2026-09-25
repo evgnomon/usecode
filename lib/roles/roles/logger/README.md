@@ -1,3 +1,8 @@
+<!--
+License-Identifier: HGL
+Copyright (C) The Usecode Authors (see AUTHORS)
+-->
+
 # logger
 
 Deploys [Vector](https://vector.dev) as a podman Quadlet unit to collect logs from

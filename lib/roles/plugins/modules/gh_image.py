@@ -1,4 +1,6 @@
 #!/usr/bin/python
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
 
 import asyncio
 import os

@@ -1,4 +1,6 @@
 #!/bin/sh
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
 
 if [ "$#" -ne 1 ]; then
     echo "Usage: $0 <keyname>"

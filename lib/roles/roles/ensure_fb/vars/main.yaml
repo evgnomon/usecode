@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 z_container_command: "/fluent-bit/bin/fluent-bit -c {{ z_mount_config_file }}"
 z_container_volumes:
   - "{{ z_backup_dir }}/certs/functions/{{ cert_name }}:{{ z_mount_cert_func_dir }}:ro"

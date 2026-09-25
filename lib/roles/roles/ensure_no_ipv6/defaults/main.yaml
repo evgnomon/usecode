@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 disable_ipv6_settings:
   - key: net.ipv6.conf.all.disable_ipv6
     value: 1

@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 use std::path::PathBuf;
 
 /// Generates a real ISO through libisofs to check the C glue and its linkage.

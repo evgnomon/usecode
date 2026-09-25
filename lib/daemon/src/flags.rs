@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 //! A tiny command-line flag parser with the same surface uc daemon's users
 //! already type: single-dash long flags (`-config PATH`, `-force`),
 //! `-flag=value` too, and parsing that stops at the first non-flag

@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 //! Proves the container stays interchangeable with the `openssl enc` command
 //! the shell implementation used, in both directions.
 

@@ -1,3 +1,8 @@
+{#
+License-Identifier: HGL
+Copyright (C) The Usecode Authors (see AUTHORS)
+-#}
+
 mise_shims="{{ blueprint_user_home }}/.local/share/mise/shims"
 if [ -d "$mise_shims" ] && [[ ":$PATH:" != *":$mise_shims:"* ]]; then
     export PATH="$mise_shims:$PATH"

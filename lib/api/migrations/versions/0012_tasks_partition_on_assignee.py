@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 """tasks are partitioned on their assignee
 
 A task is never fetched by someone asking for it by id: each API instance

@@ -1,3 +1,8 @@
+<!--
+License-Identifier: HGL
+Copyright (C) The Usecode Authors (see AUTHORS)
+-->
+
 # ensure_volume Role
 
 Manages filesystem volume mounting and configuration for attached storage devices.

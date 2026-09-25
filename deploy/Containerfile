@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 FROM caddy:2-alpine
 
 COPY Caddyfile /etc/caddy/Caddyfile

@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 ---
 # Default variables that can be overridden
 docker_version: "latest"  # Can be set to specific version like "20.10.17"

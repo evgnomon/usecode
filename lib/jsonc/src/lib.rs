@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 //! jsonc — strip comments and trailing commas from JSONC, producing valid
 //! JSON per RFC 8259.
 //!

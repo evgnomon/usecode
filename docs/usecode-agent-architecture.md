@@ -1,3 +1,8 @@
+<!--
+License-Identifier: HGL
+Copyright (C) The Usecode Authors (see AUTHORS)
+-->
+
 # AGENTS.md
 
 Architecture notes for whoever (human or agent) is working on this repo.

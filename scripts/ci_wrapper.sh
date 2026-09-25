@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
 #
 # ci-run.sh — VCS-agnostic CI wrapper around `make ci`
 #

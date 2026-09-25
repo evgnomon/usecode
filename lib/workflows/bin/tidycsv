@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 """Align CSV columns with padding so the file is readable in plain text editors."""
 
 import argparse

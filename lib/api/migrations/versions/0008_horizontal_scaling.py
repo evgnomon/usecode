@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 """shard mappings, user placement, task assignee
 
 Splits rows across several PostgreSQL instances and several named API

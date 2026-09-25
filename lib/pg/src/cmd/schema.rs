@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 use crate::db::{connect, err_text};
 
 pub fn run(dbname: &str) {

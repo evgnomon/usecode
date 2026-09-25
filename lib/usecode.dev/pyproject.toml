@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 [project]
 name = "usecode-dev-site"
 version = "0.1.0"

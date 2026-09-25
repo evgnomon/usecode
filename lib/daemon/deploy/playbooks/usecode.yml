@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 ---
 # Converge every host in the mesh onto the topology recorded in
 # ../inventory. This playbook decides nothing: addresses, keys and

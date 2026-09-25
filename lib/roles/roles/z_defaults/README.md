@@ -1,3 +1,8 @@
+<!--
+License-Identifier: HGL
+Copyright (C) The Usecode Authors (see AUTHORS)
+-->
+
 # z\_defaults Role
 
 This role sets default variables for the Usecode project. It can be used to configure base settings required for the project's infrastructure.

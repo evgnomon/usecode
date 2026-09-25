@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 use std::fs;
 use std::io::{self, IsTerminal, Read};
 use std::path::Path;

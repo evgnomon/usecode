@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 //! Manages this host's persistent WireGuard keypair so users never have
 //! to generate or paste a private key themselves. The private key is
 //! generated on first use and stored root-only on disk; only the public

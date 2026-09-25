@@ -1,3 +1,8 @@
+<!--
+License-Identifier: HGL
+Copyright (C) The Usecode Authors (see AUTHORS)
+-->
+
 # Dockerfile Version Verification Report
 
 **Date:** 2025-12-24

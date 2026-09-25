@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 ---
 - name: Read total memory from /proc/meminfo
   command: awk '/MemTotal/ { print int($2 / 1024) }' /proc/meminfo

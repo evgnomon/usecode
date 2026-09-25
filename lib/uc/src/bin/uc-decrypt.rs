@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 //! `uc-decrypt <file>.asc` — decrypt back to `<file>`, keeping the `.asc`.
 
 use std::io::Write;

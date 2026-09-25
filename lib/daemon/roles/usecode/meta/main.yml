@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 galaxy_info:
   author: evgnomon
   description: Installs the uc-daemon WireGuard tunnel + DNAT port-forwarding CLI and systemd service

@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 import base64
 from dataclasses import dataclass
 from http import HTTPStatus

@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 """location mapping keyed per provider
 
 Revision ID: 0007_location_mapping

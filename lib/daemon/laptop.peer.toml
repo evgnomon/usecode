@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 name = "hameds-desktop"
 public_key = "tnIcO/nN9WZXSPHfBTsI6zo9eMGNYHBy5fss6rkKEhU="
 address = "10.10.0.2"

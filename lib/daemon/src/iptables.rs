@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 //! Manages the DNAT/forwarding rules for the `[[service]]` entries that
 //! are forward rules ([`crate::config::Service::is_forward`]). All rules
 //! live in three dedicated chains, jumped to from the built-in ones, so

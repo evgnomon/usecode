@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 """Blueprint CLI - Command-line interface for usecode.kit."""
 
 import click

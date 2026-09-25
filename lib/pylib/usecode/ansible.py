@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 from dataclasses import dataclass, asdict
 from typing import Optional
 

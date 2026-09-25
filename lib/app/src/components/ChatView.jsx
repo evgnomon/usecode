@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 import { useEffect, useRef, useState } from 'react'
 import { fetchMessages, sendMessage, requestAgentReply } from '../api/mockApi'
 import MessageBubble from './MessageBubble'

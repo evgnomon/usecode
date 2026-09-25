@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 """Run the AI model (llama-server) as a container on the usecode-agent-api host."""
 
 import json

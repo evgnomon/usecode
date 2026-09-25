@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 //! Thin async wrapper around the usecode-agent-api HTTP endpoints, spread over
 //! the configured Caddy load balancers (see `Settings::endpoints`).
 

@@ -1,8 +1,12 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 [package]
 name = "vm"
 version = "0.7.0"
 edition = "2024"
 description = "A lightweight KVM/QEMU virtual machine creation tool"
+license = "HGL"
 authors = ["Hamed Ghasemzadeh <hg@evgnomon.org>"]
 
 [lib]

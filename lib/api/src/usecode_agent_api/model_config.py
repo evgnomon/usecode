@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 """Configurable fields for kick-starting the AI model container (llama-server).
 
 Defaults reproduce:

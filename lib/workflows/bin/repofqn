@@ -1,4 +1,6 @@
 #!/bin/sh
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
 
 repo_path=$(pwd)
 org=$(basename $(dirname $repo_path))

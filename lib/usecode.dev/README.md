@@ -1,3 +1,8 @@
+<!--
+License-Identifier: HGL
+Copyright (C) The Usecode Authors (see AUTHORS)
+-->
+
 # usecode.dev
 
 Website for **usecode**, the infrastructure provisioner MCP, released to the

@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 import { useEffect, useState } from 'react'
 import { fetchAgents, fetchMessages } from './api/mockApi'
 import AgentList from './components/AgentList'

@@ -1,4 +1,6 @@
 #!/bin/bash
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
 
 if [ ! -f "playbooks/main.yaml" ]; then
     "playbooks/main.yaml not found"

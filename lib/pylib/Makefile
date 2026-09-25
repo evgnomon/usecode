@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 VERSION ?= $(shell git describe --tags --match 'v*' --abbrev=0 2>/dev/null | sed 's/^v//')
 ROOT_DIR ?= $(abspath $(CURDIR)/../..)
 BUILD_DIR ?= $(ROOT_DIR)/build

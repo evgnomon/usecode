@@ -1,4 +1,7 @@
 #!/bin/sh
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 for DOCKER_BIN in /usr/bin/docker; do
   [ -x "$DOCKER_BIN" ] && break
 done

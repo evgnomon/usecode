@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 //! The `openssl enc -aes-256-cbc` container, reimplemented in Rust.
 //!
 //! Files are byte-for-byte compatible with

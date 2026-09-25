@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 //! Per-host entries under /etc/ssh/ssh_config.d so VMs are reachable by name.
 
 use std::path::{Path, PathBuf};

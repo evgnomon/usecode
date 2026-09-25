@@ -1,2 +1,5 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 instance-id: packer-zamin
 local-hostname: packer-zamin

@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 packer_plugins:
   - github.com/hashicorp/ansible
   - github.com/hashicorp/qemu

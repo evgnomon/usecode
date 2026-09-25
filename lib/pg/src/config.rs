@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 use std::env;
 use std::fs;
 use std::path::PathBuf;

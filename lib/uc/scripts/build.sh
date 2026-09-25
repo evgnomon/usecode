@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 # Builds the uc binaries for a target triple, installing the target's std on
 # first use.
 #

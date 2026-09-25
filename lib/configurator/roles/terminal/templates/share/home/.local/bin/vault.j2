@@ -1,4 +1,6 @@
 #!/bin/sh
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
 
 SECRETS_DIR="{{ blueprint_config_dir }}/secrets"
 GPG_KEY={{ gpg.get('key', '') if gpg is defined else '' }}

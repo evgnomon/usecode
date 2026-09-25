@@ -1,4 +1,7 @@
 #!/bin/bash
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 export EDITOR=vi
 VAULT_ADDR=$1
 

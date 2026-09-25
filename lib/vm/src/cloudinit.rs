@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 //! Cloud-init NoCloud ISO generation (backed by libisofs through src/iso.c).
 
 use std::ffi::CString;

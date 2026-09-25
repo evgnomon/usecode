@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 """Validate and normalize firewall role input into iptables-ready rule data.
 
 Reads a JSON object from stdin:

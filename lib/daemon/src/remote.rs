@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 //! Runs uc daemon commands on another host over ssh: it copies the local
 //! uc-daemon binary to the target and executes it there with the given
 //! arguments, so `uc daemon --host NAME up` behaves like running

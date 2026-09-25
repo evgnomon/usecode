@@ -1,3 +1,8 @@
+<!--
+License-Identifier: HGL
+Copyright (C) The Usecode Authors (see AUTHORS)
+-->
+
 # z\_ca\_deploy Role
 
 Deploy the CA (public) certificate to the host.

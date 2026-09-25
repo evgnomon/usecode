@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
 
 """
 MongoDB / Azure Cosmos DB (MongoDB API) CLI tool.

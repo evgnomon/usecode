@@ -1,3 +1,8 @@
+<!--
+License-Identifier: HGL
+Copyright (C) The Usecode Authors (see AUTHORS)
+-->
+
 # ensure_fb Role
 
 Configures and deploys Fluent Bit for log collection and forwarding to a centralized logging node.

@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 """
 GPG-based secret encryption/decryption utility.
 Processes data in memory without temporary files.

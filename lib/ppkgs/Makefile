@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 .PHONY: all install upgrade clean
 
 NO_UPGRADE ?= 0

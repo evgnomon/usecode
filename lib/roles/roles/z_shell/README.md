@@ -1,3 +1,8 @@
+<!--
+License-Identifier: HGL
+Copyright (C) The Usecode Authors (see AUTHORS)
+-->
+
 # z\_shell Role
 
 Runs user commands in a shell which has proper environment variables set for Zygote applications.

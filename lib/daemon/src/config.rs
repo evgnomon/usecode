@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 //! Loads, validates, and mutates the uc daemon configuration file. There
 //! is no client/server "mode": every host runs the same commands, and a
 //! host's role falls out of what its config contains - a `[[service]]`

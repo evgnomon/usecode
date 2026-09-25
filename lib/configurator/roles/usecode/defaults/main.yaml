@@ -1,2 +1,5 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 ---
 usecode_repo_dir: "{{ blueprint_user_home }}/src/github.com/evgnomon/usecode"

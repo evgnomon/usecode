@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 import { useRef, useState } from 'react'
 
 export default function Composer({ onSend, disabled }) {

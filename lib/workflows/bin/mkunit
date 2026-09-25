@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 """mkunit - Create a systemd unit file to run a command."""
 
 import argparse

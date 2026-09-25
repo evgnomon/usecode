@@ -1,2 +1,5 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 ---
 ssh_key_name: zygote_ssh_key

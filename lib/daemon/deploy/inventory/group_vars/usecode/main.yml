@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 ---
 # Mesh-wide inputs. Everything here is a knob you set by hand; everything
 # in host_vars/ is derived per host from these by `uc daemon add`.

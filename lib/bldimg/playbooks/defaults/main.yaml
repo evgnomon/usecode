@@ -1,1 +1,4 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 event_name: "{{ lookup('env', 'YACHT_EVENT_NAME') or lookup('env', 'GITHUB_EVENT_NAME') | default('push') }}"

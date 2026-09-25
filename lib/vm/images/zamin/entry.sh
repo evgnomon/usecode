@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
 
 
 export DEV_CONTAINER=1

@@ -1,3 +1,8 @@
+<!--
+License-Identifier: HGL
+Copyright (C) The Usecode Authors (see AUTHORS)
+-->
+
 # pg
 
 PostgreSQL CLI: start a local instance with podman, manage databases,

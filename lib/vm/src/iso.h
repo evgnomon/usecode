@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 #ifndef ZM_ISO_H
 #define ZM_ISO_H
 #ifdef __cplusplus

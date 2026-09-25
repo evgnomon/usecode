@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 //! Adds a key to a nested mapping in a YAML file without reformatting
 //! the rest of it.
 //!

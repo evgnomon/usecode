@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 """server type mapping cities
 
 Revision ID: 0006_server_type_cities

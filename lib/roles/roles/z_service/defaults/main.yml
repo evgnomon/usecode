@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 ---
 z_service_binary_path: "/usr/bin/{{ z_service_name }}"
 z_service_description: "{{ z_service_name }} Daemon"

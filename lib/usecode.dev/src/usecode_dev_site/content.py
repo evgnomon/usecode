@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 """Site copy. Kept as plain data so templates stay presentation-only."""
 
 REPO_URL = "https://github.com/evgnomon/usecode"

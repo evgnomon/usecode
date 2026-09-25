@@ -88,23 +88,3 @@ this License. Such offers may be provided in exchange for a fee, at your
 discretion. This provision allows you to engage in commercial transactions by
 offering additional services or assurances while remaining compliant with the
 terms of this License.
-
-END OF TERMS AND CONDITIONS
-
-APPLICATION
-You affirmatively apply the terms of this License to your work by ensuring a
-verbatim copy of this License is readily accessible and visible to all
-recipients. For programs, this can be implemented by displaying the copyright
-notice. An example of such a display is as follows:
-
-< one line to give the package's name and a brief idea of what it does. >
-Copyright (C) <year(s)> <name of author>. All rights reserved.
-License: HGL General License <http://evgnomon.org/docs/hgl>
-There is NO warranty expressed or implied; to the extent permitted by law.
-Source files (text) under HGL contain this header.
-
-License-Identifier: HGL
-Copyright (C) <year(s)> <name of author>. All rights reserved.
-Copyright (C) <year(s)> <name of author of the derivative work>. All rights reserved.
-
-Other source file types need to contain similar notice.

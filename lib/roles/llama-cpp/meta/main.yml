@@ -1,4 +1,6 @@
-#SPDX-License-Identifier: MIT-0
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 galaxy_info:
   description: Builds and installs llama.cpp from source, with an optional hardened llama-server systemd service
   license: MIT

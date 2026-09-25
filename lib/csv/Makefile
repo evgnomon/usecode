@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 .PHONY: bootstrap check test clean-build clean install uninstall publish build-and-publish docs docs-test help
 
 ROOT_DIR ?= $(abspath $(CURDIR)/../..)

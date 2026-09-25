@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 use std::fs::{self, File};
 use std::io::{self, BufReader, BufWriter, Read};
 use std::path::{Path, PathBuf};

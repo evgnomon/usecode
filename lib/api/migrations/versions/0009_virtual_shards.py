@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 """virtual shards: user-id placement, user directory, real user foreign keys
 
 Replaces the stored-partition-key scheme of 0008 with a computed one. A

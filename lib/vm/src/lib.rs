@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 //! vm - A lightweight KVM/QEMU virtual machine creation tool.
 
 #[macro_use]

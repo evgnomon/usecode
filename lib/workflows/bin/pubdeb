@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 set -euo pipefail
 
 rsync -avP --delete shadow:$HOME/.cache/blueprint/apt/ $HOME/.cache/blueprint/apt/

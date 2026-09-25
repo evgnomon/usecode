@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 //! The ansible-vault encrypted secrets file.
 
 use std::collections::BTreeMap;

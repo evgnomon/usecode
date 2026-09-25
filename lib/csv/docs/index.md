@@ -1,3 +1,8 @@
+<!--
+License-Identifier: HGL
+Copyright (C) The Usecode Authors (see AUTHORS)
+-->
+
 # bitframe
 
 A Python library for reading and processing CSV files with decimal precision.

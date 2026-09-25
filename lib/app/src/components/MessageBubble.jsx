@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 import { formatMessageText } from '../utils/formatText'
 
 function formatTime(ts) {

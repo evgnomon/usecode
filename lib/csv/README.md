@@ -1,3 +1,8 @@
+<!--
+License-Identifier: HGL
+Copyright (C) The Usecode Authors (see AUTHORS)
+-->
+
 # bitframe
 
 [![Release](https://img.shields.io/github/v/release/evgnomon/bitframe)](https://img.shields.io/github/v/release/evgnomon/bitframe)

@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 SOURCES := $(shell find src tests -type f -name "*.rs") Cargo.toml Cargo.lock
 PROFILE ?= release
 TARGET ?= x86_64-unknown-linux-musl

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 shole() {
     local bin_name=""
     local flag_help=0

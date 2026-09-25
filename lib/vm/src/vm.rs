@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 //! VM lifecycle: create, fork, start/stop, inspect, snapshot and mount.
 
 use std::os::unix::fs::PermissionsExt;

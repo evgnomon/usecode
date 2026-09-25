@@ -1,0 +1,20 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
+[package]
+name = "hgl"
+version = "0.1.0"
+edition = "2024"
+description = "Check and add the HGL license header in files tracked by git"
+license = "HGL"
+
+[lib]
+name = "hgl"
+path = "src/lib.rs"
+
+[[bin]]
+name = "hgl"
+path = "src/main.rs"
+
+[profile.release]
+strip = true

@@ -1,2 +1,5 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 ansible_ssh_common_args: '-o ProxyCommand="ssh -W %h:%p -q shadow"'
 ansible_port: 2657

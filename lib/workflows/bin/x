@@ -1,4 +1,6 @@
 #!/bin/sh
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
 
 sudo -v
 cd "$HOME/src/github.com/$USER/usecode/lib/configurator"

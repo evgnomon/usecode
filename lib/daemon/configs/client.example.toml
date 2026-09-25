@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 # /etc/uc/config.toml on a LEAF host - one that owns a process that
 # should be reachable through some other host's public address. Keep this
 # file `chmod 600`, owned by root: it may contain a peer preshared_key.

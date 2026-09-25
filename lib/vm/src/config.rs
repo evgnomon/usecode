@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 //! vm configuration, loaded from a simple `key: value` YAML subset.
 
 use std::path::{Path, PathBuf};

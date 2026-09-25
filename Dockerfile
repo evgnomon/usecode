@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 FROM docker.io/library/debian:forky
 
 ENV DEBIAN_FRONTEND=noninteractive \

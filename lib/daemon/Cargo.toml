@@ -1,9 +1,12 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 [package]
 name = "uc-daemon"
 version = "0.1.0"
 edition = "2021"
 description = "WireGuard mesh + DNAT port forwarding manager"
-license = "MIT"
+license = "HGL"
 publish = false
 
 [[bin]]

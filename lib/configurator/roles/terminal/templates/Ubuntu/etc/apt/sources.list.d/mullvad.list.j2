@@ -1,2 +1,7 @@
+{#
+License-Identifier: HGL
+Copyright (C) The Usecode Authors (see AUTHORS)
+-#}
+
 {% set arch = 'amd64' if ansible_facts['architecture'] == 'x86_64' else ansible_facts['architecture'] %}
 deb [signed-by=/etc/apt/trusted.gpg.d/mullvad-keyring.gpg arch={{ arch }}] https://repository.mullvad.net/deb/stable stable main

@@ -1,3 +1,6 @@
+" License-Identifier: HGL
+" Copyright (C) The Usecode Authors (see AUTHORS)
+
 set nocompatible              " Disable compatibility mode with vi, enabling more advanced Vim features.
 set exrc                      " Allow the use of local .vimrc files in each directory (can be a security risk if editing untrusted files).
 set secure                    " Disable potentially dangerous commands in local .vimrc files (enhances security when using 'exrc').

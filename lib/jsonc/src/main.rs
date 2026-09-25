@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 //! CLI: read JSONC on stdin, write JSON on stdout.
 //!
 //! Use:  jsonc < input.jsonc > out.json

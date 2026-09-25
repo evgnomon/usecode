@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 """Shared helpers for looking up a user's decrypted provider credentials.
 
 Used by both routes/providers.py (credential management) and

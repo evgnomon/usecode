@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 from functools import lru_cache
 
 from pydantic import field_validator, model_validator

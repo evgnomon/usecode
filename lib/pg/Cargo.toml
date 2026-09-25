@@ -1,8 +1,12 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 [package]
 name = "pg"
 version = "0.1.0"
 edition = "2024"
 description = "PostgreSQL CLI for local podman instances, schema management and queries"
+license = "HGL"
 authors = ["Hamed Ghasemzadeh <hg@evgnomon.org>"]
 publish = false
 

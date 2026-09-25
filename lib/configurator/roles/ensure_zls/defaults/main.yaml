@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 zls_repo: "{{ ansible_facts['env']['HOME'] }}/src/github.com/zigtools/zls"
 zls_bin_output: "{{ zls_repo }}/zig-out/bin/zls"
 zls_bin: "{{ local_bin_path }}/zls"

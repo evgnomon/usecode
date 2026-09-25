@@ -1,3 +1,5 @@
-#SPDX-License-Identifier: MIT-0
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 ---
 # vars file for roles/container-registry

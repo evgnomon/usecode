@@ -1,4 +1,7 @@
 #!/bin/bash
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 set -euo pipefail
 
 BUILD_DIR="${BUILD_DIR:?BUILD_DIR must be set}"

@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 """Every table here is partitioned, directly or through its parent. There
 are no exceptions and no "global" tables.
 

@@ -1,3 +1,8 @@
+<!--
+License-Identifier: HGL
+Copyright (C) The Usecode Authors (see AUTHORS)
+-->
+
 # z\_sshadd
 
 Add local ssh key to be used by Ansible connecting to remote hosts.

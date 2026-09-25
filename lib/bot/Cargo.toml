@@ -1,8 +1,12 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 [package]
 name = "usecode-mcp"
 version = "0.1.0"
 edition = "2024"
 description = "MCP server for operating usecode agent"
+license = "HGL"
 authors = ["Hamed Ghasemzadeh <hg@evgnomon.org>"]
 
 [[bin]]

@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 """Symmetric encryption for per-user secrets stored at rest (e.g. provider credentials)."""
 
 import base64

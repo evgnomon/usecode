@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 """Row storage, split across the database instances described in db.py.
 
 **Every table here is partitioned; none is global.** A table with no

@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 import asyncio
 import logging
 from contextlib import asynccontextmanager

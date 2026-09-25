@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 //! MAC address derivation and guest IP discovery.
 
 use std::thread;

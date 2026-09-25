@@ -1,3 +1,8 @@
+<!--
+License-Identifier: HGL
+Copyright (C) The Usecode Authors (see AUTHORS)
+-->
+
 # ensure_node_exporter Role
 
 Deploys Prometheus Node Exporter as a containerized service for system metrics collection.

@@ -1,3 +1,8 @@
+<!--
+License-Identifier: HGL
+Copyright (C) The Usecode Authors (see AUTHORS)
+-->
+
 <p align="center">
   <img src="assets/logo.svg" alt="VM Logo" width="300">
 </p>

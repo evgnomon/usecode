@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
 
 if [[ $# -eq 0 ]]; then
   echo "Usage: $0 <deployment> [up|down|restart|logs]"

@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 ---
 # extrepo-data has no Ubuntu tree, so Ubuntu reads the Debian data. Only the
 # repositories whose suite is distro-agnostic ("stable") are enabled here;

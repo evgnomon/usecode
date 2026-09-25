@@ -1,4 +1,7 @@
 #!/bin/bash
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 set -euo pipefail
 
 case "${1:-}" in

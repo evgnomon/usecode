@@ -1,4 +1,6 @@
 #!/bin/bash
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
 
 VERSION=$(cat pyproject.toml | yj -t | jq -r ".tool.poetry.version")
 PROJECT_NAME=$(cat pyproject.toml | yj -t | jq -r ".tool.poetry.name")

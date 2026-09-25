@@ -1,4 +1,7 @@
-.PHONY: all ci deploy publish build version install link clean submodules fmt-html fmt
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
+.PHONY: all ci deploy publish build version install link clean submodules fmt-html fmt headers headers-check authors
 
 $(eval $(shell ./scripts/ci_wrapper.sh --env 2>/dev/null))
 
@@ -104,3 +107,16 @@ fmt-html:
 
 fmt: fmt-html
 	ruff format lib/api/src/usecode_agent_api
+
+HGL := lib/hgl/target/release/hgl
+
+headers:
+	@$(MAKE) -s -C lib/hgl build
+	@$(HGL) fix
+
+headers-check:
+	@$(MAKE) -s -C lib/hgl build
+	@$(HGL) check
+
+authors:
+	./scripts/authors.sh

@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 //! Crate-level errors for the paths that fail before any tool call: building
 //! the HTTP client and reading settings. Failures at the stdio boundary stop
 //! the process, so `main` boxes them with anyhow instead.

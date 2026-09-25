@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 set -euo pipefail
 
 url=$(git remote get-url origin 2>/dev/null) || { echo "Not a git repository or no origin remote" >&2; exit 1; }

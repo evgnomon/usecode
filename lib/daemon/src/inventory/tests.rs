@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};

@@ -1,3 +1,6 @@
+@REM License-Identifier: HGL
+@REM Copyright (C) The Usecode Authors (see AUTHORS)
+
 @ECHO OFF
 
 pushd %~dp0

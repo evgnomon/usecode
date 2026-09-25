@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 ---
 # Hardens sshd on every host in the "main" group: locks the firewall down
 # to firewall_bastion_hosts/firewall_allow_rules first (so the new port is

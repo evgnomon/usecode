@@ -1,4 +1,7 @@
 #cloud-config
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 users:
   - name: packer
     plain_text_passwd: packer

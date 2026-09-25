@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 FROM docker.io/library/debian:trixie AS python-builder
 
 ENV PYTHON_VERSION=3.14.3

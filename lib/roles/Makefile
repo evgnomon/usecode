@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 .PHONY: all build install-galaxy link unlink publish clean
 
 NAMESPACE := $(shell awk '/^namespace:/ {print $$2}' galaxy.yml)

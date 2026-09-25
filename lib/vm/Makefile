@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 SOURCES := $(shell find src -type f \( -name "*.rs" -o -name "*.c" -o -name "*.h" \)) Cargo.toml Cargo.lock build.rs
 PROFILE ?= release
 OUTPUT := target/$(PROFILE)/vm

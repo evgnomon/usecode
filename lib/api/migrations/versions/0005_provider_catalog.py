@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 """location mappings and provider catalog
 
 Revision ID: 0005_provider_catalog

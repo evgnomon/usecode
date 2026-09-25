@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 fn main() {
     cc::Build::new()
         .file("src/iso.c")

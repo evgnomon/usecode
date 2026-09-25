@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 z_container_name: "prometheus"
 z_container_user: root
 function_name: "{{ z_node_type }}-{{z_container_name}}"

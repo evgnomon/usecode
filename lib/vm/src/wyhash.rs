@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 //! Wyhash (final version), byte-for-byte compatible with Zig's `std.hash.Wyhash`.
 //!
 //! vm derives a VM's MAC address and cloud-init instance-id from this hash, so the

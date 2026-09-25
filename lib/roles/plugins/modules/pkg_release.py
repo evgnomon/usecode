@@ -1,4 +1,6 @@
 #!/usr/bin/python
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
 
 from ansible.module_utils.basic import AnsibleModule
 from ansible.module_utils.urls import fetch_url

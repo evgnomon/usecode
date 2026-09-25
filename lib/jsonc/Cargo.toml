@@ -1,8 +1,12 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 [package]
 name = "jsonc"
 version = "0.1.0"
 edition = "2024"
 description = "Strip comments and trailing commas from JSONC, producing valid JSON"
+license = "HGL"
 authors = ["Hamed Ghasemzadeh <hg@evgnomon.org>"]
 
 [lib]

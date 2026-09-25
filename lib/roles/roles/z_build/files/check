@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
 
 if [ -f "Makefile" ]; then
   make check

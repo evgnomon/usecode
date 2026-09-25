@@ -1,4 +1,6 @@
-#SPDX-License-Identifier: MIT-0
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 galaxy_info:
   description: Hardens OpenSSH server configuration (key-only auth, non-default port)
   license: MIT

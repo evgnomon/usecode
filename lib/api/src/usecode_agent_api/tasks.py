@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 """Task engine: resumable workflows over provider-owned resources.
 
 See AGENTS.md ("Provider resources and tasks") for the architecture this

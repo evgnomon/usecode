@@ -1,4 +1,7 @@
 #!/bin/sh
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 # Prints the vault password for group_vars/usecode/secrets.yml.
 #
 # ansible.cfg points vault_password_file at this; because the file is

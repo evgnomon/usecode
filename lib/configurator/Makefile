@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 .PHONY: all build install install-eget bootstrap-playbook play uninstall clean prepare update
 
 EGET_VERSION ?= latest

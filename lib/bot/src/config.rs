@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 //! Settings read from the environment, prefixed `USECODE_MCP_`, with a `.env`
 //! file in the working directory filling in anything not already set.
 

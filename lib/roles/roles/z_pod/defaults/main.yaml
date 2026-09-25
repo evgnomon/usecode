@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 ---
 image_name: ghcr.io/{{ z_repo_slug }}:{{z_track}}
 target_port: 3000

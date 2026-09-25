@@ -1,3 +1,8 @@
+<!--
+License-Identifier: HGL
+Copyright (C) The Usecode Authors (see AUTHORS)
+-->
+
 # usecode-mcp
 
 MCP server that operates usecode agent: it wraps the `usecode-agent-api` HTTP endpoints as MCP tools so an

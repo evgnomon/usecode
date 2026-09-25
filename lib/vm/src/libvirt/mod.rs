@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 //! Safe wrappers around the libvirt C API.
 
 pub mod sys;

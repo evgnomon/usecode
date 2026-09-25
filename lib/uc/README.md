@@ -1,3 +1,8 @@
+<!--
+License-Identifier: HGL
+Copyright (C) The Usecode Authors (see AUTHORS)
+-->
+
 # uc
 
 The top level `usecode` command. `uc` itself holds no subcommand logic: like

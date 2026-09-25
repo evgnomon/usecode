@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 PORT ?= 8080
 
 .PHONY: all sync serve check clean

@@ -1,3 +1,8 @@
+<!--
+License-Identifier: HGL
+Copyright (C) The Usecode Authors (see AUTHORS)
+-->
+
 # Ansible Role: nginx_podman
 
 Deploy nginx using Podman Kube Play, showcasing multiple Kubernetes resource types.

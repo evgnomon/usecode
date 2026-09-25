@@ -1,3 +1,8 @@
+<!--
+License-Identifier: HGL
+Copyright (C) The Usecode Authors (see AUTHORS)
+-->
+
 # uc daemon
 
 `uc daemon` makes a program on one machine reachable through an IP address and

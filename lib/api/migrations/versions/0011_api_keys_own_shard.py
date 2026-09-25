@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 """api_keys hash their own key
 
 An API key arrives with nothing else: the request that carries it has no

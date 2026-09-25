@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 # /etc/uc/config.toml on an EDGE host - one with a public address
 # that DNATs incoming traffic through the WireGuard tunnel to whichever
 # peer owns each service. Keep this file `chmod 600`, owned by root: it

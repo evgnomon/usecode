@@ -1,3 +1,8 @@
+{#
+License-Identifier: HGL
+Copyright (C) The Usecode Authors (see AUTHORS)
+-#}
+
 {% for message in messages %}
   <div class="bubble-row{% if message.sender == 'user' %} from-user{% endif %}">
     <div class="bubble {% if message.sender == 'user' %}user{% else %}agent{% endif %}">

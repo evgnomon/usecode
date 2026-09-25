@@ -1,3 +1,6 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
 //! Shared implementation behind the `uc` command family.
 //!
 //! [`crypto`] carries the OpenSSL-compatible `aes-256-cbc` container format,

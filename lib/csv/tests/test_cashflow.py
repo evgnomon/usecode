@@ -1,3 +1,6 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
 from decimal import Decimal
 from pathlib import Path
 from tempfile import NamedTemporaryFile
