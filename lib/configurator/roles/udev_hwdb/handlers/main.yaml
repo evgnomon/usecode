@@ -1,0 +1,9 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
+---
+- name: Rebuild hwdb
+  become: true
+  ansible.builtin.shell: |
+    systemd-hwdb update
+    udevadm trigger --subsystem-match=input --action=change

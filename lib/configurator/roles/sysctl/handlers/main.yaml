@@ -1,0 +1,7 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
+---
+- name: Apply sysctl settings
+  become: true
+  ansible.builtin.command: /usr/sbin/sysctl --system

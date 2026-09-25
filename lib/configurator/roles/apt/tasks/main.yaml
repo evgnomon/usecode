@@ -1,0 +1,142 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
+---
+# apt does not read http_proxy/https_proxy from the environment reliably,
+# so mirror the caller's proxy into apt's own config. Removed again when
+# the machine has no proxy, so a stale file can never break plain networks.
+- name: Configure apt proxy
+  become: true
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/99proxy
+    mode: "0644"
+    content: |
+      Acquire::http::Proxy "{{ proxy_env.http_proxy }}";
+      Acquire::https::Proxy "{{ proxy_env.https_proxy | default(proxy_env.http_proxy, true) }}";
+  when: proxy_env.http_proxy | length > 0
+  tags:
+    - always
+
+- name: Remove apt proxy config when no proxy is configured
+  become: true
+  ansible.builtin.file:
+    path: /etc/apt/apt.conf.d/99proxy
+    state: absent
+  when: proxy_env.http_proxy | length == 0
+  tags:
+    - always
+
+- name: Include distro tasks
+  include_tasks: "{{ item }}"
+  with_first_found:
+    - files:
+        - "{{ ansible_facts['distribution'] }}.yaml"
+      skip: true
+  tags:
+    - always
+
+- name: Inflate Apt sources and keys in etc
+  include_role:
+    name: inflate
+  vars:
+    target: /etc
+  when: item.state == 'file'
+  loop: "{{ query('community.general.filetree', '../templates/' ~ ansible_facts['distribution'] ~ '/etc') }}"
+  tags:
+    - apt
+
+# Runs after the apt files above are inflated and before anything installs from
+# them, so extrepo hands over from the legacy sources in a single pass.
+- name: Enable third-party repositories with extrepo
+  ansible.builtin.include_role:
+    name: extrepo
+  tags:
+    - extrepo
+
+- name: Probe optional apt repositories
+  environment: "{{ proxy_env }}"
+  ansible.builtin.uri:
+    url: "{{ item.url }}"
+    method: HEAD
+    timeout: 10
+  register: optional_apt_repo_probe
+  failed_when: false
+  loop: "{{ optional_apt_repos }}"
+  loop_control:
+    label: "{{ item.list }}"
+  tags:
+    - always
+
+- name: Drop unreachable optional apt repositories
+  become: true
+  ansible.builtin.file:
+    path: "/etc/apt/sources.list.d/{{ item.item.list }}"
+    state: absent
+  loop: "{{ optional_apt_repo_probe.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.list }}"
+  when: item.status | default(0) != 200
+  tags:
+    - always
+
+- name: Refresh Apt cache
+  become: true
+  ansible.builtin.apt:
+    update_cache: true
+  tags:
+    - apt
+
+- name: Install package groups using Apt
+  become: true
+  ansible.builtin.apt:
+    name: "{{ (apt_packages[item] | default([]) or []) + (apt_packages[_distro ~ '_' ~ item] | default([]) or []) }}"
+    state: present
+  vars:
+    _distro: "{{ ansible_facts['distribution'] | lower }}"
+  loop: "{{ apt_profile_groups[installation_profile] | default(['share']) }}"
+  tags:
+    - apt
+
+- name: Install user packages using Apt
+  become: true
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+    name: "{{ user_apt_packages.get('share', []) }}"
+    state: present
+  when: user_apt_packages is defined
+  tags:
+    - apt
+
+- name: Install user packages using Apt for specific distribution
+  become: true
+  ansible.builtin.apt:
+    name: "{{ user_apt_packages.get(dict_item, []) }}"
+    state: present
+  when:
+    - user_apt_packages is defined
+    - dict_item in user_apt_packages
+  vars:
+    dict_item: "{{ ansible_facts['distribution'] | lower }}"
+  tags:
+    - apt
+
+- name: Upgrade all Apt packages
+  become: true
+  ansible.builtin.apt:
+    upgrade: full
+    update_cache: true
+    cache_valid_time: 3600
+  tags:
+    - never
+    - upgrade
+    - apt
+
+- name: auto-remove Apt packages
+  become: true
+  ansible.builtin.apt:
+    autoremove: true
+  tags:
+    - never
+    - autoremove
+    - upgrade

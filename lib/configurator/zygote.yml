@@ -11,8 +11,10 @@
   tags:
     - always
 
-- name: Zygote role
+- name: Zygote roles
   hosts: localhost
   roles:
-    - role: terminal
+    - apt
+    - dotfiles
+    - git
   environment: "{{ proxy_env | combine({'PATH': custom_path}) }}"

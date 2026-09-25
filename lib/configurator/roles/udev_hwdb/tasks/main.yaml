@@ -1,0 +1,23 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
+---
+- name: Install per-device keyboard map
+  become: true
+  ansible.builtin.copy:
+    src: 61-keyboard-builtin-altwin.hwdb
+    dest: /etc/udev/hwdb.d/61-keyboard-builtin-altwin.hwdb
+    mode: '0644'
+  when: ansible_facts['distribution'] == 'Debian'
+  notify: Rebuild hwdb
+  tags:
+    - udev_hwdb
+
+- name: Install Apple keyboard module options
+  become: true
+  ansible.builtin.copy:
+    src: hid_apple.conf
+    dest: /etc/modprobe.d/hid_apple.conf
+    mode: '0644'
+  tags:
+    - udev_hwdb

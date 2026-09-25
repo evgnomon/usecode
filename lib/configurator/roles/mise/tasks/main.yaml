@@ -40,3 +40,10 @@
   when: item.rc == 1
   tags:
     - mise
+
+- name: Install mise tools
+  command: mise install --yes
+  register: mise_install
+  changed_when: mise_install.stderr is search('installed')
+  tags:
+    - mise

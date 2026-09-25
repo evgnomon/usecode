@@ -1,0 +1,47 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
+- name: Install Microsoft 2025 GPG key
+  become: true
+  environment: "{{ proxy_env }}"
+  shell: |
+    install -d -m 0755 /etc/apt/keyrings
+    curl -fsSL https://packages.microsoft.com/keys/microsoft-2025.asc -o /etc/apt/keyrings/microsoft-2025.asc
+  args:
+    creates: /etc/apt/keyrings/microsoft-2025.asc
+  tags:
+    - always
+
+- name: Install Microsoft GPG key
+  become: true
+  environment: "{{ proxy_env }}"
+  shell: |
+    curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/microsoft.gpg
+  args:
+    creates: /etc/apt/trusted.gpg.d/microsoft.gpg
+  tags:
+    - always
+
+- name: Remove duplicate dotnetdev.list
+  become: true
+  ansible.builtin.file:
+    path: /etc/apt/sources.list.d/dotnetdev.list
+    state: absent
+  tags:
+    - always
+
+- name: Remove packages-microsoft-prod.list
+  become: true
+  ansible.builtin.file:
+    path: /etc/apt/sources.list.d/packages-microsoft-prod.list
+    state: absent
+  tags:
+    - always
+
+- name: Remove stale microsoft-ubuntu-resolute-prod.list
+  become: true
+  ansible.builtin.file:
+    path: /etc/apt/sources.list.d/microsoft-ubuntu-resolute-prod.list
+    state: absent
+  tags:
+    - always

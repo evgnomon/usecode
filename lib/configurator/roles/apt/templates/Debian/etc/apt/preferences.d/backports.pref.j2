@@ -1,0 +1,12 @@
+{#
+License-Identifier: HGL
+Copyright (C) The Usecode Authors (see AUTHORS)
+-#}
+# Only kernel, firmware, microcode, mesa (GL, Vulkan, VA/VDPAU drivers),
+# ALSA (library and UCM profiles), PipeWire/WirePlumber and fwupd
+# follow backports, for newer hardware support. Everything else stays on
+# stable, where backports keep their default priority of 100, so -dev packages
+# always match their stable runtime libraries.
+Package: linux-* firmware-* *-microcode src:mesa src:alsa-ucm-conf src:alsa-lib src:pipewire src:wireplumber src:fwupd
+Pin: release n={{ ansible_facts['distribution_release'] }}-backports
+Pin-Priority: 990

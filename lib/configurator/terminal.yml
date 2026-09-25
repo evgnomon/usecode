@@ -11,8 +11,10 @@
   tags:
     - always
 
-- name: Terminal role
+- name: Apt, dotfiles and git roles
   hosts: localhost
   roles:
-    - role: terminal
+    - apt
+    - dotfiles
+    - git
   environment: "{{ proxy_env | combine({'PATH': custom_path}) }}"

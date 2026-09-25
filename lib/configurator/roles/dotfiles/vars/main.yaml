@@ -1,0 +1,46 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
+---
+pinentry_bin: /usr/bin/pinentry
+
+dotfiles:
+  - .config/containers/registries.conf
+  - .config/hcloud/cli.sh
+  - .config/opencode/opencode.jsonc
+  - .ctags
+  - .gnupg/gpg.conf
+  - .gnupg/scdaemon.conf
+  - .eget.toml
+  - .fdignore
+  - .ctags.d/javascript.ctags
+  - .bashrc
+  - .bashrc.d/mise-activate.sh
+  - .inputrc
+  - .local/bin/foot-shell
+  - .local/bin/bazel
+  - .config/mise/config.toml
+  - .default-python-packages
+  - .profile
+  - .bash_aliases
+  - .tmux.conf
+  - claude/settings.json:.claude/settings.json
+  - copilot/settings.json:.copilot/settings.json
+  - copilot/mcp-config.json:.copilot/mcp-config.json
+  - .config/Code/extensions.txt
+  - .config/Code/User/keybindings.json
+  - .config/Code/User/settings.json
+  - .config/Code/User/tasks.json
+
+root_dotfiles:
+  - .bashrc
+  - .bashrc.d/mise-activate.sh
+  - .inputrc
+  - .profile
+  - .bash_aliases
+
+dotdirs:
+  - dest: .claude/skills
+    src: "src/github.com/{{ blueprint_user }}/agents/claude/skills"
+  - dest: .claude/agents
+    src: "src/github.com/{{ blueprint_user }}/agents/claude/agents"

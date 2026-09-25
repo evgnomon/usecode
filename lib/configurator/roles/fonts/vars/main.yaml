@@ -1,0 +1,5 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
+---
+user_fonts_dir: "{{ ansible_facts['env']['HOME'] }}/.fonts"
