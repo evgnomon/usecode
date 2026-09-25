@@ -17,7 +17,8 @@ uc encrypt secrets.txt # runs uc-encrypt
 
 This crate ships the dispatcher, the two file encryption subcommands, which
 replace the former `boom` shell script, and `uc configure`, the machine
-configurator.
+configurator, and `uc push`/`uc pull`, which move container images through
+the registry behind the bastion.
 
 ## Encrypting files
 
@@ -119,12 +120,33 @@ Tasks that need root run through `sudo -n`; when the selection has any,
 `uc configure` asks for the password once, before the run, and keeps the
 credentials fresh until it ends.
 
+## Moving container images
+
+`uc push` and `uc pull` replace `deploy/push.sh` and `deploy/pull.sh`. The
+registry deployed by `deploy/playbooks/registry.yaml` is only reachable through
+the bastion, so both open an SSH tunnel to it, log the container CLI in, move
+the images and close the tunnel again:
+
+```sh
+uc push myimage:latest             # tag as localhost:5000/myimage:latest and push
+uc pull myimage:latest             # pull localhost:5000/myimage:latest
+uc pull --strip-host myimage:latest # ... and also tag it as myimage:latest
+```
+
+The password comes from `REGISTRY_PASSWORD`, or else from
+`vault_container_registry_password` in `deploy/playbooks/vault.yaml` of the
+current git checkout (`--vault-file` to use another), decrypted with
+`ansible-vault`. The registry and bastion addresses, ports and users, and the
+container CLI, are options with the same environment variables the scripts
+read (`BASTION_HOST`, `REGISTRY_HOST`, `LOCAL_PORT`, `CONTAINER_CLI`, ...);
+see `uc push -h`.
+
 ## Build
 
 ```sh
 make build    # cargo build --profile release --target x86_64-unknown-linux-musl
 make check    # fmt --check, clippy -D warnings, tests
-make install  # install uc, uc-encrypt, uc-decrypt and uc-configure to /usr/local/bin
+make install  # install uc, uc-encrypt, uc-decrypt, uc-configure, uc-push and uc-pull to /usr/local/bin
 ```
 
 `make install` honours `DESTDIR` (with a trailing slash) and `PREFIX`, e.g.
