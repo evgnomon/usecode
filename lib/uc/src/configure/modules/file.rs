@@ -298,6 +298,20 @@ pub async fn read(ctx: &Ctx, path: &Path, sudo: bool) -> Result<Option<Vec<u8>>>
         Ok(bytes) => Ok(Some(bytes)),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied && elevated(ctx, sudo) => {
+            // The path is unreadable, so whether it exists at all is only
+            // known with sudo too.
+            let exists = ctx
+                .cmd("test")
+                .args(["-e", &path.display().to_string()])
+                .sudo()
+                .read_only()
+                .any_code()
+                .output()
+                .await?
+                .success();
+            if !exists {
+                return Ok(None);
+            }
             let out = ctx
                 .cmd("cat")
                 .arg(path.display().to_string())

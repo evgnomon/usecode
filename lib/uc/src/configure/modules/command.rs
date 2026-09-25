@@ -197,10 +197,16 @@ impl Cmd {
 
     fn build(&self) -> Command {
         let vars = self.ctx.vars();
-        let mut env: Vec<(String, String)> = vec![("PATH".into(), vars.path.clone())];
+        let elevate = self.sudo && !self.ctx.is_root();
+        let path = if elevate {
+            with_sbin(&vars.path)
+        } else {
+            vars.path.clone()
+        };
+        let mut env: Vec<(String, String)> = vec![("PATH".into(), path)];
         env.extend(self.env.iter().cloned());
 
-        let mut command = if self.sudo && !self.ctx.is_root() {
+        let mut command = if elevate {
             // sudo resets the environment, so it is passed through env(1).
             let mut c = Command::new("sudo");
             c.arg("-n").arg("env");
@@ -277,6 +283,18 @@ pub fn path_exists(path: &Path) -> bool {
     }
 }
 
+/// `path` with the sbin directories appended, which a user's `PATH` often
+/// lacks but root's tools (`groupadd`, `usermod`, ...) live in.
+fn with_sbin(path: &str) -> String {
+    let mut dirs: Vec<&str> = path.split(':').filter(|d| !d.is_empty()).collect();
+    for sbin in ["/usr/local/sbin", "/usr/sbin", "/sbin"] {
+        if !dirs.contains(&sbin) {
+            dirs.push(sbin);
+        }
+    }
+    dirs.join(":")
+}
+
 /// Whether `program` can be found on the run's `PATH`.
 pub fn which(ctx: &Ctx, program: &str) -> Option<PathBuf> {
     std::env::split_paths(&ctx.vars().path)
@@ -288,6 +306,14 @@ pub fn which(ctx: &Ctx, program: &str) -> Option<PathBuf> {
 mod tests {
     use super::*;
     use crate::configure::ctx::tests::ctx;
+
+    #[test]
+    fn sudo_path_gains_sbin() {
+        assert_eq!(
+            with_sbin("/usr/bin:/usr/sbin"),
+            "/usr/bin:/usr/sbin:/usr/local/sbin:/sbin"
+        );
+    }
 
     #[tokio::test]
     async fn captures_output_and_codes() {
