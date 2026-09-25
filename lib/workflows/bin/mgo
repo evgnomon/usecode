@@ -2,7 +2,7 @@
 
 """
 MongoDB / Azure Cosmos DB (MongoDB API) CLI tool.
-Mirrors the pg.py CLI interface, adapted for MongoDB concepts.
+Mirrors the pg CLI interface (lib/pg), adapted for MongoDB concepts.
 
 Mapping:
   pg concept   →  mongo concept

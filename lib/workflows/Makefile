@@ -1,6 +1,6 @@
 .PHONY: build install clean
 
-PKGS:= bin fzurls mkdeb pg workd
+PKGS:= bin fzurls mkdeb workd
 
 build install clean:
 	@for pkg in $(PKGS); do \
