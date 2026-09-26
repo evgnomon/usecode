@@ -37,7 +37,7 @@ $(INSTALL_BIN): $(OUTPUT)
 link: $(OUTPUT) $(INSTALLED_EXT_FILES)
 	@mkdir -p $(dir $(LINK_BIN))
 	@ln -sf $(CURDIR)/$(OUTPUT) $(LINK_BIN)
-	gsettings set org.gnome.shell disable-user-extensions false
+	gsettings set org.gnome.shell disable-user-extensions false 2>/dev/null || true
 	gnome-extensions enable $(EXT_UUID) 2>/dev/null || echo "Restart GNOME Shell, then run: gnome-extensions enable $(EXT_UUID)"
 
 $(EXT_DIR)/%: $(EXT_SRC_DIR)/%
