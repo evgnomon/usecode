@@ -23,9 +23,8 @@ pub const PROBE: &str = "apt/probe";
 /// debian_desktop.
 fn profile_groups(profile: Profile) -> &'static [&'static str] {
     match profile {
-        Profile::Workstation => &["share", "hardware", "desktop", "workstation"],
-        Profile::Vm => &["share", "desktop"],
-        Profile::Wsl | Profile::DevContainer => &["share"],
+        Profile::Workstation => &["share", "hardware", "desktop"],
+        Profile::Vm | Profile::Wsl | Profile::DevContainer => &["share"],
     }
 }
 
@@ -108,6 +107,8 @@ fn group(name: &str) -> &'static [&'static str] {
         ],
         // Packages requiring a desktop/GPU — skipped on WSL2
         "desktop" => &[
+            "code",             // Visual Studio Code editor installed from the Microsoft Apt repository
+            "fontconfig",       // Font cache tools (fc-cache) used when installing the Nerd Fonts
             "qemu-system-x86",  // x86/x86_64 system emulator for running virtual machines
             "brave-browser",    // Privacy-focused web browser with built-in ad blocking
             "yubioath-desktop", // YubiKey OATH desktop application for managing TOTP/HOTP codes
@@ -116,9 +117,6 @@ fn group(name: &str) -> &'static [&'static str] {
             "dmidecode", // DMI/SMBIOS decoder for reading hardware information from BIOS
             "mdns-scan", // Multicast DNS scanner for discovering services on local network
             "gnumeric", // Spreadsheet application for data analysis and visualization
-        ],
-        "workstation" => &[
-            "code",        // Visual Studio Code editor installed from the Microsoft Apt repository
             "mullvad-vpn", // Mullvad VPN desktop client installed from the Mullvad Apt repository
         ],
         "debian_desktop" => &[

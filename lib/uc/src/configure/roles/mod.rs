@@ -78,5 +78,5 @@ pub fn plan(v: &Vars) -> Plan {
 
 /// Reasons shown for tasks the profile leaves out.
 pub const NOT_IN_DEV_CONTAINER: &str = "not installed in dev containers";
-pub const DESKTOP_ONLY: &str = "only on workstation and vm profiles";
+pub const DESKTOP_ONLY: &str = "only on the desktop (workstation) profile";
 pub const WORKSTATION_ONLY: &str = "only on the workstation profile";

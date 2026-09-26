@@ -153,6 +153,10 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
             .sudo()
             .after([apt_role::PROXY, apt_role::SOURCES, apt_role::PROBE])
             .run(|ctx| async move {
+                // New or changed sources make the cached lists stale.
+                if ctx.deps_changed() {
+                    apt::update(&ctx, None).await?;
+                }
                 let hour = Some(std::time::Duration::from_secs(3600));
                 apt::install(&ctx, &["extrepo".to_string()], hour).await
             }),

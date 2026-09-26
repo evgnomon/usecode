@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 pub enum Profile {
     /// Physical Linux desktop.
     Workstation,
-    /// Explicit VM installation: desktop packages, no host-only hardware.
+    /// Explicit VM installation: headless, no desktop or host-only hardware.
     Vm,
     /// WSL2.
     Wsl,
@@ -49,9 +49,9 @@ impl Profile {
         .find(|p| p.name() == name || p.name().replace('_', "-") == name)
     }
 
-    /// Workstations and VMs get a desktop.
+    /// Only workstations have a display.
     pub fn desktop(self) -> bool {
-        matches!(self, Profile::Workstation | Profile::Vm)
+        self == Profile::Workstation
     }
 }
 

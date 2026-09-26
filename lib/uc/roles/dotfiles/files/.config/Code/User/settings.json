@@ -30,7 +30,7 @@
     "diffEditor.ignoreTrimWhitespace": true,
     "diffEditor.hideUnchangedRegions.enabled": true,
     "terminal.integrated.defaultProfile.linux": "bash",
-    "editor.fontFamily": "'CaskaydiaCove NF', 'JetBrainsMono Nerd Font', 'Droid Sans Mono', 'monospace'",
+    "editor.fontFamily": "'CaskaydiaMono Nerd Font Mono', 'monospace'",
     "editor.lineNumbers": "relative",
     "[jsonc]": {
         "editor.defaultFormatter": "vscode.json-language-features"

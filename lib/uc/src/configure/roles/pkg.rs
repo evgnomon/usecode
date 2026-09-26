@@ -95,20 +95,9 @@ fn charts(v: &Vars) -> Vec<Chart> {
     let go_arch = v.facts.go_arch().to_string();
     vec![
         font(
-            "jetbrains-mono",
-            "JetBrainsMono",
-            "JetBrainsMonoNerdFontMono-*.ttf",
-        ),
-        font("firamono", "FiraMono", "FiraMonoNerdFontMono-*.otf"),
-        font(
             "cascadia-mono",
             "CascadiaMono",
             "CaskaydiaMonoNerdFontMono-*.ttf",
-        ),
-        font(
-            "cascadia-code",
-            "CascadiaCode",
-            "CaskaydiaCoveNerdFontMono-*.ttf",
         ),
         Chart {
             name: "debian",

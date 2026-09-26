@@ -47,12 +47,22 @@ async fn update_locked(ctx: &Ctx, valid_for: Option<Duration>) -> Result<Outcome
 }
 
 /// When the package lists were last refreshed, the way Ansible measures it.
+/// Lists without any `Packages` index (fresh images ship them cleaned) have
+/// no age, so the first run always refreshes them.
 fn cache_age() -> Option<Duration> {
+    let lists = Path::new("/var/lib/apt/lists");
+    let indexed = std::fs::read_dir(lists)
+        .ok()?
+        .flatten()
+        .any(|e| e.file_name().to_string_lossy().ends_with("_Packages"));
+    if !indexed {
+        return None;
+    }
     let stamp = Path::new("/var/lib/apt/periodic/update-success-stamp");
     let path = if stamp.exists() {
         stamp
     } else {
-        Path::new("/var/lib/apt/lists")
+        lists
     };
     let modified = path.metadata().ok()?.modified().ok()?;
     SystemTime::now().duration_since(modified).ok()

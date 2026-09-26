@@ -5,7 +5,7 @@
 
 use crate::configure::engine::{Outcome, Plan, Task};
 use crate::configure::modules::{file, walk_files};
-use crate::configure::roles::WORKSTATION_ONLY;
+use crate::configure::roles::{WORKSTATION_ONLY, apt};
 use crate::configure::vars::{Profile, Vars};
 use anyhow::Context;
 
@@ -16,7 +16,7 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
             "Install the TTF fonts from the blueprint cache",
         )
         .tags(&["fonts"])
-        .after(["pkg/*"])
+        .after(["pkg/*", apt::PACKAGES])
         .when(v.profile == Profile::Workstation, WORKSTATION_ONLY)
         .run(|ctx| async move {
             let v = ctx.vars();
