@@ -1,7 +1,7 @@
 # License-Identifier: HGL
 # Copyright (C) The Usecode Authors (see AUTHORS)
 
-.PHONY: all install upgrade clean
+.PHONY: all build install upgrade dist clean
 
 NO_UPGRADE ?= 0
 
@@ -32,7 +32,7 @@ PYTHON := "/usr/local/bin/python$(PY_MAJMIN)"
 
 PIPX_PKG := $(shell $(PYTHON) -m site --user-site)/pipx
 
-build: $(_pip_stamp) $(_pipx_stamp) $(STAMPS_DIR)/compileall $(DEB_PKG)
+build: $(_pip_stamp) $(_pipx_stamp) $(STAMPS_DIR)/compileall
 
 $(STAMPS_DIR):
 	@mkdir -p $@
@@ -73,7 +73,9 @@ install:
 upgrade:
 	$(MAKE) NO_UPGRADE=0
 
-$(DEB_PKG): $(SPEC)
+dist: $(DEB_PKG)
+
+$(DEB_PKG): $(SPEC) $(STAMPS_DIR)/compileall
 	@mkdir -p dist
 	@mkdeb
 
