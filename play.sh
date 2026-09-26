@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-export PATH=/home/$USER/.local/share/mise/shims:/home/$USER/.local/bin:/home/$USER/.rbenv/shims:/home/$USER/.rbenv/bin:/home/$USER/.local/libexec:/home/$USER/bin:/home/$USER/go/bin:/home/$USER/.cargo/bin:/home/$USER/.gem/bin:/home/$USER/.cargo/bin:/home/$USER/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games:/home/$USER/.dotnet/tools
+export PATH=$HOME/.local/share/mise/shims:$HOME/.local/bin:$HOME/.rbenv/shims:$HOME/.rbenv/bin:$HOME/.local/libexec:$HOME/bin:$HOME/go/bin:$HOME/.cargo/bin:$HOME/.gem/bin:$HOME/.cargo/bin:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games:$HOME/.dotnet/tools
 
 sudo apt update
 sudo DEBIAN_FRONTEND=noninteractive apt upgrade -y \
@@ -46,8 +46,8 @@ cd ../ppkgs
 make
 sudo make install
 
-if [[ ! -d "/home/$USER/.vim" ]]; then
-  mkdir /home/$USER/.vim
+if [[ ! -d "$HOME/.vim" ]]; then
+  mkdir $HOME/.vim
 fi
 cd ../vim
 make init

@@ -24,9 +24,9 @@ yazi = "latest"
 "npm:bash-language-server" = "latest"
 "npm:sass" = "latest"
 "npm:wrangler" = "latest"
-"npm:@anthropic-ai/claude-code" = "latest"
+"npm:@anthropic-ai/claude-code" = { version = "latest", allow_builds = ["@anthropic-ai/claude-code"] } # postinstall links the platform binary
 "npm:@github/copilot" = "latest"
-"npm:opencode-ai" = "latest"
+"npm:opencode-ai" = { version = "latest", allow_builds = ["opencode-ai"] } # postinstall links the platform binary
 "npm:@earendil-works/pi-coding-agent" = "latest"
 
 # python tools (isolated venvs)
