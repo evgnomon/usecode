@@ -17,9 +17,6 @@ use anyhow::Context;
 use minijinja::{Value, context};
 use std::path::PathBuf;
 
-const IDEA_VERSION: &str = "2025.2.2";
-const IDEA_BUILD: &str = "252.26199.169";
-const RIDER_VERSION: &str = "2025.2.2";
 const NERDFONTS_VERSION: &str = "3.4.0";
 const DEBIAN_RELEASE: &str = "trixie";
 const DEBIAN_VERSION: &str = "13";
@@ -29,8 +26,6 @@ const DOCKER_VERSION: &str = "184744";
 /// `pkg_versions`, which templates read too.
 pub fn versions() -> Value {
     context! {
-        idea => context! { version => IDEA_VERSION, version_full => IDEA_BUILD },
-        rider => context! { version => RIDER_VERSION },
         nerdfonts => context! { version => NERDFONTS_VERSION },
         debian => context! {
             release => DEBIAN_RELEASE,
@@ -44,7 +39,6 @@ pub fn versions() -> Value {
 #[derive(Debug, Clone, Copy)]
 enum Unpack {
     Unzip,
-    TarGz,
     /// The download is the artifact; it is moved into place.
     Move,
 }
@@ -99,7 +93,7 @@ fn font(name: &'static str, file: &str, creates: &str) -> Chart {
 
 fn charts(v: &Vars) -> Vec<Chart> {
     let go_arch = v.facts.go_arch().to_string();
-    let mut charts = vec![
+    vec![
         font(
             "jetbrains-mono",
             "JetBrainsMono",
@@ -129,42 +123,7 @@ fn charts(v: &Vars) -> Vec<Chart> {
             creates: format!("debian_{DEBIAN_VERSION}.bin"),
             bins: Vec::new(),
         },
-    ];
-    if v.facts.is_debian_family() {
-        let jetbrains_arch = match v.facts.architecture.as_str() {
-            "aarch64" => "-aarch64",
-            _ => "",
-        };
-        let idea = format!("idea-IC-{IDEA_BUILD}/bin/idea");
-        let rider = format!("JetBrains Rider-{RIDER_VERSION}/bin/rider");
-        charts.push(Chart {
-            name: "idea",
-            version: IDEA_VERSION,
-            os: "tar.gz".into(),
-            arch: jetbrains_arch.into(),
-            url: format!(
-                "https://download.jetbrains.com/idea/ideaIC-{IDEA_VERSION}{jetbrains_arch}.tar.gz"
-            ),
-            ext: "tar.gz",
-            unpack: Unpack::TarGz,
-            creates: idea.clone(),
-            bins: vec![("idea", idea)],
-        });
-        charts.push(Chart {
-            name: "rider",
-            version: RIDER_VERSION,
-            os: "tar.gz".into(),
-            arch: jetbrains_arch.into(),
-            url: format!(
-                "https://download.jetbrains.com/rider/JetBrains.Rider-{RIDER_VERSION}.tar.gz"
-            ),
-            ext: "tar.gz",
-            unpack: Unpack::TarGz,
-            creates: rider.clone(),
-            bins: vec![("rider", rider)],
-        });
-    }
-    charts
+    ]
 }
 
 pub fn tasks(plan: &mut Plan, v: &Vars) {
@@ -199,7 +158,6 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
                     let (src_s, dest_s) = (src.display().to_string(), dest.display().to_string());
                     match chart.unpack {
                         Unpack::Unzip => ctx.cmd("unzip").args(["-o", "-q", "-d", &dest_s, &src_s]),
-                        Unpack::TarGz => ctx.cmd("tar").args(["-C", &dest_s, "-xzf", &src_s]),
                         Unpack::Move => ctx.cmd("mv").args([&src_s, &dest_s]),
                     }
                     .output()
