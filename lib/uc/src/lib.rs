@@ -13,7 +13,8 @@
 //!
 //! [`group`] and [`groups`] are the command groups (`uc image`, `uc repo`,
 //! ...) that hand over to the standalone tools, found through [`dispatch`],
-//! and [`authors`] is `uc repo authors`.
+//! and [`authors`] is `uc repo authors`. [`vm`] is `uc vm`, which adds the
+//! cloud providers to the local machines of `vm`.
 
 pub mod authors;
 pub mod cli;
@@ -23,10 +24,12 @@ pub mod dispatch;
 pub mod ghcr;
 pub mod group;
 pub mod groups;
+pub mod http;
 pub mod password;
 pub mod registry;
 pub mod repo;
 pub mod secret;
+pub mod vm;
 
 use std::fmt;
 

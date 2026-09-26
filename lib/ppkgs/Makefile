@@ -29,8 +29,7 @@ endif
 
 
 PYTHON := "/usr/local/bin/python$(PY_MAJMIN)"
-
-PIPX_PKG := $(shell $(PYTHON) -m site --user-site)/pipx
+export PIP_DISABLE_PIP_VERSION_CHECK := 1
 
 build: $(_pip_stamp) $(_pipx_stamp) $(STAMPS_DIR)/compileall
 
@@ -40,8 +39,9 @@ $(STAMPS_DIR):
 $(PREFIX):
 	@mkdir -p $@
 
-$(PIPX_PKG):
-	$(PYTHON) -m pip install --user pipx
+$(STAMPS_DIR)/pipx: | $(STAMPS_DIR)
+	$(PYTHON) -m pip install -q --user pipx
+	@touch $@
 
 $(STAMPS_DIR)/pip-install: requirements.txt | $(STAMPS_DIR) $(PREFIX)
 	$(PYTHON) -m pip install --prefix $(PREFIX) --ignore-installed $(PIP_PACKAGES)
@@ -51,12 +51,12 @@ $(STAMPS_DIR)/pip-upgrade: requirements.txt | $(STAMPS_DIR) $(PREFIX)
 	$(PYTHON) -m pip install --prefix $(PREFIX) --ignore-installed --upgrade $(PIP_PACKAGES)
 	@touch $@
 
-$(STAMPS_DIR)/pipx-install: pipx-requirements.txt | $(STAMPS_DIR) $(PREFIX) $(PIPX_PKG)
+$(STAMPS_DIR)/pipx-install: pipx-requirements.txt | $(STAMPS_DIR) $(PREFIX) $(STAMPS_DIR)/pipx
 	PIPX_HOME=$(PREFIX)/share/pipx PIPX_BIN_DIR=$(PREFIX)/bin $(PYTHON) -m pipx install $(PIPX_PACKAGES)
 	PIPX_HOME=$(PREFIX)/share/pipx PIPX_BIN_DIR=$(PREFIX)/bin $(PYTHON) -m pipx inject yt-dlp mutagen
 	@touch $@
 
-$(STAMPS_DIR)/pipx-upgrade: pipx-requirements.txt | $(STAMPS_DIR) $(PREFIX) $(PIPX_PKG)
+$(STAMPS_DIR)/pipx-upgrade: pipx-requirements.txt | $(STAMPS_DIR) $(PREFIX) $(STAMPS_DIR)/pipx
 	PIPX_HOME=$(PREFIX)/share/pipx PIPX_BIN_DIR=$(PREFIX)/bin $(PYTHON) -m pipx install $(PIPX_PACKAGES)
 	PIPX_HOME=$(PREFIX)/share/pipx PIPX_BIN_DIR=$(PREFIX)/bin $(PYTHON) -m pipx upgrade-all
 	PIPX_HOME=$(PREFIX)/share/pipx PIPX_BIN_DIR=$(PREFIX)/bin $(PYTHON) -m pipx inject yt-dlp mutagen --force

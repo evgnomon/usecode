@@ -12,8 +12,6 @@ ROOT_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 BUILD_DIR := $(ROOT_DIR)/build
 export ROOT_DIR BUILD_DIR
 
-LIB_DIRS := $(wildcard lib/*)
-
 all: build
 
 ci:
@@ -59,43 +57,23 @@ version:
 	@echo $(VERSION)
 
 build:
-	@for d in $(LIB_DIRS); do \
-		if $(MAKE) -C $$d -n build >/dev/null 2>&1; then \
-			$(MAKE) -C $$d build || exit $$?; \
-		fi; \
-	done
+	@MAKE=$(MAKE) ./scripts/each_lib.sh $@
 
 install:
-	@for d in $(LIB_DIRS); do \
-		if $(MAKE) -C $$d -n install >/dev/null 2>&1; then \
-			$(MAKE) -C $$d install || exit $$?; \
-		fi; \
-	done
+	@MAKE=$(MAKE) ./scripts/each_lib.sh $@
 
 link:
-	@for d in $(LIB_DIRS); do \
-		if $(MAKE) -C $$d -n link >/dev/null 2>&1; then \
-			$(MAKE) -C $$d link || exit $$?; \
-		fi; \
-	done
+	@MAKE=$(MAKE) ./scripts/each_lib.sh $@
 
 publish:
-	@for d in $(LIB_DIRS); do \
-		if $(MAKE) -C $$d -n publish >/dev/null 2>&1; then \
-			$(MAKE) -C $$d publish || exit $$?; \
-		fi; \
-	done
+	@MAKE=$(MAKE) ./scripts/each_lib.sh $@
 
 submodules:
 	git submodule update --init --recursive
 
 clean:
 	@rm -rf $(BUILD_DIR)
-	@for d in $(LIB_DIRS); do \
-		if $(MAKE) -C $$d -n clean >/dev/null 2>&1; then \
-			$(MAKE) -C $$d clean || exit $$?; \
-		fi; \
-	done
+	@MAKE=$(MAKE) ./scripts/each_lib.sh $@
 
 fmt-html:
 	@if ! command -v djlint >/dev/null 2>&1; then \

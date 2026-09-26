@@ -7,6 +7,7 @@
 //! Building and pushing drive the container CLI; deleting goes through the
 //! GitHub packages REST API, which is the only way to remove a version.
 
+use crate::http;
 use anyhow::{Context, Result, bail};
 use clap::Args;
 use serde_json::Value;
@@ -111,10 +112,8 @@ fn run(cmd: &mut Command, what: &str) -> Result<()> {
     Ok(())
 }
 
-/// A client for the GitHub REST API's container package endpoints.
-///
-/// Requests go through `curl`, which keeps this crate free of a TLS stack
-/// (and so of C code) and honours the system's CA store and proxy settings.
+/// A client for the GitHub REST API's container package endpoints, over
+/// [`crate::http`].
 pub struct Api {
     base: String,
     token: String,
@@ -133,33 +132,21 @@ impl Api {
     /// Sends one request and returns the body of a 2xx response.
     fn request(&self, method: &str, path: &str) -> Result<String> {
         let url = format!("{}{path}", self.base);
-        let what = format!("{method} {url}");
-        let mut child = Command::new("curl")
-            .args(["--silent", "--show-error", "--location", "--config", "-"])
-            .args(["--request", method, "--write-out", "\n%{http_code}"])
-            .arg(&url)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()
-            .context("starting curl")?;
-        // Headers go in on stdin so the token never shows up in `ps`.
-        child
-            .stdin
-            .take()
-            .expect("stdin is piped")
-            .write_all(curl_config(&self.token).as_bytes())
-            .context("sending headers to curl")?;
-        let output = child.wait_with_output()?;
-        if !output.status.success() {
-            bail!("{what}: curl failed ({})", output.status);
+        let headers = [
+            format!("Authorization: Bearer {}", self.token),
+            "Accept: application/vnd.github+json".to_string(),
+            "X-GitHub-Api-Version: 2022-11-28".to_string(),
+            "User-Agent: uc-ghcr".to_string(),
+        ];
+        let response = http::request(method, &url, &headers, None)?;
+        if !response.ok() {
+            bail!(
+                "{method} {url}: HTTP {}: {}",
+                response.status,
+                response.body.trim()
+            );
         }
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let (body, status) =
-            split_status(&stdout).with_context(|| format!("{what}: no status from curl"))?;
-        if !(200..300).contains(&status) {
-            bail!("{what}: HTTP {status}: {}", body.trim());
-        }
-        Ok(body.to_string())
+        Ok(response.body)
     }
 
     fn get(&self, path: &str) -> Result<Value> {
@@ -204,24 +191,6 @@ impl Api {
     }
 }
 
-/// A curl config carrying the API headers.
-fn curl_config(token: &str) -> String {
-    [
-        format!("header = \"Authorization: Bearer {token}\""),
-        "header = \"Accept: application/vnd.github+json\"".to_string(),
-        "header = \"X-GitHub-Api-Version: 2022-11-28\"".to_string(),
-        "user-agent = \"uc-ghcr\"".to_string(),
-    ]
-    .join("\n")
-        + "\n"
-}
-
-/// Splits curl's output into the body and the status `--write-out` appended.
-fn split_status(output: &str) -> Option<(&str, u16)> {
-    let (body, status) = output.rsplit_once('\n')?;
-    Some((body, status.trim().parse().ok()?))
-}
-
 /// The id of the version tagged `tag`, or whose name (its digest) is `tag`.
 fn find_version(versions: &[Value], tag: &str) -> Option<u64> {
     versions.iter().find_map(|v| {
@@ -250,13 +219,6 @@ mod tests {
         assert_eq!(find_version(versions, "latest"), Some(2));
         assert_eq!(find_version(versions, "sha256:ccc"), Some(3));
         assert_eq!(find_version(versions, "gone"), None);
-    }
-
-    #[test]
-    fn splits_the_status_off_the_body() {
-        assert_eq!(split_status("{\"a\":1}\n200"), Some(("{\"a\":1}", 200)));
-        assert_eq!(split_status("\n204"), Some(("", 204)));
-        assert_eq!(split_status("no status"), None);
     }
 
     #[test]

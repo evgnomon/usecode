@@ -1,6 +1,5 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
-
 {
     "github.copilot.nextEditSuggestions.enabled": true,
     "files.autoSave": "onFocusChange",
@@ -96,7 +95,6 @@
     "chat.editing.autoAcceptDelay": 1,
     "window.zoomLevel": 0.6,
     "python.defaultInterpreterPath": "/bin/python3",
-
     // Vim extension settings
     "vim.leader": ",",
     "vim.hlsearch": true,
@@ -117,106 +115,241 @@
     },
     "vim.normalModeKeyBindingsNonRecursive": [
         {
-            "before": ["<leader>", "g"],
-            "commands": ["editor.action.revealDefinition"]
+            "before": [
+                "<leader>",
+                "g"
+            ],
+            "commands": [
+                "editor.action.revealDefinition"
+            ]
         },
         {
-            "before": ["g", "t"],
-            "commands": ["editor.action.goToTypeDefinition"]
+            "before": [
+                "g",
+                "t"
+            ],
+            "commands": [
+                "editor.action.goToTypeDefinition"
+            ]
         },
         {
-            "before": ["g", "i"],
-            "commands": ["editor.action.goToImplementation"]
+            "before": [
+                "g",
+                "i"
+            ],
+            "commands": [
+                "editor.action.goToImplementation"
+            ]
         },
         {
-            "before": ["<leader>", "3"],
-            "commands": ["editor.action.goToReferences"]
+            "before": [
+                "<leader>",
+                "3"
+            ],
+            "commands": [
+                "editor.action.goToReferences"
+            ]
         },
         {
-            "before": ["<leader>", "q"],
-            "commands": ["editor.action.showHover"]
+            "before": [
+                "<leader>",
+                "q"
+            ],
+            "commands": [
+                "editor.action.showHover"
+            ]
         },
         {
-            "before": ["<S-F6>"],
-            "commands": ["editor.action.rename"]
+            "before": [
+                "<S-F6>"
+            ],
+            "commands": [
+                "editor.action.rename"
+            ]
         },
         {
-            "before": ["<F8>"],
-            "commands": ["editor.action.marker.next"]
+            "before": [
+                "<F8>"
+            ],
+            "commands": [
+                "editor.action.marker.next"
+            ]
         },
         {
-            "before": ["<S-F8>"],
-            "commands": ["editor.action.marker.prev"]
+            "before": [
+                "<S-F8>"
+            ],
+            "commands": [
+                "editor.action.marker.prev"
+            ]
         },
         {
-            "before": ["<leader>", "i"],
-            "commands": ["editor.action.organizeImports"]
+            "before": [
+                "<leader>",
+                "i"
+            ],
+            "commands": [
+                "editor.action.organizeImports"
+            ]
         },
         {
-            "before": ["<leader>", "."],
-            "commands": ["editor.action.quickFix"]
+            "before": [
+                "<leader>",
+                "."
+            ],
+            "commands": [
+                "editor.action.quickFix"
+            ]
         },
         {
-            "before": ["<C-l>"],
-            "commands": ["editor.action.formatDocument"]
+            "before": [
+                "<C-l>"
+            ],
+            "commands": [
+                "editor.action.formatDocument"
+            ]
         },
         {
-            "before": ["<leader>", "o"],
-            "commands": ["workbench.action.quickOpen"]
+            "before": [
+                "<leader>",
+                "o"
+            ],
+            "commands": [
+                "workbench.action.quickOpen"
+            ]
         },
         {
-            "before": ["<leader>", "f"],
-            "commands": ["workbench.action.findInFiles"]
+            "before": [
+                "<leader>",
+                "f"
+            ],
+            "commands": [
+                "workbench.action.findInFiles"
+            ]
         },
         {
-            "before": ["<leader>", "t"],
-            "commands": ["workbench.action.showAllSymbols"]
+            "before": [
+                "<leader>",
+                "t"
+            ],
+            "commands": [
+                "workbench.action.showAllSymbols"
+            ]
         },
         {
-            "before": ["<leader>", "7"],
-            "commands": ["workbench.action.gotoSymbol"]
+            "before": [
+                "<leader>",
+                "7"
+            ],
+            "commands": [
+                "workbench.action.gotoSymbol"
+            ]
         },
         {
-            "before": ["<leader>", "8"],
-            "commands": ["copyRelativeFilePath"]
+            "before": [
+                "<leader>",
+                "8"
+            ],
+            "commands": [
+                "copyRelativeFilePath"
+            ]
         },
         {
-            "before": ["<leader>", "k", "p"],
-            "commands": ["copyRelativeFilePath"]
+            "before": [
+                "<leader>",
+                "k",
+                "p"
+            ],
+            "commands": [
+                "copyRelativeFilePath"
+            ]
         },
         {
-            "before": ["<F10>"],
-            "commands": ["workbench.action.joinAllGroups"]
+            "before": [
+                "<F10>"
+            ],
+            "commands": [
+                "workbench.action.joinAllGroups"
+            ]
         },
         {
-            "before": ["]", "l"],
-            "commands": ["search.action.focusNextSearchResult"]
+            "before": [
+                "]",
+                "l"
+            ],
+            "commands": [
+                "search.action.focusNextSearchResult"
+            ]
         },
         {
-            "before": ["<leader>", "v"],
-            "after": ["\"+", "p"]
+            "before": [
+                "<leader>",
+                "v"
+            ],
+            "after": [
+                "\"+",
+                "p"
+            ]
         },
         {
-            "before": ["<leader>", "c"],
-            "after": ["\"+", "y"]
+            "before": [
+                "<leader>",
+                "c"
+            ],
+            "after": [
+                "\"+",
+                "y"
+            ]
         }
     ],
     "vim.visualModeKeyBindingsNonRecursive": [
         {
-            "before": ["<leader>", "c"],
-            "after": ["\"+", "y"]
+            "before": [
+                "<leader>",
+                "c"
+            ],
+            "after": [
+                "\"+",
+                "y"
+            ]
         },
         {
-            "before": ["<leader>", "v"],
-            "after": ["\"+", "p"]
+            "before": [
+                "<leader>",
+                "v"
+            ],
+            "after": [
+                "\"+",
+                "p"
+            ]
         }
     ],
     // Disable arrow keys
     "vim.normalModeKeyBindings": [
-        { "before": ["<up>"], "commands": [] },
-        { "before": ["<down>"], "commands": [] },
-        { "before": ["<left>"], "commands": [] },
-        { "before": ["<right>"], "commands": [] }
+        {
+            "before": [
+                "<up>"
+            ],
+            "commands": []
+        },
+        {
+            "before": [
+                "<down>"
+            ],
+            "commands": []
+        },
+        {
+            "before": [
+                "<left>"
+            ],
+            "commands": []
+        },
+        {
+            "before": [
+                "<right>"
+            ],
+            "commands": []
+        }
     ],
     "editor.cursorSurroundingLines": 0,
     "chat.mcp.gallery.enabled": true,
@@ -234,5 +367,9 @@
             "matchCommandLine": true
         }
     },
-    "geminicodeassist.project": "rbprj-100397"
+    // Keep false on Swedish/Nordic layouts, or you can't type @ | [ ] { } \
+    // Set to true only if you use a US layout: then Option = Alt everywhere
+    "terminal.integrated.macOptionIsMeta": true,
+    // Send keybindings to the shell instead of VS Code where possible
+    "terminal.integrated.sendKeybindingsToShell": true
 }

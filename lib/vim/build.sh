@@ -29,5 +29,7 @@ if [ ! -f "$STAGE/bin/vim" ] || [ configure -nt "$STAGE/bin/vim" ]; then
         --prefix="$PREFIX"
 fi
 
-make
-make install DESTDIR="$BUILD_DIR"
+make -s -C src
+[ src/vim -nt "$STAGE/bin/vim" ] || exit 0
+echo "vim: staging into $STAGE"
+make -s -C src install DESTDIR="$BUILD_DIR" >/dev/null

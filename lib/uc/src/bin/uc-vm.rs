@@ -1,8 +1,8 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! `uc vm`: see [`uc::groups::VM`].
+//! `uc vm`: see [`uc::vm`].
 
 fn main() -> std::process::ExitCode {
-    uc::group::main(&uc::groups::VM)
+    uc::vm::main()
 }

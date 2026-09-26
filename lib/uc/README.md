@@ -252,11 +252,36 @@ flags the ones whose tool is not installed.
 | `uc db resources pods` | `mkpod` |
 | `uc net mesh` | `uc daemon` |
 | `uc net ipsec`, `dig` | `ipmesh`, `diga` |
-| `uc vm`, `uc nats`, `uc work` | `vm`, `natsup`, `workd`, arguments and all |
+| `uc vm` | `vm`, arguments and all; with `--provider`, built in (see below) |
+| `uc nats`, `uc work` | `natsup`, `workd`, arguments and all |
 | `uc new role`, `workflow`, `script`, `unit` | `mkarole`, `catalyze`, `shole`, `mkunit` |
 | `uc cloud do`, `hcloud` | `wdoctl`, `whcloud` |
 | `uc cloud play [ARGS]` | `y`: the repository playbook |
 | `uc cloud play host`, `ssh` | `plat`, `annabelle` |
+
+### Cloud VMs
+
+`uc vm` takes the same commands and size options to Hetzner Cloud or
+DigitalOcean when given `--provider`:
+
+```sh
+sudo uc vm create uc3 --memory 4GiB --vcpus 4 --disk-size 60G  # local KVM/QEMU
+uc vm create uc3 --memory 4GiB --vcpus 4 --disk-size 60G --provider hetzner
+uc vm list --provider digitalocean
+uc vm delete uc3 --provider hetzner --force
+```
+
+`create` picks the cheapest server type, across the provider's locations, with
+at least the requested vCPUs, memory and disk; `--location`, `--arch` and
+`--image` narrow it down. The server boots with the local VMs' cloud-init
+user-data from `/etc/vm/config.yaml`, and gets an ssh_config entry
+(`/etc/ssh/ssh_config.d`, or `~/.ssh/config.d` without root), so `ssh uc3`
+reaches the same user either way. `list`, `info`, `inspect`, `ip`, `start`,
+`stop`, `restart` and `delete` work on cloud VMs too; `snapshot`, `fork`,
+`mount` and `config` stay local. The providers are driven through their REST
+APIs (over `curl`, like `uc ghcr`), with the token from `HCLOUD_TOKEN` or
+`DIGITALOCEAN_ACCESS_TOKEN`, else `hetzner.prod` or `doctl.prod` in the
+current repository's secrets, as `uc cloud` finds it. Cloud VMs need no sudo.
 
 `uc configure` stays as it is, `x` being its shortcut. The personal and
 desktop tools that are not about DevOps — `ff`, `fzurls`, `imgpress`,
