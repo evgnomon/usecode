@@ -45,15 +45,17 @@ x-postgres: &postgres
   restart: unless-stopped
 
 x-api: &api
-  build:
-    context: ../lib/api
+  # api-1 builds this image; api-2 reuses it rather than building it again.
+  image: localhost/usecode-api:local
   depends_on:
     postgres-1:
       condition: service_healthy
     postgres-2:
       condition: service_healthy
+  # Optional: the stack runs on the defaults below without it.
   env_file:
-    - ../lib/api/.env
+    - path: ../lib/api/.env
+      required: false
   volumes:
     # Host's rootless podman API socket, so the api container can build
     # and run the usecode-agent-model container via podman-remote.
@@ -87,6 +89,7 @@ x-api-env: &api-env
   USECODE_AGENT_SHARDS: '{"b": "postgres-2:5432/${USECODE_AGENT_POSTGRES_DB:-usecode_agent}"}'
 
 x-caddy: &caddy
+  image: localhost/usecode-caddy:local
   build:
     context: .
     dockerfile: Containerfile
@@ -98,13 +101,8 @@ x-caddy: &caddy
   healthcheck:
     test:
       [
-        "CMD",
-        "wget",
-        "--no-check-certificate",
-        "-q",
-        "-O",
-        "/dev/null",
-        "https://localhost:443",
+        "CMD-SHELL",
+        "wget -q -O /dev/null http://localhost:80 || wget --no-check-certificate -q -O /dev/null https://localhost:443",
       ]
     interval: 5s
     timeout: 5s
@@ -136,6 +134,8 @@ services:
   # -- API ---------------------------------------------------------------
   api-1:
     <<: *api
+    build:
+      context: ../lib/api
     environment:
       <<: *api-env
       USECODE_AGENT_NODE_NAME: api-1
@@ -156,6 +156,7 @@ services:
   caddy-1:
     <<: *caddy
     ports:
+      - "8430:80"
       - "4430:443"
     volumes:
       - caddy_1_data:/data
@@ -167,6 +168,7 @@ services:
   caddy-2:
     <<: *caddy
     ports:
+      - "8431:80"
       - "4431:443"
     volumes:
       - caddy_2_data:/data

@@ -36,7 +36,7 @@ usecode-mcp   # starts an MCP server over stdio
 ```
 
 By default the bot spreads its requests round-robin over both Caddy load balancers from
-`deploy/compose.yml` (`https://localhost:4430/api` and `https://localhost:4431/api`), failing
+`deploy/compose.yml` (`http://localhost:8430/api` and `http://localhost:8431/api`), failing
 over to the other if one can't be reached. Set `USECODE_MCP_API_BASE_URL` to pin it to a single
 address instead — a remote deployment, or a bare `usecode-agent-api` with no Caddy in front (see
 Configuration below).
@@ -47,7 +47,7 @@ Copy `.env.example` to `.env` and adjust as needed. The `.env` file is read from
 directory, and anything already set in the environment wins over it.
 
 - `USECODE_MCP_API_BASE_URLS` — the Caddy load balancers to spread requests over, as a JSON
-  array or a comma-separated list (default `["https://localhost:4430/api", "https://localhost:4431/api"]`,
+  array or a comma-separated list (default `["http://localhost:8430/api", "http://localhost:8431/api"]`,
   matching `deploy/compose.yml`). Requests rotate over them, and one that can't reach an endpoint is
   retried against the next. This is the tier *above* Caddy's own load balancing: Caddy already
   spreads requests over `api-1`/`api-2`, but a client pinned to one Caddy goes down with it.
@@ -57,8 +57,8 @@ directory, and anything already set in the environment wins over it.
   `X-API-Key` for tools that accept an `api_key` argument, so an agent already tied to one
   usecode agent account doesn't have to pass it on every call.
 - `USECODE_MCP_REQUEST_TIMEOUT_SECONDS` — HTTP timeout for calls to `usecode-agent-api` (default `10`).
-- `USECODE_MCP_API_VERIFY_SSL` — set to `false` to skip TLS verification against Caddy's
-  self-signed local cert (default `true`).
+- `USECODE_MCP_API_VERIFY_SSL` — set to `false` to skip TLS verification for an `https://`
+  endpoint behind a self-signed certificate (default `true`).
 - `USECODE_MCP_COMPOSE_FILE` — path to the compose file used by `ensure_running` /
   `logs_commands` (default `deploy/compose.yml` at the root of this checkout).
 - `USECODE_MCP_CONTAINER_CLI` — `podman` (default, uses `podman-compose`, matching

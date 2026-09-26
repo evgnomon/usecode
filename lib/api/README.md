@@ -80,7 +80,7 @@ The full stack — two Caddy load balancers, two named API instances, two
 PostgreSQL instances — comes up with:
 
 ```sh
-podman-compose -f deploy/compose.yml up -d --build   # https://localhost:4430 (and :4431)
+make up   # from the repo root: http://localhost:8430 (and :8431)
 ```
 
 ## Configuration

@@ -5,4 +5,4 @@ FROM caddy:2-alpine
 
 COPY Caddyfile /etc/caddy/Caddyfile
 
-EXPOSE 443
+EXPOSE 80 443

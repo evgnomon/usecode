@@ -42,3 +42,10 @@ uuid = { version = "1", features = ["v4", "serde"] }
 strip = true
 lto = true
 codegen-units = 1
+
+# Quick to rebuild, for the local compose stack (see Containerfile).
+[profile.local]
+inherits = "release"
+lto = false
+codegen-units = 16
+incremental = true

@@ -1,7 +1,9 @@
 # License-Identifier: HGL
 # Copyright (C) The Usecode Authors (see AUTHORS)
 
-{$DOMAIN:localhost} {
+# DOMAIN unset (local dev): plain HTTP on :80, no certificate to trust.
+# DOMAIN=api.example.com: HTTPS on :443 with an automatic certificate.
+{$DOMAIN::80} {
 	encode gzip
 
 	# Both Caddy instances load balance over every API instance. The API is

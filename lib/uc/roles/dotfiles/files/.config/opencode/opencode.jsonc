@@ -28,7 +28,7 @@
         "usecode-mcp"
       ],
       "environment": {
-        "USECODE_MCP_API_BASE_URL": "https://localhost:4430/api"
+        "USECODE_MCP_API_BASE_URL": "http://localhost:8430/api"
       },
       "enabled": true
     }

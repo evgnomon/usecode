@@ -8,9 +8,10 @@ use std::env;
 
 use crate::error::Result;
 
-/// Default Caddy load balancers, matching `deploy/compose.yml`.
+/// Default Caddy load balancers, matching `deploy/compose.yml`. Plain HTTP:
+/// locally Caddy serves no TLS, so there is no certificate to trust.
 const DEFAULT_API_BASE_URLS: [&str; 2] =
-    ["https://localhost:4430/api", "https://localhost:4431/api"];
+    ["http://localhost:8430/api", "http://localhost:8431/api"];
 
 #[derive(Debug, Clone)]
 pub struct Settings {
@@ -36,10 +37,8 @@ pub struct Settings {
 
     pub request_timeout_seconds: f64,
 
-    // Verify the API server's TLS certificate. Caddy issues a self-signed
-    // cert for local/non-public deployments, so set this to false in your
-    // local .env if you hit a certificate verification failure talking to
-    // localhost.
+    // Verify the API server's TLS certificate. Only matters for an https://
+    // endpoint; set it to false for one behind a self-signed certificate.
     pub api_verify_ssl: bool,
 
     // Path to the compose file used to run usecode agent locally. Defaults to

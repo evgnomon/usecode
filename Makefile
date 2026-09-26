@@ -1,7 +1,7 @@
 # License-Identifier: HGL
 # Copyright (C) The Usecode Authors (see AUTHORS)
 
-.PHONY: all ci deploy publish build version install link clean submodules fmt-html fmt headers headers-check authors
+.PHONY: all ci deploy publish build version install link clean submodules fmt-html fmt headers headers-check authors up reload down logs
 
 $(eval $(shell ./scripts/ci_wrapper.sh --env 2>/dev/null))
 
@@ -55,6 +55,10 @@ deploy:
 
 version:
 	@echo $(VERSION)
+
+# Local stack (deploy/compose.yml); see scripts/dev.sh.
+up reload down logs:
+	@./scripts/dev.sh $@
 
 build:
 	@MAKE=$(MAKE) ./scripts/each_lib.sh $@

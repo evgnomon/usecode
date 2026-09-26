@@ -10,9 +10,16 @@ COPY migrations ./migrations
 COPY templates ./templates
 COPY static ./static
 COPY model_image ./model_image
-RUN cargo build --release --locked
+# The registry and target/ live in cache mounts, so a rebuild only
+# recompiles what changed. PROFILE=release gives the LTO'd binary.
+# sharing=locked serialises api-1/api-2 building in parallel.
+ARG PROFILE=local
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/src/target,sharing=locked \
+    cargo build --profile "$PROFILE" --locked \
+    && cp "target/$PROFILE/usecode-agent-api" /usr/local/bin/
 
-FROM docker.io/library/debian:bookworm-slim
+FROM docker.io/library/debian:trixie-slim
 
 # podman-remote talks to the host's podman over the socket mounted at
 # /run/podman/podman.sock (see deploy/compose.yml + CONTAINER_HOST env var).
@@ -23,7 +30,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && ln -s /usr/bin/podman-remote /usr/local/bin/podman
 
-COPY --from=build /src/target/release/usecode-agent-api /usr/local/bin/usecode-agent-api
+COPY --from=build /usr/local/bin/usecode-agent-api /usr/local/bin/usecode-agent-api
 
 ENV USECODE_AGENT_BIND=0.0.0.0:8000
 EXPOSE 8000

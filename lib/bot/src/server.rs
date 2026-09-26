@@ -498,7 +498,9 @@ impl UsecodeServer {
         )
     }
 
-    /// Make sure usecode agent is running on this machine, starting it via deploy/compose.yml if not.
+    /// Make sure usecode agent is running on this machine, starting it via
+    /// deploy/compose.yml if not. Reuses built images; use `reload` after
+    /// code changes.
     #[tool]
     async fn ensure_running(&self) -> Json<Value> {
         Json(match compose::is_running(&self.settings).await {
@@ -526,7 +528,7 @@ impl UsecodeServer {
     /// running containers.
     #[tool]
     async fn reload(&self) -> Json<Value> {
-        Json(match compose::start(&self.settings).await {
+        Json(match compose::rebuild(&self.settings).await {
             Ok(output) => status_with("reloaded", output),
             Err(error) => json!({"error": error.to_string()}),
         })

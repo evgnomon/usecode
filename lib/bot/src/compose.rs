@@ -168,12 +168,20 @@ pub async fn is_running(settings: &Settings) -> ComposeResult<bool> {
     Ok(!expected.is_empty() && expected.iter().all(|service| running.contains(service)))
 }
 
-/// Build and bring the compose stack up in the background.
+/// Bring the compose stack up in the background, building an image only if
+/// it doesn't exist yet. Quick once the images are built; use `rebuild` to
+/// pick up source changes.
+pub async fn start(settings: &Settings) -> ComposeResult<Map<String, Value>> {
+    let output = run(settings, &["up", "-d"]).await?;
+    Ok(output.to_value())
+}
+
+/// Rebuild every image and recreate every container.
 ///
 /// `--force-recreate` is required because compose otherwise reuses an
 /// existing (stopped) container tied to the old image even when `--build`
 /// produced a newer one under the same tag.
-pub async fn start(settings: &Settings) -> ComposeResult<Map<String, Value>> {
+pub async fn rebuild(settings: &Settings) -> ComposeResult<Map<String, Value>> {
     let output = run(settings, &["up", "-d", "--build", "--force-recreate"]).await?;
     Ok(output.to_value())
 }
