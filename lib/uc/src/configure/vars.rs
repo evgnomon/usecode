@@ -168,7 +168,6 @@ impl Vars {
                 home.join("go/bin"),
                 home.join(".cargo/bin"),
                 local_bin.clone(),
-                home.join(".pyenv/shims"),
                 PathBuf::from("/usr/local/bin"),
                 PathBuf::from("/usr/bin"),
             ]

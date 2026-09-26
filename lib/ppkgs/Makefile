@@ -32,7 +32,7 @@ PYTHON := "/usr/local/bin/python$(PY_MAJMIN)"
 
 PIPX_PKG := $(shell $(PYTHON) -m site --user-site)/pipx
 
-build: $(_pip_stamp) $(_pipx_stamp) $(STAMPS_DIR)/compileall $(STAMPS_DIR)/pyenv-rehash $(DEB_PKG)
+build: $(_pip_stamp) $(_pipx_stamp) $(STAMPS_DIR)/compileall $(DEB_PKG)
 
 $(STAMPS_DIR):
 	@mkdir -p $@
@@ -64,10 +64,6 @@ $(STAMPS_DIR)/pipx-upgrade: pipx-requirements.txt | $(STAMPS_DIR) $(PREFIX) $(PI
 
 $(STAMPS_DIR)/compileall: $(_pip_stamp) $(_pipx_stamp) | $(STAMPS_DIR)
 	$(PYTHON) -m compileall -q $(PREFIX) --invalidation-mode checked-hash -j 0
-	@touch $@
-
-$(STAMPS_DIR)/pyenv-rehash: $(STAMPS_DIR)/compileall | $(STAMPS_DIR)
-	pyenv rehash
 	@touch $@
 
 install:

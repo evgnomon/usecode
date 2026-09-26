@@ -177,24 +177,6 @@ fi
 
 export INTERACTIVE_INIT=1
 
-export PYENV_SHELL=bash
-export PATH="$HOME/.pyenv/bin:$PATH"
-
-# Remove existing pyenv shims from PATH
-NEW_PATH=""
-IFS=':' read -ra PATH_ARRAY <<< "$PATH"
-for p in "${PATH_ARRAY[@]}"; do
-    if [[ "$p" != "$HOME/.pyenv/shims" ]]; then
-        if [[ -z "$NEW_PATH" ]]; then
-            NEW_PATH="$p"
-        else
-            NEW_PATH="$NEW_PATH:$p"
-        fi
-    fi
-done
-PATH="$NEW_PATH"
-
-export PATH="$HOME/.pyenv/shims:$PATH"
 export GEM_HOME="$HOME/.gem"
 export CODE_HOME="$HOME/src"
 export PATH="$GEM_HOME/bin:$PATH"
@@ -221,7 +203,6 @@ eval "$(ssh-agent -s)" > /dev/null
 export GPG_TTY=$(tty)
 gpg --card-status > /dev/null 2>&1 || true
 export EDITOR=vim
-export LD_LIBRARY_PATH="$HOME/.pyenv/versions/3.13.7/lib/"
 export PATH="$HOME/.local/libexec:$PATH"
 
 if [[ "$(uname -r)" == *"WSL2"* ]]; then

@@ -4,8 +4,6 @@
 {
   "snippets.ultisnips.pythonPrompt": false,
   "python.formatting.provider": "ruff",
-  "python.formatting.blackPath": "${env:HOME}/.pyenv/shims/black",
-  "python.pythonPath": "${env:HOME}/.pyenv/shims/python",
   "[zig]": {
     "coc.preferences.formatOnSave": true,
     "semanticTokens.enable": true

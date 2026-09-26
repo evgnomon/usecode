@@ -13,9 +13,6 @@ export CFLAGS="-O3 -pipe -fno-plt -flto -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=1"
 export LDFLAGS="-rdynamic -Wl,-O1 -Wl,--as-needed -flto"
 export LD_LIBRARY_PATH=/usr/local/lib:${LD_LIBRARY_PATH:-}
 
-unset PYENV_VERSION
-unset PYENV_ROOT
-
 PYTHON3_CONFIG_DIR="$(/usr/local/bin/python3 -c 'import sysconfig; print(sysconfig.get_config_var("LIBPL"))')"
 
 if [ ! -f "$STAGE/bin/vim" ] || [ configure -nt "$STAGE/bin/vim" ]; then
