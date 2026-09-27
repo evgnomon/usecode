@@ -24,5 +24,5 @@ COPY play.sh /tmp/usecode-play.sh
 RUN bash /tmp/usecode-play.sh \
     && rm -f /tmp/usecode-play.sh
 
-WORKDIR /build
-CMD ["usecode"]
+WORKDIR /root/src/github.com/evgnomon/usecode
+CMD ["bash"]

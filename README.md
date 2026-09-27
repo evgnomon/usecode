@@ -3,78 +3,154 @@ License-Identifier: HGL
 Copyright (C) The Usecode Authors (see AUTHORS)
 -->
 
-> No task that you do before using and/or developing AI for. Using and/or developing AI is also a task that we use and/or develop AI for. Soon would be no task that human do better than AI except AI. And we already have everything in this journey except that AI. How to get there? Simple! Just `usecode` and AI for everything.
+# usecode
 
-# Getting Started
+Hi! This is the toolbox I use every day to set up Linux machines, spin up
+servers and run AI agents. I got tired of doing the same setup over and over,
+so I put all of it in one place and gave it one command: `uc`. If you work on
+Debian or Ubuntu, there's a good chance some of it saves you a weekend too.
 
-Use Debian and/or Ubuntu. You Don't need to replace your Windows tablet or list your MacBook on second hands, you can spin off a Debian/Ubuntu VM on your computer or remote. That way you can just skip Windows and MacOS and get through a Debian/Ubuntu workstation.  
+## What you get
 
-### Development container
+- **A ready-to-code machine in one go.** `uc configure` installs and configures
+  compilers, language servers, CLI tools, editors and dotfiles. It knows whether
+  it's on a desktop, a VM, WSL or a container and only installs what makes sense
+  there.
+- **One command for the everyday DevOps chores.** `uc` gathers dozens of small
+  tools under friendly groups: `uc vm`, `uc cert`, `uc db`, `uc image`,
+  `uc repo`, `uc secret` and more. Run `uc help` to see what's there.
+- **Cloud servers without the console clicking.** `uc vm create` spins up a
+  machine locally (KVM/QEMU) or on Hetzner, DigitalOcean, OVHcloud or UpCloud,
+  picks the cheapest server that fits the size you asked for, and adds an ssh
+  entry so `ssh <name>` just works.
+- **Secrets that stay secret.** `uc encrypt` / `uc decrypt` for files, and
+  `uc secret` for generating secrets and managing vault stores.
+- **An AI agent stack you can run yourself.** A small web app and API for
+  chatting with AI agents, plus an MCP server (`usecode-mcp`) so Claude Code or
+  any MCP client can drive it. See [docs/usecode-agent.md](docs/usecode-agent.md).
 
-The repository includes a project-owned development image for VS Code Dev Containers.
-Open the repository in VS Code and run **Dev Containers: Reopen in Container**.
-The Dev Container is configured for nested Podman use; rebuild it after changing the
-configuration with **Dev Containers: Rebuild Container Without Cache** so changes such
-as the rootless `uidmap` dependency are installed.
+## Quick start
 
-The default Dev Container is deliberately lightweight: it installs development and CLI
-tooling, but not Nerd Fonts, GUI applications, hardware-token
-packages, QEMU, or host-only image tooling. Set `INSTALL_PROFILE=workstation` only when
-running the configurator on a desktop host. Select `.devcontainer/devcontainer.nested.json`
-when nested Podman is required; it enables privileged mode and unconfined AppArmor,
-which should not be used for untrusted workspaces.
-
-For a standalone Docker or Podman session, build and start it with:
-
-```bash
-bash scripts/containerize.sh build
-bash scripts/containerize.sh run
-```
-
-To build the standalone image that runs `play.sh` during the image build, select the
-root Dockerfile explicitly:
-
-```bash
-bash scripts/containerize.sh build Dockerfile
-```
-
-The script prefers Podman when both runtimes are installed. Set `CONTAINER_RUNTIME=docker`
-to select Docker explicitly, or set `USECODE_IMAGE` to use a different image tag. Rootless
-Podman requires unprivileged user namespaces to be enabled by the host. If the workspace
-itself is already inside a container, use the configured Dev Container or run the outer
-container with equivalent privileged and AppArmor settings. Nested Podman uses the `vfs`
-storage driver because OverlayFS cannot be mounted over the outer container's OverlayFS;
-this is slower but works without additional host storage configuration. Inside this Dev
-Container, the script uses rootful Podman through passwordless `sudo` to avoid nested
-rootless namespace re-exec failures. Set `PODMAN_ROOTFUL=0` to explicitly request rootless
-mode. Podman builds use the outer container's network namespace so package repositories
-remain reachable when nested netavark DNS is unavailable.
-
-Install `usecode` with a single command:
+On a Debian or Ubuntu machine (a VM or a spare box is perfect if you just want
+to look around), run:
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/evgnomon/usecode/refs/heads/master/play.sh)
 ```
 
-Everything is ready in `/build` dir after build, you can run `usecode` with.
-
-As it might take a long time to build `usecode` project, you can use save some time by using a cached build with:
+Grab a coffee, the first run takes a while. When it's done, open a new shell and
+say hello:
 
 ```bash
-git clone
-cd usecode
-make -DCACHED=1
+uc help
+```
+
+On Windows or macOS? No need to switch: a Debian/Ubuntu VM (or WSL on Windows)
+works great, locally or in the cloud.
+
+### What the kickstart does
+
+[`play.sh`](play.sh) is short and worth a read before you run it. In order, it:
+
+1. updates apt and installs `git`, `make` and `curl`,
+2. clones this repo to `~/src/github.com/evgnomon/usecode` (or updates it),
+3. installs the base system packages (`lib/configurator`, needs `sudo`),
+4. installs Rust, builds `uc` and runs `uc configure` for your machine,
+5. builds everything in `lib/` and installs the tools to `/usr/local/bin`.
+
+It's safe to run again; finished steps are skipped and your checkout is just
+fast-forwarded. A few environment variables let you steer it:
+
+| Variable | What it does | Default |
+| --- | --- | --- |
+| `USECODE_DIR` | Where the checkout lives | `~/src/github.com/evgnomon/usecode` |
+| `USECODE_BRANCH` | Which branch to build | `master` |
+| `INSTALL_PROFILE` | `workstation`, `dev_container`, `wsl` or `vm` | detected |
+
+For example, to set up a VM without the desktop hardware bits:
+
+```bash
+INSTALL_PROFILE=vm bash <(curl -fsSL https://raw.githubusercontent.com/evgnomon/usecode/refs/heads/master/play.sh)
+```
+
+Want to see what `uc configure` would change before it does? After the first
+run, `lib/configurator/play.sh -C` does a dry run. More on profiles in
+[lib/configurator/README.md](lib/configurator/README.md).
+
+### Already have a checkout?
+
+```bash
+cd ~/src/github.com/evgnomon/usecode
+make submodules
+make
 sudo make install
 ```
 
-Which gives the same `/build` dir with `usecode` ready to run, but with some time saved.
+## Try it in a container first
 
-## Distribution
-Files in `/dist` are made for distribution, make them using the following command if missing:
+If you'd rather not touch your machine yet, a container is a nice way to kick
+the tires. With Podman or Docker installed:
 
 ```bash
-make dist
+bash scripts/containerize.sh build   # lightweight dev image
+bash scripts/containerize.sh run
 ```
+
+To build an image that runs the full kickstart inside it:
+
+```bash
+bash scripts/containerize.sh build Dockerfile
+```
+
+Podman is used when both are installed; set `CONTAINER_RUNTIME=docker` to pick
+Docker, or `USECODE_IMAGE` for a different tag.
+
+### VS Code Dev Container
+
+Open the repo in VS Code and pick **Dev Containers: Reopen in Container**. The
+default container is kept light: dev and CLI tools, no fonts, GUI apps or
+hardware-token packages. If you need Podman inside it, use
+`.devcontainer/devcontainer.nested.json`; it runs privileged, so keep it for
+workspaces you trust. After changing the container config, run
+**Dev Containers: Rebuild Container Without Cache**.
+
+## Run the agent stack locally
+
+The web app, API and friends run from `deploy/compose.yml` with Podman:
+
+```bash
+make up       # start, building images only the first time
+make reload   # rebuild and restart after code changes
+make logs     # follow the logs
+make down     # stop (your data is kept)
+```
+
+Then open <http://localhost:8430>. To let Claude Code talk to it:
+
+```bash
+claude mcp add usecode -- usecode-mcp
+```
+
+## Finding your way around
+
+| Path | What's in it |
+| --- | --- |
+| `lib/uc` | The `uc` command and `uc configure`; start with its [README](lib/uc/README.md) |
+| `lib/` | Every tool and library, each with its own Makefile |
+| `lib/configurator` | The bootstrap that the kickstart calls |
+| `deploy/` | Compose file, container images and Ansible playbooks |
+| `docs/` | Longer write-ups, like the agent architecture |
+| `scripts/` | Small build helpers used by the Makefile |
+
+Handy `make` targets at the root: `build`, `install`, `link`, `clean`,
+`submodules`, `fmt`, `headers-check` and `authors`.
+
+## Contributing
+
+Ideas, bug reports and patches are very welcome. Please have a look at
+[CONTRIBUTING.md](CONTRIBUTING.md) (commits need a `Signed-off-by` line) and the
+[Code of Conduct](CODE_OF_CONDUCT.md). usecode is licensed under the
+[HGL General License](COPYING).
 
 ## No Warranty
 
