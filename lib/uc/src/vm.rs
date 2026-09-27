@@ -2,7 +2,8 @@
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
 //! `uc vm`: the local KVM/QEMU machines of `vm`, and the same commands on
-//! Hetzner Cloud, DigitalOcean and OVHcloud Public Cloud with `--provider`.
+//! Hetzner Cloud, DigitalOcean, OVHcloud Public Cloud and UpCloud with
+//! `--provider`.
 //!
 //! Without `--provider` (or with `--provider local`) the command line goes to
 //! `vm` untouched. With a cloud provider, `create` takes the same size options
@@ -29,16 +30,20 @@ const POLL_INTERVAL: Duration = Duration::from_secs(2);
 const POLL_TRIES: u32 = 150;
 /// OVHcloud prices by the hour; a month of it, to compare with the others.
 const HOURS_PER_MONTH: f64 = 730.0;
+/// UpCloud prices by the hour too, but bills no more than 672 hours a month.
+const UPCLOUD_HOURS_PER_MONTH: f64 = 672.0;
 
 const CLOUD_HELP: &str = "\
 Cloud providers:
-  --provider <local|hetzner|digitalocean|ovh>
+  --provider <local|hetzner|digitalocean|ovh|upcloud>
                                      Where the VM runs (default: local). With a
                                      cloud provider, 'create' picks the cheapest
                                      server type with at least --vcpus, --memory
-                                     and --disk-size, and the VM is managed with
+                                     and --disk-size (on UpCloud, the smallest
+                                     one unless those are given), and the VM
+                                     is managed with
                                      the same list, info, inspect, ip, start,
-                                     stop, restart and delete commands. Cloud
+                                     stop, restart and remove commands. Cloud
                                      VMs do not need sudo. The API token is
                                      HCLOUD_TOKEN or DIGITALOCEAN_ACCESS_TOKEN,
                                      else hetzner.prod or doctl.prod in the
@@ -49,21 +54,28 @@ Cloud providers:
                                      OVH_ENDPOINT (ovh-eu, ovh-ca or ovh-us),
                                      else application_key, application_secret,
                                      consumer_key, project and endpoint under
-                                     ovh.prod in the secrets.
+                                     ovh.prod in the secrets. UpCloud takes
+                                     UPCLOUD_TOKEN, else upcloud.prod, or
+                                     UPCLOUD_USERNAME and UPCLOUD_PASSWORD,
+                                     else username and password under
+                                     upcloud.prod.
 
 Cloud options for 'create':
-  --location <code>                  Hetzner location, DigitalOcean region or
-                                     OVHcloud region such as GRA11
-                                     (default: the cheapest one)
+  --location <code>                  Hetzner location, DigitalOcean region,
+                                     OVHcloud region such as GRA11 or UpCloud
+                                     zone such as de-fra1 (default: the
+                                     cheapest one, or dk-cph1 on UpCloud)
   --arch <x86|arm>                   CPU architecture (default: x86)
-  --image <name>                     Provider image (default: debian-13, or
-                                     'Debian 13' on OVHcloud)
+  --image <name>                     Provider image (default: debian-13,
+                                     'Debian 13' on OVHcloud, or the
+                                     'Debian GNU/Linux 13' template on UpCloud)
 
 Cloud examples:
   uc vm create uc3 --memory 4GiB --vcpus 4 --disk-size 60G --provider hetzner
   uc vm list --provider digitalocean
   uc vm create uc4 --vcpus 2 --memory 8GiB --provider ovh --location GRA11
-  uc vm delete uc3 --provider hetzner --force
+  uc vm create uc5 --vcpus 2 --memory 4GiB --provider upcloud --location de-fra1
+  uc vm remove uc3 --provider hetzner --force
 ";
 
 /// The `main` of `uc-vm`.
@@ -107,6 +119,7 @@ enum Provider {
     Hetzner,
     DigitalOcean,
     Ovh,
+    UpCloud,
 }
 
 impl Provider {
@@ -117,7 +130,10 @@ impl Provider {
             "hetzner" | "hcloud" => Some(Provider::Hetzner),
             "digitalocean" | "do" => Some(Provider::DigitalOcean),
             "ovh" | "ovhcloud" => Some(Provider::Ovh),
-            other => bail!("unknown provider '{other}' (local, hetzner, digitalocean or ovh)"),
+            "upcloud" => Some(Provider::UpCloud),
+            other => {
+                bail!("unknown provider '{other}' (local, hetzner, digitalocean, ovh or upcloud)")
+            }
         })
     }
 
@@ -126,15 +142,16 @@ impl Provider {
             Provider::Hetzner => "hetzner",
             Provider::DigitalOcean => "digitalocean",
             Provider::Ovh => "ovh",
+            Provider::UpCloud => "upcloud",
         }
     }
 
-    /// The largest page the list endpoints serve; OVHcloud's lists are not
-    /// paged.
+    /// The largest page the list endpoints serve; OVHcloud's and UpCloud's
+    /// lists are not paged.
     fn per_page(self) -> u32 {
         match self {
             Provider::Hetzner => 50,
-            Provider::DigitalOcean | Provider::Ovh => 200,
+            Provider::DigitalOcean | Provider::Ovh | Provider::UpCloud => 200,
         }
     }
 
@@ -143,7 +160,23 @@ impl Provider {
             Provider::Hetzner => "debian-13",
             Provider::DigitalOcean => "debian-13-x64",
             Provider::Ovh => "Debian 13",
+            Provider::UpCloud => "Debian GNU/Linux 13",
         }
+    }
+
+    /// The zone `create` uses when no --location is given; elsewhere the
+    /// cheapest location wins.
+    fn default_location(self) -> Option<&'static str> {
+        match self {
+            Provider::UpCloud => Some("dk-cph1"),
+            _ => None,
+        }
+    }
+
+    /// Whether `create` takes the smallest server type unless --vcpus,
+    /// --memory or --disk-size ask for more, rather than the VM defaults.
+    fn defaults_to_smallest(self) -> bool {
+        self == Provider::UpCloud
     }
 
     fn running_status(self) -> &'static str {
@@ -151,6 +184,7 @@ impl Provider {
             Provider::Hetzner => "running",
             Provider::DigitalOcean => "active",
             Provider::Ovh => "ACTIVE",
+            Provider::UpCloud => "started",
         }
     }
 }
@@ -259,18 +293,19 @@ struct Spec {
 }
 
 impl Spec {
-    fn parse(args: &[String], cfg: &VmConfig) -> Result<Spec> {
+    fn parse(args: &[String], cfg: &VmConfig, provider: Provider) -> Result<Spec> {
         let name = args
             .first()
             .filter(|name| !name.starts_with('-'))
             .context("usage: uc vm create <name> [options] --provider <provider>")?;
+        let smallest = provider.defaults_to_smallest();
         let mut spec = Spec {
             name: name.clone(),
-            vcpus: cfg.default_vcpus,
-            memory_mib: cfg.default_memory.div_ceil(1024),
-            disk_gib: cfg.default_disk_size.div_ceil(1 << 30),
+            vcpus: if smallest { 1 } else { cfg.default_vcpus },
+            memory_mib: if smallest { 0 } else { cfg.default_memory.div_ceil(1024) },
+            disk_gib: if smallest { 0 } else { cfg.default_disk_size.div_ceil(1 << 30) },
             image: None,
-            location: None,
+            location: provider.default_location().map(str::to_string),
             arch: "x86".to_string(),
             start: true,
             wait_for_ip: true,
@@ -571,6 +606,61 @@ fn ovh_server(instance: &Value, flavors: &[Value]) -> Server {
     }
 }
 
+/// `GET /plan` and `GET /price`: one offer per plan and zone that prices it,
+/// under `server_plan_<plan>`. Prices are in cents of the account's currency
+/// per hour, a month being [`UPCLOUD_HOURS_PER_MONTH`].
+fn upcloud_offers(plans: &Value, prices: &Value) -> Vec<Offer> {
+    let mut offers = Vec::new();
+    for zone in array(&prices["prices"]["zone"]) {
+        for plan in array(&plans["plans"]["plan"]) {
+            let name = text(&plan["name"]);
+            let price = &zone[format!("server_plan_{name}").as_str()]["price"];
+            if price.is_null() {
+                continue;
+            }
+            offers.push(Offer {
+                server_type: name,
+                location: text(&zone["name"]),
+                arch: "x86".to_string(),
+                vcpus: number(&plan["core_number"]) as u32,
+                memory_mib: number(&plan["memory_amount"]) as u64,
+                disk_gib: number(&plan["storage_size"]) as u64,
+                price: number(price) / 100.0 * UPCLOUD_HOURS_PER_MONTH,
+            });
+        }
+    }
+    offers
+}
+
+/// An UpCloud server. A single server carries its IP addresses and disks; in
+/// a list it has neither, and its public IPv4 is looked up in `ips`, the
+/// account's `GET /ip_address`.
+fn upcloud_server(server: &Value, ips: &[Value]) -> Server {
+    let uuid = &server["uuid"];
+    let own = array(&server["ip_addresses"]["ip_address"]);
+    let ipv4 = own
+        .iter()
+        .chain(ips.iter().filter(|ip| ip["server"] == *uuid))
+        .find(|ip| ip["access"] == "public" && ip["family"] == "IPv4")
+        .and_then(|ip| ip["address"].as_str())
+        .map(str::to_string);
+    let disk_gib = array(&server["storage_devices"]["storage_device"])
+        .iter()
+        .map(|disk| number(&disk["storage_size"]) as u64)
+        .sum();
+    Server {
+        id: text(uuid),
+        name: text(&server["title"]),
+        status: text(&server["state"]),
+        server_type: text(&server["plan"]),
+        location: text(&server["zone"]),
+        ipv4,
+        vcpus: number(&server["core_number"]) as u64,
+        memory_mib: number(&server["memory_amount"]) as u64,
+        disk_gib,
+    }
+}
+
 /// A client for the provider's REST API, over [`crate::http`].
 struct Api {
     provider: Provider,
@@ -579,8 +669,10 @@ struct Api {
 }
 
 enum Auth {
-    /// Hetzner's and DigitalOcean's API token.
+    /// Hetzner's, DigitalOcean's and UpCloud's API token.
     Bearer(String),
+    /// UpCloud's API user, as base64 of `username:password`.
+    Basic(String),
     Ovh(OvhKeys),
 }
 
@@ -695,6 +787,9 @@ impl Api {
     /// Hetzner's token is `HCLOUD_TOKEN` or `hetzner.prod` in the secrets,
     /// DigitalOcean's `DIGITALOCEAN_ACCESS_TOKEN` or `doctl.prod`. OVHcloud
     /// takes its keys, project and endpoint from `OVH_*` or `ovh.prod.*`.
+    /// UpCloud takes an API token from `UPCLOUD_TOKEN` or `upcloud.prod`, else
+    /// its API user from `UPCLOUD_USERNAME` and `UPCLOUD_PASSWORD` or
+    /// `upcloud.prod.username` and `upcloud.prod.password`.
     fn connect(provider: Provider) -> Result<Api> {
         let mut creds = Credentials::default();
         let (base, auth) = match provider {
@@ -723,6 +818,21 @@ impl Api {
                 };
                 (base, Auth::Ovh(keys))
             }
+            Provider::UpCloud => {
+                let auth = match creds.find("UPCLOUD_TOKEN", "upcloud.prod")? {
+                    Some(token) => Auth::Bearer(token),
+                    None => {
+                        use base64::Engine;
+                        let username = creds.get("UPCLOUD_USERNAME", "upcloud.prod.username")?;
+                        let password = creds.get("UPCLOUD_PASSWORD", "upcloud.prod.password")?;
+                        Auth::Basic(
+                            base64::engine::general_purpose::STANDARD
+                                .encode(format!("{username}:{password}")),
+                        )
+                    }
+                };
+                ("https://api.upcloud.com/1.3", auth)
+            }
         };
         Ok(Api {
             provider,
@@ -735,7 +845,9 @@ impl Api {
     fn ovh(&self) -> &OvhKeys {
         match &self.auth {
             Auth::Ovh(keys) => keys,
-            Auth::Bearer(_) => unreachable!("{} has no OVHcloud keys", self.provider.name()),
+            Auth::Bearer(_) | Auth::Basic(_) => {
+                unreachable!("{} has no OVHcloud keys", self.provider.name())
+            }
         }
     }
 
@@ -755,6 +867,7 @@ impl Api {
         ];
         match &self.auth {
             Auth::Bearer(token) => headers.push(format!("Authorization: Bearer {token}")),
+            Auth::Basic(user) => headers.push(format!("Authorization: Basic {user}")),
             Auth::Ovh(keys) => {
                 headers.extend(keys.headers(method, &url, body.as_deref().unwrap_or("")))
             }
@@ -838,12 +951,14 @@ fn has_next_page(body: &Value) -> bool {
 }
 
 /// The message of an API error: Hetzner's `error.message`, DigitalOcean's
-/// and OVHcloud's `message`, or the body itself.
+/// and OVHcloud's `message`, UpCloud's `error.error_message`, or the body
+/// itself.
 fn api_error(body: &str) -> String {
     let value: Value = serde_json::from_str(body).unwrap_or_default();
     value["error"]["message"]
         .as_str()
         .or(value["message"].as_str())
+        .or(value["error"]["error_message"].as_str())
         .map_or_else(|| body.trim().to_string(), str::to_string)
 }
 
@@ -863,6 +978,10 @@ fn offers(api: &Api) -> Result<Vec<Offer>> {
                 &api.call("GET", &catalog, None)?,
             )
         }
+        Provider::UpCloud => upcloud_offers(
+            &api.call("GET", "/plan", None)?,
+            &api.call("GET", "/price", None)?,
+        ),
     })
 }
 
@@ -886,6 +1005,14 @@ fn servers(api: &Api) -> Result<Vec<Server>> {
                 .map(|instance| ovh_server(instance, array(&flavors)))
                 .collect()
         }
+        Provider::UpCloud => {
+            let list = api.call("GET", "/server", None)?;
+            let ips = api.call("GET", "/ip_address", None)?;
+            array(&list["servers"]["server"])
+                .iter()
+                .map(|server| upcloud_server(server, array(&ips["ip_addresses"]["ip_address"])))
+                .collect()
+        }
     })
 }
 
@@ -900,6 +1027,10 @@ fn get(api: &Api, id: &str) -> Result<Server> {
         }
         Provider::Ovh => ovh_server(
             &api.call("GET", &api.project_path(&format!("/instance/{id}")), None)?,
+            &[],
+        ),
+        Provider::UpCloud => upcloud_server(
+            &api.call("GET", &format!("/server/{id}"), None)?["server"],
             &[],
         ),
     })
@@ -917,6 +1048,60 @@ fn ovh_instance(name: &str, flavor: &Value, image: &Value, region: &str, user_da
         "userData": user_data,
         "monthlyBilling": false,
     })
+}
+
+/// The `POST /server` body. UpCloud's cloud-init templates take the
+/// user-data only with `metadata` on, and want a login user with SSH keys.
+fn upcloud_server_body(
+    spec: &Spec,
+    offer: &Offer,
+    template: &Value,
+    tier: &str,
+    username: &str,
+    ssh_keys: &[String],
+    user_data: &str,
+) -> Value {
+    let interface = |kind: &str| {
+        json!({
+            "type": kind,
+            "ip_addresses": { "ip_address": [{ "family": "IPv4" }] },
+        })
+    };
+    json!({ "server": {
+        "zone": offer.location,
+        "title": spec.name,
+        "hostname": spec.name,
+        "plan": offer.server_type,
+        "metadata": "yes",
+        "user_data": user_data,
+        "login_user": {
+            "username": username,
+            "ssh_keys": { "ssh_key": ssh_keys },
+        },
+        "storage_devices": { "storage_device": [{
+            "action": "clone",
+            "storage": template,
+            "title": format!("{}-disk", spec.name),
+            "size": offer.disk_gib,
+            "tier": tier,
+        }]},
+        "networking": { "interfaces": { "interface": [
+            interface("public"),
+            interface("utility"),
+        ]}},
+    }})
+}
+
+/// The SSH keys the cloud-init user-data authorizes: the `ssh-*`, `ecdsa-*`
+/// and `sk-*` entries of its lists.
+fn authorized_keys(user_data: &str) -> Vec<String> {
+    user_data
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("- "))
+        .map(|key| key.trim().trim_matches(['"', '\'']))
+        .filter(|key| ["ssh-", "ecdsa-", "sk-"].iter().any(|p| key.starts_with(p)))
+        .map(str::to_string)
+        .collect()
 }
 
 /// Polls a server until `ready` holds it, for the APIs whose requests start
@@ -978,9 +1163,9 @@ fn run(provider: Provider, args: &[String]) -> Result<()> {
     }
     let api = &Api::connect(provider)?;
     match command {
-        "create" => create(api, &cfg, &Spec::parse(rest, &cfg)?),
+        "create" => create(api, &cfg, &Spec::parse(rest, &cfg, provider)?),
         "list" => list(api, rest.iter().any(|arg| arg == "-a" || arg == "--all")),
-        "info" | "inspect" => info(&find(api, name()?)?),
+        "info" | "inspect" => info(&get(api, &find(api, name()?)?.id)?),
         "ip" => {
             let server = find(api, name()?)?;
             let ip = server.ipv4.context("the VM has no public IPv4 address")?;
@@ -1012,7 +1197,7 @@ fn run(provider: Provider, args: &[String]) -> Result<()> {
                 },
             )
         }
-        "delete" => delete(api, &find(api, name()?)?, force()?),
+        "remove" => remove(api, &find(api, name()?)?, force()?),
         other => bail!("unknown command '{other}'; see 'uc vm --help'"),
     }
 }
@@ -1128,6 +1313,48 @@ fn create(api: &Api, cfg: &VmConfig, spec: &Spec) -> Result<()> {
                 ovh_server(&instance, &[])
             }
         }
+        Provider::UpCloud => {
+            let ssh_keys = authorized_keys(&user_data);
+            if ssh_keys.is_empty() {
+                bail!("UpCloud needs an SSH key; the cloud-init user-data authorizes none");
+            }
+            let plans = api.call("GET", "/plan", None)?;
+            let tier = array(&plans["plans"]["plan"])
+                .iter()
+                .find(|plan| plan["name"] == offer.server_type.as_str())
+                .map_or_else(|| "maxiops".to_string(), |plan| text(&plan["storage_tier"]));
+            let templates = api.call("GET", "/storage/template", None)?;
+            let templates = array(&templates["storages"]["storage"]);
+            let template = templates
+                .iter()
+                .find(|t| {
+                    t["uuid"] == image
+                        || text(&t["title"])
+                            .to_ascii_lowercase()
+                            .starts_with(&image.to_ascii_lowercase())
+                })
+                .with_context(|| {
+                    let titles: Vec<String> = templates.iter().map(|t| text(&t["title"])).collect();
+                    format!("no template '{image}'; there are: {}", titles.join(", "))
+                })?;
+            let body = upcloud_server_body(
+                spec,
+                offer,
+                &template["uuid"],
+                &tier,
+                &cfg.username,
+                &ssh_keys,
+                &user_data,
+            );
+            let server = upcloud_server(&api.call("POST", "/server", Some(&body))?["server"], &[]);
+            if spec.wait_for_ip {
+                wait_for(api, &server.id, |s| {
+                    s.status == "started" && s.ipv4.is_some()
+                })?
+            } else {
+                server
+            }
+        }
     };
     if !spec.start {
         println!("VM '{}' created but not started", spec.name);
@@ -1228,12 +1455,43 @@ fn power(api: &Api, server: &Server, action: Power) -> Result<()> {
             api.call("POST", &path, body.as_ref())?;
             wait_for(api, id, |s| s.status == status)?;
         }
+        Provider::UpCloud => {
+            let (verb, body, status) = upcloud_power(action);
+            api.call("POST", &format!("/server/{id}/{verb}"), body.as_ref())?;
+            wait_for(api, id, |s| s.status == status)?;
+        }
     }
     println!("VM '{}': done", server.name);
     Ok(())
 }
 
-fn delete(api: &Api, server: &Server, force: bool) -> Result<()> {
+/// UpCloud's verb, body and final state for a power action. A soft stop
+/// gives the server a minute before UpCloud stops it hard.
+fn upcloud_power(action: Power) -> (&'static str, Option<Value>, &'static str) {
+    let stop = |kind: &str| json!({ "stop_type": kind, "timeout": "60" });
+    let restart = |kind: &str| {
+        let mut body = stop(kind);
+        body["timeout_action"] = json!("destroy");
+        json!({ "restart_server": body })
+    };
+    match action {
+        Power::Start => ("start", None, "started"),
+        Power::Shutdown => (
+            "stop",
+            Some(json!({ "stop_server": stop("soft") })),
+            "stopped",
+        ),
+        Power::Off => (
+            "stop",
+            Some(json!({ "stop_server": stop("hard") })),
+            "stopped",
+        ),
+        Power::Reboot => ("restart", Some(restart("soft")), "started"),
+        Power::Reset => ("restart", Some(restart("hard")), "started"),
+    }
+}
+
+fn remove(api: &Api, server: &Server, force: bool) -> Result<()> {
     if server.status == api.provider.running_status() && !force {
         bail!(
             "VM '{}' is running; stop it first or use --force",
@@ -1249,6 +1507,17 @@ fn delete(api: &Api, server: &Server, force: bool) -> Result<()> {
             &api.project_path(&format!("/instance/{id}")),
             None,
         )?),
+        Provider::UpCloud => {
+            // UpCloud deletes only stopped servers; the disks and their
+            // backups go with it.
+            if server.status != "stopped" {
+                let (verb, body, status) = upcloud_power(Power::Off);
+                api.call("POST", &format!("/server/{id}/{verb}"), body.as_ref())?;
+                wait_for(api, id, |s| s.status == status)?;
+            }
+            let path = format!("/server/{id}?storages=1&backups=delete");
+            drop(api.call("DELETE", &path, None)?)
+        }
     }
     for path in ssh_config_paths(&server.name) {
         match std::fs::remove_file(&path) {
@@ -1258,7 +1527,7 @@ fn delete(api: &Api, server: &Server, force: bool) -> Result<()> {
             _ => {}
         }
     }
-    println!("VM '{}' deleted", server.name);
+    println!("VM '{}' removed", server.name);
     Ok(())
 }
 
@@ -1333,6 +1602,8 @@ mod tests {
         assert_eq!(provider, None);
         let (provider, _) = split_provider(&strings(&["list", "--provider", "ovh"])).unwrap();
         assert_eq!(provider, Some(Provider::Ovh));
+        let (provider, _) = split_provider(&strings(&["list", "--provider=upcloud"])).unwrap();
+        assert_eq!(provider, Some(Provider::UpCloud));
         assert!(split_provider(&strings(&["list", "--provider", "aws"])).is_err());
         assert!(split_provider(&strings(&["list", "--provider"])).is_err());
     }
@@ -1362,6 +1633,7 @@ mod tests {
                 "hel1",
             ]),
             &cfg,
+            Provider::Hetzner,
         )
         .unwrap();
         assert_eq!(spec.name, "uc3");
@@ -1370,8 +1642,32 @@ mod tests {
         assert_eq!(spec.disk_gib, 60);
         assert_eq!(spec.location.as_deref(), Some("hel1"));
         assert_eq!(cfg.username, "hamed");
-        assert!(Spec::parse(&strings(&["uc3", "--mount", "/src"]), &cfg).is_err());
-        assert!(Spec::parse(&strings(&["--vcpus", "2"]), &cfg).is_err());
+        assert!(Spec::parse(&strings(&["uc3", "--mount", "/src"]), &cfg, Provider::Hetzner).is_err());
+        assert!(Spec::parse(&strings(&["--vcpus", "2"]), &cfg, Provider::Hetzner).is_err());
+    }
+
+    #[test]
+    fn upcloud_defaults_to_the_smallest_type_in_denmark() {
+        let cfg = VmConfig::default();
+        let spec = Spec::parse(&strings(&["uc5"]), &cfg, Provider::UpCloud).unwrap();
+        assert_eq!(spec.location.as_deref(), Some("dk-cph1"));
+        let offers = [
+            offer("1xCPU-1GB", "dk-cph1", 1, 1024, 10, 5.0),
+            offer("2xCPU-4GB", "dk-cph1", 2, 4096, 80, 18.0),
+            offer("1xCPU-1GB", "de-fra1", 1, 1024, 10, 4.0),
+        ];
+        let chosen = choose(&offers, &spec).unwrap();
+        assert_eq!(
+            (chosen.server_type.as_str(), chosen.location.as_str()),
+            ("1xCPU-1GB", "dk-cph1")
+        );
+        let asked = Spec::parse(
+            &strings(&["uc5", "--vcpus", "2", "--location", "de-fra1"]),
+            &cfg,
+            Provider::UpCloud,
+        )
+        .unwrap();
+        assert_eq!((asked.vcpus, asked.location.as_deref()), (2, Some("de-fra1")));
     }
 
     #[test]
@@ -1394,6 +1690,7 @@ mod tests {
                 "60G",
             ]),
             &cfg,
+            Provider::Hetzner,
         )
         .unwrap();
         let chosen = choose(&offers, &spec).unwrap();
@@ -1509,6 +1806,68 @@ mod tests {
     }
 
     #[test]
+    fn upcloud_plans_are_priced_per_zone() {
+        let plans = json!({"plans": {"plan": [
+            {"name": "2xCPU-4GB", "core_number": 2, "memory_amount": 4096,
+             "storage_size": 80, "storage_tier": "maxiops"},
+            {"name": "GPU-8xCPU-64GB-1xL40S", "core_number": 8, "memory_amount": 65536,
+             "storage_size": 400, "storage_tier": "maxiops"}
+        ]}});
+        let prices = json!({"prices": {"zone": [
+            {"name": "de-fra1", "server_plan_2xCPU-4GB": {"amount": 1, "price": 2.5}},
+            {"name": "fi-hel1", "server_plan_2xCPU-4GB": {"amount": 1, "price": 3.0},
+             "server_plan_GPU-8xCPU-64GB-1xL40S": {"amount": 1, "price": 150}}
+        ]}});
+        let offers = upcloud_offers(&plans, &prices);
+        assert_eq!(offers.len(), 3);
+        assert_eq!(
+            offers[0],
+            offer("2xCPU-4GB", "de-fra1", 2, 4096, 80, 0.025 * 672.0)
+        );
+        assert_eq!(offers[2].location, "fi-hel1");
+    }
+
+    #[test]
+    fn upcloud_servers_boot_the_template_with_cloud_init() {
+        let user_data = "#cloud-config\nusers:\n  - name: vm\n    ssh_authorized_keys:\n      - ssh-ed25519 AAAA me@host\n      - \"ecdsa-sha2-nistp256 BBBB\"\n";
+        let keys = authorized_keys(user_data);
+        assert_eq!(
+            keys,
+            ["ssh-ed25519 AAAA me@host", "ecdsa-sha2-nistp256 BBBB"]
+        );
+        let spec = Spec::parse(&strings(&["uc5"]), &VmConfig::default(), Provider::UpCloud).unwrap();
+        let body = upcloud_server_body(
+            &spec,
+            &offer("2xCPU-4GB", "de-fra1", 2, 4096, 80, 16.8),
+            &json!("t1"),
+            "maxiops",
+            "vm",
+            &keys,
+            user_data,
+        );
+        let server = &body["server"];
+        assert_eq!(server["metadata"], "yes");
+        assert_eq!(server["zone"], "de-fra1");
+        assert_eq!(
+            server["storage_devices"]["storage_device"][0]["storage"],
+            "t1"
+        );
+        assert_eq!(server["storage_devices"]["storage_device"][0]["size"], 80);
+        assert_eq!(
+            server["login_user"]["ssh_keys"]["ssh_key"][1],
+            "ecdsa-sha2-nistp256 BBBB"
+        );
+        let (verb, stop, state) = upcloud_power(Power::Off);
+        assert_eq!((verb, state), ("stop", "stopped"));
+        assert_eq!(stop.unwrap()["stop_server"]["stop_type"], "hard");
+        let (_, restart, _) = upcloud_power(Power::Reboot);
+        assert_eq!(
+            restart.unwrap()["restart_server"]["timeout_action"],
+            "destroy"
+        );
+    }
+
+    #[test]
     fn servers_map_from_the_api_output() {
         let server = hetzner_server(&json!({
             "id": 42, "name": "uc3", "status": "running",
@@ -1543,6 +1902,29 @@ mod tests {
         assert_eq!(instance.server_type, "b3-8");
         assert_eq!(instance.vcpus, 2);
         assert_eq!(instance.ipv4.as_deref(), Some("9.9.9.9"));
+
+        let ips = [
+            json!({"access": "utility", "family": "IPv4", "address": "10.1.0.2", "server": "u1"}),
+            json!({"access": "public", "family": "IPv4", "address": "7.7.7.7", "server": "u1"}),
+            json!({"access": "public", "family": "IPv4", "address": "8.8.8.8", "server": "u2"}),
+        ];
+        let listed = upcloud_server(
+            &json!({"uuid": "u1", "title": "uc5", "state": "started", "plan": "2xCPU-4GB",
+                    "zone": "de-fra1", "core_number": "2", "memory_amount": "4096"}),
+            &ips,
+        );
+        assert_eq!(listed.name, "uc5");
+        assert_eq!(listed.vcpus, 2);
+        assert_eq!(listed.ipv4.as_deref(), Some("7.7.7.7"));
+        let single = upcloud_server(
+            &json!({"uuid": "u1", "title": "uc5", "state": "started",
+                    "ip_addresses": {"ip_address": [
+                        {"access": "public", "family": "IPv4", "address": "7.7.7.7"}]},
+                    "storage_devices": {"storage_device": [{"storage_size": 80}]}}),
+            &[],
+        );
+        assert_eq!(single.disk_gib, 80);
+        assert_eq!(single.ipv4.as_deref(), Some("7.7.7.7"));
     }
 
     #[test]
@@ -1564,6 +1946,12 @@ mod tests {
         assert_eq!(
             api_error(r#"{"id": "not_found", "message": "gone"}"#),
             "gone"
+        );
+        assert_eq!(
+            api_error(
+                r#"{"error": {"error_code": "AUTHENTICATION_FAILED", "error_message": "no"}}"#
+            ),
+            "no"
         );
         assert_eq!(api_error("Bad Gateway\n"), "Bad Gateway");
     }

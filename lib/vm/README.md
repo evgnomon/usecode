@@ -151,14 +151,14 @@ Force stop (poweroff):
 vm stop myvm --force
 ```
 
-#### Delete a VM
+#### Remove a VM
 ```bash
-vm delete myvm
+vm remove myvm
 ```
 
-Force delete a running VM:
+Force remove a running VM:
 ```bash
-vm delete myvm --force
+vm remove myvm --force
 ```
 
 #### Get VM IP Address

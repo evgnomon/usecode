@@ -278,7 +278,7 @@ pub static NET: Group = Group {
 
 pub static VM: Group = alias(
     "uc vm",
-    "create and run virtual machines locally with KVM/QEMU (vm) or on Hetzner, DigitalOcean and OVHcloud",
+    "create and run virtual machines locally with KVM/QEMU (vm) or on Hetzner, DigitalOcean, OVHcloud and UpCloud",
     &["vm"],
 );
 

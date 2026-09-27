@@ -79,8 +79,8 @@ fn run(args: &[String]) -> Result<()> {
             let force = parse_force(&rest[1..]);
             vm::restart_vm(&conn, &cfg, name, force)
         }
-        "delete" => {
-            let name = domain_arg(rest, "vm delete <name> [--force]");
+        "remove" => {
+            let name = domain_arg(rest, "vm remove <name> [--force]");
             let force = parse_force(&rest[1..]);
             vm::delete_vm(&conn, &cfg, name, force)
         }
@@ -165,12 +165,12 @@ Commands:
   start <name>                       Start a VM
   stop <name>                        Stop a VM
   restart <name>                     Restart a VM
-  delete <name>                      Delete a VM
+  remove <name>                      Remove a VM
   ip <name>                          Get VM IP address
   snapshot create <name> <snap>      Create a snapshot
   snapshot list <name>               List snapshots for a VM
   snapshot restore <name> <snap>     Revert VM to a snapshot
-  snapshot delete <name> <snap>      Delete a snapshot
+  snapshot remove <name> <snap>      Remove a snapshot
   fork <source> <new-name> [options] Fork a VM from an external snapshot
   mount <name> <host-path> [options] Mount a host directory into the VM
   config <name> [options]            Reconfigure an existing VM
@@ -194,8 +194,8 @@ Options for 'mount':
 Options for 'stop' and 'restart':
   --force                             Force stop (poweroff)
 
-Options for 'delete':
-  --force                             Force delete running VM
+Options for 'remove':
+  --force                             Force remove running VM
 
 Global Options:
   --help, -h                         Show this help message
@@ -388,7 +388,7 @@ fn cmd_config(args: &[String], conn: &Connection) -> Result<()> {
 }
 
 fn cmd_snapshot(args: &[String], conn: &Connection) -> Result<()> {
-    const USAGE: &str = "vm snapshot <create|list|restore|delete> <name> [snapshot-name]";
+    const USAGE: &str = "vm snapshot <create|list|restore|remove> <name> [snapshot-name]";
 
     let Some(subcmd) = args.first().map(String::as_str) else {
         fail_usage("Error: snapshot subcommand required", USAGE);
@@ -416,8 +416,8 @@ fn cmd_snapshot(args: &[String], conn: &Connection) -> Result<()> {
             let (name, snap) = domain_and_snapshot("vm snapshot restore <name> <snapshot-name>");
             vm::restore_snapshot(conn, name, snap)
         }
-        "delete" => {
-            let (name, snap) = domain_and_snapshot("vm snapshot delete <name> <snapshot-name>");
+        "remove" => {
+            let (name, snap) = domain_and_snapshot("vm snapshot remove <name> <snapshot-name>");
             vm::delete_snapshot(conn, name, snap)
         }
         other => {

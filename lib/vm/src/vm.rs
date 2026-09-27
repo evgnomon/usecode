@@ -167,7 +167,7 @@ pub fn delete_vm(conn: &Connection, cfg: &Config, domain_name: &str, force: bool
     // Stop if running
     if dom.is_active() {
         if !force {
-            error!("Domain '{domain_name}' is running. Use --force to stop and delete.");
+            error!("Domain '{domain_name}' is running. Use --force to stop and remove.");
             return Err(Error::vm(format!("domain '{domain_name}' is running")));
         }
         info!("Force stopping domain '{domain_name}'");
@@ -202,7 +202,7 @@ pub fn delete_vm(conn: &Connection, cfg: &Config, domain_name: &str, force: bool
         warn!("Could not remove SSH config: {err}");
     }
 
-    info!("Domain '{domain_name}' deleted");
+    info!("Domain '{domain_name}' removed");
     Ok(())
 }
 
@@ -419,7 +419,7 @@ pub fn delete_snapshot(conn: &Connection, domain_name: &str, snapshot_name: &str
     info!("Deleting snapshot '{snapshot_name}' from domain '{domain_name}'");
     dom.delete_snapshot(snapshot_name)?;
 
-    info!("Snapshot '{snapshot_name}' deleted");
+    info!("Snapshot '{snapshot_name}' removed");
     Ok(())
 }
 

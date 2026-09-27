@@ -262,23 +262,26 @@ flags the ones whose tool is not installed.
 ### Cloud VMs
 
 `uc vm` takes the same commands and size options to Hetzner Cloud,
-DigitalOcean or OVHcloud Public Cloud when given `--provider`:
+DigitalOcean, OVHcloud Public Cloud or UpCloud when given `--provider`:
 
 ```sh
 sudo uc vm create uc3 --memory 4GiB --vcpus 4 --disk-size 60G  # local KVM/QEMU
 uc vm create uc3 --memory 4GiB --vcpus 4 --disk-size 60G --provider hetzner
 uc vm list --provider digitalocean
 uc vm create uc4 --vcpus 2 --memory 8GiB --provider ovh --location GRA11
-uc vm delete uc3 --provider hetzner --force
+uc vm create uc5 --vcpus 2 --memory 4GiB --provider upcloud --location de-fra1
+uc vm remove uc3 --provider hetzner --force
 ```
 
 `create` picks the cheapest server type, across the provider's locations, with
 at least the requested vCPUs, memory and disk; `--location`, `--arch` and
-`--image` narrow it down. The server boots with the local VMs' cloud-init
+`--image` narrow it down. On UpCloud, `create` defaults to the `dk-cph1`
+(Copenhagen) zone and the smallest plan unless `--location`, `--vcpus`,
+`--memory` or `--disk-size` say otherwise. The server boots with the local VMs' cloud-init
 user-data from `/etc/vm/config.yaml`, and gets an ssh_config entry
 (`/etc/ssh/ssh_config.d`, or `~/.ssh/config.d` without root), so `ssh uc3`
 reaches the same user either way. `list`, `info`, `inspect`, `ip`, `start`,
-`stop`, `restart` and `delete` work on cloud VMs too; `snapshot`, `fork`,
+`stop`, `restart` and `remove` work on cloud VMs too; `snapshot`, `fork`,
 `mount` and `config` stay local. The providers are driven through their REST
 APIs (over `curl`, like `uc ghcr`), with the token from `HCLOUD_TOKEN` or
 `DIGITALOCEAN_ACCESS_TOKEN`, else `hetzner.prod` or `doctl.prod` in the
@@ -289,7 +292,14 @@ and optionally `OVH_ENDPOINT` (`ovh-eu`, the default, `ovh-ca` or `ovh-us`),
 else `application_key`, `application_secret`, `consumer_key`, `project` and
 `endpoint` under `ovh.prod` in the secrets. Its flavors are priced from the
 public catalog's hourly rate over 730 hours, and it has no graceful stop, so
-`stop` and `stop --force` do the same. Cloud VMs need no sudo.
+`stop` and `stop --force` do the same. UpCloud takes an API token from
+`UPCLOUD_TOKEN` or `upcloud.prod`, else its API user from `UPCLOUD_USERNAME`
+and `UPCLOUD_PASSWORD` or `username` and `password` under `upcloud.prod`. Its
+plans are priced per zone from the hourly price list, capped at 672 hours a
+month; servers clone a template (`Debian GNU/Linux 13` by default, matched by
+title prefix or UUID), log in with the SSH keys of the cloud-init user-data,
+and are stopped before `remove --force` removes them with their disks. Cloud
+VMs need no sudo.
 
 `uc configure` stays as it is, `x` being its shortcut. The personal and
 desktop tools that are not about DevOps — `ff`, `fzurls`, `imgpress`,
