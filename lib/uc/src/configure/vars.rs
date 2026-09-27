@@ -64,6 +64,8 @@ pub struct GitProfile {
     pub fullname: Option<String>,
     pub gpg_key: Option<String>,
     pub git_sign_format: Option<String>,
+    /// Sign commits and tags; anything but an explicit `true` turns it off.
+    pub git_sign: Option<bool>,
     pub allowed_signers_file: Option<String>,
 }
 

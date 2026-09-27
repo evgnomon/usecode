@@ -175,6 +175,7 @@ async fn profile(ctx: &crate::configure::ctx::Ctx, t: &Target) -> Result<Outcome
         .allowed_signers_file
         .clone()
         .unwrap_or_else(|| v.home.join(".ssh/allowed_signers").display().to_string());
+    let sign = (p.git_sign == Some(true)).to_string();
     let settings = [
         ("user.email", p.useremail.clone()),
         (
@@ -182,8 +183,8 @@ async fn profile(ctx: &crate::configure::ctx::Ctx, t: &Target) -> Result<Outcome
             p.fullname.clone().or_else(|| p.username.clone()),
         ),
         ("user.signingKey", p.gpg_key.clone()),
-        ("commit.gpgsign", Some("true".into())),
-        ("tag.gpgSign", Some("true".into())),
+        ("commit.gpgsign", Some(sign.clone())),
+        ("tag.gpgSign", Some(sign)),
         ("gpg.ssh.allowedSignersFile", Some(signers)),
     ];
     let mut outcome = Outcome::Ok;
