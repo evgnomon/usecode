@@ -2,7 +2,7 @@
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
 //! `uc vm`: the local KVM/QEMU machines of `vm`, and the same commands on
-//! Hetzner Cloud and DigitalOcean with `--provider`.
+//! Hetzner Cloud, DigitalOcean and OVHcloud Public Cloud with `--provider`.
 //!
 //! Without `--provider` (or with `--provider local`) the command line goes to
 //! `vm` untouched. With a cloud provider, `create` takes the same size options
@@ -10,12 +10,13 @@
 //! memory and disk. The server boots with the cloud-init user-data of the
 //! local machines and gets an ssh_config entry, so `ssh <name>` reaches the
 //! same user wherever the machine runs. The providers are driven through
-//! their REST APIs, with the token `uc cloud` uses from the repository's
-//! secrets.
+//! their REST APIs, with the credentials `uc cloud` uses from the
+//! repository's secrets.
 
 use crate::http;
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
+use std::collections::HashMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
@@ -26,10 +27,12 @@ const SSH_CONFIG_D: &str = "/etc/ssh/ssh_config.d";
 /// How often and how long to wait for provider actions: five minutes.
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
 const POLL_TRIES: u32 = 150;
+/// OVHcloud prices by the hour; a month of it, to compare with the others.
+const HOURS_PER_MONTH: f64 = 730.0;
 
 const CLOUD_HELP: &str = "\
 Cloud providers:
-  --provider <local|hetzner|digitalocean>
+  --provider <local|hetzner|digitalocean|ovh>
                                      Where the VM runs (default: local). With a
                                      cloud provider, 'create' picks the cheapest
                                      server type with at least --vcpus, --memory
@@ -39,17 +42,27 @@ Cloud providers:
                                      VMs do not need sudo. The API token is
                                      HCLOUD_TOKEN or DIGITALOCEAN_ACCESS_TOKEN,
                                      else hetzner.prod or doctl.prod in the
-                                     current repository's secrets.
+                                     current repository's secrets. OVHcloud
+                                     takes OVH_APPLICATION_KEY,
+                                     OVH_APPLICATION_SECRET, OVH_CONSUMER_KEY,
+                                     OVH_CLOUD_PROJECT_SERVICE and optionally
+                                     OVH_ENDPOINT (ovh-eu, ovh-ca or ovh-us),
+                                     else application_key, application_secret,
+                                     consumer_key, project and endpoint under
+                                     ovh.prod in the secrets.
 
 Cloud options for 'create':
-  --location <code>                  Hetzner location or DigitalOcean region
+  --location <code>                  Hetzner location, DigitalOcean region or
+                                     OVHcloud region such as GRA11
                                      (default: the cheapest one)
   --arch <x86|arm>                   CPU architecture (default: x86)
-  --image <name>                     Provider image (default: debian-13)
+  --image <name>                     Provider image (default: debian-13, or
+                                     'Debian 13' on OVHcloud)
 
 Cloud examples:
   uc vm create uc3 --memory 4GiB --vcpus 4 --disk-size 60G --provider hetzner
   uc vm list --provider digitalocean
+  uc vm create uc4 --vcpus 2 --memory 8GiB --provider ovh --location GRA11
   uc vm delete uc3 --provider hetzner --force
 ";
 
@@ -93,6 +106,7 @@ pub fn main() -> ExitCode {
 enum Provider {
     Hetzner,
     DigitalOcean,
+    Ovh,
 }
 
 impl Provider {
@@ -102,7 +116,8 @@ impl Provider {
             "local" => None,
             "hetzner" | "hcloud" => Some(Provider::Hetzner),
             "digitalocean" | "do" => Some(Provider::DigitalOcean),
-            other => bail!("unknown provider '{other}' (local, hetzner or digitalocean)"),
+            "ovh" | "ovhcloud" => Some(Provider::Ovh),
+            other => bail!("unknown provider '{other}' (local, hetzner, digitalocean or ovh)"),
         })
     }
 
@@ -110,36 +125,16 @@ impl Provider {
         match self {
             Provider::Hetzner => "hetzner",
             Provider::DigitalOcean => "digitalocean",
+            Provider::Ovh => "ovh",
         }
     }
 
-    fn api_base(self) -> &'static str {
-        match self {
-            Provider::Hetzner => "https://api.hetzner.cloud/v1",
-            Provider::DigitalOcean => "https://api.digitalocean.com/v2",
-        }
-    }
-
-    /// The largest page the list endpoints serve.
+    /// The largest page the list endpoints serve; OVHcloud's lists are not
+    /// paged.
     fn per_page(self) -> u32 {
         match self {
             Provider::Hetzner => 50,
-            Provider::DigitalOcean => 200,
-        }
-    }
-
-    fn token_env(self) -> &'static str {
-        match self {
-            Provider::Hetzner => "HCLOUD_TOKEN",
-            Provider::DigitalOcean => "DIGITALOCEAN_ACCESS_TOKEN",
-        }
-    }
-
-    /// Where the token is in the repository's secrets.
-    fn secret_key(self) -> &'static str {
-        match self {
-            Provider::Hetzner => "hetzner.prod",
-            Provider::DigitalOcean => "doctl.prod",
+            Provider::DigitalOcean | Provider::Ovh => 200,
         }
     }
 
@@ -147,6 +142,7 @@ impl Provider {
         match self {
             Provider::Hetzner => "debian-13",
             Provider::DigitalOcean => "debian-13-x64",
+            Provider::Ovh => "Debian 13",
         }
     }
 
@@ -154,6 +150,7 @@ impl Provider {
         match self {
             Provider::Hetzner => "running",
             Provider::DigitalOcean => "active",
+            Provider::Ovh => "ACTIVE",
         }
     }
 }
@@ -496,43 +493,272 @@ fn digitalocean_server(droplet: &Value) -> Server {
     }
 }
 
+/// A flavor or image of OVHcloud that is missing, when there is none.
+static NULL: Value = Value::Null;
+
+/// `GET /cloud/project/<project>/flavor`: OVHcloud lists each flavor once per
+/// region already. Flavors carry no price, so it comes from the hourly plan
+/// of the public catalog (in 10^-8 of its currency), a month being
+/// [`HOURS_PER_MONTH`]; so does the memory, which the catalog gives in whole
+/// GiB. Windows flavors and flavors the catalog does not price are left out.
+fn ovh_offers(flavors: &Value, catalog: &Value) -> Vec<Offer> {
+    let plans: HashMap<String, &Value> = array(&catalog["addons"])
+        .iter()
+        .map(|plan| (text(&plan["planCode"]), plan))
+        .collect();
+    let mut offers = Vec::new();
+    for flavor in array(flavors) {
+        if flavor["available"].as_bool() == Some(false) || flavor["osType"] == "windows" {
+            continue;
+        }
+        let code = match flavor["planCodes"]["hourly"].as_str() {
+            Some(code) => code.to_string(),
+            None => format!("{}.consumption", text(&flavor["name"])),
+        };
+        let Some(plan) = plans.get(&code) else {
+            continue;
+        };
+        let Some(hourly) = array(&plan["pricings"])
+            .iter()
+            .find(|pricing| pricing["intervalUnit"] == "hour")
+            .map(|pricing| number(&pricing["price"]) / 1e8)
+        else {
+            continue;
+        };
+        let memory_gib = number(&plan["blobs"]["technical"]["memory"]["size"]);
+        offers.push(Offer {
+            server_type: text(&flavor["name"]),
+            location: text(&flavor["region"]),
+            arch: "x86".to_string(),
+            vcpus: number(&flavor["vcpus"]) as u32,
+            memory_mib: if memory_gib > 0.0 {
+                (memory_gib * 1024.0).round() as u64
+            } else {
+                number(&flavor["ram"]) as u64
+            },
+            disk_gib: number(&flavor["disk"]) as u64,
+            price: hourly * HOURS_PER_MONTH,
+        });
+    }
+    offers
+}
+
+/// An OVHcloud instance. A single instance carries its flavor; in a list it
+/// has only `flavorId`, looked up in `flavors`.
+fn ovh_server(instance: &Value, flavors: &[Value]) -> Server {
+    let flavor = match &instance["flavor"] {
+        Value::Null => flavors
+            .iter()
+            .find(|flavor| flavor["id"] == instance["flavorId"])
+            .unwrap_or(&NULL),
+        flavor => flavor,
+    };
+    let ipv4 = array(&instance["ipAddresses"])
+        .iter()
+        .find(|addr| addr["type"] == "public" && addr["version"] == 4)
+        .and_then(|addr| addr["ip"].as_str())
+        .map(str::to_string);
+    Server {
+        id: text(&instance["id"]),
+        name: text(&instance["name"]),
+        status: text(&instance["status"]),
+        server_type: text(&flavor["name"]),
+        location: text(&instance["region"]),
+        ipv4,
+        vcpus: number(&flavor["vcpus"]) as u64,
+        memory_mib: number(&flavor["ram"]) as u64,
+        disk_gib: number(&flavor["disk"]) as u64,
+    }
+}
+
 /// A client for the provider's REST API, over [`crate::http`].
 struct Api {
     provider: Provider,
-    token: String,
+    base: String,
+    auth: Auth,
+}
+
+enum Auth {
+    /// Hetzner's and DigitalOcean's API token.
+    Bearer(String),
+    Ovh(OvhKeys),
+}
+
+/// OVHcloud signs each request with application keys rather than sending a
+/// token, and its VMs live in a Public Cloud project.
+struct OvhKeys {
+    application_key: String,
+    application_secret: String,
+    consumer_key: String,
+    project: String,
+    /// Whose public catalog prices the flavors: FR, CA or US.
+    subsidiary: String,
+    /// OVHcloud's clock minus ours, in seconds; signatures carry its time.
+    clock_skew: i64,
+}
+
+impl OvhKeys {
+    /// The `X-Ovh-*` headers that authenticate one request.
+    fn headers(&self, method: &str, url: &str, body: &str) -> Vec<String> {
+        let timestamp = unix_time() + self.clock_skew;
+        let signature = ovh_signature(
+            &self.application_secret,
+            &self.consumer_key,
+            method,
+            url,
+            body,
+            timestamp,
+        );
+        vec![
+            format!("X-Ovh-Application: {}", self.application_key),
+            format!("X-Ovh-Consumer: {}", self.consumer_key),
+            format!("X-Ovh-Timestamp: {timestamp}"),
+            format!("X-Ovh-Signature: {signature}"),
+        ]
+    }
+}
+
+/// `$1$` and the SHA-1 of the secret, consumer key, method, full URL, body
+/// and timestamp joined by `+`.
+fn ovh_signature(
+    secret: &str,
+    consumer_key: &str,
+    method: &str,
+    url: &str,
+    body: &str,
+    timestamp: i64,
+) -> String {
+    use sha1::{Digest, Sha1};
+    let digest = Sha1::digest(format!(
+        "{secret}+{consumer_key}+{method}+{url}+{body}+{timestamp}"
+    ));
+    let hex: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
+    format!("$1${hex}")
+}
+
+fn unix_time() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs() as i64)
+}
+
+/// The API root and catalog subsidiary of an `OVH_ENDPOINT`, named as the
+/// OVHcloud SDKs name them.
+fn ovh_endpoint(name: &str) -> Result<(&'static str, &'static str)> {
+    Ok(match name {
+        "ovh-eu" => ("https://eu.api.ovh.com/1.0", "FR"),
+        "ovh-ca" => ("https://ca.api.ovh.com/1.0", "CA"),
+        "ovh-us" => ("https://api.us.ovhcloud.com/1.0", "US"),
+        other => bail!("unknown OVHcloud endpoint '{other}' (ovh-eu, ovh-ca or ovh-us)"),
+    })
+}
+
+/// Credentials from the environment, else from the current repository's
+/// secret store, where `uc cloud` finds them too. The store is read once, on
+/// the first credential the environment does not have.
+#[derive(Default)]
+struct Credentials {
+    secrets: Option<Value>,
+}
+
+impl Credentials {
+    fn get(&mut self, env: &str, key: &str) -> Result<String> {
+        self.find(env, key)?.with_context(|| {
+            format!(
+                "no {key} in the {} secrets (or set {env})",
+                crate::repo::fqn()
+            )
+        })
+    }
+
+    fn find(&mut self, env: &str, key: &str) -> Result<Option<String>> {
+        if let Some(value) = std::env::var(env).ok().filter(|value| !value.is_empty()) {
+            return Ok(Some(value));
+        }
+        if self.secrets.is_none() {
+            let repo = crate::repo::fqn();
+            let secrets = crate::secret::Store::new(&crate::secret::dir(), &repo)
+                .get()
+                .with_context(|| format!("reading the {repo} secrets (or set {env})"))?;
+            self.secrets = Some(secrets);
+        }
+        Ok(self
+            .secrets
+            .as_ref()
+            .and_then(|secrets| crate::secret::field(secrets, key))
+            .filter(|value| value.is_string())
+            .map(crate::secret::raw))
+    }
 }
 
 impl Api {
-    /// The token is `HCLOUD_TOKEN` or `DIGITALOCEAN_ACCESS_TOKEN` when set,
-    /// otherwise `hetzner.prod` or `doctl.prod` in the current repository's
-    /// secret store, where `uc cloud` finds it too.
+    /// Hetzner's token is `HCLOUD_TOKEN` or `hetzner.prod` in the secrets,
+    /// DigitalOcean's `DIGITALOCEAN_ACCESS_TOKEN` or `doctl.prod`. OVHcloud
+    /// takes its keys, project and endpoint from `OVH_*` or `ovh.prod.*`.
     fn connect(provider: Provider) -> Result<Api> {
-        let env = provider.token_env();
-        if let Some(token) = std::env::var(env).ok().filter(|token| !token.is_empty()) {
-            return Ok(Api { provider, token });
+        let mut creds = Credentials::default();
+        let (base, auth) = match provider {
+            Provider::Hetzner => (
+                "https://api.hetzner.cloud/v1",
+                Auth::Bearer(creds.get("HCLOUD_TOKEN", "hetzner.prod")?),
+            ),
+            Provider::DigitalOcean => (
+                "https://api.digitalocean.com/v2",
+                Auth::Bearer(creds.get("DIGITALOCEAN_ACCESS_TOKEN", "doctl.prod")?),
+            ),
+            Provider::Ovh => {
+                let endpoint = creds
+                    .find("OVH_ENDPOINT", "ovh.prod.endpoint")?
+                    .unwrap_or_else(|| "ovh-eu".to_string());
+                let (base, subsidiary) = ovh_endpoint(&endpoint)?;
+                let keys = OvhKeys {
+                    application_key: creds
+                        .get("OVH_APPLICATION_KEY", "ovh.prod.application_key")?,
+                    application_secret: creds
+                        .get("OVH_APPLICATION_SECRET", "ovh.prod.application_secret")?,
+                    consumer_key: creds.get("OVH_CONSUMER_KEY", "ovh.prod.consumer_key")?,
+                    project: creds.get("OVH_CLOUD_PROJECT_SERVICE", "ovh.prod.project")?,
+                    subsidiary: subsidiary.to_string(),
+                    clock_skew: ovh_clock_skew(base)?,
+                };
+                (base, Auth::Ovh(keys))
+            }
+        };
+        Ok(Api {
+            provider,
+            base: base.to_string(),
+            auth,
+        })
+    }
+
+    /// OVHcloud's keys; only its API has them.
+    fn ovh(&self) -> &OvhKeys {
+        match &self.auth {
+            Auth::Ovh(keys) => keys,
+            Auth::Bearer(_) => unreachable!("{} has no OVHcloud keys", self.provider.name()),
         }
-        let repo = crate::repo::fqn();
-        let secrets = crate::secret::Store::new(&crate::secret::dir(), &repo)
-            .get()
-            .with_context(|| format!("reading the {repo} secrets (or set {env})"))?;
-        let key = provider.secret_key();
-        let token = crate::secret::field(&secrets, key)
-            .filter(|token| token.is_string())
-            .map(crate::secret::raw)
-            .with_context(|| format!("no {key} in the {repo} secrets (or set {env})"))?;
-        Ok(Api { provider, token })
+    }
+
+    /// `path` under the OVHcloud Public Cloud project.
+    fn project_path(&self, path: &str) -> String {
+        format!("/cloud/project/{}{path}", self.ovh().project)
     }
 
     /// Sends one request and returns the JSON of a 2xx response (`null`
     /// when it has no body).
     fn call(&self, method: &str, path: &str, body: Option<&Value>) -> Result<Value> {
-        let url = format!("{}{path}", self.provider.api_base());
-        let headers = [
-            format!("Authorization: Bearer {}", self.token),
+        let url = format!("{}{path}", self.base);
+        let body = body.map(Value::to_string);
+        let mut headers = vec![
             "Content-Type: application/json".to_string(),
             "User-Agent: uc-vm".to_string(),
         ];
-        let body = body.map(Value::to_string);
+        match &self.auth {
+            Auth::Bearer(token) => headers.push(format!("Authorization: Bearer {token}")),
+            Auth::Ovh(keys) => {
+                headers.extend(keys.headers(method, &url, body.as_deref().unwrap_or("")))
+            }
+        }
         let response = http::request(method, &url, &headers, body.as_deref())?;
         if !response.ok() {
             bail!(
@@ -593,6 +819,18 @@ impl Api {
     }
 }
 
+/// OVHcloud's time (`GET /auth/time`, unauthenticated) less the local one.
+fn ovh_clock_skew(base: &str) -> Result<i64> {
+    let url = format!("{base}/auth/time");
+    let response = http::request("GET", &url, &[], None)?;
+    let time: i64 = response
+        .body
+        .trim()
+        .parse()
+        .with_context(|| format!("GET {url}: HTTP {}: {}", response.status, response.body))?;
+    Ok(time - unix_time())
+}
+
 /// Whether a list response has another page: Hetzner's
 /// `meta.pagination.next_page`, DigitalOcean's `links.pages.next`.
 fn has_next_page(body: &Value) -> bool {
@@ -600,7 +838,7 @@ fn has_next_page(body: &Value) -> bool {
 }
 
 /// The message of an API error: Hetzner's `error.message`, DigitalOcean's
-/// `message`, or the body itself.
+/// and OVHcloud's `message`, or the body itself.
 fn api_error(body: &str) -> String {
     let value: Value = serde_json::from_str(body).unwrap_or_default();
     value["error"]["message"]
@@ -615,6 +853,16 @@ fn offers(api: &Api) -> Result<Vec<Offer>> {
             hetzner_offers(&Value::Array(api.list("/server_types", "server_types")?))
         }
         Provider::DigitalOcean => digitalocean_offers(&Value::Array(api.list("/sizes", "sizes")?)),
+        Provider::Ovh => {
+            let catalog = format!(
+                "/order/catalog/public/cloud?ovhSubsidiary={}",
+                api.ovh().subsidiary
+            );
+            ovh_offers(
+                &api.call("GET", &api.project_path("/flavor"), None)?,
+                &api.call("GET", &catalog, None)?,
+            )
+        }
     })
 }
 
@@ -630,7 +878,58 @@ fn servers(api: &Api) -> Result<Vec<Server>> {
             .iter()
             .map(digitalocean_server)
             .collect(),
+        Provider::Ovh => {
+            let flavors = api.call("GET", &api.project_path("/flavor"), None)?;
+            let instances = api.call("GET", &api.project_path("/instance"), None)?;
+            array(&instances)
+                .iter()
+                .map(|instance| ovh_server(instance, array(&flavors)))
+                .collect()
+        }
     })
+}
+
+/// One server, fresh from the API.
+fn get(api: &Api, id: &str) -> Result<Server> {
+    Ok(match api.provider {
+        Provider::Hetzner => {
+            hetzner_server(&api.call("GET", &format!("/servers/{id}"), None)?["server"])
+        }
+        Provider::DigitalOcean => {
+            digitalocean_server(&api.call("GET", &format!("/droplets/{id}"), None)?["droplet"])
+        }
+        Provider::Ovh => ovh_server(
+            &api.call("GET", &api.project_path(&format!("/instance/{id}")), None)?,
+            &[],
+        ),
+    })
+}
+
+/// The `POST /cloud/project/<project>/instance` body. The instance is billed
+/// by the hour, as the flavors are priced: OVHcloud's monthly plan commits
+/// to the whole month.
+fn ovh_instance(name: &str, flavor: &Value, image: &Value, region: &str, user_data: &str) -> Value {
+    json!({
+        "name": name,
+        "flavorId": flavor,
+        "imageId": image,
+        "region": region,
+        "userData": user_data,
+        "monthlyBilling": false,
+    })
+}
+
+/// Polls a server until `ready` holds it, for the APIs whose requests start
+/// no action to wait on.
+fn wait_for(api: &Api, id: &str, ready: impl Fn(&Server) -> bool) -> Result<Server> {
+    for _ in 0..POLL_TRIES {
+        let server = get(api, id)?;
+        if ready(&server) {
+            return Ok(server);
+        }
+        std::thread::sleep(POLL_INTERVAL);
+    }
+    bail!("timed out waiting for {} server {id}", api.provider.name())
 }
 
 fn find(api: &Api, name: &str) -> Result<Server> {
@@ -720,8 +1019,11 @@ fn run(provider: Provider, args: &[String]) -> Result<()> {
 
 fn create(api: &Api, cfg: &VmConfig, spec: &Spec) -> Result<()> {
     let provider = api.provider;
-    if provider == Provider::DigitalOcean && !spec.start {
-        bail!("DigitalOcean droplets always start when created; --no-start is not supported");
+    if provider != Provider::Hetzner && !spec.start {
+        bail!(
+            "{} servers always start when created; --no-start is not supported",
+            provider.name()
+        );
     }
     let user_data = std::fs::read_to_string(cfg.user_data()?)?;
     if servers(api)?.iter().any(|server| server.name == spec.name) {
@@ -781,9 +1083,49 @@ fn create(api: &Api, cfg: &VmConfig, spec: &Spec) -> Result<()> {
             let droplet =
                 digitalocean_server(&api.call("POST", "/droplets", Some(&body))?["droplet"]);
             if spec.wait_for_ip {
-                wait_for_droplet(api, &droplet.id)?
+                wait_for(api, &droplet.id, |s| {
+                    s.status == "active" && s.ipv4.is_some()
+                })?
             } else {
                 droplet
+            }
+        }
+        Provider::Ovh => {
+            let region = &offer.location;
+            let flavors = api.call(
+                "GET",
+                &api.project_path(&format!("/flavor?region={region}")),
+                None,
+            )?;
+            let flavor = array(&flavors)
+                .iter()
+                .find(|flavor| flavor["name"] == offer.server_type.as_str())
+                .with_context(|| format!("flavor {} not found in {region}", offer.server_type))?;
+            let images = api.call(
+                "GET",
+                &api.project_path(&format!("/image?osType=linux&region={region}")),
+                None,
+            )?;
+            let found = array(&images)
+                .iter()
+                .find(|found| text(&found["name"]).eq_ignore_ascii_case(image))
+                .with_context(|| {
+                    let names: Vec<String> = array(&images)
+                        .iter()
+                        .map(|img| text(&img["name"]))
+                        .collect();
+                    format!(
+                        "no image '{image}' in {region}; there are: {}",
+                        names.join(", ")
+                    )
+                })?;
+            let body = ovh_instance(&spec.name, &flavor["id"], &found["id"], region, &user_data);
+            let instance = api.call("POST", &api.project_path("/instance"), Some(&body))?;
+            let id = text(&instance["id"]);
+            if spec.wait_for_ip {
+                wait_for(api, &id, |s| s.status == "ACTIVE" && s.ipv4.is_some())?
+            } else {
+                ovh_server(&instance, &[])
             }
         }
     };
@@ -803,19 +1145,6 @@ fn create(api: &Api, cfg: &VmConfig, spec: &Spec) -> Result<()> {
         None => eprintln!("uc vm: warning: the VM has no public IPv4 address yet"),
     }
     Ok(())
-}
-
-/// Polls a new droplet until it is active and has its public address.
-fn wait_for_droplet(api: &Api, id: &str) -> Result<Server> {
-    for _ in 0..POLL_TRIES {
-        let droplet =
-            digitalocean_server(&api.call("GET", &format!("/droplets/{id}"), None)?["droplet"]);
-        if droplet.status == "active" && droplet.ipv4.is_some() {
-            return Ok(droplet);
-        }
-        std::thread::sleep(POLL_INTERVAL);
-    }
-    bail!("timed out waiting for droplet {id} to become active")
 }
 
 fn list(api: &Api, all: bool) -> Result<()> {
@@ -864,7 +1193,7 @@ enum Power {
 
 fn power(api: &Api, server: &Server, action: Power) -> Result<()> {
     let id = &server.id;
-    let response = match api.provider {
+    match api.provider {
         Provider::Hetzner => {
             let verb = match action {
                 Power::Start => "poweron",
@@ -873,7 +1202,7 @@ fn power(api: &Api, server: &Server, action: Power) -> Result<()> {
                 Power::Reboot => "reboot",
                 Power::Reset => "reset",
             };
-            api.call("POST", &format!("/servers/{id}/actions/{verb}"), None)?
+            api.wait(&api.call("POST", &format!("/servers/{id}/actions/{verb}"), None)?)?;
         }
         Provider::DigitalOcean => {
             let verb = match action {
@@ -884,10 +1213,22 @@ fn power(api: &Api, server: &Server, action: Power) -> Result<()> {
                 Power::Reset => "power_cycle",
             };
             let body = json!({ "type": verb });
-            api.call("POST", &format!("/droplets/{id}/actions"), Some(&body))?
+            api.wait(&api.call("POST", &format!("/droplets/{id}/actions"), Some(&body))?)?;
         }
-    };
-    api.wait(&response)?;
+        Provider::Ovh => {
+            // OVHcloud has no graceful stop, and no action to wait on: the
+            // instance's status says when it is done.
+            let (verb, body, status) = match action {
+                Power::Start => ("start", None, "ACTIVE"),
+                Power::Shutdown | Power::Off => ("stop", None, "SHUTOFF"),
+                Power::Reboot => ("reboot", Some(json!({ "type": "soft" })), "ACTIVE"),
+                Power::Reset => ("reboot", Some(json!({ "type": "hard" })), "ACTIVE"),
+            };
+            let path = api.project_path(&format!("/instance/{id}/{verb}"));
+            api.call("POST", &path, body.as_ref())?;
+            wait_for(api, id, |s| s.status == status)?;
+        }
+    }
     println!("VM '{}': done", server.name);
     Ok(())
 }
@@ -903,6 +1244,11 @@ fn delete(api: &Api, server: &Server, force: bool) -> Result<()> {
     match api.provider {
         Provider::Hetzner => api.wait(&api.call("DELETE", &format!("/servers/{id}"), None)?)?,
         Provider::DigitalOcean => drop(api.call("DELETE", &format!("/droplets/{id}"), None)?),
+        Provider::Ovh => drop(api.call(
+            "DELETE",
+            &api.project_path(&format!("/instance/{id}")),
+            None,
+        )?),
     }
     for path in ssh_config_paths(&server.name) {
         match std::fs::remove_file(&path) {
@@ -985,6 +1331,8 @@ mod tests {
         assert_eq!(rest, strings(&["list"]));
         let (provider, _) = split_provider(&strings(&["list", "--provider", "local"])).unwrap();
         assert_eq!(provider, None);
+        let (provider, _) = split_provider(&strings(&["list", "--provider", "ovh"])).unwrap();
+        assert_eq!(provider, Some(Provider::Ovh));
         assert!(split_provider(&strings(&["list", "--provider", "aws"])).is_err());
         assert!(split_provider(&strings(&["list", "--provider"])).is_err());
     }
@@ -1102,6 +1450,65 @@ mod tests {
     }
 
     #[test]
+    fn ovh_flavors_are_priced_from_the_catalog() {
+        let flavors = json!([
+            {"id": "f1", "name": "b3-8", "region": "GRA11", "vcpus": 2, "ram": 8000,
+             "disk": 50, "osType": "linux", "available": true,
+             "planCodes": {"hourly": "b3-8.consumption", "monthly": null}},
+            {"id": "f2", "name": "win-b3-8", "region": "GRA11", "vcpus": 2, "ram": 8000,
+             "disk": 50, "osType": "windows", "available": true,
+             "planCodes": {"hourly": "win-b3-8.consumption"}},
+            {"id": "f3", "name": "unpriced", "region": "GRA11", "vcpus": 2, "ram": 8000,
+             "disk": 50, "osType": "linux", "available": true, "planCodes": {}}
+        ]);
+        let catalog = json!({"addons": [
+            {"planCode": "b3-8.consumption",
+             "pricings": [{"price": 5120000, "intervalUnit": "hour"}],
+             "blobs": {"technical": {"memory": {"size": 8}}}},
+            {"planCode": "win-b3-8.consumption",
+             "pricings": [{"price": 1, "intervalUnit": "hour"}]}
+        ]});
+        let offers = ovh_offers(&flavors, &catalog);
+        assert_eq!(offers.len(), 1);
+        assert_eq!(offers[0].location, "GRA11");
+        assert_eq!(offers[0].memory_mib, 8192);
+        assert!((offers[0].price - 0.0512 * 730.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn ovh_instances_are_billed_by_the_hour() {
+        let body = ovh_instance(
+            "uc4",
+            &json!("f1"),
+            &json!("i1"),
+            "GRA11",
+            "#cloud-config\n",
+        );
+        assert_eq!(body["monthlyBilling"], false);
+        assert_eq!(body["flavorId"], "f1");
+    }
+
+    #[test]
+    fn ovh_requests_are_signed() {
+        assert_eq!(
+            ovh_signature(
+                "AS",
+                "CK",
+                "GET",
+                "https://eu.api.ovh.com/1.0/cloud/project/p/instance",
+                "",
+                1790489276
+            ),
+            "$1$88c229378506bf49b4a98a62de074c2fcf4b6c5a"
+        );
+        assert_eq!(
+            ovh_endpoint("ovh-ca").unwrap(),
+            ("https://ca.api.ovh.com/1.0", "CA")
+        );
+        assert!(ovh_endpoint("kimsufi-eu").is_err());
+    }
+
+    #[test]
     fn servers_map_from_the_api_output() {
         let server = hetzner_server(&json!({
             "id": 42, "name": "uc3", "status": "running",
@@ -1122,6 +1529,20 @@ mod tests {
         }));
         assert_eq!(droplet.location, "fra1");
         assert_eq!(droplet.ipv4.as_deref(), Some("5.6.7.8"));
+
+        let flavors = [json!({"id": "f1", "name": "b3-8", "vcpus": 2, "ram": 8000, "disk": 50})];
+        let instance = ovh_server(
+            &json!({
+                "id": "abc", "name": "uc4", "status": "ACTIVE", "region": "GRA11",
+                "flavorId": "f1",
+                "ipAddresses": [{"ip": "2001:db8::1", "type": "public", "version": 6},
+                                {"ip": "9.9.9.9", "type": "public", "version": 4}]
+            }),
+            &flavors,
+        );
+        assert_eq!(instance.server_type, "b3-8");
+        assert_eq!(instance.vcpus, 2);
+        assert_eq!(instance.ipv4.as_deref(), Some("9.9.9.9"));
     }
 
     #[test]

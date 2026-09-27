@@ -261,13 +261,14 @@ flags the ones whose tool is not installed.
 
 ### Cloud VMs
 
-`uc vm` takes the same commands and size options to Hetzner Cloud or
-DigitalOcean when given `--provider`:
+`uc vm` takes the same commands and size options to Hetzner Cloud,
+DigitalOcean or OVHcloud Public Cloud when given `--provider`:
 
 ```sh
 sudo uc vm create uc3 --memory 4GiB --vcpus 4 --disk-size 60G  # local KVM/QEMU
 uc vm create uc3 --memory 4GiB --vcpus 4 --disk-size 60G --provider hetzner
 uc vm list --provider digitalocean
+uc vm create uc4 --vcpus 2 --memory 8GiB --provider ovh --location GRA11
 uc vm delete uc3 --provider hetzner --force
 ```
 
@@ -281,7 +282,14 @@ reaches the same user either way. `list`, `info`, `inspect`, `ip`, `start`,
 `mount` and `config` stay local. The providers are driven through their REST
 APIs (over `curl`, like `uc ghcr`), with the token from `HCLOUD_TOKEN` or
 `DIGITALOCEAN_ACCESS_TOKEN`, else `hetzner.prod` or `doctl.prod` in the
-current repository's secrets, as `uc cloud` finds it. Cloud VMs need no sudo.
+current repository's secrets, as `uc cloud` finds it. OVHcloud signs requests
+with application keys instead: `OVH_APPLICATION_KEY`, `OVH_APPLICATION_SECRET`,
+`OVH_CONSUMER_KEY`, the Public Cloud project id in `OVH_CLOUD_PROJECT_SERVICE`
+and optionally `OVH_ENDPOINT` (`ovh-eu`, the default, `ovh-ca` or `ovh-us`),
+else `application_key`, `application_secret`, `consumer_key`, `project` and
+`endpoint` under `ovh.prod` in the secrets. Its flavors are priced from the
+public catalog's hourly rate over 730 hours, and it has no graceful stop, so
+`stop` and `stop --force` do the same. Cloud VMs need no sudo.
 
 `uc configure` stays as it is, `x` being its shortcut. The personal and
 desktop tools that are not about DevOps — `ff`, `fzurls`, `imgpress`,
