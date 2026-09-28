@@ -4,10 +4,10 @@
 [package]
 name = "jsonc"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
 description = "Strip comments and trailing commas from JSONC, producing valid JSON"
-license = "HGL"
-authors = ["Hamed Ghasemzadeh <hg@evgnomon.org>"]
+license.workspace = true
+authors.workspace = true
 
 [lib]
 name = "jsonc"
@@ -16,6 +16,3 @@ path = "src/lib.rs"
 [[bin]]
 name = "jsonc"
 path = "src/main.rs"
-
-[profile.release]
-strip = true

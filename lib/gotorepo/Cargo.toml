@@ -4,10 +4,10 @@
 [package]
 name = "gotorepo"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
 description = "Open the current repository's origin remote in the browser"
-license = "HGL"
-authors = ["Hamed Ghasemzadeh <hg@evgnomon.org>"]
+license.workspace = true
+authors.workspace = true
 publish = false
 
 [[bin]]
@@ -15,8 +15,3 @@ name = "gotorepo"
 path = "src/main.rs"
 
 [dependencies]
-
-[profile.release]
-strip = true
-lto = true
-codegen-units = 1

@@ -655,10 +655,12 @@ mod tests {
             .unwrap(),
             "10.10.0.1"
         );
-        assert!(peer_address(&Peer {
-            allowed_ips: vec!["10.10.0.0/24".into(), "10.20.0.0/24".into()],
-            ..Peer::default()
-        })
-        .is_err());
+        assert!(
+            peer_address(&Peer {
+                allowed_ips: vec!["10.10.0.0/24".into(), "10.20.0.0/24".into()],
+                ..Peer::default()
+            })
+            .is_err()
+        );
     }
 }

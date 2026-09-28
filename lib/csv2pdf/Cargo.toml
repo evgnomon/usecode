@@ -4,10 +4,10 @@
 [package]
 name = "csv2pdf"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
 description = "Render CSV from stdin as a PDF table via weasyprint"
-license = "HGL"
-authors = ["Hamed Ghasemzadeh <hg@evgnomon.org>"]
+license.workspace = true
+authors.workspace = true
 publish = false
 
 [[bin]]
@@ -16,8 +16,3 @@ path = "src/main.rs"
 
 [dependencies]
 csv = "1"
-
-[profile.release]
-strip = true
-lto = true
-codegen-units = 1

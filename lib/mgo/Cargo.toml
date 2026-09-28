@@ -4,10 +4,10 @@
 [package]
 name = "mgo"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
 description = "MongoDB / Azure Cosmos DB (MongoDB API) CLI for local podman instances, collection management and JSON queries"
-license = "HGL"
-authors = ["Hamed Ghasemzadeh <hg@evgnomon.org>"]
+license.workspace = true
+authors.workspace = true
 publish = false
 
 [[bin]]
@@ -16,11 +16,6 @@ path = "src/main.rs"
 
 [dependencies]
 chrono = { version = "0.4", default-features = false, features = ["std", "alloc"] }
-clap = { version = "4", features = ["derive"] }
+clap = { workspace = true, features = ["derive"] }
 mongodb = { version = "3", features = ["sync"] }
-serde_json = { version = "1", features = ["preserve_order"] }
-
-[profile.release]
-strip = true
-lto = true
-codegen-units = 1
+serde_json = { workspace = true, features = ["preserve_order"] }

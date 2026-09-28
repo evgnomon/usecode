@@ -17,4 +17,4 @@ if ! rustup target list --installed | grep -qx "$target"; then
 	rustup target add "$target"
 fi
 
-exec cargo build --profile "$profile" --target "$target"
+exec cargo build -p uc --profile "$profile" --target "$target"

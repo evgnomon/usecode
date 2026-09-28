@@ -3,20 +3,18 @@
 
 FROM docker.io/library/rust:1-bookworm AS build
 
+# The build context is the repo root: cargo needs the whole workspace
+# (every member's manifest) to resolve, even though only the api is built.
 WORKDIR /src
-COPY Cargo.toml Cargo.lock ./
-COPY src ./src
-COPY migrations ./migrations
-COPY templates ./templates
-COPY static ./static
-COPY model_image ./model_image
+COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+COPY lib ./lib
 # The registry and target/ live in cache mounts, so a rebuild only
 # recompiles what changed. PROFILE=release gives the LTO'd binary.
 # sharing=locked serialises api-1/api-2 building in parallel.
 ARG PROFILE=local
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/src/target,sharing=locked \
-    cargo build --profile "$PROFILE" --locked \
+    cargo build -p usecode-agent-api --profile "$PROFILE" --locked \
     && cp "target/$PROFILE/usecode-agent-api" /usr/local/bin/
 
 FROM docker.io/library/debian:trixie-slim

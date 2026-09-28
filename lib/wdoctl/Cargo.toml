@@ -4,10 +4,10 @@
 [package]
 name = "wdoctl"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
 description = "Run doctl with the repository's DigitalOcean token"
-license = "HGL"
-authors = ["Hamed Ghasemzadeh <hg@evgnomon.org>"]
+license.workspace = true
+authors.workspace = true
 publish = false
 
 [[bin]]
@@ -15,9 +15,4 @@ name = "wdoctl"
 path = "src/main.rs"
 
 [dependencies]
-serde_json = "1"
-
-[profile.release]
-strip = true
-lto = true
-codegen-units = 1
+serde_json.workspace = true

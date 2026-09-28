@@ -27,7 +27,7 @@
 mod vault;
 mod yamledit;
 
-pub use vault::{check_available, Vault};
+pub use vault::{Vault, check_available};
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -38,7 +38,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{Context, Result};
 use crate::keys;
-use crate::net::{next_addr, Prefix};
+use crate::net::{Prefix, next_addr};
 
 /// The inventory group whose members uc daemon manages.
 pub const GROUP: &str = "usecode";

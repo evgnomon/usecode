@@ -4,10 +4,10 @@
 [package]
 name = "mkp12"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
 description = "Bundle a zygote function key and certificate into PKCS#12"
-license = "HGL"
-authors = ["Hamed Ghasemzadeh <hg@evgnomon.org>"]
+license.workspace = true
+authors.workspace = true
 publish = false
 
 [[bin]]
@@ -15,8 +15,3 @@ name = "mkp12"
 path = "src/main.rs"
 
 [dependencies]
-
-[profile.release]
-strip = true
-lto = true
-codegen-units = 1

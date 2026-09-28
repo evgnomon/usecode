@@ -368,10 +368,11 @@ impl Db {
             } else if targets.len() > 1 {
                 // `table` comes from the static schema declarations, never
                 // from input.
-                let existing: i64 =
-                    sqlx::query_scalar(&format!(r#"SELECT count(*) FROM "{table}""#))
-                        .fetch_one(&mut *tx)
-                        .await?;
+                let existing: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+                    r#"SELECT count(*) FROM "{table}""#
+                )))
+                .fetch_one(&mut *tx)
+                .await?;
                 if existing > 0 {
                     let others: Vec<&str> = targets[1..].iter().map(|(k, _)| k.as_str()).collect();
                     tracing::warn!(

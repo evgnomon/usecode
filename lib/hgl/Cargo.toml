@@ -4,9 +4,9 @@
 [package]
 name = "hgl"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
 description = "Check and add the HGL license header in files tracked by git"
-license = "HGL"
+license.workspace = true
 
 [lib]
 name = "hgl"
@@ -15,6 +15,3 @@ path = "src/lib.rs"
 [[bin]]
 name = "hgl"
 path = "src/main.rs"
-
-[profile.release]
-strip = true

@@ -199,7 +199,11 @@ pub fn resource_to_doc(
     if let Some(sp) = spec.filter(truthy) {
         doc.insert("spec".into(), sp);
     }
-    Value::Object(doc)
+    // Sorted keys, like PyYAML. Explicit because other workspace crates turn
+    // on serde_json's preserve_order, which would otherwise leak in here.
+    let mut doc = Value::Object(doc);
+    doc.sort_all_objects();
+    doc
 }
 
 /// Normalize a path like Python's `pathlib.PurePosixPath` does when

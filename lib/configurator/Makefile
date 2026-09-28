@@ -13,7 +13,7 @@ EGET ?= $(BIN_DIR)/eget
 STAMPS_DIR := $(CURDIR)/.stamps
 UC_DIR := $(ROOT_DIR)/lib/uc
 UC_SOURCES := $(shell find $(UC_DIR)/src -type f -name '*.rs') $(shell find $(UC_DIR)/roles -type f) \
-	$(UC_DIR)/Cargo.toml $(UC_DIR)/Cargo.lock
+	$(UC_DIR)/Cargo.toml $(ROOT_DIR)/Cargo.lock
 
 
 EGET_BINS := eget gh fd delta rg bat hugo rclone hcloud tflint gvproxy goose kompose csvlens yq

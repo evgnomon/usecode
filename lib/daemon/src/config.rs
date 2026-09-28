@@ -320,13 +320,11 @@ impl Config {
                      forward rule) or both empty (it's a local declaration)"
                 ));
             }
-            if has_bind {
-                if let Err(e) = split_host_port(&s.remote_bind) {
-                    errs.push(format!(
-                        "service[{i}]: remote_bind {:?} must be host:port: {e}",
-                        s.remote_bind
-                    ));
-                }
+            if has_bind && let Err(e) = split_host_port(&s.remote_bind) {
+                errs.push(format!(
+                    "service[{i}]: remote_bind {:?} must be host:port: {e}",
+                    s.remote_bind
+                ));
             }
             if has_addr && s.client_address.parse::<IpAddr>().is_err() {
                 errs.push(format!(

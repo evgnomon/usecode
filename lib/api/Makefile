@@ -2,59 +2,11 @@
 # Copyright (C) The Usecode Authors (see AUTHORS)
 
 NAME := usecode-agent-api
-SOURCES := $(shell find src migrations templates static model_image -type f) Cargo.toml Cargo.lock
-PROFILE ?= release
-OUTPUT := target/$(PROFILE)/$(NAME)
-DESTDIR ?= /
-PREFIX ?= /usr/local
-INSTALL_BIN := $(DESTDIR)$(patsubst /%,%,$(PREFIX))/bin/$(NAME)
-LINK_BIN := $(HOME)/.local/bin/$(NAME)
+EXTRA_SOURCES := $(shell find migrations templates static model_image -type f)
 
-.PHONY: all build check install uninstall link unlink run test lint fmt clean
+include ../rust.mk
 
-all: build
-
-build: $(OUTPUT)
-
-$(OUTPUT): $(SOURCES)
-	@cargo build --profile $(PROFILE)
-	@touch $(OUTPUT)
-
-Cargo.lock:
-	@cargo generate-lockfile
-
-install: $(INSTALL_BIN)
-
-$(INSTALL_BIN): $(OUTPUT)
-	@install -d $(@D)
-	@install -m 0755 $(OUTPUT) $@
-
-link: $(OUTPUT)
-	@mkdir -p $(dir $(LINK_BIN))
-	@ln -sf $(CURDIR)/$(OUTPUT) $(LINK_BIN)
-
-unlink:
-	@rm -f $(LINK_BIN)
+.PHONY: run
 
 run:
-	@cargo run
-
-check:
-	@cargo fmt --check
-	@cargo clippy --all-targets -- -D warnings
-	@cargo test
-
-test:
-	@cargo test
-
-lint:
-	@cargo clippy --all-targets -- -D warnings
-
-fmt:
-	@cargo fmt
-
-uninstall:
-	@rm -f $(INSTALL_BIN)
-
-clean:
-	@cargo clean
+	@cargo run -p $(NAME)

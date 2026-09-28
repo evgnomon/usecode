@@ -604,8 +604,7 @@ pub fn mount_vm(conn: &Connection, domain_name: &str, mount: &MountSpec) -> Resu
 /// when none exists yet. Without `ssh_key` in the config, the public half of
 /// `identity_file` (resolved against the invoking user's home) is used.
 fn ensure_cloud_init_template(cfg: &Config) -> Result<()> {
-    let template_path =
-        Path::new(&cfg.cloud_init_template_path).join("cloud-init-user-data.yaml");
+    let template_path = Path::new(&cfg.cloud_init_template_path).join("cloud-init-user-data.yaml");
     if template_path.exists() {
         return Ok(());
     }

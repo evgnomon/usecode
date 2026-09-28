@@ -4,10 +4,10 @@
 [package]
 name = "mkarole"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
 description = "Scaffold an Ansible role and a roles.yaml playbook"
-license = "HGL"
-authors = ["Hamed Ghasemzadeh <hg@evgnomon.org>"]
+license.workspace = true
+authors.workspace = true
 publish = false
 
 [[bin]]
@@ -15,8 +15,3 @@ name = "mkarole"
 path = "src/main.rs"
 
 [dependencies]
-
-[profile.release]
-strip = true
-lto = true
-codegen-units = 1

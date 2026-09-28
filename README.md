@@ -137,13 +137,19 @@ claude mcp add usecode -- usecode-mcp
 | --- | --- |
 | `lib/uc` | The `uc` command and `uc configure`; start with its [README](lib/uc/README.md) |
 | `lib/` | Every tool and library, each with its own Makefile |
+| `Cargo.toml` | One cargo workspace for all the Rust crates in `lib/`, so they share a lockfile and a `target/` |
 | `lib/configurator` | The bootstrap that the kickstart calls |
 | `deploy/` | Compose file, container images and Ansible playbooks |
 | `docs/` | Longer write-ups, like the agent architecture |
 | `scripts/` | Small build helpers used by the Makefile |
 
 Handy `make` targets at the root: `build`, `install`, `link`, `clean`,
-`submodules`, `fmt`, `headers-check` and `authors`.
+`submodules`, `check`, `test`, `lint`, `fmt`, `headers-check` and `authors`.
+
+Adding a Rust tool? Put it in `lib/<name>`, add it to `members` in the root
+`Cargo.toml`, and give it a two-line Makefile: `NAME := <name>` followed by
+`include ../rust.mk`. That gets you `build`, `install`, `link`, `test` and
+the rest.
 
 ## Contributing
 

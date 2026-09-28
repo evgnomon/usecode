@@ -4,10 +4,10 @@
 [package]
 name = "certgen"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
 description = "X.509 certificate management (local CA, server and client certificates) via openssl"
-license = "HGL"
-authors = ["Hamed Ghasemzadeh <hg@evgnomon.org>"]
+license.workspace = true
+authors.workspace = true
 publish = false
 
 [[bin]]
@@ -15,10 +15,5 @@ name = "certgen"
 path = "src/main.rs"
 
 [dependencies]
-anyhow = "1"
-clap = { version = "4", features = ["derive"] }
-
-[profile.release]
-strip = true
-lto = true
-codegen-units = 1
+anyhow.workspace = true
+clap = { workspace = true, features = ["derive"] }

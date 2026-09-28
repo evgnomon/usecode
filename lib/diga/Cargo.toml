@@ -4,10 +4,10 @@
 [package]
 name = "diga"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
 description = "Print only the A records of a DNS lookup with dig"
-license = "HGL"
-authors = ["Hamed Ghasemzadeh <hg@evgnomon.org>"]
+license.workspace = true
+authors.workspace = true
 publish = false
 
 [[bin]]
@@ -15,8 +15,3 @@ name = "diga"
 path = "src/main.rs"
 
 [dependencies]
-
-[profile.release]
-strip = true
-lto = true
-codegen-units = 1

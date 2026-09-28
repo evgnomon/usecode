@@ -135,7 +135,8 @@ services:
   api-1:
     <<: *api
     build:
-      context: ../lib/api
+      context: ..
+      dockerfile: lib/api/Containerfile
     environment:
       <<: *api-env
       USECODE_AGENT_NODE_NAME: api-1

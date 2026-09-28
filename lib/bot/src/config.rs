@@ -10,8 +10,7 @@ use crate::error::Result;
 
 /// Default Caddy load balancers, matching `deploy/compose.yml`. Plain HTTP:
 /// locally Caddy serves no TLS, so there is no certificate to trust.
-const DEFAULT_API_BASE_URLS: [&str; 2] =
-    ["http://localhost:8430/api", "http://localhost:8431/api"];
+const DEFAULT_API_BASE_URLS: [&str; 2] = ["http://localhost:8430/api", "http://localhost:8431/api"];
 
 #[derive(Debug, Clone)]
 pub struct Settings {

@@ -48,11 +48,11 @@ pub fn status(cfg: &Config) -> (String, Result<()>) {
         return (out, res);
     }
 
-    if !cfg.forwards().is_empty() {
-        if let Ok(rules) = iptables::ruleset() {
-            out.push('\n');
-            out.push_str(&rules);
-        }
+    if !cfg.forwards().is_empty()
+        && let Ok(rules) = iptables::ruleset()
+    {
+        out.push('\n');
+        out.push_str(&rules);
     }
 
     (out, Ok(()))

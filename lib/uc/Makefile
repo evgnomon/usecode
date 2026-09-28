@@ -1,12 +1,13 @@
 # License-Identifier: HGL
 # Copyright (C) The Usecode Authors (see AUTHORS)
 
-SOURCES := $(shell find src tests -type f -name "*.rs") Cargo.toml Cargo.lock
+ROOT_DIR ?= $(abspath ../..)
+SOURCES := $(shell find src tests -type f -name "*.rs") Cargo.toml $(ROOT_DIR)/Cargo.lock
 PROFILE ?= release
 TARGET ?= x86_64-unknown-linux-musl
 BINS := uc uc-encrypt uc-decrypt uc-configure uc-push uc-pull uc-ghcr uc-secret \
 	uc-image uc-repo uc-cert uc-deb uc-db uc-net uc-vm uc-nats uc-work uc-new uc-cloud
-OUT_DIR := target/$(TARGET)/$(PROFILE)
+OUT_DIR := $(ROOT_DIR)/target/$(TARGET)/$(PROFILE)
 OUTPUTS := $(addprefix $(OUT_DIR)/,$(BINS))
 DESTDIR ?= /
 PREFIX ?= /usr/local
@@ -36,18 +37,18 @@ $(INSTALLED_ALIASES): $(BIN_DIR)/uc-secret
 	@ln -sf uc-secret $@
 
 check:
-	@cargo fmt --check
-	@cargo clippy --all-targets -- -D warnings
-	@cargo test
+	@cargo fmt -p uc --check
+	@cargo clippy -p uc --all-targets -- -D warnings
+	@cargo test -p uc
 
 test:
-	@cargo test
+	@cargo test -p uc
 
 lint:
-	@cargo clippy --all-targets -- -D warnings
+	@cargo clippy -p uc --all-targets -- -D warnings
 
 fmt:
-	@cargo fmt
+	@cargo fmt -p uc
 
 dist: build
 	@mkdeb
@@ -59,4 +60,4 @@ uninstall:
 	@rm -f $(INSTALLED) $(INSTALLED_ALIASES)
 
 clean:
-	@cargo clean
+	@cargo clean -p uc

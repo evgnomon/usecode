@@ -104,4 +104,4 @@ dist-ssr
 **/vault.yaml
 **/secrets.yml
 
-lib/*/target
+/target

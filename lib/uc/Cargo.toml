@@ -4,10 +4,10 @@
 [package]
 name = "uc"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
 description = "usecode command line tool, its OpenSSL-compatible file encryption subcommands, the parallel machine configurator and the container registry push/pull, GHCR image management, the secret stores and the command groups over the usecode tools"
-license = "HGL"
-authors = ["Hamed Ghasemzadeh <hg@evgnomon.org>"]
+license.workspace = true
+authors.workspace = true
 
 [lib]
 name = "uc"
@@ -91,24 +91,21 @@ path = "src/bin/uc-cloud.rs"
 
 [dependencies]
 aes = "0.9"
-anyhow = "1"
+anyhow.workspace = true
 base64 = "0.23"
 cbc = "0.2"
-clap = { version = "4", features = ["derive", "env"] }
-getrandom = "0.3"
-libc = "0.2"
+clap = { workspace = true, features = ["derive", "env"] }
+getrandom.workspace = true
+libc.workspace = true
 md-5 = "0.11"
-minijinja = "2"
+minijinja.workspace = true
 minijinja-contrib = { version = "2", features = ["pycompat"] }
 pbkdf2 = { version = "0.13", default-features = false, features = ["hmac"] }
-rpassword = "7"
-serde_json = { version = "1", features = ["preserve_order"] }
-serde = { version = "1", features = ["derive"] }
-serde_yaml = "0.9"
+rpassword.workspace = true
+serde_json = { workspace = true, features = ["preserve_order"] }
+serde = { workspace = true, features = ["derive"] }
+serde_yaml.workspace = true
 sha1 = "0.11"
 sha2 = "0.11"
-tokio = { version = "1", features = ["macros", "process", "rt-multi-thread", "sync", "time", "io-util"] }
+tokio = { workspace = true, features = ["macros", "process", "rt-multi-thread", "sync", "time", "io-util"] }
 zeroize = "1"
-
-[profile.release]
-strip = true

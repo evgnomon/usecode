@@ -4,10 +4,10 @@
 [package]
 name = "trust_ca"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
 description = "Fetch the CA serving a TLS endpoint and install it into system, container and NSS trust stores"
-license = "HGL"
-authors = ["Hamed Ghasemzadeh <hg@evgnomon.org>"]
+license.workspace = true
+authors.workspace = true
 publish = false
 
 [[bin]]
@@ -15,9 +15,4 @@ name = "trust_ca"
 path = "src/main.rs"
 
 [dependencies]
-regex = "1.13.1"
-
-[profile.release]
-strip = true
-lto = true
-codegen-units = 1
+regex.workspace = true

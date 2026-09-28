@@ -959,12 +959,12 @@ impl Store {
     ) -> Result<ServerRow> {
         let pool = self.db.pool(partition).await?;
         let now = Utc::now();
-        Ok(sqlx::query_as(&format!(
+        Ok(sqlx::query_as(sqlx::AssertSqlSafe(format!(
             "INSERT INTO servers (id, user_id, provider, provider_server_id, type, name, status,
                                   public_ip4, public_ip6, created_at, updated_at)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
              RETURNING {SERVER_COLUMNS}"
-        ))
+        )))
         .bind(Uuid::new_v4())
         .bind(user_id)
         .bind(server.provider)
@@ -989,9 +989,9 @@ impl Store {
             return Ok(None);
         };
         let pool = self.db.pool(partition).await?;
-        Ok(sqlx::query_as(&format!(
+        Ok(sqlx::query_as(sqlx::AssertSqlSafe(format!(
             "SELECT {SERVER_COLUMNS} FROM servers WHERE id = $1 AND user_id = $2"
-        ))
+        )))
         .bind(server_id)
         .bind(user_id)
         .fetch_optional(&pool)
@@ -1004,9 +1004,9 @@ impl Store {
         user_id: &Uuid,
     ) -> Result<Vec<ServerRow>> {
         let pool = self.db.pool(partition).await?;
-        Ok(sqlx::query_as(&format!(
+        Ok(sqlx::query_as(sqlx::AssertSqlSafe(format!(
             "SELECT {SERVER_COLUMNS} FROM servers WHERE user_id = $1 ORDER BY created_at DESC"
-        ))
+        )))
         .bind(user_id)
         .fetch_all(&pool)
         .await?)
@@ -1022,9 +1022,9 @@ impl Store {
             return Ok(None);
         };
         let pool = self.db.pool(partition).await?;
-        Ok(sqlx::query_as(&format!(
+        Ok(sqlx::query_as(sqlx::AssertSqlSafe(format!(
             "DELETE FROM servers WHERE id = $1 AND user_id = $2 RETURNING {SERVER_COLUMNS}"
-        ))
+        )))
         .bind(server_id)
         .bind(user_id)
         .fetch_optional(&pool)
@@ -1042,10 +1042,10 @@ impl Store {
             return Ok(None);
         };
         let pool = self.db.pool(partition).await?;
-        Ok(sqlx::query_as(&format!(
+        Ok(sqlx::query_as(sqlx::AssertSqlSafe(format!(
             "UPDATE servers SET status = $3, updated_at = $4 WHERE id = $1 AND user_id = $2
              RETURNING {SERVER_COLUMNS}"
-        ))
+        )))
         .bind(server_id)
         .bind(user_id)
         .bind(status)
@@ -1063,12 +1063,12 @@ impl Store {
         server: NewServer<'_>,
     ) -> Result<(ServerRow, bool)> {
         let pool = self.db.pool(partition).await?;
-        let updated: Option<ServerRow> = sqlx::query_as(&format!(
+        let updated: Option<ServerRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
             "UPDATE servers SET type = $4, name = $5, status = $6, public_ip4 = $7,
                                 public_ip6 = $8, updated_at = $9
              WHERE user_id = $1 AND provider = $2 AND provider_server_id = $3
              RETURNING {SERVER_COLUMNS}"
-        ))
+        )))
         .bind(user_id)
         .bind(server.provider)
         .bind(server.provider_server_id)
@@ -1111,12 +1111,12 @@ impl Store {
     ) -> Result<TaskRecord> {
         let pool = self.task_pool(assignee).await?;
         let now = Utc::now();
-        let row: TaskRow = sqlx::query_as(&format!(
+        let row: TaskRow = sqlx::query_as(sqlx::AssertSqlSafe(format!(
             "INSERT INTO tasks (id, user_id, kind, assignee, state, resources, payload,
                                 created_at, updated_at)
              VALUES ($1, $2, $3, $4, $5, $6::json, $7::json, $8, $8)
              RETURNING {TASK_COLUMNS}"
-        ))
+        )))
         .bind(Uuid::new_v4())
         .bind(user_id)
         .bind(kind)
@@ -1148,9 +1148,9 @@ impl Store {
     /// it and its id.
     pub async fn get_task(&self, assignee: &str, task_id: &Uuid) -> Result<Option<TaskRecord>> {
         let pool = self.task_pool(assignee).await?;
-        let row: Option<TaskRow> = sqlx::query_as(&format!(
+        let row: Option<TaskRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
             "SELECT {TASK_COLUMNS} FROM tasks WHERE assignee = $1 AND id = $2"
-        ))
+        )))
         .bind(assignee)
         .bind(task_id)
         .fetch_optional(&pool)
@@ -1162,9 +1162,9 @@ impl Store {
     /// on one instance, since that is what the table is hashed for.
     pub async fn list_tasks(&self, assignee: &str) -> Result<Vec<TaskRecord>> {
         let pool = self.task_pool(assignee).await?;
-        let rows: Vec<TaskRow> = sqlx::query_as(&format!(
+        let rows: Vec<TaskRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
             "SELECT {TASK_COLUMNS} FROM tasks WHERE assignee = $1 ORDER BY created_at"
-        ))
+        )))
         .bind(assignee)
         .fetch_all(&pool)
         .await?;
@@ -1192,10 +1192,10 @@ impl Store {
         let mut records: Vec<TaskRecord> = Vec::new();
         for (assignee, task_ids) in by_assignee {
             let pool = self.task_pool(&assignee).await?;
-            let rows: Vec<TaskRow> = sqlx::query_as(&format!(
+            let rows: Vec<TaskRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
                 "SELECT {TASK_COLUMNS} FROM tasks
                  WHERE assignee = $1 AND id = ANY($2) AND user_id = $3"
-            ))
+            )))
             .bind(&assignee)
             .bind(&task_ids)
             .bind(user_id)

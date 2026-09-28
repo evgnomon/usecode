@@ -4,10 +4,10 @@
 [package]
 name = "k8s_ddl"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
 description = "Create the Kubernetes resources table schema with pg"
-license = "HGL"
-authors = ["Hamed Ghasemzadeh <hg@evgnomon.org>"]
+license.workspace = true
+authors.workspace = true
 publish = false
 
 [[bin]]
@@ -15,8 +15,3 @@ name = "k8s_ddl"
 path = "src/main.rs"
 
 [dependencies]
-
-[profile.release]
-strip = true
-lto = true
-codegen-units = 1

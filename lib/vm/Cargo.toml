@@ -4,10 +4,10 @@
 [package]
 name = "vm"
 version = "0.7.0"
-edition = "2024"
+edition.workspace = true
 description = "A lightweight KVM/QEMU virtual machine creation tool"
-license = "HGL"
-authors = ["Hamed Ghasemzadeh <hg@evgnomon.org>"]
+license.workspace = true
+authors.workspace = true
 
 [lib]
 name = "vm"
@@ -19,6 +19,3 @@ path = "src/main.rs"
 
 [build-dependencies]
 cc = "1"
-
-[profile.release]
-strip = true

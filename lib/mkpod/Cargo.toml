@@ -4,10 +4,10 @@
 [package]
 name = "mkpod"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
 description = "Manage pods via podman from a PostgreSQL resource store"
-license = "HGL"
-authors = ["Hamed Ghasemzadeh <hg@evgnomon.org>"]
+license.workspace = true
+authors.workspace = true
 publish = false
 
 [[bin]]
@@ -15,12 +15,7 @@ name = "mkpod"
 path = "src/main.rs"
 
 [dependencies]
-anyhow = "1"
-clap = { version = "4", features = ["derive", "env"] }
-postgres = { version = "0.19", features = ["with-serde_json-1"] }
-serde_json = { version = "1", features = ["preserve_order"] }
-
-[profile.release]
-strip = true
-lto = true
-codegen-units = 1
+anyhow.workspace = true
+clap = { workspace = true, features = ["derive", "env"] }
+postgres = { workspace = true, features = ["with-serde_json-1"] }
+serde_json = { workspace = true, features = ["preserve_order"] }

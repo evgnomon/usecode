@@ -59,11 +59,7 @@ fn cache_age() -> Option<Duration> {
         return None;
     }
     let stamp = Path::new("/var/lib/apt/periodic/update-success-stamp");
-    let path = if stamp.exists() {
-        stamp
-    } else {
-        lists
-    };
+    let path = if stamp.exists() { stamp } else { lists };
     let modified = path.metadata().ok()?.modified().ok()?;
     SystemTime::now().duration_since(modified).ok()
 }

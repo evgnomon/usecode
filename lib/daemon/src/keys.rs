@@ -108,10 +108,10 @@ fn write_private(path: &str, contents: &str) -> std::io::Result<()> {
 /// rest of the WireGuard ecosystem produces, falling back to generating
 /// the Curve25519 scalar directly.
 fn gen_private_key() -> Result<String> {
-    if let Ok(out) = Command::new("wg").arg("genkey").output() {
-        if out.status.success() {
-            return Ok(String::from_utf8_lossy(&out.stdout).trim().to_string());
-        }
+    if let Ok(out) = Command::new("wg").arg("genkey").output()
+        && out.status.success()
+    {
+        return Ok(String::from_utf8_lossy(&out.stdout).trim().to_string());
     }
 
     let mut raw = random_bytes()?;

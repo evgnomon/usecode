@@ -4,10 +4,10 @@
 [package]
 name = "usecode-agent-api"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
 description = "HTTP backend for usecode agent: OTP auth, API keys, cloud servers, tasks and the chat UI"
-license = "HGL"
-authors = ["Hamed Ghasemzadeh <hg@evgnomon.org>"]
+license.workspace = true
+authors.workspace = true
 publish = false
 
 [[bin]]
@@ -15,37 +15,25 @@ name = "usecode-agent-api"
 path = "src/main.rs"
 
 [dependencies]
-anyhow = "1"
-axum = { version = "0.8", features = ["macros"] }
+anyhow.workspace = true
+axum = { workspace = true, features = ["macros"] }
 base64 = "0.22"
 blake2 = "0.10"
 chrono = { version = "0.4", features = ["serde"] }
-dotenvy = "0.15"
+dotenvy.workspace = true
 fernet = { version = "0.2", default-features = false, features = ["rustcrypto"] }
 futures = "0.3"
-minijinja = "2"
+minijinja.workspace = true
 rand = "0.9"
-reqwest = { version = "0.13", default-features = false, features = ["json", "query", "rustls", "charset", "http2"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = { version = "1", features = ["preserve_order"] }
+reqwest = { workspace = true, features = ["json", "query", "rustls", "charset", "http2"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true, features = ["preserve_order"] }
 sha2 = "0.10"
-sqlx = { version = "0.8", default-features = false, features = ["postgres", "runtime-tokio", "tls-rustls", "uuid", "chrono", "json", "derive"] }
+sqlx = { version = "0.9", default-features = false, features = ["postgres", "runtime-tokio", "tls-rustls", "uuid", "chrono", "json", "derive"] }
 subtle = "2"
-thiserror = "2"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "signal", "time", "fs"] }
+thiserror.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "process", "signal", "time", "fs"] }
 tower-http = { version = "0.6", features = ["cors"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-uuid = { version = "1", features = ["v4", "serde"] }
-
-[profile.release]
-strip = true
-lto = true
-codegen-units = 1
-
-# Quick to rebuild, for the local compose stack (see Containerfile).
-[profile.local]
-inherits = "release"
-lto = false
-codegen-units = 16
-incremental = true
+uuid = { workspace = true, features = ["v4", "serde"] }

@@ -302,8 +302,16 @@ impl Spec {
         let mut spec = Spec {
             name: name.clone(),
             vcpus: if smallest { 1 } else { cfg.default_vcpus },
-            memory_mib: if smallest { 0 } else { cfg.default_memory.div_ceil(1024) },
-            disk_gib: if smallest { 0 } else { cfg.default_disk_size.div_ceil(1 << 30) },
+            memory_mib: if smallest {
+                0
+            } else {
+                cfg.default_memory.div_ceil(1024)
+            },
+            disk_gib: if smallest {
+                0
+            } else {
+                cfg.default_disk_size.div_ceil(1 << 30)
+            },
             image: None,
             location: provider.default_location().map(str::to_string),
             arch: "x86".to_string(),
@@ -1642,7 +1650,14 @@ mod tests {
         assert_eq!(spec.disk_gib, 60);
         assert_eq!(spec.location.as_deref(), Some("hel1"));
         assert_eq!(cfg.username, "hamed");
-        assert!(Spec::parse(&strings(&["uc3", "--mount", "/src"]), &cfg, Provider::Hetzner).is_err());
+        assert!(
+            Spec::parse(
+                &strings(&["uc3", "--mount", "/src"]),
+                &cfg,
+                Provider::Hetzner
+            )
+            .is_err()
+        );
         assert!(Spec::parse(&strings(&["--vcpus", "2"]), &cfg, Provider::Hetzner).is_err());
     }
 
@@ -1667,7 +1682,10 @@ mod tests {
             Provider::UpCloud,
         )
         .unwrap();
-        assert_eq!((asked.vcpus, asked.location.as_deref()), (2, Some("de-fra1")));
+        assert_eq!(
+            (asked.vcpus, asked.location.as_deref()),
+            (2, Some("de-fra1"))
+        );
     }
 
     #[test]
@@ -1835,7 +1853,8 @@ mod tests {
             keys,
             ["ssh-ed25519 AAAA me@host", "ecdsa-sha2-nistp256 BBBB"]
         );
-        let spec = Spec::parse(&strings(&["uc5"]), &VmConfig::default(), Provider::UpCloud).unwrap();
+        let spec =
+            Spec::parse(&strings(&["uc5"]), &VmConfig::default(), Provider::UpCloud).unwrap();
         let body = upcloud_server_body(
             &spec,
             &offer("2xCPU-4GB", "de-fra1", 2, 4096, 80, 16.8),

@@ -9,7 +9,7 @@ PostgreSQL CLI: start a local instance with podman, manage databases,
 tables, columns, indexes and rows, dump DDL, and run SQL with JSON output.
 
 ```sh
-make build        # target/release/pg
+make build        # ../../target/release/pg
 make link         # symlink into ~/.local/bin/pg
 make install      # install into $(PREFIX)/bin (default /usr/local)
 ```

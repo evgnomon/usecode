@@ -1,7 +1,7 @@
 # License-Identifier: HGL
 # Copyright (C) The Usecode Authors (see AUTHORS)
 
-.PHONY: all ci deploy publish build version install link clean submodules fmt-html fmt headers headers-check authors up reload down logs
+.PHONY: all ci deploy publish build version install link clean submodules check test lint fmt-html fmt headers headers-check authors up reload down logs
 
 $(eval $(shell ./scripts/ci_wrapper.sh --env 2>/dev/null))
 
@@ -78,6 +78,17 @@ submodules:
 clean:
 	@rm -rf $(BUILD_DIR)
 	@MAKE=$(MAKE) ./scripts/each_lib.sh $@
+	@cargo clean
+
+# The Rust crates under lib/ form one cargo workspace (see Cargo.toml).
+check: lint test
+	@cargo fmt --all --check
+
+test:
+	@cargo test --workspace
+
+lint:
+	@cargo clippy --workspace --all-targets -- -D warnings
 
 fmt-html:
 	@if ! command -v djlint >/dev/null 2>&1; then \
@@ -88,9 +99,9 @@ fmt-html:
 	djlint --extension=jinja2 --reformat "lib/api/templates" --indent 2 || true
 
 fmt: fmt-html
-	$(MAKE) -C lib/api fmt
+	@cargo fmt --all
 
-HGL := lib/hgl/target/release/hgl
+HGL := target/release/hgl
 
 headers:
 	@$(MAKE) -s -C lib/hgl build
@@ -100,7 +111,7 @@ headers-check:
 	@$(MAKE) -s -C lib/hgl build
 	@$(HGL) check
 
-UC_REPO := lib/uc/target/x86_64-unknown-linux-musl/release/uc-repo
+UC_REPO := target/x86_64-unknown-linux-musl/release/uc-repo
 
 authors:
 	@$(MAKE) -s -C lib/uc build

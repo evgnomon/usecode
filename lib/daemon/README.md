@@ -23,7 +23,7 @@ addresses start to collide once there are more.
 ## Install
 
 ```sh
-cargo build --release   # the binary lands in target/release/uc-daemon
+cargo build -p uc-daemon --release   # the binary lands in ../../target/release/uc-daemon
 ```
 
 That is all the control node needs. `uc-daemon` itself installs nothing:

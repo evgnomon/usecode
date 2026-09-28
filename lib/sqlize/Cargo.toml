@@ -4,10 +4,10 @@
 [package]
 name = "sqlize"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
 description = "Apply SQL migration files from a directory to SQLite or PostgreSQL"
-license = "HGL"
-authors = ["Hamed Ghasemzadeh <hg@evgnomon.org>"]
+license.workspace = true
+authors.workspace = true
 publish = false
 
 [[bin]]
@@ -15,11 +15,6 @@ name = "sqlize"
 path = "src/main.rs"
 
 [dependencies]
-clap = { version = "4.6.7", features = ["derive"] }
-postgres = "0.19"
-rusqlite = { version = "0.40.2", features = ["bundled"] }
-
-[profile.release]
-strip = true
-lto = true
-codegen-units = 1
+clap = { workspace = true, features = ["derive"] }
+postgres.workspace = true
+rusqlite = { version = "0.39", features = ["bundled"] }
