@@ -1,7 +1,7 @@
 # License-Identifier: HGL
 # Copyright (C) The Usecode Authors (see AUTHORS)
 
-.PHONY: all ci deploy publish build version install link clean submodules check test lint fmt-html fmt headers headers-check authors up reload down logs
+.PHONY: all ci deploy publish rust build version install link clean submodules check test lint fmt-html fmt headers headers-check authors up reload down logs
 
 $(eval $(shell ./scripts/ci_wrapper.sh --env 2>/dev/null))
 
@@ -60,16 +60,21 @@ version:
 up reload down logs:
 	@./scripts/dev.sh $@
 
-build:
+# One cargo run builds every Rust crate in parallel with shared dependencies,
+# so the per-crate builds that each_lib.sh triggers find their binaries fresh.
+rust:
+	@cargo build --workspace --profile release
+
+build: rust
 	@MAKE=$(MAKE) ./scripts/each_lib.sh $@
 
-install:
+install: rust
 	@MAKE=$(MAKE) ./scripts/each_lib.sh $@
 
-link:
+link: rust
 	@MAKE=$(MAKE) ./scripts/each_lib.sh $@
 
-publish:
+publish: rust
 	@MAKE=$(MAKE) ./scripts/each_lib.sh $@
 
 submodules:
