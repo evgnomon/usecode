@@ -5,7 +5,7 @@
         "*"
       ],
       "type": "local",
-      "command": "usecode-mcp",
+      "command": "uc-agent-mcp",
       "args": []
     }
   }

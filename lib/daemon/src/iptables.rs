@@ -14,7 +14,7 @@ use crate::error::{Context, Result};
 use crate::net::{join_host_port, split_host_port};
 use crate::wg::run;
 
-/// Chain names uc daemon owns exclusively, one per hook it needs.
+/// Chain names uc net mesh owns exclusively, one per hook it needs.
 const PRE_CHAIN: &str = "UC_DAEMON_PRE"; // nat/PREROUTING: DNAT forward rules
 const POST_CHAIN: &str = "UC_DAEMON_POST"; // nat/POSTROUTING: masquerade
 const FWD_CHAIN: &str = "UC_DAEMON_FWD"; // filter/FORWARD: accept tunnel traffic
@@ -26,8 +26,8 @@ const JUMPS: [(&str, &str, &str); 3] = [
     ("filter", "FORWARD", FWD_CHAIN),
 ];
 
-/// (Re)build uc daemon's chains from `cfg`. Safe to call repeatedly; it
-/// replaces any previous uc daemon ruleset atomically-enough (flush, then
+/// (Re)build uc net mesh's chains from `cfg`. Safe to call repeatedly; it
+/// replaces any previous uc net mesh ruleset atomically-enough (flush, then
 /// rebuild) for a rarely-changed forwarding table.
 pub fn apply(cfg: &Config) -> Result<()> {
     flush()?;
@@ -66,7 +66,7 @@ pub fn apply(cfg: &Config) -> Result<()> {
     Ok(())
 }
 
-/// Remove uc daemon's jump rules and chains, if present. A no-op (not an
+/// Remove uc net mesh's jump rules and chains, if present. A no-op (not an
 /// error) if nothing was ever applied.
 pub fn flush() -> Result<()> {
     for (table, builtin, owned) in JUMPS {
@@ -77,7 +77,7 @@ pub fn flush() -> Result<()> {
     Ok(())
 }
 
-/// uc daemon's chains as text, for `uc daemon status`.
+/// uc net mesh's chains as text, for `uc net mesh status`.
 pub fn ruleset() -> Result<String> {
     let mut b = String::new();
     for (table, _, owned) in JUMPS {

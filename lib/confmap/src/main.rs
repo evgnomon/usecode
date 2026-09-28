@@ -23,7 +23,7 @@ const PG_DATABASE: &str = "z";
 /// When stdin is not a terminal, its content (stripped) is written to
 /// CONFIG_NAME's KEY instead, creating the ConfigMap if needed.
 #[derive(Parser)]
-#[command(name = "confmap")]
+#[command(name = "uc-db-resources-configmap")]
 struct Cli {
     /// Name of the ConfigMap to find
     config_name: Option<String>,

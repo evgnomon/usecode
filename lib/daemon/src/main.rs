@@ -1,7 +1,7 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! uc daemon sets up a WireGuard mesh and configures DNAT rules so that
+//! uc net mesh sets up a WireGuard mesh and configures DNAT rules so that
 //! traffic to a public address lands on a port running elsewhere in the
 //! mesh. There is no client/server distinction at the command level:
 //! every host runs the same commands, and what a host actually does
@@ -85,7 +85,7 @@ fn run(args: &[String]) -> Result<()> {
         "pubkey" => pubkey(),
         "genkey" => genkey(rest),
         "version" | "-v" | "--version" => {
-            println!("uc-daemon {VERSION}");
+            println!("uc-net-mesh {VERSION}");
             Ok(())
         }
         "help" | "-h" | "--help" => {
@@ -101,14 +101,14 @@ fn run(args: &[String]) -> Result<()> {
 
 fn usage() {
     eprint!(
-        r#"uc daemon - WireGuard mesh + DNAT port forwarding manager
+        r#"uc net mesh - WireGuard mesh + DNAT port forwarding manager
 
 Every host runs the same commands. What a host does (accept inbound
 connections, forward traffic to a peer) follows from its config, not
 from a mode you pick up front.
 
 Fleet (run on the control node, in a checkout of this repo):
-  uc daemon add NAME [-endpoint HOST:PORT] [-ansible-host HOST]
+  uc net mesh add NAME [-endpoint HOST:PORT] [-ansible-host HOST]
                                        put a host into the mesh topology: allocate
                                        the next free tunnel address, mint its
                                        keypair, record it in the Ansible inventory
@@ -116,32 +116,32 @@ Fleet (run on the control node, in a checkout of this repo):
                                        ansible-playbook to converge every host
 
 Setup (run on the host itself, for a mesh you drive by hand instead):
-  uc daemon export  [-out FILE] [-address CIDR] [-endpoint HOST:PORT]
+  uc net mesh export  [-out FILE] [-address CIDR] [-endpoint HOST:PORT]
                                        generate this host's keypair if needed and
                                        write its descriptor - hand FILE to any host
                                        that should peer with this one
-  uc daemon import  DESCRIPTOR_FILE   add the host behind a descriptor as a peer
-  uc daemon forward NAME PROTO PORT
-  uc daemon forward NAME PROTO [BIND:]PORT:PEER:PEER_PORT
+  uc net mesh import  DESCRIPTOR_FILE add the host behind a descriptor as a peer
+  uc net mesh forward NAME PROTO PORT
+  uc net mesh forward NAME PROTO [BIND:]PORT:PEER:PEER_PORT
                                        declare a service: with just a PORT, "I run
                                        this here"; with :PEER:PEER_PORT, "forward
                                        PORT to that peer's PEER_PORT"
-  uc daemon unforward NAME            remove a forward/service declaration
+  uc net mesh unforward NAME          remove a forward/service declaration
 
 Apply:
-  uc daemon up       [-config PATH]   bring up the tunnel, and DNAT rules for any
+  uc net mesh up       [-config PATH] bring up the tunnel, and DNAT rules for any
                                        forward declarations in this host's config
-  uc daemon down     [-config PATH]   tear down the tunnel and any DNAT rules
-  uc daemon reload   [-config PATH]   reapply the config to a running tunnel
-  uc daemon status   [-config PATH]   show WireGuard and DNAT state
-  uc daemon validate [-config PATH]   check the config file without applying it
+  uc net mesh down     [-config PATH] tear down the tunnel and any DNAT rules
+  uc net mesh reload   [-config PATH] reapply the config to a running tunnel
+  uc net mesh status   [-config PATH] show WireGuard and DNAT state
+  uc net mesh validate [-config PATH] check the config file without applying it
 
 Low-level:
-  uc daemon pubkey                    print this host's WireGuard public key
-  uc daemon genkey [-force]           (re)generate this host's WireGuard keypair
-  uc daemon version                   print the uc daemon version
+  uc net mesh pubkey                  print this host's WireGuard public key
+  uc net mesh genkey [-force]         (re)generate this host's WireGuard keypair
+  uc net mesh version               print the uc net mesh version
 
-uc daemon manages its own WireGuard private key; it is never read from or
+uc net mesh manages its own WireGuard private key; it is never read from or
 written to the config file. Keys live root-only under {keys_dir}.
 
 Config defaults to {config_path} and must be mode 0600, owned by root.
@@ -152,7 +152,7 @@ Config defaults to {config_path} and must be mode 0600, owned by root.
 }
 
 fn config_path(args: &[String]) -> String {
-    let mut fs = FlagSet::new("uc-daemon");
+    let mut fs = FlagSet::new("uc-net-mesh");
     fs.string("config", config::DEFAULT_PATH);
     let _ = fs.parse(args);
     fs.get_str("config")
@@ -166,7 +166,7 @@ fn with_config(
     must_be_root: bool,
     f: impl FnOnce(&Config) -> Result<()>,
 ) -> Result<()> {
-    let mut fs = FlagSet::new("uc-daemon");
+    let mut fs = FlagSet::new("uc-net-mesh");
     fs.string("config", config::DEFAULT_PATH);
     fs.parse(args)?;
 
@@ -202,7 +202,7 @@ fn add(args: &[String]) -> Result<()> {
         .string("ansible-user", "root")
         .string("vault-password-file", "");
 
-    // `uc daemon add NAME -endpoint ...` is how anyone would write this,
+    // `uc net mesh add NAME -endpoint ...` is how anyone would write this,
     // but parsing stops at the first non-flag argument - so lift the
     // name off the front ourselves when it leads, and accept it trailing
     // the flags too.
@@ -215,7 +215,7 @@ fn add(args: &[String]) -> Result<()> {
     let name = if leading { name } else { fs.arg(0) };
     let leftover = fs.nargs();
     if (leading && leftover > 0) || (!leading && leftover != 1) {
-        bail!("usage: uc daemon add NAME [flags]");
+        bail!("usage: uc net mesh add NAME [flags]");
     }
 
     inventory::check_available()?;
@@ -261,7 +261,7 @@ fn add(args: &[String]) -> Result<()> {
 }
 
 /// Looks for the inventory in the current directory and its parents, so
-/// `uc daemon add` works anywhere inside a checkout.
+/// `uc net mesh add` works anywhere inside a checkout.
 fn find_inventory() -> Result<PathBuf> {
     let mut dir = std::env::current_dir().ctx("determine working directory")?;
     loop {
@@ -271,7 +271,7 @@ fn find_inventory() -> Result<PathBuf> {
         }
         if !dir.pop() {
             bail!(
-                "no {} found in this directory or any parent; run `uc daemon add` from a usecode \
+                "no {} found in this directory or any parent; run `uc net mesh add` from a usecode \
                  checkout, or pass -inventory DIR",
                 inventory::DEFAULT_DIR
             );
@@ -281,7 +281,7 @@ fn find_inventory() -> Result<PathBuf> {
 
 /// Generates this host's persistent keypair if needed and writes a
 /// small, non-secret descriptor (name, public key, address, endpoint)
-/// that another host can hand to `uc daemon import` to add this host as a
+/// that another host can hand to `uc net mesh import` to add this host as a
 /// peer. If no config exists yet, -address creates a minimal one first.
 fn export(args: &[String]) -> Result<()> {
     let mut fs = FlagSet::new("export");
@@ -358,7 +358,7 @@ fn this_hostname() -> Result<String> {
     Ok(name)
 }
 
-/// Reads a descriptor written by `uc daemon export` on another host and
+/// Reads a descriptor written by `uc net mesh export` on another host and
 /// adds (or updates) it as a `[[peer]]` in this host's config.
 fn import_peer(args: &[String]) -> Result<()> {
     let mut fs = FlagSet::new("import");
@@ -368,7 +368,7 @@ fn import_peer(args: &[String]) -> Result<()> {
         .string("preshared-key", "");
     fs.parse(args)?;
     if fs.nargs() != 1 {
-        bail!("usage: uc daemon import DESCRIPTOR_FILE");
+        bail!("usage: uc net mesh import DESCRIPTOR_FILE");
     }
     let desc_path = fs.arg(0);
 
@@ -377,7 +377,9 @@ fn import_peer(args: &[String]) -> Result<()> {
     let body = std::fs::read_to_string(&desc_path).with_ctx(|| format!("parse {desc_path}"))?;
     let desc: Descriptor = toml::from_str(&body).with_ctx(|| format!("parse {desc_path}"))?;
     if desc.name.is_empty() || desc.public_key.is_empty() || desc.address.is_empty() {
-        bail!("{desc_path} is not a valid uc-daemon descriptor (missing name/public_key/address)");
+        bail!(
+            "{desc_path} is not a valid uc-net-mesh descriptor (missing name/public_key/address)"
+        );
     }
 
     let path = fs.get_str("config");
@@ -404,7 +406,7 @@ fn import_peer(args: &[String]) -> Result<()> {
         "imported peer {:?} ({}) into {path}",
         desc.name, desc.address
     );
-    println!("run `sudo uc daemon up` (or `reload` if already running) to apply");
+    println!("run `sudo uc net mesh up` (or `reload` if already running) to apply");
     Ok(())
 }
 
@@ -417,7 +419,7 @@ fn forward(args: &[String]) -> Result<()> {
     fs.parse(args)?;
     if fs.nargs() != 3 {
         bail!(
-            "usage: uc daemon forward NAME PROTO PORT | uc daemon forward NAME PROTO \
+            "usage: uc net mesh forward NAME PROTO PORT | uc net mesh forward NAME PROTO \
              [BIND:]PORT:PEER:PEER_PORT"
         );
     }
@@ -444,7 +446,7 @@ fn forward(args: &[String]) -> Result<()> {
     } else {
         println!("saved service {name:?}: local port {local_port}");
     }
-    println!("run `sudo uc daemon up` (or `reload` if already running) to apply");
+    println!("run `sudo uc net mesh up` (or `reload` if already running) to apply");
     Ok(())
 }
 
@@ -479,9 +481,9 @@ fn build_service(cfg: &Config, name: &str, proto: &str, spec: &str) -> Result<Se
                 bail!("invalid peer port {:?}", parts[parts.len() - 1]);
             }
 
-            let peer = cfg
-                .peer_by_name(peer_name)
-                .ok_or_else(|| err!("no peer named {peer_name:?}; run `uc daemon import` first"))?;
+            let peer = cfg.peer_by_name(peer_name).ok_or_else(|| {
+                err!("no peer named {peer_name:?}; run `uc net mesh import` first")
+            })?;
             let addr = peer_address(peer).with_ctx(|| format!("peer {peer_name:?}"))?;
 
             Ok(Service {
@@ -501,7 +503,7 @@ fn build_service(cfg: &Config, name: &str, proto: &str, spec: &str) -> Result<Se
 }
 
 /// Extracts a single host address from a peer's allowed_ips, as set by
-/// `uc daemon import` (descriptor address + "/32").
+/// `uc net mesh import` (descriptor address + "/32").
 fn peer_address(p: &Peer) -> Result<String> {
     if p.allowed_ips.len() != 1 {
         bail!(
@@ -526,7 +528,7 @@ fn unforward(args: &[String]) -> Result<()> {
     fs.string("config", config::DEFAULT_PATH);
     fs.parse(args)?;
     if fs.nargs() != 1 {
-        bail!("usage: uc daemon unforward NAME");
+        bail!("usage: uc net mesh unforward NAME");
     }
     let name = fs.arg(0);
 
@@ -540,7 +542,7 @@ fn unforward(args: &[String]) -> Result<()> {
     cfg.save(&path)?;
 
     println!("removed service {name:?}");
-    println!("run `sudo uc daemon up` (or `reload` if already running) to apply");
+    println!("run `sudo uc net mesh up` (or `reload` if already running) to apply");
     Ok(())
 }
 

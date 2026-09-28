@@ -1,13 +1,13 @@
 .\" License-Identifier: HGL
 .\" Copyright (C) The Usecode Authors (see AUTHORS)
-.TH MKDEB 1 "2026-05-01" "mkdeb 0.3.0" "User Commands"
+.TH UC-DEB-BUILD 1 "2026-05-01" "uc-deb-build 0.4.0" "User Commands"
 .SH NAME
-mkdeb \- package files into a Debian (.deb) package
+uc-deb-build \- package files into a Debian (.deb) package
 .SH SYNOPSIS
-.B mkdeb
+.B uc-deb-build
 .RI [ OPTIONS ]
 .SH DESCRIPTION
-.B mkdeb
+.B uc-deb-build
 is a small wrapper around
 .BR dpkg-deb (1)
 that assembles a Debian binary package from a source directory. It can read
@@ -123,7 +123,7 @@ file is present in the source directory it is preferred over
 .IR .deb.json .
 .I .deb.jsonc
 may contain comments and is preprocessed via
-.IR jsonc .
+.IR uc-data-jsonc .
 .PP
 Recognized keys:
 .BR name ", "
@@ -183,7 +183,7 @@ Build the package:
 .PP
 .RS 4
 .nf
-mkdeb \-s myapp \-o dist
+uc-deb-build \-s myapp \-o dist
 .fi
 .RE
 .PP
@@ -191,14 +191,14 @@ Override the version on the command line:
 .PP
 .RS 4
 .nf
-mkdeb \-s myapp \-v 1.0.1 \-\-depends "libc6, libssl3"
+uc-deb-build \-s myapp \-v 1.0.1 \-\-depends "libc6, libssl3"
 .fi
 .RE
 .SH OUTPUT
 The built package is written to
 .IR OUTPUT_DIR/NAME_VERSION_ARCH.deb .
 After a successful build,
-.B mkdeb
+.B uc-deb-build
 prints the output of
 .B "dpkg-deb \-\-info"
 and
@@ -224,12 +224,12 @@ is required when a
 or
 .I .deb.jsonc
 file is present.
-.I jsonc
+.I uc-data-jsonc
 is required to parse
 .I .deb.jsonc
 files.
 .SH EXIT STATUS
-.B mkdeb
+.B uc-deb-build
 exits 0 on success and a non-zero status on any error, including missing
 tools, an unreadable source directory, or a failure inside
 .BR dpkg-deb .

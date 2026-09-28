@@ -3,7 +3,7 @@ License-Identifier: HGL
 Copyright (C) The Usecode Authors (see AUTHORS)
 -->
 
-# usecode-agent-api
+# uc-agent-api
 
 Rust (axum + sqlx) backend for usecode agent: OTP login, API keys, cloud
 provider credentials, servers and their background tasks, the AI model
@@ -47,7 +47,7 @@ See [docs/usecode-agent-architecture.md](../../docs/usecode-agent-architecture.m
 
 ## AI model API
 
-Kick-starts `llama-server` as a container on the usecode-agent-api host (via `podman`/`docker`).
+Kick-starts `llama-server` as a container on the uc-agent-api host (via `podman`/`docker`).
 All `/models/*` endpoints require an API key.
 
 - `GET /models/options` — configurable fields, each with its default and (where applicable) its

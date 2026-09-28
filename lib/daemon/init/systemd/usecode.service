@@ -11,12 +11,12 @@ ConditionFileNotEmpty=/etc/uc/config.toml
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStartPre=/usr/local/bin/uc-daemon validate
-ExecStart=/usr/local/bin/uc-daemon up
-ExecReload=/usr/local/bin/uc-daemon reload
-ExecStop=/usr/local/bin/uc-daemon down
+ExecStartPre=/usr/local/bin/uc-net-mesh validate
+ExecStart=/usr/local/bin/uc-net-mesh up
+ExecReload=/usr/local/bin/uc-net-mesh reload
+ExecStop=/usr/local/bin/uc-net-mesh down
 
-# uc daemon needs root to create WireGuard interfaces, load private keys
+# uc net mesh needs root to create WireGuard interfaces, load private keys
 # and (on the server) manage nftables/ip_forward.
 User=root
 Group=root

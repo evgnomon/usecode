@@ -10,7 +10,7 @@ license.workspace = true
 publish = false
 
 [[bin]]
-name = "uc-daemon"
+name = "uc-net-mesh"
 path = "src/main.rs"
 
 [dependencies]

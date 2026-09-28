@@ -17,6 +17,11 @@ use std::process::ExitCode;
 use clap::Parser;
 
 fn main() -> ExitCode {
+    // One line for `uc help`, which lists this tool as `uc work`.
+    if std::env::args().nth(1).as_deref() == Some("--summary") {
+        println!("run and manage processes with the workflow manager");
+        return ExitCode::SUCCESS;
+    }
     let cli = cmd::Cli::parse();
     match cmd::dispatch(cli) {
         Ok(code) => code,

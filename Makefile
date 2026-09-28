@@ -106,7 +106,7 @@ fmt-html:
 fmt: fmt-html
 	@cargo fmt --all
 
-HGL := target/release/hgl
+HGL := target/release/uc-repo-headers
 
 headers:
 	@$(MAKE) -s -C lib/hgl build

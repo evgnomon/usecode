@@ -27,7 +27,10 @@ fn openssl_args(home: &str, key: &str) -> Vec<String> {
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() != 2 {
-        let arg0 = args.first().map(String::as_str).unwrap_or("mkp12");
+        let arg0 = args
+            .first()
+            .map(String::as_str)
+            .unwrap_or("uc-cert-p12-bundle");
         println!("Usage: {arg0} <keyname>");
         exit(1);
     }
@@ -35,7 +38,7 @@ fn main() {
     let err = Command::new("openssl")
         .args(openssl_args(&home, &args[1]))
         .exec();
-    eprintln!("mkp12: openssl: {err}");
+    eprintln!("uc-cert-p12-bundle: openssl: {err}");
     exit(if err.kind() == io::ErrorKind::NotFound {
         127
     } else {

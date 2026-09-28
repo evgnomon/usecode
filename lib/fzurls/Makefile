@@ -2,6 +2,9 @@
 # Copyright (C) The Usecode Authors (see AUTHORS)
 
 NAME := fzurls
+BIN := uc-pick-url
+# The old name, kept for a release so scripts calling it carry on working.
+ALIASES := fzurls
 EXT_UUID := fzurls-focus@org.evgnomon
 EXT_DIR := $(HOME)/.local/share/gnome-shell/extensions/$(EXT_UUID)
 EXT_SRC_DIR := gnome-ext

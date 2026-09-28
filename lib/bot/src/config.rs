@@ -14,7 +14,7 @@ const DEFAULT_API_BASE_URLS: [&str; 2] = ["http://localhost:8430/api", "http://l
 
 #[derive(Debug, Clone)]
 pub struct Settings {
-    // The Caddy load balancers in front of usecode-agent-api, each routing /api/*
+    // The Caddy load balancers in front of uc-agent-api, each routing /api/*
     // to the API instances behind it. Requests are spread over these
     // round-robin, and one that can't reach an endpoint is retried against
     // the next.
@@ -25,7 +25,7 @@ pub struct Settings {
     pub api_base_urls: Vec<String>,
 
     // Single-endpoint override. Set USECODE_MCP_API_BASE_URL to talk to one
-    // specific address (a remote deployment, or a bare usecode-agent-api with no
+    // specific address (a remote deployment, or a bare uc-agent-api with no
     // Caddy in front) — it replaces the list above rather than adding to it,
     // so the bot then has exactly the one endpoint asked for.
     pub api_base_url: Option<String>,

@@ -34,13 +34,13 @@ See `lib/app/README.md`, `lib/api/README.md`, and `lib/bot/README.md` for detail
 logout) against a running `lib/api` instance.
 
 ```sh
-cd lib/bot && make install && usecode-mcp   # starts an MCP server over stdio
+cd lib/bot && make install && uc-agent-mcp   # starts an MCP server over stdio
 ```
 
 Add it to Claude Code:
 
 ```sh
-claude mcp add usecode -- usecode-mcp
+claude mcp add usecode -- uc-agent-mcp
 ```
 
 See `lib/bot/README.md` for configuration and the full tool list.

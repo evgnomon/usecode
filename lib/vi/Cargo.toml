@@ -11,7 +11,7 @@ authors.workspace = true
 publish = false
 
 [[bin]]
-name = "vi"
+name = "uc-sys-vi"
 path = "src/main.rs"
 
 [dependencies]

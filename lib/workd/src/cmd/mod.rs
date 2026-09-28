@@ -24,7 +24,7 @@ pub const DEFAULT_PORT: u16 = 8000;
 
 #[derive(Parser)]
 #[command(
-    name = "workd",
+    name = "uc-work",
     version,
     about = "Process Runner - Run and manage processes via API."
 )]

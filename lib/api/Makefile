@@ -2,6 +2,9 @@
 # Copyright (C) The Usecode Authors (see AUTHORS)
 
 NAME := usecode-agent-api
+BIN := uc-agent-api
+# The old name, kept for a release so scripts calling it carry on working.
+ALIASES := usecode-agent-api
 EXTRA_SOURCES := $(shell find migrations templates static model_image -type f)
 
 include ../rust.mk

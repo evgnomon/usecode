@@ -1,7 +1,7 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! mkdeb - package files into a Debian (.deb) package.
+//! uc-deb-build - package files into a Debian (.deb) package.
 
 mod args;
 mod build;

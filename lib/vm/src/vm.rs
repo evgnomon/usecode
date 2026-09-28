@@ -567,7 +567,7 @@ pub fn mount_vm(conn: &Connection, domain_name: &str, mount: &MountSpec) -> Resu
         }
         if dom.is_active() {
             error!(
-                "Domain '{domain_name}' must be restarted for shared memory to take effect. Run: vm stop {domain_name} && vm start {domain_name}"
+                "Domain '{domain_name}' must be restarted for shared memory to take effect. Run: uc vm stop {domain_name} && uc vm start {domain_name}"
             );
             return Err(Error::vm(format!(
                 "domain '{domain_name}' must be restarted"

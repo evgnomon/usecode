@@ -1,7 +1,7 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! The MCP tool surface: every usecode-agent-api endpoint the bot exposes, plus
+//! The MCP tool surface: every uc-agent-api endpoint the bot exposes, plus
 //! the local `deploy/compose.yml` lifecycle.
 
 use std::sync::Arc;
@@ -273,13 +273,13 @@ impl UsecodeServer {
     }
 
     /// Check whether the AI model container (llama-server) is currently running
-    /// on the usecode-agent-api host. Falls back to the configured USECODE_MCP_API_KEY.
+    /// on the uc-agent-api host. Falls back to the configured USECODE_MCP_API_KEY.
     #[tool]
     async fn model_status(&self, args: Parameters<ApiKeyArgs>) -> Json<Value> {
         answer(self.client.model_status(args.0.api_key).await)
     }
 
-    /// Kick-start the AI model container (llama-server) on the usecode-agent-api host.
+    /// Kick-start the AI model container (llama-server) on the uc-agent-api host.
     /// Defaults to `ggml-org/Qwen3-0.6B-GGUF:Q4_0` on device `Vulkan0` with a
     /// 32768-token context, alias `local-model`, on `127.0.0.1:8080` — call
     /// model_options for the full default/options list. Omit any field to
@@ -309,7 +309,7 @@ impl UsecodeServer {
         )
     }
 
-    /// Stop the running AI model container (llama-server) on the usecode-agent-api host.
+    /// Stop the running AI model container (llama-server) on the uc-agent-api host.
     /// Falls back to the configured USECODE_MCP_API_KEY.
     #[tool]
     async fn model_stop(&self, args: Parameters<ApiKeyArgs>) -> Json<Value> {

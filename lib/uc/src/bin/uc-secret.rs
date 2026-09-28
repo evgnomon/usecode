@@ -6,7 +6,8 @@
 //! Installed under the names of the tools it replaces (`getsecret`,
 //! `keychain`, `rchain`, `ghchain`, `ensure_vault`, `ensure_secret`,
 //! `rotate_keychain_pass`, `rotsec`), it behaves as they did. `encrypt`,
-//! `decrypt` and `serve` hand over to `uc-encrypt`, `uc-decrypt` and `secd`.
+//! `decrypt`, `server` and `serve` hand over to `uc-encrypt`, `uc-decrypt` and
+//! `uc-secret-server`.
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::ffi::OsString;
@@ -105,8 +106,15 @@ enum Cmd {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<OsString>,
     },
-    /// Serve the SSH key authenticated secret manager over HTTP (was
-    /// `secd serve`).
+    /// The SSH key authenticated secret manager: upsert, read and serve
+    /// secrets (was `secd`).
+    #[command(disable_help_flag = true)]
+    Server {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<OsString>,
+    },
+    /// Serve the SSH key authenticated secret manager over HTTP (same as
+    /// `uc secret server serve`).
     #[command(disable_help_flag = true)]
     Serve {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -225,9 +233,10 @@ fn run(cmd: Cmd) -> anyhow::Result<ExitCode> {
         }
         Cmd::Encrypt { args } => return Ok(dispatch::exec("uc-encrypt", args)),
         Cmd::Decrypt { args } => return Ok(dispatch::exec("uc-decrypt", args)),
+        Cmd::Server { args } => return Ok(dispatch::exec("uc-secret-server", args)),
         Cmd::Serve { args } => {
             return Ok(dispatch::exec(
-                "secd",
+                "uc-secret-server",
                 ["serve".into()].into_iter().chain(args),
             ));
         }
@@ -306,12 +315,16 @@ mod tests {
         for (sub, words) in [
             ("encrypt", vec!["-f", "a.txt"]),
             ("decrypt", vec!["-h"]),
+            ("server", vec!["read", "-h"]),
             ("serve", vec!["--help"]),
         ] {
             let mut argv = vec!["uc-secret", sub];
             argv.extend(&words);
             let args = match Cli::try_parse_from(&argv).unwrap().command {
-                Cmd::Encrypt { args } | Cmd::Decrypt { args } | Cmd::Serve { args } => args,
+                Cmd::Encrypt { args }
+                | Cmd::Decrypt { args }
+                | Cmd::Server { args }
+                | Cmd::Serve { args } => args,
                 _ => panic!("{sub}"),
             };
             assert_eq!(args, words, "{sub}");

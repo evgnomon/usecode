@@ -13,7 +13,7 @@ fn main() {
         .args(["+noall", "+answer", "-t", "A"])
         .args(env::args_os().skip(1))
         .exec();
-    eprintln!("diga: dig: {err}");
+    eprintln!("uc-net-dig: dig: {err}");
     exit(if err.kind() == io::ErrorKind::NotFound {
         127
     } else {

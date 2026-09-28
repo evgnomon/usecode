@@ -11,7 +11,7 @@ authors.workspace = true
 publish = false
 
 [[bin]]
-name = "zcdump"
+name = "uc-cert-p12-fetch"
 path = "src/main.rs"
 
 [dependencies]

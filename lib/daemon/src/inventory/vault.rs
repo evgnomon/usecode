@@ -19,7 +19,7 @@ use crate::inventory::Inventory;
 /// by name: `usecode_private_keys[inventory_hostname]`.
 pub const PRIVATE_KEYS_VAR: &str = "usecode_private_keys";
 
-/// uc daemon shells out to ansible-vault rather than implementing the
+/// uc net mesh shells out to ansible-vault rather than implementing the
 /// format, so the file is exactly what `ansible-vault edit` and a
 /// playbook expect, and the password comes from wherever ansible
 /// normally finds it (a prompt, --vault-password-file,
@@ -126,7 +126,7 @@ impl Vault {
         fs::create_dir_all(dir).with_ctx(|| format!("create {}", dir.display()))?;
 
         let staging = tempfile::Builder::new()
-            .prefix(".uc-daemon-vault-")
+            .prefix(".uc-net-mesh-vault-")
             .tempdir_in(dir)
             .ctx("create staging directory")?;
         let tmp = staging.path().join("secrets.yml");

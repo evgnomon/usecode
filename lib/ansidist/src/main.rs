@@ -32,11 +32,11 @@ fn run(prog: &str, args: &[&str]) -> i32 {
     match Command::new(prog).args(args).status() {
         Ok(s) => s.code().unwrap_or_else(|| 128 + s.signal().unwrap_or(0)),
         Err(e) if e.kind() == io::ErrorKind::NotFound => {
-            eprintln!("ansidist: {prog}: command not found");
+            eprintln!("uc-repo-dist: {prog}: command not found");
             127
         }
         Err(e) => {
-            eprintln!("ansidist: {prog}: {e}");
+            eprintln!("uc-repo-dist: {prog}: {e}");
             126
         }
     }
@@ -47,7 +47,7 @@ fn main() {
         Ok(s) => match s.parse::<toml::Table>() {
             Ok(t) => Some(t),
             Err(e) => {
-                eprintln!("ansidist: pyproject.toml: {e}");
+                eprintln!("uc-repo-dist: pyproject.toml: {e}");
                 None
             }
         },
@@ -71,7 +71,7 @@ fn main() {
     let entered = match env::set_current_dir(&coll) {
         Ok(()) => true,
         Err(e) => {
-            eprintln!("ansidist: cd: {coll}: {e}");
+            eprintln!("uc-repo-dist: cd: {coll}: {e}");
             false
         }
     };

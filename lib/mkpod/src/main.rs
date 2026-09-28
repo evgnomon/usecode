@@ -1,7 +1,7 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! mkpod — manage pods via podman from a PostgreSQL resource store.
+//! uc-db-resources-pods — manage pods via podman from a PostgreSQL resource store.
 
 mod db;
 mod podman;
@@ -11,9 +11,9 @@ use anyhow::{Result, bail};
 use clap::{Args, Parser, Subcommand};
 use postgres::Client;
 
-/// mkpod — manage pods via podman from a PostgreSQL resource store.
+/// uc-db-resources-pods — manage pods via podman from a PostgreSQL resource store.
 #[derive(Parser)]
-#[command(name = "mkpod", version)]
+#[command(name = "uc-db-resources-pods", version)]
 struct Cli {
     #[command(subcommand)]
     command: Command,

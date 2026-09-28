@@ -16,10 +16,10 @@ build: build-image
 dist: dist/zamin_$(version)_amd64.deb
 
 dist/zamin_$(version)_amd64.deb: output-zamin/zamin
-	@mkdeb --version $(version)
+	@uc-deb-build --version $(version)
 
 publish: dist
-	@pubdeb
+	@uc-deb-publish
 
 build-image: output-zamin/zamin
 

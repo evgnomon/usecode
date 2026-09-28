@@ -11,7 +11,7 @@ authors.workspace = true
 publish = false
 
 [[bin]]
-name = "secd"
+name = "uc-secret-server"
 path = "src/main.rs"
 
 [dependencies]

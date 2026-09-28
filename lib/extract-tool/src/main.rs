@@ -3,7 +3,7 @@
 
 //! Extract a tool from evgnomon/flow into its own repo at evgnomon/<tool>.
 //!
-//! Usage: extract-tool <tool-name> [--dry-run]
+//! Usage: uc repo extract <tool-name> [--dry-run]
 //!
 //! What it does:
 //!   1. Uses git subtree split to extract the tool's history into a branch
@@ -89,7 +89,7 @@ fn run(dir: &Path, cmd: &str, args: &[&str]) {
         Ok(s) if s.success() => {}
         Ok(s) => exit(s.code().unwrap_or(1)),
         Err(e) => {
-            eprintln!("extract-tool: {cmd}: {e}");
+            eprintln!("uc-repo-extract: {cmd}: {e}");
             exit(127);
         }
     }
@@ -101,7 +101,10 @@ fn s(p: &Path) -> String {
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    let argv0 = args.first().map(String::as_str).unwrap_or("extract-tool");
+    let argv0 = args
+        .first()
+        .map(String::as_str)
+        .unwrap_or("uc-repo-extract");
     let script = script_path(argv0);
 
     if args.len() < 2 {
@@ -161,7 +164,7 @@ fn main() {
     // Step 1: Create the new repo
     println!("==> Creating new repo at {target}...");
     if let Err(e) = fs::create_dir_all(&target_dir) {
-        eprintln!("extract-tool: {target}: {e}");
+        eprintln!("uc-repo-extract: {target}: {e}");
         exit(1);
     }
     run(&target_dir, "git", &["init"]);

@@ -11,7 +11,7 @@ authors.workspace = true
 publish = false
 
 [[bin]]
-name = "num_argv"
+name = "uc-sys-argv"
 path = "src/main.rs"
 
 [dependencies]

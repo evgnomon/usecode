@@ -1,7 +1,7 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! mkunit - Create a systemd unit file to run a command.
+//! uc-new-unit - Create a systemd unit file to run a command.
 
 mod argv;
 mod unit;
@@ -12,14 +12,14 @@ use std::process::{Command, ExitCode};
 
 use clap::Parser;
 
-const USAGE: &str = "mkunit <unit-name> <command> [args...] [options]";
+const USAGE: &str = "uc new unit <unit-name> <command> [args...] [options]";
 
 /// Create a systemd unit file to run a command.
 ///
 /// Options must come before the unit name; everything after the unit name
 /// is the command to run.
 #[derive(Parser)]
-#[command(name = "mkunit", override_usage = USAGE, infer_long_args = true)]
+#[command(name = "uc-new-unit", override_usage = USAGE, infer_long_args = true)]
 struct Cli {
     /// Name of the systemd unit (without .service)
     #[arg(allow_negative_numbers = true)]
@@ -50,14 +50,14 @@ fn systemctl(args: &[&str]) -> bool {
 
 fn main() -> ExitCode {
     let mut raw = std::env::args_os();
-    let prog = raw.next().unwrap_or_else(|| OsString::from("mkunit"));
+    let prog = raw.next().unwrap_or_else(|| OsString::from("uc-new-unit"));
     let args: Vec<String> = raw.map(|a| a.to_string_lossy().into_owned()).collect();
     let split = argv::split(&args);
     let cli =
         Cli::parse_from(std::iter::once(prog.to_string_lossy().into_owned()).chain(split.head));
 
     if split.command.is_empty() {
-        eprintln!("usage: {USAGE}\nmkunit: error: You must provide a command to run.");
+        eprintln!("usage: {USAGE}\nuc-new-unit: error: You must provide a command to run.");
         return ExitCode::from(2);
     }
 

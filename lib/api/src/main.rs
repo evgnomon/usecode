@@ -1,7 +1,7 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! usecode-agent-api: the HTTP backend for usecode agent.
+//! uc-agent-api: the HTTP backend for usecode agent.
 
 mod chat_store;
 mod config;

@@ -7,7 +7,7 @@ Copyright (C) The Usecode Authors (see AUTHORS)
   <img src="assets/logo.svg" alt="VM Logo" width="300">
 </p>
 
-# vm
+# uc vm
 
 A lightweight KVM/QEMU virtual machine creation tool written in Rust.
 
@@ -99,71 +99,71 @@ Replace `YOUR_PUBLIC_KEY_HERE` with your actual SSH public key from `~/.ssh/id_r
 
 Create a new VM (legacy mode):
 ```bash
-vm myvm
+uc vm myvm
 ```
 
 ### Commands
 
 #### Create a VM
 ```bash
-vm create myvm
+uc vm create myvm
 ```
 
 With custom specifications:
 ```bash
-vm create myvm --memory 2GiB --vcpus 4
-vm create myvm --machine pc-q35-9.0
-vm create myvm --image /path/to/custom/image.qcow2
+uc vm create myvm --memory 2GiB --vcpus 4
+uc vm create myvm --machine pc-q35-9.0
+uc vm create myvm --image /path/to/custom/image.qcow2
 ```
 
 Create but don't start:
 ```bash
-vm create myvm --no-start
+uc vm create myvm --no-start
 ```
 
 Don't wait for IP address:
 ```bash
-vm create myvm --no-wait-ip
+uc vm create myvm --no-wait-ip
 ```
 
 #### List VMs
 ```bash
-vm list
+uc vm list
 ```
 
 #### Show VM Information
 ```bash
-vm info myvm
+uc vm info myvm
 ```
 
 #### Start a VM
 ```bash
-vm start myvm
+uc vm start myvm
 ```
 
 #### Stop a VM
 ```bash
-vm stop myvm
+uc vm stop myvm
 ```
 
 Force stop (poweroff):
 ```bash
-vm stop myvm --force
+uc vm stop myvm --force
 ```
 
 #### Remove a VM
 ```bash
-vm remove myvm
+uc vm remove myvm
 ```
 
 Force remove a running VM:
 ```bash
-vm remove myvm --force
+uc vm remove myvm --force
 ```
 
 #### Get VM IP Address
 ```bash
-vm ip myvm
+uc vm ip myvm
 ```
 
 ### Global Options
@@ -175,23 +175,23 @@ vm ip myvm
 
 Create a web server VM:
 ```bash
-vm create webserver --memory 2GiB --vcpus 2
-vm ip webserver
+uc vm create webserver --memory 2GiB --vcpus 2
+uc vm ip webserver
 ```
 
 Create multiple VMs:
 ```bash
-vm create db1 --memory 4GiB --vcpus 4
-vm create db2 --memory 4GiB --vcpus 4
-vm create app1 --memory 1GiB --vcpus 2
+uc vm create db1 --memory 4GiB --vcpus 4
+uc vm create db2 --memory 4GiB --vcpus 4
+uc vm create app1 --memory 1GiB --vcpus 2
 ```
 
 Manage VMs:
 ```bash
-vm list
-vm info webserver
-vm stop webserver
-vm start webserver
+uc vm list
+uc vm info webserver
+uc vm stop webserver
+uc vm start webserver
 ```
 
 ## Architecture

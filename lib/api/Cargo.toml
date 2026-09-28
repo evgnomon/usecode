@@ -11,7 +11,7 @@ authors.workspace = true
 publish = false
 
 [[bin]]
-name = "usecode-agent-api"
+name = "uc-agent-api"
 path = "src/main.rs"
 
 [dependencies]

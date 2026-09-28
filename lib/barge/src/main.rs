@@ -20,7 +20,7 @@ fn main() {
             "barge",
         ])
         .exec();
-    eprintln!("barge: docker: {err}");
+    eprintln!("uc-image-run-barge: docker: {err}");
     exit(if err.kind() == io::ErrorKind::NotFound {
         127
     } else {

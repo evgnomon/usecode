@@ -67,7 +67,7 @@ fn main() {
     let html = match to_html(io::stdin().lock()) {
         Ok(h) => h,
         Err(e) => {
-            eprintln!("csv2pdf: {e}");
+            eprintln!("uc-data-pdf: {e}");
             exit(1);
         }
     };
@@ -78,7 +78,7 @@ fn main() {
     {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("csv2pdf: weasyprint: {e}");
+            eprintln!("uc-data-pdf: weasyprint: {e}");
             exit(if e.kind() == io::ErrorKind::NotFound {
                 127
             } else {
@@ -89,12 +89,12 @@ fn main() {
     if let Some(mut stdin) = child.stdin.take()
         && let Err(e) = stdin.write_all(html.as_bytes())
     {
-        eprintln!("csv2pdf: weasyprint: {e}");
+        eprintln!("uc-data-pdf: weasyprint: {e}");
     }
     let rc = match child.wait() {
         Ok(s) => s.code().unwrap_or_else(|| 128 + s.signal().unwrap_or(0)),
         Err(e) => {
-            eprintln!("csv2pdf: weasyprint: {e}");
+            eprintln!("uc-data-pdf: weasyprint: {e}");
             1
         }
     };

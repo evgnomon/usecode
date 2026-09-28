@@ -37,7 +37,7 @@ fn main() {
     {
         Ok(o) => o,
         Err(e) => {
-            eprintln!("ucversion: git: {e}");
+            eprintln!("uc-repo-version: git: {e}");
             exit(127);
         }
     };

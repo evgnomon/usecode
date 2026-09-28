@@ -17,7 +17,7 @@ use crate::sniff::Dialect;
 
 /// Align CSV columns with padding so the file is readable in plain text editors.
 #[derive(Parser)]
-#[command(name = "tidycsv")]
+#[command(name = "uc-data-tidy")]
 struct Cli {
     /// input CSV file
     input: PathBuf,
@@ -74,7 +74,7 @@ fn main() -> ExitCode {
     match run(&cli) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("tidycsv: {e}");
+            eprintln!("uc-data-tidy: {e}");
             ExitCode::FAILURE
         }
     }

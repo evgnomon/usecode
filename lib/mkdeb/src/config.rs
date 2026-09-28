@@ -11,7 +11,7 @@ use serde_json::{Map, Value};
 use crate::log;
 use crate::sys;
 
-const JSONC: &str = "/usr/local/bin/jsonc";
+const JSONC: &str = "/usr/local/bin/uc-data-jsonc";
 
 /// Parsed top-level object of a `.deb.json` file (empty when absent).
 #[derive(Debug, Default)]
@@ -38,7 +38,7 @@ impl DebJson {
 }
 
 /// Load `file` if it is a regular file; `.jsonc` files are piped through
-/// `/usr/local/bin/jsonc` first.
+/// `/usr/local/bin/uc-data-jsonc` first.
 pub fn load(file: &str) -> DebJson {
     if !Path::new(file).is_file() {
         return DebJson::default();
@@ -50,7 +50,7 @@ pub fn load(file: &str) -> DebJson {
             .unwrap_or_else(|e| log::die(&format!("Cannot read {file}: {e}"))),
     };
     DebJson::parse(&content).unwrap_or_else(|e| {
-        eprintln!("mkdeb: cannot parse {file}: {e}");
+        eprintln!("uc-deb-build: cannot parse {file}: {e}");
         DebJson::default()
     })
 }

@@ -12,7 +12,7 @@
 #
 #   ansible-playbook deploy/playbooks/usecode.yml
 #
-# Adding a host is `uc daemon add NAME` followed by another run of this;
+# Adding a host is `uc net mesh add NAME` followed by another run of this;
 # every existing host picks the new member up as a peer.
 - name: Apply the usecode mesh topology
   hosts: usecode

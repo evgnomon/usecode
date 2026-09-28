@@ -1,7 +1,7 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! The few bits of address parsing uc daemon needs, in the shapes Go's
+//! The few bits of address parsing uc net mesh needs, in the shapes Go's
 //! `net` package offered them: a CIDR splits into an address and a
 //! prefix length, and a `host:port` splits into its two halves with
 //! bracketed IPv6 literals understood.
@@ -66,7 +66,7 @@ pub fn join_host_port(host: &str, port: u16) -> String {
     }
 }
 
-/// An IPv4 network, the shape `uc daemon add` allocates out of.
+/// An IPv4 network, the shape `uc net mesh add` allocates out of.
 #[derive(Clone, Copy, Debug)]
 pub struct Prefix {
     base: u32,

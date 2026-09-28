@@ -66,7 +66,7 @@ pub fn generate() -> Result<(String, String)> {
 }
 
 /// Create a WireGuard keypair without touching the filesystem. It is for
-/// keys that belong to some *other* host - `uc daemon add` mints a new
+/// keys that belong to some *other* host - `uc net mesh add` mints a new
 /// mesh member's keypair on the control node, where [`DIR`] is neither
 /// writable nor the right place for it.
 pub fn new_pair() -> Result<(String, String)> {

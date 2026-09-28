@@ -13,7 +13,7 @@ fn exit_like(status: ExitStatus) -> ! {
 }
 
 fn spawn_failed(cmd: &Command, e: std::io::Error) -> ! {
-    eprintln!("mkdeb: {}: {e}", cmd.get_program().to_string_lossy());
+    eprintln!("uc-deb-build: {}: {e}", cmd.get_program().to_string_lossy());
     process::exit(127)
 }
 

@@ -19,7 +19,7 @@ fn main() {
     let (r, w) = match io::pipe() {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("whcloud: pipe: {e}");
+            eprintln!("uc-cloud-hcloud: pipe: {e}");
             exit(1);
         }
     };
@@ -28,12 +28,12 @@ fn main() {
     let mut producer = Command::new(&script);
     producer.stdout(w);
     if let Err(e) = producer.spawn() {
-        eprintln!("whcloud: {script}: {e}");
+        eprintln!("uc-cloud-hcloud: {script}: {e}");
     }
     drop(producer);
     // SAFETY: fcntl on a descriptor we own; clears FD_CLOEXEC so hcloud inherits it.
     if unsafe { libc::fcntl(r.as_raw_fd(), libc::F_SETFD, 0) } == -1 {
-        eprintln!("whcloud: fcntl: {}", io::Error::last_os_error());
+        eprintln!("uc-cloud-hcloud: fcntl: {}", io::Error::last_os_error());
         exit(1);
     }
     let err = Command::new("hcloud")
@@ -41,7 +41,7 @@ fn main() {
         .arg(format!("/dev/fd/{}", r.as_raw_fd()))
         .args(env::args_os().skip(1))
         .exec();
-    eprintln!("whcloud: hcloud: {err}");
+    eprintln!("uc-cloud-hcloud: hcloud: {err}");
     exit(if err.kind() == io::ErrorKind::NotFound {
         127
     } else {

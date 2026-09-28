@@ -1,7 +1,7 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! fzurls: open a URL, file or search query in Brave, or pick a bookmark from
+//! uc-pick-url: open a URL, file or search query in Brave, or pick a bookmark from
 //! the `urls` list in `$HOME/src/github.com/$USER/config/config.yaml` with fzf.
 //!
 //! When the `fzurls-focus@org.evgnomon` GNOME extension is running, a Brave
@@ -125,7 +125,7 @@ fn config_lines() -> Vec<String> {
         .stdout(Stdio::piped())
         .spawn()
     else {
-        eprintln!("fzurls: yj: command not found");
+        eprintln!("uc-pick-url: yj: command not found");
         return Vec::new();
     };
     if let Some(mut stdin) = yj.stdin.take() {
@@ -148,7 +148,7 @@ fn fzf(args: &[&str], input: Option<String>) -> String {
         Stdio::null()
     });
     let Ok(mut child) = cmd.spawn() else {
-        eprintln!("fzurls: fzf: command not found");
+        eprintln!("uc-pick-url: fzf: command not found");
         return String::new();
     };
     let writer = child.stdin.take().zip(input).map(|(mut stdin, data)| {

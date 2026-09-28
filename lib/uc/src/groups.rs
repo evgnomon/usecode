@@ -3,8 +3,9 @@
 
 //! The `uc` command groups and the tools behind each command.
 //!
-//! Each group is run by its own `uc-<group>` executable. The tools keep their
-//! own names too, so scripts calling them directly carry on working.
+//! Each group is run by its own `uc-<group>` executable. A tool is named
+//! after the command that runs it, `uc db resources sync` runs
+//! `uc-db-resources-yaml sync`, and can be run by that name directly too.
 
 use crate::group::{Fallback, Group, Run, Sub};
 use std::ffi::OsString;
@@ -41,7 +42,7 @@ const fn alias(path: &'static str, summary: &'static str, argv: &'static [&'stat
 }
 
 pub const ALL: &[&Group] = &[
-    &IMAGE, &REPO, &CERT, &DEB, &DB, &NET, &VM, &NATS, &WORK, &NEW, &CLOUD,
+    &IMAGE, &REPO, &CERT, &DEB, &DB, &NET, &VM, &NEW, &CLOUD, &AGENT, &DATA, &MEDIA, &PICK, &SYS,
 ];
 
 pub static IMAGE: Group = Group {
@@ -72,11 +73,11 @@ pub static IMAGE_RUN: Group = Group {
     path: "uc image run",
     summary: "run the workflow containers on the current directory",
     commands: &[
-        exec("barge", "run the barge container (was barge)", &["barge"]),
+        exec("barge", "run the barge container", &["uc-image-run-barge"]),
         exec(
             "yacht",
-            "run the yacht container with the repository's secrets (was yacht)",
-            &["yacht"],
+            "run the yacht container with the repository's secrets",
+            &["uc-image-run-yacht"],
         ),
     ],
     fallback: None,
@@ -88,42 +89,47 @@ pub static REPO: Group = Group {
     commands: &[
         exec(
             "fqn",
-            "print the org_repo name of the current directory (was repofqn)",
-            &["repofqn"],
+            "print the org_repo name of the current directory",
+            &["uc-repo-fqn"],
         ),
         exec(
             "version",
-            "print the latest tag on master or the branch name (was ucversion)",
-            &["ucversion"],
+            "print the latest tag on master or the branch name",
+            &["uc-repo-version"],
         ),
         exec(
             "open",
-            "open the origin remote in the browser (was gotorepo)",
-            &["gotorepo"],
+            "open the origin remote in the browser",
+            &["uc-repo-open"],
         ),
         exec(
             "status",
-            "list repositories that are dirty, untracked or behind (was git_repos)",
-            &["git_repos"],
+            "list repositories that are dirty, untracked or behind",
+            &["uc-repo-status"],
         ),
         exec(
             "git-config",
-            "set git identity and signing from the blueprint config (was set_git_conf)",
-            &["set_git_conf"],
+            "set git identity and signing from the blueprint config",
+            &["uc-repo-git-config"],
         ),
         exec(
             "extract",
-            "extract a tool from evgnomon/flow into its own repository (was extract-tool)",
-            &["extract-tool"],
+            "extract a tool from evgnomon/flow into its own repository",
+            &["uc-repo-extract"],
+        ),
+        exec(
+            "dist",
+            "build and install the Poetry project and its Ansible collection",
+            &["uc-repo-dist"],
         ),
         exec(
             "headers",
-            "check and add the HGL license headers (was hgl)",
-            &["hgl"],
+            "check and add the HGL license headers",
+            &["uc-repo-headers"],
         ),
         Sub {
             name: "authors",
-            summary: "add contributors from git history to AUTHORS (was scripts/authors.sh)",
+            summary: "add contributors from git history to AUTHORS",
             run: Run::Builtin(authors),
         },
     ],
@@ -150,13 +156,13 @@ pub static CERT: Group = Group {
     commands: &[
         exec(
             "trust",
-            "trust the CA serving a TLS endpoint (was trust_ca)",
-            &["trust_ca"],
+            "trust the CA serving a TLS endpoint",
+            &["uc-cert-trust"],
         ),
         group("p12", &CERT_P12),
     ],
     fallback: Some(Fallback {
-        argv: &["certgen"],
+        argv: &["uc-cert-gen"],
         summary: "certgen's local CA, server and client certificates \
                   (init, server, client, list, show, verify, delete, nginx-config)",
         bare: false,
@@ -168,12 +174,12 @@ pub static CERT_P12: Group = Group {
     summary: "bundle zygote keys and certificates as PKCS#12",
     commands: &[exec(
         "fetch",
-        "fetch the zygote CA and user certificates and bundle them (was zcdump)",
-        &["zcdump"],
+        "fetch the zygote CA and user certificates and bundle them",
+        &["uc-cert-p12-fetch"],
     )],
     fallback: Some(Fallback {
-        argv: &["mkp12"],
-        summary: "KEYNAME bundles that function key and certificate (was mkp12)",
+        argv: &["uc-cert-p12-bundle"],
+        summary: "KEYNAME bundles that function key and certificate",
         bare: true,
     }),
 };
@@ -184,13 +190,13 @@ pub static DEB: Group = Group {
     commands: &[
         exec(
             "build",
-            "make Debian packages into ./dist (was mkdeb)",
-            &["mkdeb"],
+            "make Debian packages into ./dist",
+            &["uc-deb-build"],
         ),
         exec(
             "publish",
-            "publish ./dist to the apt repository (was pubdeb)",
-            &["pubdeb"],
+            "publish ./dist to the apt repository",
+            &["uc-deb-publish"],
         ),
     ],
     fallback: None,
@@ -202,18 +208,18 @@ pub static DB: Group = Group {
     commands: &[
         exec(
             "pg",
-            "PostgreSQL instances, schemas and queries (was pg)",
-            &["pg"],
+            "PostgreSQL instances, schemas and queries",
+            &["uc-db-pg"],
         ),
         exec(
             "mongo",
-            "MongoDB instances, collections and queries (was mgo)",
-            &["mgo"],
+            "MongoDB instances, collections and queries",
+            &["uc-db-mongo"],
         ),
         exec(
             "migrate",
-            "apply SQL migrations to SQLite or PostgreSQL (was sqlize)",
-            &["sqlize"],
+            "apply SQL migrations to SQLite or PostgreSQL",
+            &["uc-db-migrate"],
         ),
         group("resources", &DB_RESOURCES),
     ],
@@ -226,28 +232,28 @@ pub static DB_RESOURCES: Group = Group {
     commands: &[
         exec(
             "sync",
-            "sync resource YAMLs into PostgreSQL (was ysys sync)",
-            &["ysys", "sync"],
+            "sync resource YAMLs into PostgreSQL",
+            &["uc-db-resources-yaml", "sync"],
         ),
         exec(
             "dump",
-            "write the stored resources back out (was ysys dump)",
-            &["ysys", "dump"],
+            "write the stored resources back out",
+            &["uc-db-resources-yaml", "dump"],
         ),
         exec(
             "configmap",
-            "query and update ConfigMaps (was confmap)",
-            &["confmap"],
+            "query and update ConfigMaps",
+            &["uc-db-resources-configmap"],
         ),
         exec(
             "schema",
-            "create the resources table with ./pg (was k8s_ddl)",
-            &["k8s_ddl"],
+            "create the resources table with uc db pg",
+            &["uc-db-resources-schema"],
         ),
         exec(
             "pods",
-            "run pods from the stored resources with podman (was mkpod)",
-            &["mkpod"],
+            "run pods from the stored resources with podman",
+            &["uc-db-resources-pods"],
         ),
     ],
     fallback: None,
@@ -259,18 +265,14 @@ pub static NET: Group = Group {
     commands: &[
         exec(
             "mesh",
-            "WireGuard mesh and port forwarding (was uc daemon)",
-            &["uc-daemon"],
+            "WireGuard mesh and port forwarding",
+            &["uc-net-mesh"],
         ),
-        exec(
-            "ipsec",
-            "full-mesh strongSwan IPsec VPN (was ipmesh)",
-            &["ipmesh"],
-        ),
+        exec("ipsec", "full-mesh strongSwan IPsec VPN", &["uc-net-ipsec"]),
         exec(
             "dig",
-            "print only the A records of a DNS lookup (was diga)",
-            &["diga"],
+            "print only the A records of a DNS lookup",
+            &["uc-net-dig"],
         ),
     ],
     fallback: None,
@@ -278,17 +280,9 @@ pub static NET: Group = Group {
 
 pub static VM: Group = alias(
     "uc vm",
-    "create and run virtual machines locally with KVM/QEMU (vm) or on Hetzner, DigitalOcean, OVHcloud and UpCloud",
-    &["vm"],
+    "create and run virtual machines locally with KVM/QEMU or on Hetzner, DigitalOcean, OVHcloud and UpCloud",
+    &["uc-vm-local"],
 );
-
-pub static NATS: Group = alias(
-    "uc nats",
-    "run NATS JetStream nodes and clusters with Podman (natsup)",
-    &["natsup"],
-);
-
-pub static WORK: Group = alias("uc work", "the workflow manager (workd)", &["workd"]);
 
 pub static NEW: Group = Group {
     path: "uc new",
@@ -296,24 +290,20 @@ pub static NEW: Group = Group {
     commands: &[
         exec(
             "role",
-            "an Ansible role and its roles.yaml playbook (was mkarole)",
-            &["mkarole"],
+            "an Ansible role and its roles.yaml playbook",
+            &["uc-new-role"],
         ),
         exec(
             "workflow",
-            "a Yacht GitHub workflow and default playbook (was catalyze)",
-            &["catalyze"],
+            "a Yacht GitHub workflow and default playbook",
+            &["uc-new-workflow"],
         ),
         exec(
             "script",
-            "an executable script with a shebang (was shole)",
-            &["shole"],
+            "an executable script with a shebang",
+            &["uc-new-script"],
         ),
-        exec(
-            "unit",
-            "a systemd unit running a command (was mkunit)",
-            &["mkunit"],
-        ),
+        exec("unit", "a systemd unit running a command", &["uc-new-unit"]),
     ],
     fallback: None,
 };
@@ -324,13 +314,13 @@ pub static CLOUD: Group = Group {
     commands: &[
         exec(
             "do",
-            "doctl with the repository's DigitalOcean token (was wdoctl)",
-            &["wdoctl"],
+            "doctl with the repository's DigitalOcean token",
+            &["uc-cloud-do"],
         ),
         exec(
             "hcloud",
-            "hcloud with a generated config (was whcloud)",
-            &["whcloud"],
+            "hcloud with a generated config",
+            &["uc-cloud-hcloud"],
         ),
         group("play", &CLOUD_PLAY),
     ],
@@ -341,17 +331,131 @@ pub static CLOUD_PLAY: Group = Group {
     path: "uc cloud play",
     summary: "run playbooks, per-host deployments and remote scripts",
     commands: &[
-        exec("host", "per-host service deployments (was plat)", &["plat"]),
+        exec(
+            "host",
+            "per-host service deployments",
+            &["uc-cloud-play-host"],
+        ),
         exec(
             "ssh",
-            "run a script and upload files on several servers (was annabelle)",
-            &["annabelle"],
+            "run a script and upload files on several servers",
+            &["uc-cloud-play-ssh"],
         ),
     ],
     fallback: Some(Fallback {
-        argv: &["y"],
+        argv: &["uc-cloud-play-run"],
         summary: "run the repository playbook with its vault secrets, \
-                  passing the arguments to ansible-playbook (was y)",
+                  passing the arguments to ansible-playbook",
         bare: true,
     }),
+};
+
+pub static AGENT: Group = Group {
+    path: "uc agent",
+    summary: "the usecode agent's HTTP backend and MCP server",
+    commands: &[
+        exec(
+            "api",
+            "HTTP backend: OTP auth, API keys, cloud servers, tasks and the chat UI",
+            &["uc-agent-api"],
+        ),
+        exec(
+            "mcp",
+            "MCP server for operating the usecode agent",
+            &["uc-agent-mcp"],
+        ),
+    ],
+    fallback: None,
+};
+
+pub static DATA: Group = Group {
+    path: "uc data",
+    summary: "convert and tidy CSV and JSON",
+    commands: &[
+        exec(
+            "pdf",
+            "render CSV from stdin as a PDF table",
+            &["uc-data-pdf"],
+        ),
+        exec(
+            "tidy",
+            "align CSV columns so the file reads well as plain text",
+            &["uc-data-tidy"],
+        ),
+        exec(
+            "jsonc",
+            "strip comments and trailing commas from JSONC",
+            &["uc-data-jsonc"],
+        ),
+    ],
+    fallback: None,
+};
+
+pub static MEDIA: Group = Group {
+    path: "uc media",
+    summary: "back up, compress and download media",
+    commands: &[
+        exec(
+            "backup",
+            "mirror the local media archive to the backup box",
+            &["uc-media-backup"],
+        ),
+        exec(
+            "compress",
+            "compress the JPEG images in a directory",
+            &["uc-media-compress"],
+        ),
+        exec(
+            "yt",
+            "download the best audio as opus with yt-dlp",
+            &["uc-media-yt"],
+        ),
+    ],
+    fallback: None,
+};
+
+pub static PICK: Group = Group {
+    path: "uc pick",
+    summary: "fuzzy-pick files and URLs with fzf",
+    commands: &[
+        exec(
+            "file",
+            "fuzzy-pick files under a directory",
+            &["uc-pick-file"],
+        ),
+        exec(
+            "url",
+            "open URLs, files, searches or picked bookmarks in Brave",
+            &["uc-pick-url"],
+        ),
+    ],
+    fallback: None,
+};
+
+pub static SYS: Group = Group {
+    path: "uc sys",
+    summary: "small helpers for the local machine",
+    commands: &[
+        exec(
+            "yubikey",
+            "attach a YubiKey to WSL and show its info",
+            &["uc-sys-yubikey"],
+        ),
+        exec(
+            "docker",
+            "docker with ~/.docker config and sudo only when needed",
+            &["uc-sys-docker"],
+        ),
+        exec(
+            "vi",
+            "hardened vim without config, plugins, backups or modelines",
+            &["uc-sys-vi"],
+        ),
+        exec(
+            "argv",
+            "print argc and each argv element with its index",
+            &["uc-sys-argv"],
+        ),
+    ],
+    fallback: None,
 };

@@ -1,10 +1,10 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! Runs uc daemon commands on another host over ssh: it copies the local
-//! uc-daemon binary to the target and executes it there with the given
-//! arguments, so `uc daemon --host NAME up` behaves like running
-//! `sudo uc daemon up` after `ssh NAME`.
+//! Runs uc net mesh commands on another host over ssh: it copies the local
+//! uc-net-mesh binary to the target and executes it there with the given
+//! arguments, so `uc net mesh --host NAME up` behaves like running
+//! `sudo uc net mesh up` after `ssh NAME`.
 //!
 //! All of that takes several ssh invocations (copy, run, clean up), but
 //! the user should only ever authenticate once. So the first thing
@@ -28,12 +28,12 @@ use tempfile::TempDir;
 
 use crate::error::{Context, Result};
 
-/// Copy the currently running uc-daemon binary to `host` (an ssh
+/// Copy the currently running uc-net-mesh binary to `host` (an ssh
 /// destination, e.g. an entry in ~/.ssh/config) and execute it there
 /// with `args`, connecting stdio so interactive prompts (like a sudo
 /// password) work as they would locally.
 pub fn run(host: &str, args: &[String]) -> Result<()> {
-    let mut self_path = std::env::current_exe().ctx("locate uc-daemon executable")?;
+    let mut self_path = std::env::current_exe().ctx("locate uc-net-mesh executable")?;
     if let Ok(resolved) = fs::canonicalize(&self_path) {
         self_path = resolved;
     }
@@ -42,7 +42,7 @@ pub fn run(host: &str, args: &[String]) -> Result<()> {
 
     let binary = session
         .copy_binary(&self_path)
-        .with_ctx(|| format!("copy uc-daemon to {host}"))?;
+        .with_ctx(|| format!("copy uc-net-mesh to {host}"))?;
     let staging = Path::new(&binary)
         .parent()
         .map(|p| p.to_string_lossy().into_owned())
@@ -73,7 +73,7 @@ impl Session {
     /// waits for commands to be multiplexed onto it.
     fn dial(host: &str) -> Result<Session> {
         let dir = tempfile::Builder::new()
-            .prefix("uc-daemon-ssh-")
+            .prefix("uc-net-mesh-ssh-")
             .tempdir()
             .ctx("create control directory")?;
         let ctl = dir.path().join("ctl");
@@ -135,8 +135,8 @@ impl Session {
             fs::File::open(local_path).with_ctx(|| format!("open {}", local_path.display()))?;
 
         const STAGE: &str = concat!(
-            r#"d=$(mktemp -d "${TMPDIR:-/tmp}/uc-daemon.XXXXXXXX") && "#,
-            r#"cat > "$d/uc-daemon" && chmod 0700 "$d/uc-daemon" && printf %s "$d""#
+            r#"d=$(mktemp -d "${TMPDIR:-/tmp}/uc-net-mesh.XXXXXXXX") && "#,
+            r#"cat > "$d/uc-net-mesh" && chmod 0700 "$d/uc-net-mesh" && printf %s "$d""#
         );
 
         let mut child = self
@@ -157,7 +157,7 @@ impl Session {
         if dir.is_empty() {
             bail!("remote did not report a staging directory");
         }
-        Ok(format!("{dir}/uc-daemon"))
+        Ok(format!("{dir}/uc-net-mesh"))
     }
 
     fn remove_all(&self, dir: &str) {
@@ -183,7 +183,7 @@ impl Session {
 
         let status = self.ssh(&["-t"], Some(&remote)).status()?;
         if !status.success() {
-            bail!("uc-daemon exited with {status}");
+            bail!("uc-net-mesh exited with {status}");
         }
         Ok(())
     }
@@ -201,7 +201,7 @@ impl Drop for Session {
     }
 }
 
-/// Whether a uc daemon subcommand has to run as root on the target.
+/// Whether a uc net mesh subcommand has to run as root on the target.
 /// Nearly everything does: even the read-only commands parse the config,
 /// which lives root-owned and mode 0600. Only the ones that touch no
 /// state at all are exempt.

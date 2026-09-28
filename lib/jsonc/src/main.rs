@@ -3,7 +3,7 @@
 
 //! CLI: read JSONC on stdin, write JSON on stdout.
 //!
-//! Use:  jsonc < input.jsonc > out.json
+//! Use:  uc data jsonc < input.jsonc > out.json
 
 use std::io::{Read, Write};
 use std::process::ExitCode;

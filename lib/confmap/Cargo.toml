@@ -11,7 +11,7 @@ authors.workspace = true
 publish = false
 
 [[bin]]
-name = "confmap"
+name = "uc-db-resources-configmap"
 path = "src/main.rs"
 
 [dependencies]

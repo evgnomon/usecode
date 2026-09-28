@@ -17,7 +17,7 @@ use templates::{MAIN_PLAYBOOK, YACHT_WORKFLOW};
 
 fn write_file(path: &str, content: &str) {
     if let Err(e) = fs::write(path, content) {
-        eprintln!("catalyze: {path}: {e}");
+        eprintln!("uc-new-workflow: {path}: {e}");
         exit(1);
     }
 }

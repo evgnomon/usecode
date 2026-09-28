@@ -3,9 +3,9 @@
 
 //! Secret manager – SSH pubkey auth + vault-style encrypted storage.
 //!
-//! Server:     secd serve
-//! CLI local:  secd upsert acme prod db --value "secret"
-//! CLI remote: secd --remote http://localhost:8000 upsert acme prod db --value "secret"
+//! Server:     uc secret serve
+//! CLI local:  uc secret server upsert acme prod db --value "secret"
+//! CLI remote: uc secret server --remote http://localhost:8000 upsert acme prod db --value "secret"
 
 mod auth;
 mod client;
@@ -23,7 +23,7 @@ use serde_json::json;
 use crate::client::Signer;
 
 #[derive(Parser)]
-#[command(name = "secd", version, verbatim_doc_comment)]
+#[command(name = "uc-secret-server", version, verbatim_doc_comment)]
 /// Secret manager – SSH pubkey auth + vault-style encrypted storage.
 ///
 /// Secrets live in /var/secrets/<tenant>/<resource_group>/secrets/<name>.
@@ -83,7 +83,7 @@ fn usage_error(sub: &str, msg: &str) -> ! {
         .find_subcommand_mut(sub)
         .expect("subcommand exists")
         .clone()
-        .bin_name(format!("secd {sub}"));
+        .bin_name(format!("uc secret server {sub}"));
     let mut sub = sub;
     sub.error(ErrorKind::ValueValidation, msg).exit()
 }

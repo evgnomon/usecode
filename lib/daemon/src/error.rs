@@ -1,7 +1,7 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! A single error type for the whole program. uc daemon's errors are read
+//! A single error type for the whole program. uc net mesh's errors are read
 //! by people, not matched on by callers, so an error is just a message
 //! with whatever context the layer that produced it could add.
 
@@ -38,7 +38,7 @@ macro_rules! bail {
     ($($arg:tt)*) => { return Err($crate::err!($($arg)*)) };
 }
 
-/// Context wraps a failure in the sentence that explains what uc daemon
+/// Context wraps a failure in the sentence that explains what uc net mesh
 /// was doing, the way Go's `fmt.Errorf("...: %w", err)` chains read.
 pub trait Context<T> {
     fn ctx(self, msg: impl fmt::Display) -> Result<T>;

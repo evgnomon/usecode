@@ -3,7 +3,7 @@
 
 //! CLI: check or add the license header in files tracked by git.
 //!
-//! Use:  hgl [check|fix] [-x PATHSPEC]... [PATH]...
+//! Use:  uc repo headers [check|fix] [-x PATHSPEC]... [PATH]...
 //!
 //! `check` (the default) lists files missing the header and exits 1 if any.
 //! `fix` adds the header to them. Symlinks and submodules are skipped, so
@@ -12,7 +12,7 @@
 use std::process::{Command, ExitCode};
 
 const USAGE: &str = "\
-usage: hgl [check|fix] [-x PATHSPEC]... [PATH]...
+usage: uc repo headers [check|fix] [-x PATHSPEC]... [PATH]...
 
 Check or add the license header in files tracked by git.
 
@@ -125,22 +125,22 @@ fn main() -> ExitCode {
             return ExitCode::SUCCESS;
         }
         Err(err) => {
-            eprintln!("hgl: {err}\n\n{USAGE}");
+            eprintln!("uc-repo-headers: {err}\n\n{USAGE}");
             return ExitCode::from(2);
         }
     };
     match run(&args) {
         Ok(0) => ExitCode::SUCCESS,
         Ok(n) if args.fix => {
-            eprintln!("hgl: added the header to {n} file(s)");
+            eprintln!("uc-repo-headers: added the header to {n} file(s)");
             ExitCode::SUCCESS
         }
         Ok(n) => {
-            eprintln!("hgl: {n} file(s) missing the header; run `hgl fix`");
+            eprintln!("uc-repo-headers: {n} file(s) missing the header; run `uc repo headers fix`");
             ExitCode::FAILURE
         }
         Err(err) => {
-            eprintln!("hgl: {err}");
+            eprintln!("uc-repo-headers: {err}");
             ExitCode::from(2)
         }
     }

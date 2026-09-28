@@ -28,7 +28,7 @@ fn write(path: &str, content: &str) -> bool {
     match fs::write(path, content) {
         Ok(()) => true,
         Err(e) => {
-            eprintln!("mkarole: {path}: {e}");
+            eprintln!("uc-new-role: {path}: {e}");
             false
         }
     }
@@ -37,7 +37,7 @@ fn write(path: &str, content: &str) -> bool {
 fn main() {
     let role = env::args().nth(1).unwrap_or_default();
     if role.is_empty() {
-        println!("Usage: create_ansible_role <role_name>");
+        println!("Usage: uc new role <role_name>");
         exit(1);
     }
 

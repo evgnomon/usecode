@@ -7,7 +7,7 @@
 //! The topology is the single source of truth for who is in the mesh and
 //! what address each host holds. Nothing allocates an address on the
 //! host itself any more, which is what stops two hosts from ever being
-//! handed the same one: `uc daemon add` looks at every address already
+//! handed the same one: `uc net mesh add` looks at every address already
 //! recorded here and picks the lowest free one in the configured
 //! network.
 //!
@@ -20,7 +20,7 @@
 //! deploy/inventory/host_vars/<host>.yml            one host's unique facts
 //! ```
 //!
-//! Only hosts.yml and host_vars/<host>.yml are written by uc daemon, and
+//! Only hosts.yml and host_vars/<host>.yml are written by uc net mesh, and
 //! only ever by adding to them: a host file is created once, when the
 //! host joins, and is yours to hand-edit afterwards.
 
@@ -40,7 +40,7 @@ use crate::error::{Context, Result};
 use crate::keys;
 use crate::net::{Prefix, next_addr};
 
-/// The inventory group whose members uc daemon manages.
+/// The inventory group whose members uc net mesh manages.
 pub const GROUP: &str = "usecode";
 
 /// Where the inventory lives inside a usecode checkout, relative to the
@@ -66,8 +66,8 @@ pub struct Settings {
 }
 
 /// One mesh member's unique facts, stored in host_vars/<name>.yml.
-/// Fields uc daemon does not manage (extra Ansible vars, services added by
-/// hand) are preserved because uc daemon only ever creates this file,
+/// Fields uc net mesh does not manage (extra Ansible vars, services added by
+/// hand) are preserved because uc net mesh only ever creates this file,
 /// never rewrites it.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Host {
@@ -97,7 +97,7 @@ pub struct Host {
     pub endpoint: String,
 
     /// This host's `[[service]]` declarations, filled in by hand (or
-    /// with `uc daemon forward` on the host itself).
+    /// with `uc net mesh forward` on the host itself).
     #[serde(rename = "usecode_services", default)]
     pub services: Vec<serde_yaml::Value>,
 }
@@ -406,9 +406,9 @@ impl Inventory {
 
         let header = format!(
             "---\n\
-             # {name} - one member of the uc daemon mesh.\n\
+             # {name} - one member of the uc net mesh mesh.\n\
              #\n\
-             # Created by `uc daemon add {name}`, and not touched by uc daemon again:\n\
+             # Created by `uc net mesh add {name}`, and not touched by uc net mesh again:\n\
              # edit it freely. usecode_address was allocated from usecode_network in\n\
              # group_vars/{GROUP}/main.yml, and the private key half of\n\
              # usecode_public_key is in group_vars/{GROUP}/secrets.yml under this host's\n\

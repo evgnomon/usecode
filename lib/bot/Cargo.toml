@@ -10,7 +10,7 @@ license.workspace = true
 authors.workspace = true
 
 [[bin]]
-name = "usecode-mcp"
+name = "uc-agent-mcp"
 path = "src/main.rs"
 
 [dependencies]

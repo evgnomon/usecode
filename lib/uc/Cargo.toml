@@ -74,20 +74,32 @@ name = "uc-vm"
 path = "src/bin/uc-vm.rs"
 
 [[bin]]
-name = "uc-nats"
-path = "src/bin/uc-nats.rs"
-
-[[bin]]
-name = "uc-work"
-path = "src/bin/uc-work.rs"
-
-[[bin]]
 name = "uc-new"
 path = "src/bin/uc-new.rs"
 
 [[bin]]
 name = "uc-cloud"
 path = "src/bin/uc-cloud.rs"
+
+[[bin]]
+name = "uc-agent"
+path = "src/bin/uc-agent.rs"
+
+[[bin]]
+name = "uc-data"
+path = "src/bin/uc-data.rs"
+
+[[bin]]
+name = "uc-media"
+path = "src/bin/uc-media.rs"
+
+[[bin]]
+name = "uc-pick"
+path = "src/bin/uc-pick.rs"
+
+[[bin]]
+name = "uc-sys"
+path = "src/bin/uc-sys.rs"
 
 [dependencies]
 aes = "0.9"

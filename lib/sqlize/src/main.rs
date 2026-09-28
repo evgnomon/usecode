@@ -32,7 +32,7 @@ Examples:
 
 /// Apply SQL migrations from a directory in alphabetical order
 #[derive(Parser)]
-#[command(name = "sqlize", after_help = EXAMPLES)]
+#[command(name = "uc-db-migrate", after_help = EXAMPLES)]
 struct Cli {
     /// Directory containing SQL migration files
     directory: String,

@@ -90,4 +90,7 @@ COPY evgnomon.sources /etc/apt/sources.list.d/
 
 # TODO: add uc (provides `uc ghcr` for the z_container role) once it is
 # published to archive.evgnomon.org.
-RUN apt-get update && apt-get install -y mkdeb=$MKDEB_VERSION tree
+# mkdeb 0.4.0 renames the binary to uc-deb-build; until it is published,
+# alias the 0.3.0 binary so Makefiles calling uc-deb-build keep working.
+RUN apt-get update && apt-get install -y mkdeb=$MKDEB_VERSION tree \
+  && ln -sf /usr/bin/mkdeb /usr/bin/uc-deb-build

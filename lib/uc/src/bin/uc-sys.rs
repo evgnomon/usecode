@@ -1,8 +1,8 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! `uc nats`: see [`uc::groups::NATS`].
+//! `uc sys`: see [`uc::groups::SYS`].
 
 fn main() -> std::process::ExitCode {
-    uc::group::main(&uc::groups::NATS)
+    uc::group::main(&uc::groups::SYS)
 }

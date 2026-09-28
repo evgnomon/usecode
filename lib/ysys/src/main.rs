@@ -23,7 +23,7 @@ pub fn die(msg: impl std::fmt::Display) -> ! {
 /// Connection settings come from the nearest .pg.json (searched from the
 /// current directory upwards).
 #[derive(Parser)]
-#[command(name = "ysys")]
+#[command(name = "uc-db-resources-yaml")]
 struct Cli {
     #[command(subcommand)]
     command: Command,

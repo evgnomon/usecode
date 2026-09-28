@@ -1,13 +1,13 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! Create the Kubernetes `resources` table schema using `./pg`.
+//! Create the Kubernetes `resources` table schema using `uc-db-pg` (`uc db pg`).
 //! Stops at the first failing step and exits with its status.
 
 use std::os::unix::process::ExitStatusExt;
 use std::process::{Command, exit};
 
-const PG: &str = "./pg";
+const PG: &str = "uc-db-pg";
 
 const STEPS: &[&[&str]] = &[
     &["db", "add", "z"],
@@ -58,7 +58,7 @@ fn main() {
         let rc = match Command::new(PG).args(*step).status() {
             Ok(s) => s.code().unwrap_or_else(|| 128 + s.signal().unwrap_or(0)),
             Err(e) => {
-                eprintln!("k8s_ddl: {PG}: {e}");
+                eprintln!("uc-db-resources-schema: {PG}: {e}");
                 if e.kind() == std::io::ErrorKind::NotFound {
                     127
                 } else {

@@ -14,5 +14,5 @@ name = "jsonc"
 path = "src/lib.rs"
 
 [[bin]]
-name = "jsonc"
+name = "uc-data-jsonc"
 path = "src/main.rs"

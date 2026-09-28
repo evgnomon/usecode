@@ -80,7 +80,7 @@ fn main() {
         .env("INPUT_PLAYBOOK", &playbook)
         .args(docker_args(&home, &user, &playbook, &args))
         .exec();
-    eprintln!("yacht: docker: {err}");
+    eprintln!("uc-image-run-yacht: docker: {err}");
     exit(if err.kind() == io::ErrorKind::NotFound {
         127
     } else {

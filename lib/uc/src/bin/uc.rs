@@ -72,7 +72,8 @@ fn summary(command: &str) -> Option<String> {
 }
 
 /// Every `uc-<name>` executable reachable from the search path, deduplicated
-/// and sorted for the help output.
+/// and sorted for the help output. Names with a dash are the tools behind a
+/// group's commands (`uc-db-pg` for `uc db pg`), listed by their group.
 fn discover() -> BTreeSet<String> {
     let mut commands = BTreeSet::new();
     for dir in search_dirs() {
@@ -84,7 +85,7 @@ fn discover() -> BTreeSet<String> {
             let Some(name) = name.to_str().and_then(|n| n.strip_prefix(PREFIX)) else {
                 continue;
             };
-            if !name.is_empty() && is_executable(&entry.path()) {
+            if !name.is_empty() && !name.contains('-') && is_executable(&entry.path()) {
                 commands.insert(name.to_string());
             }
         }

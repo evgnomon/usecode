@@ -25,9 +25,9 @@ The last two replace the former `lib/pylib` Python package (`bp` and the
 `gh_image` Ansible module).
 
 It also ships the command groups — `uc image`, `uc repo`, `uc cert`,
-`uc deb`, `uc db`, `uc net`, `uc vm`, `uc nats`, `uc work`, `uc new` and
-`uc cloud` — which gather the DevOps tools in `lib/` under one command; see
-[Command groups](#command-groups).
+`uc deb`, `uc db`, `uc net`, `uc vm`, `uc new`, `uc cloud`, `uc agent`,
+`uc data`, `uc media`, `uc pick` and `uc sys` — which gather every tool in
+`lib/` under one command; see [Command groups](#command-groups).
 
 ## Encrypting files
 
@@ -178,7 +178,8 @@ uc secret ensure -r              # create it if missing, print its path
 uc secret rotate NAME            # re-encrypt under a new vault password
 uc secret rotate -r --playbook   # rotate this repository's secrets themselves
 uc secret encrypt notes.txt      # same as uc encrypt / uc decrypt
-uc secret serve                  # secd serve
+uc secret server read acme prod db  # the SSH key authenticated secret server
+uc secret serve                  # same as uc secret server serve
 ```
 
 `gen` draws characters uniformly from the OS random source; the dotfiles
@@ -201,9 +202,10 @@ in place, so an interrupted rotation can simply be run again. With
 it runs `rotate.yaml` in `~/src/github.com/$USER/blueprint` with the store
 as extra vars, passing anything after `--` to ansible-playbook.
 
-`encrypt` and `decrypt` are `uc encrypt` and `uc decrypt`, and `serve` runs
-`secd serve`, the SSH key authenticated secret server; its client commands
-stay `secd upsert`/`secd read`.
+`encrypt` and `decrypt` are `uc encrypt` and `uc decrypt`. `server` runs
+`uc-secret-server` (was `secd`), the SSH key authenticated secret server, with
+its `upsert`, `read` and `serve` commands; `serve` on its own is a shortcut
+for `server serve`.
 
 `uc secret` replaces eight tools, and `make install` links their names to
 `uc-secret`, which behaves as the tool it was called as:
@@ -221,43 +223,62 @@ stay `secd upsert`/`secd read`.
 
 ## Command groups
 
-The other DevOps tools keep their own executables and names, so scripts
-calling them carry on working, and are also reached through a group. A group
-is a `uc-<group>` executable that hands the rest of the command line to the
-tool, the way `uc` hands it to the group; `uc <group>` lists its commands and
-flags the ones whose tool is not installed.
+Every other tool in `lib/` is its own executable, named after the command
+that runs it: `uc db pg` runs `uc-db-pg`, `uc cert p12 fetch` runs
+`uc-cert-p12-fetch`. So you can call a tool through `uc` or straight by its
+`uc-*` name, whichever reads better in a script. A group is a `uc-<group>`
+executable that hands the rest of the command line to the tool, the way `uc`
+hands it to the group; `uc <group>` lists its commands and flags the ones
+whose tool is not installed. `uc help` lists just the groups and top level
+commands, not every `uc-*` tool.
 
-| Command | Runs |
-|---|---|
-| `uc image push`, `pull` | `uc push`, `uc pull` |
-| `uc image ghcr build`, `delete` | `uc ghcr` |
-| `uc image run barge`, `yacht` | `barge`, `yacht` |
-| `uc repo fqn` | `repofqn` |
-| `uc repo version` | `ucversion` |
-| `uc repo open` | `gotorepo` |
-| `uc repo status [DIR]` | `git_repos` |
-| `uc repo git-config` | `set_git_conf` |
-| `uc repo extract` | `extract-tool` |
-| `uc repo headers check`, `fix` | `hgl` |
-| `uc repo authors` | built in, was `scripts/authors.sh` (`make authors`) |
-| `uc cert init`, `server`, `client`, ... | `certgen`: any command not below |
-| `uc cert trust HOST:PORT` | `trust_ca` |
-| `uc cert p12 KEYNAME` | `mkp12` |
-| `uc cert p12 fetch` | `zcdump` |
-| `uc deb build`, `publish` | `mkdeb`, `pubdeb` |
-| `uc db pg`, `mongo`, `migrate` | `pg`, `mgo`, `sqlize` |
-| `uc db resources sync`, `dump` | `ysys sync`, `ysys dump` |
-| `uc db resources configmap` | `confmap` |
-| `uc db resources schema` | `k8s_ddl` |
-| `uc db resources pods` | `mkpod` |
-| `uc net mesh` | `uc daemon` |
-| `uc net ipsec`, `dig` | `ipmesh`, `diga` |
-| `uc vm` | `vm`, arguments and all; with `--provider`, built in (see below) |
-| `uc nats`, `uc work` | `natsup`, `workd`, arguments and all |
-| `uc new role`, `workflow`, `script`, `unit` | `mkarole`, `catalyze`, `shole`, `mkunit` |
-| `uc cloud do`, `hcloud` | `wdoctl`, `whcloud` |
-| `uc cloud play [ARGS]` | `y`: the repository playbook |
-| `uc cloud play host`, `ssh` | `plat`, `annabelle` |
+The old tool names still work for now: `make install` and `make link` put
+them next to the new ones as symlinks. They go away in a later release, so
+switching scripts over to the `uc` commands is a good idea.
+
+| Command | Executable | Was |
+|---|---|---|
+| `uc image push`, `pull` | `uc-push`, `uc-pull` | |
+| `uc image ghcr build`, `delete` | `uc-ghcr` | |
+| `uc image run barge`, `yacht` | `uc-image-run-barge`, `uc-image-run-yacht` | `barge`, `yacht` |
+| `uc repo fqn` | `uc-repo-fqn` | `repofqn` |
+| `uc repo version` | `uc-repo-version` | `ucversion` |
+| `uc repo open` | `uc-repo-open` | `gotorepo` |
+| `uc repo status [DIR]` | `uc-repo-status` | `git_repos` |
+| `uc repo git-config` | `uc-repo-git-config` | `set_git_conf` |
+| `uc repo extract` | `uc-repo-extract` | `extract-tool` |
+| `uc repo dist` | `uc-repo-dist` | `ansidist` |
+| `uc repo headers check`, `fix` | `uc-repo-headers` | `hgl` |
+| `uc repo authors` | built in | `scripts/authors.sh` (`make authors`) |
+| `uc cert init`, `server`, `client`, ... | `uc-cert-gen`: any command not below | `certgen` |
+| `uc cert trust HOST:PORT` | `uc-cert-trust` | `trust_ca` |
+| `uc cert p12 KEYNAME` | `uc-cert-p12-bundle` | `mkp12` |
+| `uc cert p12 fetch` | `uc-cert-p12-fetch` | `zcdump` |
+| `uc deb build`, `publish` | `uc-deb-build`, `uc-deb-publish` | `mkdeb`, `pubdeb` |
+| `uc db pg`, `mongo`, `migrate` | `uc-db-pg`, `uc-db-mongo`, `uc-db-migrate` | `pg`, `mgo`, `sqlize` |
+| `uc db resources sync`, `dump` | `uc-db-resources-yaml sync`, `dump` | `ysys` |
+| `uc db resources configmap` | `uc-db-resources-configmap` | `confmap` |
+| `uc db resources schema` | `uc-db-resources-schema` | `k8s_ddl` |
+| `uc db resources pods` | `uc-db-resources-pods` | `mkpod` |
+| `uc net mesh` | `uc-net-mesh` | `uc-daemon` |
+| `uc net ipsec`, `dig` | `uc-net-ipsec`, `uc-net-dig` | `ipmesh`, `diga` |
+| `uc vm` | `uc-vm-local`, arguments and all; with `--provider`, built in (see below) | `vm` |
+| `uc nats`, `uc work` | `uc-nats`, `uc-work` themselves | `natsup`, `workd` |
+| `uc new role`, `workflow`, `script`, `unit` | `uc-new-role`, `uc-new-workflow`, `uc-new-script`, `uc-new-unit` | `mkarole`, `catalyze`, `shole`, `mkunit` |
+| `uc cloud do`, `hcloud` | `uc-cloud-do`, `uc-cloud-hcloud` | `wdoctl`, `whcloud` |
+| `uc cloud play [ARGS]` | `uc-cloud-play-run`: the repository playbook | `y` |
+| `uc cloud play host`, `ssh` | `uc-cloud-play-host`, `uc-cloud-play-ssh` | `plat`, `annabelle` |
+| `uc secret server` | `uc-secret-server` | `secd` |
+| `uc agent api`, `mcp` | `uc-agent-api`, `uc-agent-mcp` | `usecode-agent-api`, `usecode-mcp` |
+| `uc data pdf`, `tidy`, `jsonc` | `uc-data-pdf`, `uc-data-tidy`, `uc-data-jsonc` | `csv2pdf`, `tidycsv`, `jsonc` |
+| `uc media backup`, `compress`, `yt` | `uc-media-backup`, `uc-media-compress`, `uc-media-yt` | `backup_archive`, `imgpress`, `ytdump` |
+| `uc pick file`, `url` | `uc-pick-file`, `uc-pick-url` | `ff`, `fzurls` |
+| `uc sys yubikey`, `argv` | `uc-sys-yubikey`, `uc-sys-argv` | `ykattach`, `num_argv` |
+| `uc sys docker`, `vi` | `uc-sys-docker`, `uc-sys-vi` | `docker`, `vi` |
+
+`docker` and `vi` do their job by standing in for the real ones on `PATH`, so
+those two names stay installed as symlinks for good. `x` keeps its name too:
+it is the shortcut for `uc configure`.
 
 ### Cloud VMs
 
@@ -300,11 +321,6 @@ month; servers clone a template (`Debian GNU/Linux 13` by default, matched by
 title prefix or UUID), log in with the SSH keys of the cloud-init user-data,
 and are stopped before `remove --force` removes them with their disks. Cloud
 VMs need no sudo.
-
-`uc configure` stays as it is, `x` being its shortcut. The personal and
-desktop tools that are not about DevOps — `ff`, `fzurls`, `imgpress`,
-`ytdump`, `backup_archive`, `ykattach`, `vi`, `jsonc`, `tidycsv`, `csv2pdf`,
-`num_argv`, `docker` — are left standalone.
 
 A group's commands are tables in `src/groups.rs`; a command either runs a
 tool, with arguments of its own put in front of the user's, opens a nested

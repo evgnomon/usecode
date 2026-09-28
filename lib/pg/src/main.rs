@@ -18,7 +18,7 @@ use crate::config::CFG;
 /// directory upwards); PGHOST, PGPORT, PGUSER, PGPASSWORD and PGDATABASE
 /// override them. With no subcommand, SQL piped on stdin is executed.
 #[derive(Parser)]
-#[command(name = "pg", version)]
+#[command(name = "uc-db-pg", version)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
@@ -158,13 +158,13 @@ enum IdxCommand {
     ///
     /// Examples:
     ///
-    ///   pg idx add resources kind                     # btree index on kind
+    ///   uc db pg idx add resources kind               # btree index on kind
     ///
-    ///   pg idx add resources kind namespace           # composite btree index
+    ///   uc db pg idx add resources kind namespace     # composite btree index
     ///
-    ///   pg idx add resources labels                   # GIN index (auto-detected from jsonb)
+    ///   uc db pg idx add resources labels             # GIN index (auto-detected from jsonb)
     ///
-    ///   pg idx add resources api_version kind name namespace --unique  # unique constraint
+    ///   uc db pg idx add resources api_version kind name namespace --unique  # unique constraint
     #[command(verbatim_doc_comment)]
     Add(cmd::idx::AddOpts),
     /// Drop an index by name.

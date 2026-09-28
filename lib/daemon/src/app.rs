@@ -34,7 +34,7 @@ pub fn down(cfg: &Config) -> Result<()> {
 }
 
 /// Reapply the WireGuard peer/service configuration without tearing down
-/// the interface, e.g. after `uc daemon import`/`forward`.
+/// the interface, e.g. after `uc net mesh import`/`forward`.
 pub fn reload(cfg: &Config) -> Result<()> {
     up(cfg)
 }

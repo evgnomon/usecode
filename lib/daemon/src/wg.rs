@@ -64,7 +64,7 @@ pub fn down(iface: &str) -> Result<()> {
 }
 
 /// The output of `wg show <iface>`. The output is returned even when the
-/// command fails, since that is what `uc daemon status` wants to show.
+/// command fails, since that is what `uc net mesh status` wants to show.
 pub fn status(iface: &str) -> (String, Result<()>) {
     match Command::new("wg").args(["show", iface]).output() {
         Ok(out) => {
@@ -86,7 +86,7 @@ fn configure_device(cfg: &Config) -> Result<()> {
     // One directory for every key file this call needs; dropping it
     // wipes them all, whichever step failed.
     let dir = tempfile::Builder::new()
-        .prefix("uc-daemon-key-")
+        .prefix("uc-net-mesh-key-")
         .tempdir()
         .ctx("create temp key directory")?;
 

@@ -16,9 +16,11 @@ Debian or Ubuntu, there's a good chance some of it saves you a weekend too.
   compilers, language servers, CLI tools, editors and dotfiles. It knows whether
   it's on a desktop, a VM, WSL or a container and only installs what makes sense
   there.
-- **One command for the everyday DevOps chores.** `uc` gathers dozens of small
-  tools under friendly groups: `uc vm`, `uc cert`, `uc db`, `uc image`,
-  `uc repo`, `uc secret` and more. Run `uc help` to see what's there.
+- **One command for the everyday chores.** `uc` gathers every tool in here
+  under friendly groups: `uc vm`, `uc cert`, `uc db`, `uc image`, `uc repo`,
+  `uc secret`, `uc media`, `uc pick` and more. Run `uc help` to see what's
+  there. Each tool is also a plain `uc-*` executable (`uc db pg` is
+  `uc-db-pg`), so it's just as easy to call from a script.
 - **Cloud servers without the console clicking.** `uc vm create` spins up a
   machine locally (KVM/QEMU) or on Hetzner, DigitalOcean, OVHcloud or UpCloud,
   picks the cheapest server that fits the size you asked for, and adds an ssh
@@ -26,7 +28,7 @@ Debian or Ubuntu, there's a good chance some of it saves you a weekend too.
 - **Secrets that stay secret.** `uc encrypt` / `uc decrypt` for files, and
   `uc secret` for generating secrets and managing vault stores.
 - **An AI agent stack you can run yourself.** A small web app and API for
-  chatting with AI agents, plus an MCP server (`usecode-mcp`) so Claude Code or
+  chatting with AI agents, plus an MCP server (`uc-agent-mcp`) so Claude Code or
   any MCP client can drive it. See [docs/usecode-agent.md](docs/usecode-agent.md).
 
 ## Quick start
@@ -128,7 +130,7 @@ make down     # stop (your data is kept)
 Then open <http://localhost:8430>. To let Claude Code talk to it:
 
 ```bash
-claude mcp add usecode -- usecode-mcp
+claude mcp add usecode -- uc-agent-mcp
 ```
 
 ## Finding your way around
@@ -147,8 +149,11 @@ Handy `make` targets at the root: `build`, `install`, `link`, `clean`,
 `submodules`, `check`, `test`, `lint`, `fmt`, `headers-check` and `authors`.
 
 Adding a Rust tool? Put it in `lib/<name>`, add it to `members` in the root
-`Cargo.toml`, and give it a two-line Makefile: `NAME := <name>` followed by
-`include ../rust.mk`. That gets you `build`, `install`, `link`, `test` and
+`Cargo.toml`, and pick the `uc` command it belongs under, say `uc db foo`.
+Name its binary after that command (`[[bin]] name = "uc-db-foo"`), give it a
+short Makefile: `NAME := <name>`, `BIN := uc-db-foo`, then
+`include ../rust.mk`, and add it to the group's table in
+`lib/uc/src/groups.rs`. That gets you `build`, `install`, `link`, `test` and
 the rest.
 
 ## Contributing

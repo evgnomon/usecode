@@ -4,7 +4,7 @@
 ---
 # shadow - one member of the usecode mesh.
 #
-# Created by `uc daemon add shadow`, and not touched by `uc daemon` again:
+# Created by `uc net mesh add shadow`, and not touched by `uc net mesh` again:
 # edit it freely. usecode_address was allocated from usecode_network in
 # group_vars/usecode/main.yml, and the private key half of
 # usecode_public_key is in group_vars/usecode/secrets.yml under this host's

@@ -9,7 +9,7 @@ use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio, exit};
 
 fn usage() -> ! {
-    println!("Usage: set_git_conf [-p PROFILE] [REPO_PATH]");
+    println!("Usage: uc repo git-config [-p PROFILE] [REPO_PATH]");
     println!();
     println!("Configure git identity and signing for a repo using blueprint config.");
     println!();
@@ -74,7 +74,7 @@ fn run_yq(config: &str, expr: &str) -> String {
         .stderr(Stdio::inherit())
         .output()
         .unwrap_or_else(|e| {
-            eprintln!("set_git_conf: yq: {e}");
+            eprintln!("uc-repo-git-config: yq: {e}");
             exit(127);
         });
     if !out.status.success() {
@@ -97,7 +97,7 @@ fn must(mut c: Command) {
         Ok(s) if s.success() => {}
         Ok(s) => exit(s.code().unwrap_or(1)),
         Err(e) => {
-            eprintln!("set_git_conf: {e}");
+            eprintln!("uc-repo-git-config: {e}");
             exit(127);
         }
     }
@@ -161,7 +161,7 @@ fn main() {
         Parsed::Ok { profile, rest } => (profile, rest),
         Parsed::Help => usage(),
         Parsed::Err(msg) => {
-            eprintln!("set_git_conf: {msg}");
+            eprintln!("uc-repo-git-config: {msg}");
             usage();
         }
     };

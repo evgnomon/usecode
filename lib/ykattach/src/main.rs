@@ -11,11 +11,11 @@ fn run(prog: &str, args: &[&str]) -> i32 {
     match Command::new(prog).args(args).status() {
         Ok(s) => s.code().unwrap_or_else(|| 128 + s.signal().unwrap_or(0)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            eprintln!("ykattach: {prog}: not found");
+            eprintln!("uc-sys-yubikey: {prog}: not found");
             127
         }
         Err(e) => {
-            eprintln!("ykattach: {prog}: {e}");
+            eprintln!("uc-sys-yubikey: {prog}: {e}");
             126
         }
     }

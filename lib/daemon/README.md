@@ -3,9 +3,9 @@ License-Identifier: HGL
 Copyright (C) The Usecode Authors (see AUTHORS)
 -->
 
-# uc daemon
+# uc net mesh
 
-`uc daemon` makes a program on one machine reachable through an IP address and
+`uc net mesh` makes a program on one machine reachable through an IP address and
 port on another machine, over a WireGuard mesh.
 
 There's no client/server "mode" to pick. Every host runs the same commands;
@@ -23,12 +23,12 @@ addresses start to collide once there are more.
 ## Install
 
 ```sh
-cargo build -p uc-daemon --release   # the binary lands in ../../target/release/uc-daemon
+cargo build -p uc-daemon --release     # the binary lands in ../../target/release/uc-net-mesh
 ```
 
-That is all the control node needs. `uc-daemon` itself installs nothing:
+That is all the control node needs. `uc-net-mesh` itself installs nothing:
 targets get WireGuard, iptables, the binary and the systemd unit from the
-playbook, which is the only way uc-daemon is installed on a host.
+playbook, which is the only way uc-net-mesh is installed on a host.
 
 ## Managed: one topology, addresses handed out from it
 
@@ -44,15 +44,15 @@ deploy/inventory/host_vars/<host>.yml            one host's address, public key,
 ```
 
 An address can only be picked safely by something that can see every
-other host, so nothing picks one on the host itself. `uc daemon add` does
+other host, so nothing picks one on the host itself. `uc net mesh add` does
 it centrally:
 
 ```sh
 # a host with a public IP others dial
-uc daemon add edge -endpoint vpn.example.com -ansible-host 203.0.113.10
+uc net mesh add edge -endpoint vpn.example.com -ansible-host 203.0.113.10
 
 # a host behind NAT, which only dials out
-uc daemon add laptop -ansible-host 198.51.100.4
+uc net mesh add laptop -ansible-host 198.51.100.4
 ```
 
 Each `add` reads the whole topology, takes the lowest free address in
@@ -111,14 +111,14 @@ topology says should be a peer - how long ago it handshaked and whether
 it answers a ping over the tunnel. It changes nothing, and a host that is
 down is reported as down instead of ending the run.
 
-Growing the mesh is `uc daemon add phone` and another
+Growing the mesh is `uc net mesh add phone` and another
 `ansible-playbook deploy/playbooks/usecode.yml`; every existing host picks the
 new member up as a peer. Nothing else has to be edited.
 
 The vault password comes from `deploy/vault-pass.sh`, which `ansible.cfg`
 names as the `vault_password_file`; being executable, it is run and its
 stdout used, so the password stays in whatever `getsecret` reads and
-never lands on disk here. `uc daemon add` runs `ansible-vault` from the
+never lands on disk here. `uc net mesh add` runs `ansible-vault` from the
 repo root too, so it resolves the password the same way. Swap the body of
 that script for your own secret store, or comment the setting out and
 uncomment `ask_vault_pass` to be prompted instead.
@@ -131,16 +131,16 @@ so keeping track of which are taken is on you - that is the part the
 managed flow above takes over.
 
 **1. Generate each host's keypair and exchange descriptors.** Both machines
-need the `uc-daemon` binary plus `wireguard-tools`, `iproute2` and `iptables`
-already installed - `uc-daemon` does not install them. Order doesn't matter -
+need the `uc-net-mesh` binary plus `wireguard-tools`, `iproute2` and `iptables`
+already installed - `uc-net-mesh` does not install them. Order doesn't matter -
 run these in either order, on either machine:
 
 ```sh
 # on edge (has a public IP others can dial)
-sudo uc daemon export -address 10.10.0.1/24 -endpoint vpn.example.com:51820 -out edge.peer.toml
+sudo uc net mesh export -address 10.10.0.1/24 -endpoint vpn.example.com:51820 -out edge.peer.toml
 
 # on laptop (behind NAT, dials out - no -endpoint)
-sudo uc daemon export -address 10.10.0.2/24 -out laptop.peer.toml
+sudo uc net mesh export -address 10.10.0.2/24 -out laptop.peer.toml
 ```
 
 Copy `edge.peer.toml` to `laptop`, and `laptop.peer.toml` to `edge` (scp,
@@ -150,10 +150,10 @@ chat, USB stick - it's not secret, no private key is ever in it).
 
 ```sh
 # on laptop
-sudo uc daemon import edge.peer.toml
+sudo uc net mesh import edge.peer.toml
 
 # on edge
-sudo uc daemon import laptop.peer.toml
+sudo uc net mesh import laptop.peer.toml
 ```
 
 **3. Declare the service.** On `laptop`, say what's running locally; on
@@ -161,16 +161,16 @@ sudo uc daemon import laptop.peer.toml
 
 ```sh
 # on laptop: "I run web on my port 8080"
-sudo uc daemon forward web tcp 8080
+sudo uc net mesh forward web tcp 8080
 
 # on edge: "public port 80 forwards to laptop's port 8080"
-sudo uc daemon forward web tcp 80:laptop:8080
+sudo uc net mesh forward web tcp 80:laptop:8080
 ```
 
 **4. Bring it up, on both:**
 
 ```sh
-sudo uc daemon up
+sudo uc net mesh up
 ```
 
 `edge` sees a forward rule in its own config and turns on IP forwarding and
@@ -185,20 +185,20 @@ Adding a third host (say `phone`, also served through `edge`) doesn't touch
 
 ```sh
 # on phone
-sudo uc daemon export -address 10.10.0.3/24 -out phone.peer.toml
+sudo uc net mesh export -address 10.10.0.3/24 -out phone.peer.toml
 # copy phone.peer.toml to edge, edge.peer.toml to phone
 
 # on edge
-sudo uc daemon import phone.peer.toml
-sudo uc daemon forward api tcp 443:phone:9000
+sudo uc net mesh import phone.peer.toml
+sudo uc net mesh forward api tcp 443:phone:9000
 
 # on phone
-sudo uc daemon import edge.peer.toml
-sudo uc daemon forward api tcp 9000
-sudo uc daemon up
+sudo uc net mesh import edge.peer.toml
+sudo uc net mesh forward api tcp 9000
+sudo uc net mesh up
 
 # on edge, to pick up the new peer/service
-sudo uc daemon reload
+sudo uc net mesh reload
 ```
 
 A host can hold public endpoints for some peers while being a plain leaf of
@@ -211,7 +211,7 @@ Fleet (on the control node, inside a checkout - touches the topology, not
 any host):
 
 ```text
-uc daemon add NAME [-endpoint HOST[:PORT]] [-address IP] [-ansible-host HOST]
+uc net mesh add NAME [-endpoint HOST[:PORT]] [-address IP] [-ansible-host HOST]
                    [-ansible-user USER] [-inventory DIR] [-vault-password-file FILE]
                                      put a host into the mesh: allocate its address,
                                      mint its keypair, record it in the inventory
@@ -224,30 +224,30 @@ without a port gets `usecode_listen_port`.
 Setup (on the host, mutate its config):
 
 ```text
-uc daemon export  [-out FILE] [-address CIDR] [-endpoint HOST:PORT]
+uc net mesh export  [-out FILE] [-address CIDR] [-endpoint HOST:PORT]
                                      write this host's descriptor
-uc daemon import  DESCRIPTOR_FILE   add the host behind a descriptor as a peer
-uc daemon forward NAME PROTO PORT
-uc daemon forward NAME PROTO [BIND:]PORT:PEER:PEER_PORT
+uc net mesh import  DESCRIPTOR_FILE add the host behind a descriptor as a peer
+uc net mesh forward NAME PROTO PORT
+uc net mesh forward NAME PROTO [BIND:]PORT:PEER:PEER_PORT
                                      declare a service, or a forward rule to a peer
-uc daemon unforward NAME            remove a service/forward declaration
+uc net mesh unforward NAME          remove a service/forward declaration
 ```
 
 Apply (act on the config already on disk):
 
 ```text
-sudo uc daemon up       bring up the tunnel, and DNAT rules for any forward rules
-sudo uc daemon down     tear down the tunnel and any DNAT rules
-sudo uc daemon reload   reapply the config to a running tunnel
-sudo uc daemon status   show the tunnel and forwarding state
-sudo uc daemon validate check the config file without applying it
+sudo uc net mesh up     bring up the tunnel, and DNAT rules for any forward rules
+sudo uc net mesh down   tear down the tunnel and any DNAT rules
+sudo uc net mesh reload reapply the config to a running tunnel
+sudo uc net mesh status show the tunnel and forwarding state
+sudo uc net mesh validate check the config file without applying it
 ```
 
 Low-level (rarely needed directly - `export` calls these for you):
 
 ```text
-sudo uc daemon pubkey            print this host's WireGuard public key
-sudo uc daemon genkey [-force]   (re)generate this host's WireGuard keypair
+sudo uc net mesh pubkey          print this host's WireGuard public key
+sudo uc net mesh genkey [-force] (re)generate this host's WireGuard keypair
 ```
 
 The `forward` port mapping reads left to right: everything before the last
@@ -264,7 +264,7 @@ sudo systemctl reload usecode
 sudo journalctl -u usecode
 ```
 
-The configuration is root-only at `/etc/uc/config.toml`. `uc-daemon` refuses
+The configuration is root-only at `/etc/uc/config.toml`. `uc-net-mesh` refuses
 to use a less protected file because it may contain a WireGuard preshared
 key. `export`/`import`/`forward`/`unforward` all rewrite the file in place
 (via a validated encode), so hand-written comments don't survive past the
@@ -273,11 +273,11 @@ kept as annotated references instead.
 
 ## Troubleshooting
 
-- **No connection:** confirm both descriptors were imported on the correct host (`uc daemon validate` lists peer/service counts).
+- **No connection:** confirm both descriptors were imported on the correct host (`uc net mesh validate` lists peer/service counts).
 - **No handshake:** confirm the dialing side can reach the endpoint host's address:port over UDP.
-- **Handshake but no web page:** confirm the local program is listening on the port named in `forward`, the edge host's firewall allows the public port, and `uc daemon status` shows the DNAT rule.
-- **Two hosts on the same address:** the playbook stops on "Assert every mesh address is unique" and prints host → address for the whole group. Fix the offending `host_vars` file; `uc daemon add` won't allocate on top of a topology that already clashes either.
-- **Configuration error:** run `sudo uc daemon validate` and follow the message - it reports every problem in the config at once, not just the first one.
+- **Handshake but no web page:** confirm the local program is listening on the port named in `forward`, the edge host's firewall allows the public port, and `uc net mesh status` shows the DNAT rule.
+- **Two hosts on the same address:** the playbook stops on "Assert every mesh address is unique" and prints host → address for the whole group. Fix the offending `host_vars` file; `uc net mesh add` won't allocate on top of a topology that already clashes either.
+- **Configuration error:** run `sudo uc net mesh validate` and follow the message - it reports every problem in the config at once, not just the first one.
 
 ## For developers
 
@@ -288,7 +288,7 @@ kept as annotated references instead.
 - `src/wg.rs` manages the WireGuard interface.
 - `src/iptables.rs` manages DNAT/forwarding rules for hosts with forward-rule services.
 - `src/keys.rs` manages this host's persistent WireGuard keypair.
-- `src/remote.rs` runs `uc-daemon` on another host over one ssh connection.
+- `src/remote.rs` runs `uc-net-mesh` on another host over one ssh connection.
 - `cargo test` covers the parts that decide things: address allocation, config validation,
   rule building, forward-spec parsing and the `hosts.yml` edit.
 - `init/systemd/usecode.service` is the unit the playbook installs.

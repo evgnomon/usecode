@@ -6,7 +6,7 @@
 #
 # ansible.cfg points vault_password_file at this; because the file is
 # executable, ansible runs it and reads the password from stdout rather
-# than reading the file itself. `uc daemon add` shells out to
+# than reading the file itself. `uc net mesh add` shells out to
 # ansible-vault from the repo root, so it resolves the password the same
 # way with nothing passed on its command line.
 #

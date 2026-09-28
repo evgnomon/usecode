@@ -1,7 +1,7 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! Loads, validates, and mutates the uc daemon configuration file. There
+//! Loads, validates, and mutates the uc net mesh configuration file. There
 //! is no client/server "mode": every host runs the same commands, and a
 //! host's role falls out of what its config contains - a `[[service]]`
 //! with only `local_port` is something this host runs; a `[[service]]`
@@ -19,11 +19,11 @@ use serde::{Deserialize, Serialize};
 use crate::error::{Context, Error, Result};
 use crate::net::{parse_cidr, split_host_port};
 
-/// The well-known location for the uc daemon config file.
+/// The well-known location for the uc net mesh config file.
 pub const DEFAULT_PATH: &str = "/etc/uc/config.toml";
 
 /// The local WireGuard interface settings. The private key is
-/// deliberately not part of the config file: uc daemon generates and
+/// deliberately not part of the config file: uc net mesh generates and
 /// persists it itself (see [`crate::keys`]) so it never has to be typed,
 /// pasted, or committed anywhere.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -39,7 +39,7 @@ pub struct Interface {
 }
 
 /// A remote WireGuard peer. Peers are normally added with
-/// `uc daemon import`, not hand-edited.
+/// `uc net mesh import`, not hand-edited.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Peer {
     #[serde(default)]
@@ -58,8 +58,8 @@ pub struct Peer {
 
 /// Either a local declaration ("I run this on `local_port`") or a
 /// forward rule ("public traffic on `remote_bind` goes to
-/// `client_address:local_port`"), set with `uc daemon forward` /
-/// `uc daemon unforward`. Which one it is follows from whether
+/// `client_address:local_port`"), set with `uc net mesh forward` /
+/// `uc net mesh unforward`. Which one it is follows from whether
 /// `remote_bind` is set - there is no separate flag for it.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Service {
@@ -96,7 +96,7 @@ impl Service {
     }
 }
 
-/// The root uc daemon configuration.
+/// The root uc net mesh configuration.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Config {
     #[serde(rename = "wireguard", default)]
@@ -108,7 +108,7 @@ pub struct Config {
 }
 
 /// The small, non-secret bundle a host hands to another host so it can
-/// be added as a peer, via `uc daemon export` / `uc daemon import`. It never
+/// be added as a peer, via `uc net mesh export` / `uc net mesh import`. It never
 /// contains a private key.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Descriptor {
@@ -129,8 +129,8 @@ fn is_zero(n: &i64) -> bool {
 
 /// Written to the config path when no file exists yet. It is a starting
 /// point, not a working config.
-const DEFAULT_TEMPLATE: &str = r#"# uc daemon config - run "uc daemon export" to fill this in, then "uc daemon
-# import" to add peers and "uc daemon forward" to declare services. See
+const DEFAULT_TEMPLATE: &str = r#"# uc net mesh config - run "uc net mesh export" to fill this in, then "uc net mesh
+# import" to add peers and "uc net mesh forward" to declare services. See
 # README.md for a worked recipe.
 
 [wireguard]
@@ -141,15 +141,15 @@ address   = "10.10.0.2/24" # this host's WireGuard address (CIDR)
 impl Config {
     /// Read and validate the config file at `path`. If no file exists
     /// there, write a commented-out template (root-only) and return an
-    /// error asking the caller to run `uc daemon export` first, rather
+    /// error asking the caller to run `uc net mesh export` first, rather
     /// than failing with a bare "no such file". Refuses to load a file
     /// that is readable or writable by anyone other than its owner,
     /// since it may contain WireGuard preshared keys.
     pub fn load(path: &str) -> Result<Config> {
         if ensure_default(path)? {
             bail!(
-                "no config found; wrote a template to {path} - run `uc daemon export` to fill in \
-                 this host's identity, then `uc daemon import` to add peers"
+                "no config found; wrote a template to {path} - run `uc net mesh export` to fill in \
+                 this host's identity, then `uc net mesh import` to add peers"
             );
         }
 
@@ -164,7 +164,7 @@ impl Config {
     /// Create a minimal config with just the wireguard interface section
     /// (no peers, no services) and save it to `path`. Fails if a config
     /// already exists there - use [`Config::load`] in that case. This is
-    /// what `uc daemon export` calls the first time it runs on a host.
+    /// what `uc net mesh export` calls the first time it runs on a host.
     pub fn new_at(path: &str, iface: &str, address: &str, listen_port: i64) -> Result<Config> {
         if Path::new(path).exists() {
             bail!("{path} already exists");
@@ -187,8 +187,8 @@ impl Config {
 
     /// Validate and write the config back to `path`, root-only. Hand
     /// edits and comments in an existing file are lost once this is
-    /// called - after the first `uc daemon export`/`import`/`forward`, the
-    /// config file is owned by uc daemon's own commands.
+    /// called - after the first `uc net mesh export`/`import`/`forward`, the
+    /// config file is owned by uc net mesh's own commands.
     pub fn save(&self, path: &str) -> Result<()> {
         self.validate()?;
 
@@ -230,7 +230,7 @@ impl Config {
     }
 
     /// Add `s`, or replace the existing service with the same name if
-    /// one exists (`uc daemon forward` on an existing name repoints it
+    /// one exists (`uc net mesh forward` on an existing name repoints it
     /// instead of duplicating it).
     pub fn add_or_replace_service(&mut self, s: Service) {
         match self.services.iter_mut().find(|e| e.name == s.name) {
@@ -350,7 +350,7 @@ fn join_errs(errs: Vec<String>) -> Result<()> {
 }
 
 /// Make sure the directory holding the config exists. A directory
-/// uc daemon creates is root-only from the start; one that already exists
+/// uc net mesh creates is root-only from the start; one that already exists
 /// is left at whatever mode its owner chose (the Ansible role gives
 /// /etc/uc 0750 so a group can list it).
 fn ensure_private_dir(path: &str) -> Result<()> {

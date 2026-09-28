@@ -20,7 +20,7 @@
       - usecode_public_key | length > 0
     fail_msg: >-
       {{ inventory_hostname }} has no usecode_address/usecode_public_key.
-      Hosts join the mesh with `uc daemon add {{ inventory_hostname }}`,
+      Hosts join the mesh with `uc net mesh add {{ inventory_hostname }}`,
       which allocates the address and mints the keypair - don't write
       host_vars by hand.
 
@@ -30,7 +30,7 @@
     fail_msg: >-
       No private key for {{ inventory_hostname }} in
       group_vars/{{ usecode_group }}/secrets.yml. It is written there by
-      `uc daemon add`; if the host predates that, re-add it or insert the
+      `uc net mesh add`; if the host predates that, re-add it or insert the
       key with `ansible-vault edit`.
   # Deliberately not no_log: the assertion names the variable, never its
   # value, and hiding the result would hide the message above with it.
@@ -77,7 +77,7 @@
 
 # --target-dir points cargo at the per-architecture cache, so its own
 # incremental build state is what makes the second host cheap.
-- name: Build the uc-daemon binary on the control node
+- name: Build the uc-net-mesh binary on the control node
   delegate_to: localhost
   become: false
   ansible.builtin.command:
@@ -89,9 +89,9 @@
   changed_when: true
   check_mode: false
 
-- name: Install the uc-daemon binary
+- name: Install the uc-net-mesh binary
   ansible.builtin.copy:
-    src: "{{ usecode_build_cache }}/{{ usecode_arch }}/{{ usecode_rust_target }}/release/uc-daemon"
+    src: "{{ usecode_build_cache }}/{{ usecode_arch }}/{{ usecode_rust_target }}/release/uc-net-mesh"
     dest: "{{ usecode_binary_dest }}"
     owner: root
     group: root
@@ -116,7 +116,7 @@
 
 # The credentials. The private key is the one thing that never appears in
 # the topology in the clear - it comes out of the vault and goes straight
-# to a root-only file, which is exactly where uc daemon would have put a
+# to a root-only file, which is exactly where uc net mesh would have put a
 # key it generated itself.
 - name: Install this host's WireGuard private key
   ansible.builtin.copy:
@@ -176,6 +176,12 @@
     path: /etc/systemd/system/uc-daemon.service
     state: absent
   notify: Restart usecode
+
+# The binary used to be called uc-daemon too; it is uc-net-mesh now.
+- name: Remove the pre-rename uc-daemon binary
+  ansible.builtin.file:
+    path: /usr/local/bin/uc-daemon
+    state: absent
 
 - name: Install the systemd unit
   ansible.builtin.copy:

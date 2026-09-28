@@ -3,4 +3,4 @@
 
 target/
 /dist
-pkg/debian/usr/bin/workd
+pkg/debian/usr/bin/uc-work

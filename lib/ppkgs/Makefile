@@ -77,7 +77,7 @@ dist: $(DEB_PKG)
 
 $(DEB_PKG): $(SPEC) $(STAMPS_DIR)/compileall
 	@mkdir -p dist
-	@mkdeb
+	@uc-deb-build
 
 clean:
 	@rm -rf $(STAMPS_DIR) $(BUILD_DIR) $(DEB_PKG)

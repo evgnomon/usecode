@@ -155,7 +155,7 @@ pub fn ensure_configmaps(
             None => {
                 insert(client, kind, &name, namespace, tenant, &json!({}))?;
                 println!("Auto-created empty ConfigMap '{name}'");
-                println!("  Populate it with: echo 'value' | confmap {name} key");
+                println!("  Populate it with: echo 'value' | uc db resources configmap {name} key");
                 json!({})
             }
         };

@@ -7,7 +7,7 @@
 # The mesh topology itself is NOT here - it lives in the inventory
 # (deploy/inventory), which is the single place that decides which hosts
 # exist, what address each holds, and what key it uses. What follows is
-# only how to install uc-daemon on a host, plus fallbacks for the mesh-wide
+# only how to install uc-net-mesh on a host, plus fallbacks for the mesh-wide
 # inputs so the role still runs against an inventory that doesn't set
 # them.
 
@@ -35,7 +35,7 @@ usecode_cargo: cargo
 # so converging twenty hosts doesn't mean twenty compiles.
 usecode_build_cache: "{{ lookup('env', 'HOME') }}/.cache/uc-daemon/build"
 
-usecode_binary_dest: /usr/local/bin/uc-daemon
+usecode_binary_dest: /usr/local/bin/uc-net-mesh
 usecode_config_dir: /etc/uc
 usecode_config_path: "{{ usecode_config_dir }}/config.toml"
 usecode_key_dir: "{{ usecode_config_dir }}/wireguard"
@@ -57,7 +57,7 @@ usecode_persistent_keepalive: 25
 usecode_mtu: 0
 
 # Per-host facts, normally written to host_vars/<host>.yml by
-# `uc daemon add`. usecode_address and usecode_public_key are required;
+# `uc net mesh add`. usecode_address and usecode_public_key are required;
 # the role refuses to run without them rather than guessing.
 usecode_address: ""
 usecode_public_key: ""

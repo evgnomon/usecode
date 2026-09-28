@@ -65,7 +65,7 @@ fn main() {
     {
         Ok(o) => o.stdout,
         Err(e) => {
-            eprintln!("wdoctl: getsecret: {e}");
+            eprintln!("uc-cloud-do: getsecret: {e}");
             Vec::new()
         }
     };
@@ -73,7 +73,7 @@ fn main() {
         .env("DIGITALOCEAN_ACCESS_TOKEN", doctl_prod(&secrets))
         .args(env::args_os().skip(1))
         .exec();
-    eprintln!("wdoctl: doctl: {err}");
+    eprintln!("uc-cloud-do: doctl: {err}");
     exit(if err.kind() == io::ErrorKind::NotFound {
         127
     } else {

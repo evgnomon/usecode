@@ -11,7 +11,7 @@ authors.workspace = true
 publish = false
 
 [[bin]]
-name = "backup_archive"
+name = "uc-media-backup"
 path = "src/main.rs"
 
 [dependencies]

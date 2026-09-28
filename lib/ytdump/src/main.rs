@@ -44,7 +44,7 @@ fn main() {
         .args(ytdlp_args(&home))
         .args(env::args_os().skip(1))
         .exec();
-    eprintln!("ytdump: yt-dlp: {err}");
+    eprintln!("uc-media-yt: yt-dlp: {err}");
     exit(if err.kind() == io::ErrorKind::NotFound {
         127
     } else {

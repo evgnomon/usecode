@@ -1,7 +1,7 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! Open the current repository's origin remote in the browser via `fzurls`.
+//! Open the current repository's origin remote in the browser via `uc pick url`.
 
 use std::os::unix::process::CommandExt;
 use std::process::{Command, Stdio, exit};
@@ -35,8 +35,8 @@ fn main() {
         }
     };
 
-    let err = Command::new("fzurls").arg(to_https(&url)).exec();
-    eprintln!("gotorepo: fzurls: {err}");
+    let err = Command::new("uc-pick-url").arg(to_https(&url)).exec();
+    eprintln!("uc-repo-open: uc-pick-url: {err}");
     exit(127);
 }
 

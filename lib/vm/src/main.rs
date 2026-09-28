@@ -22,7 +22,7 @@ fn main() -> ExitCode {
 }
 
 fn run(args: &[String]) -> Result<()> {
-    let prog_name = args.first().map(String::as_str).unwrap_or("vm");
+    let prog_name = args.first().map(String::as_str).unwrap_or("uc-vm-local");
 
     let Some(command) = args.get(1).map(String::as_str) else {
         print_usage(prog_name);
@@ -66,25 +66,25 @@ fn run(args: &[String]) -> Result<()> {
             let all = rest.iter().any(|arg| arg == "-a" || arg == "--all");
             vm::list_vms(&conn, all)
         }
-        "info" => vm::show_vm_info(&conn, domain_arg(rest, "vm info <name>")),
-        "inspect" => vm::inspect_vm(&conn, domain_arg(rest, "vm inspect <name>")),
-        "start" => vm::start_vm(&conn, &cfg, domain_arg(rest, "vm start <name>")),
+        "info" => vm::show_vm_info(&conn, domain_arg(rest, "uc vm info <name>")),
+        "inspect" => vm::inspect_vm(&conn, domain_arg(rest, "uc vm inspect <name>")),
+        "start" => vm::start_vm(&conn, &cfg, domain_arg(rest, "uc vm start <name>")),
         "stop" => {
-            let name = domain_arg(rest, "vm stop <name> [--force]");
+            let name = domain_arg(rest, "uc vm stop <name> [--force]");
             let force = parse_force(&rest[1..]);
             vm::stop_vm(&conn, name, force)
         }
         "restart" => {
-            let name = domain_arg(rest, "vm restart <name> [--force]");
+            let name = domain_arg(rest, "uc vm restart <name> [--force]");
             let force = parse_force(&rest[1..]);
             vm::restart_vm(&conn, &cfg, name, force)
         }
         "remove" => {
-            let name = domain_arg(rest, "vm remove <name> [--force]");
+            let name = domain_arg(rest, "uc vm remove <name> [--force]");
             let force = parse_force(&rest[1..]);
             vm::delete_vm(&conn, &cfg, name, force)
         }
-        "ip" => vm::get_vm_ip(&conn, &cfg, domain_arg(rest, "vm ip <name>")),
+        "ip" => vm::get_vm_ip(&conn, &cfg, domain_arg(rest, "uc vm ip <name>")),
         "snapshot" => cmd_snapshot(rest, &conn),
         "fork" => cmd_fork(rest, &conn, &cfg),
         "mount" => cmd_mount(rest, &conn),
@@ -154,8 +154,8 @@ fn print_help() {
 vm - A lightweight KVM/QEMU virtual machine creation tool
 
 Usage:
-  vm <command> [options]
-  vm <domain-name>                    (legacy mode: create VM)
+  uc vm <command> [options]
+  uc vm <domain-name>                    (legacy mode: create VM)
 
 Commands:
   create <name> [options]            Create a new VM
@@ -202,25 +202,25 @@ Global Options:
   --version, -v                      Show version information
 
 Examples:
-  vm create myvm
-  vm create myvm --memory 2GiB --vcpus 4 --disk-size 20G
-  vm create myvm --mount /home/user/projects
-  vm create myvm --mount /home/user/projects:src
-  vm create myvm --no-start
-  vm fork myvm myvm-copy
-  vm fork myvm myvm-copy --memory 2GiB --vcpus 4
-  vm mount myvm /home/user/projects
-  vm mount myvm /home/user/projects --tag src
-  vm list
-  vm start myvm
-  vm ip myvm
+  uc vm create myvm
+  uc vm create myvm --memory 2GiB --vcpus 4 --disk-size 20G
+  uc vm create myvm --mount /home/user/projects
+  uc vm create myvm --mount /home/user/projects:src
+  uc vm create myvm --no-start
+  uc vm fork myvm myvm-copy
+  uc vm fork myvm myvm-copy --memory 2GiB --vcpus 4
+  uc vm mount myvm /home/user/projects
+  uc vm mount myvm /home/user/projects --tag src
+  uc vm list
+  uc vm start myvm
+  uc vm ip myvm
 "#
     );
 }
 
 fn print_version() {
     print!(
-        "vm version {VERSION}\n\
+        "uc vm version {VERSION}\n\
          Copyright (C) 2022-26 evgnomon.org by Hamed Ghasemzadeh. All rights reserved.\n\
          License: HGL General License <https://evgnomon.org/docs/hgl>\n\
          There is NO warranty expressed or implied; to the extent permitted by law.\n"
@@ -228,7 +228,7 @@ fn print_version() {
 }
 
 fn cmd_create(args: &[String], conn: &Connection, cfg: &Config) -> Result<()> {
-    let domain_name = domain_arg(args, "vm create <name> [options]");
+    let domain_name = domain_arg(args, "uc vm create <name> [options]");
     let mut specs = VmSpecs::default();
 
     let mut i = 1;
@@ -285,7 +285,7 @@ fn cmd_fork(args: &[String], conn: &Connection, cfg: &Config) -> Result<()> {
     if args.len() < 2 {
         fail_usage(
             "Error: source and destination names required",
-            "vm fork <source> <new-name> [options]",
+            "uc vm fork <source> <new-name> [options]",
         );
     }
 
@@ -328,7 +328,7 @@ fn cmd_mount(args: &[String], conn: &Connection) -> Result<()> {
     if args.len() < 2 {
         fail_usage(
             "Error: domain name and host path required",
-            "vm mount <name> <host-path> [--tag <tag>]",
+            "uc vm mount <name> <host-path> [--tag <tag>]",
         );
     }
 
@@ -361,7 +361,7 @@ fn cmd_mount(args: &[String], conn: &Connection) -> Result<()> {
 }
 
 fn cmd_config(args: &[String], conn: &Connection) -> Result<()> {
-    let domain_name = domain_arg(args, "vm config <name> --memory <size>");
+    let domain_name = domain_arg(args, "uc vm config <name> --memory <size>");
     let mut memory_kib: Option<u64> = None;
 
     let mut i = 1;
@@ -388,7 +388,7 @@ fn cmd_config(args: &[String], conn: &Connection) -> Result<()> {
 }
 
 fn cmd_snapshot(args: &[String], conn: &Connection) -> Result<()> {
-    const USAGE: &str = "vm snapshot <create|list|restore|remove> <name> [snapshot-name]";
+    const USAGE: &str = "uc vm snapshot <create|list|restore|remove> <name> [snapshot-name]";
 
     let Some(subcmd) = args.first().map(String::as_str) else {
         fail_usage("Error: snapshot subcommand required", USAGE);
@@ -403,21 +403,21 @@ fn cmd_snapshot(args: &[String], conn: &Connection) -> Result<()> {
 
     match subcmd {
         "create" => {
-            let (name, snap) = domain_and_snapshot("vm snapshot create <name> <snapshot-name>");
+            let (name, snap) = domain_and_snapshot("uc vm snapshot create <name> <snapshot-name>");
             vm::create_snapshot(conn, name, snap)
         }
         "list" => {
             if args.len() < 2 {
-                fail_usage("Error: domain name required", "vm snapshot list <name>");
+                fail_usage("Error: domain name required", "uc vm snapshot list <name>");
             }
             vm::list_snapshots(conn, args[1].as_str())
         }
         "restore" => {
-            let (name, snap) = domain_and_snapshot("vm snapshot restore <name> <snapshot-name>");
+            let (name, snap) = domain_and_snapshot("uc vm snapshot restore <name> <snapshot-name>");
             vm::restore_snapshot(conn, name, snap)
         }
         "remove" => {
-            let (name, snap) = domain_and_snapshot("vm snapshot remove <name> <snapshot-name>");
+            let (name, snap) = domain_and_snapshot("uc vm snapshot remove <name> <snapshot-name>");
             vm::delete_snapshot(conn, name, snap)
         }
         other => {

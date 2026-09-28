@@ -32,12 +32,12 @@ fn main() {
             }
         }
         Err(e) => {
-            eprintln!("ff: fd: {e}");
+            eprintln!("uc-pick-file: fd: {e}");
             fzf.stdin(Stdio::null());
         }
     }
     let err = fzf.exec();
-    eprintln!("ff: fzf: {err}");
+    eprintln!("uc-pick-file: fzf: {err}");
     exit(if err.kind() == io::ErrorKind::NotFound {
         127
     } else {

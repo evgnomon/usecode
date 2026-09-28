@@ -1,7 +1,7 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! Run the AI model (llama-server) as a container on the usecode-agent-api
+//! Run the AI model (llama-server) as a container on the uc-agent-api
 //! host, through the configured container CLI (podman or docker).
 
 use std::path::PathBuf;

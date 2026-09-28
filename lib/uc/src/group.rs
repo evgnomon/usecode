@@ -7,7 +7,7 @@
 //! A [`Group`] is a table of commands, each handing over to a tool (with
 //! arguments of its own put in front of the user's), to a nested group, or to
 //! a function in this crate. A group may also have a fallback tool that gets
-//! any other command line, so `uc cert init` still reaches `certgen init`.
+//! any other command line, so `uc cert init` reaches `uc-cert-gen init`.
 //! The tables themselves are in [`crate::groups`].
 
 use crate::dispatch;
@@ -229,27 +229,44 @@ mod tests {
     fn commands_reach_their_tools() {
         use crate::groups::*;
         assert_eq!(exec_of(&IMAGE, &["push", "a:1"]), ["uc-push", "a:1"]);
-        assert_eq!(exec_of(&IMAGE, &["run", "yacht", "-v"]), ["yacht", "-v"]);
-        assert_eq!(exec_of(&REPO, &["headers", "check"]), ["hgl", "check"]);
+        assert_eq!(
+            exec_of(&IMAGE, &["run", "yacht", "-v"]),
+            ["uc-image-run-yacht", "-v"]
+        );
+        assert_eq!(
+            exec_of(&REPO, &["headers", "check"]),
+            ["uc-repo-headers", "check"]
+        );
         assert_eq!(
             exec_of(&CERT, &["init", "--days", "1"]),
-            ["certgen", "init", "--days", "1"]
+            ["uc-cert-gen", "init", "--days", "1"]
         );
-        assert_eq!(exec_of(&CERT, &["p12", "user_1"]), ["mkp12", "user_1"]);
-        assert_eq!(exec_of(&CERT, &["p12", "fetch"]), ["zcdump"]);
+        assert_eq!(
+            exec_of(&CERT, &["p12", "user_1"]),
+            ["uc-cert-p12-bundle", "user_1"]
+        );
+        assert_eq!(exec_of(&CERT, &["p12", "fetch"]), ["uc-cert-p12-fetch"]);
         assert_eq!(
             exec_of(&DB, &["resources", "sync", "."]),
-            ["ysys", "sync", "."]
+            ["uc-db-resources-yaml", "sync", "."]
         );
         assert_eq!(
             exec_of(&NET, &["mesh", "add", "edge"]),
-            ["uc-daemon", "add", "edge"]
+            ["uc-net-mesh", "add", "edge"]
         );
-        assert_eq!(exec_of(&VM, &[]), ["vm"]);
-        assert_eq!(exec_of(&VM, &["-h"]), ["vm", "-h"]);
-        assert_eq!(exec_of(&CLOUD, &["play"]), ["y"]);
-        assert_eq!(exec_of(&CLOUD, &["play", "-t", "x"]), ["y", "-t", "x"]);
-        assert_eq!(exec_of(&CLOUD, &["play", "host", "ps"]), ["plat", "ps"]);
+        assert_eq!(exec_of(&VM, &[]), ["uc-vm-local"]);
+        assert_eq!(exec_of(&VM, &["-h"]), ["uc-vm-local", "-h"]);
+        assert_eq!(exec_of(&CLOUD, &["play"]), ["uc-cloud-play-run"]);
+        assert_eq!(
+            exec_of(&CLOUD, &["play", "-t", "x"]),
+            ["uc-cloud-play-run", "-t", "x"]
+        );
+        assert_eq!(
+            exec_of(&CLOUD, &["play", "host", "ps"]),
+            ["uc-cloud-play-host", "ps"]
+        );
+        assert_eq!(exec_of(&AGENT, &["mcp"]), ["uc-agent-mcp"]);
+        assert_eq!(exec_of(&SYS, &["vi", "a.txt"]), ["uc-sys-vi", "a.txt"]);
     }
 
     #[test]

@@ -141,7 +141,7 @@ fn check_address_rejects_what_allocation_would_never_hand_out() {
 }
 
 // Adding a host has to leave hosts.yml usable by Ansible and by the next
-// `uc daemon add`, comments and all.
+// `uc net mesh add`, comments and all.
 #[test]
 fn add_to_group_preserves_the_file() {
     let (_tmp, inv) = new_inventory(DEFAULT_SETTINGS, &hosts_of(&[("edge", "10.10.0.1")]));

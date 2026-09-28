@@ -59,7 +59,10 @@ fn main() {
         .arg(config)
         .args(env::args_os().skip(1))
         .exec();
-    eprintln!("docker: {}: {err}", cmd.get_program().to_string_lossy());
+    eprintln!(
+        "uc-sys-docker: {}: {err}",
+        cmd.get_program().to_string_lossy()
+    );
     exit(if err.kind() == io::ErrorKind::NotFound {
         127
     } else {

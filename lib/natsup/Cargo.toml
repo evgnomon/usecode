@@ -11,7 +11,7 @@ authors.workspace = true
 publish = false
 
 [[bin]]
-name = "natsup"
+name = "uc-nats"
 path = "src/main.rs"
 
 [dependencies]

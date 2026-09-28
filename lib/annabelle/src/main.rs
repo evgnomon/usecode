@@ -11,17 +11,17 @@ use std::time::Duration;
 use clap::{CommandFactory, Parser};
 
 const EXAMPLES: &str =
-    "annabelle — Run local script + optional file uploads on multiple remote servers via SSH/SCP
+    "uc cloud play ssh — Run local script + optional file uploads on multiple remote servers via SSH/SCP
 
 Examples:
-  annabelle server1 server2 myscript.sh
-  annabelle server1 server2 -f data.csv myscript.sh
-  annabelle srv1 srv2 -f file1.txt -f file2.conf
-  annabelle host1 -f config.yaml:/etc/myapp/config.yaml setup.sh";
+  uc cloud play ssh server1 server2 myscript.sh
+  uc cloud play ssh server1 server2 -f data.csv myscript.sh
+  uc cloud play ssh srv1 srv2 -f file1.txt -f file2.conf
+  uc cloud play ssh host1 -f config.yaml:/etc/myapp/config.yaml setup.sh";
 
 /// Run a local script (and optionally upload files first) on multiple remote servers
 #[derive(Parser)]
-#[command(name = "annabelle", after_help = EXAMPLES)]
+#[command(name = "uc-cloud-play-ssh", after_help = EXAMPLES)]
 struct Cli {
     /// Server(s) followed by optional script file
     #[arg(value_name = "SERVER [SCRIPT]")]

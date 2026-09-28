@@ -6,7 +6,7 @@ Copyright (C) The Usecode Authors (see AUTHORS)
 usecode
 =======
 
-Applies the mesh topology to one host: builds the `uc-daemon` binary on the
+Applies the mesh topology to one host: builds the `uc-net-mesh` binary on the
 control node and copies it over (no Rust toolchain needed on the target),
 installs `wireguard-tools`/`iproute2`/`iptables`, installs the host's
 WireGuard credentials from the vault, renders `/etc/uc/config.toml`
@@ -15,7 +15,7 @@ from the topology, and enables the systemd service.
 The role decides nothing. Which hosts exist, what address each holds and
 what key it uses all come from the inventory (`deploy/inventory`), which
 is why two hosts can't end up on the same address: the address is
-allocated once, centrally, by `uc daemon add`, and this role only applies
+allocated once, centrally, by `uc net mesh add`, and this role only applies
 what it finds. It refuses to run against a host the topology doesn't
 describe rather than inventing values for it.
 
@@ -37,7 +37,7 @@ Requirements
 What comes from where
 ---------------------
 
-Per host, written by `uc daemon add` into `host_vars/<host>.yml`:
+Per host, written by `uc net mesh add` into `host_vars/<host>.yml`:
 
 - `usecode_address` — the host's tunnel address, e.g. `10.10.0.3`, bare
   (the prefix comes from `usecode_network`).

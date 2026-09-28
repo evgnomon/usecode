@@ -2,7 +2,7 @@
 # License-Identifier: HGL
 # Copyright (C) The Usecode Authors (see AUTHORS)
 
-CONTEXT_NAME=$(repofqn)
+CONTEXT_NAME=$(uc-repo-fqn)
 TOKEN=$(getsecret $CONTEXT_NAME | jq -r ".hetzner.prod")
 
 echo 'active_context = "'$CONTEXT_NAME'"

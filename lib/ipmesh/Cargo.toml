@@ -11,7 +11,7 @@ authors.workspace = true
 publish = false
 
 [[bin]]
-name = "ipmesh"
+name = "uc-net-ipsec"
 path = "src/main.rs"
 
 [dependencies]

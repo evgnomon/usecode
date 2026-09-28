@@ -15,7 +15,7 @@ ARG PROFILE=local
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/src/target,sharing=locked \
     cargo build -p usecode-agent-api --profile "$PROFILE" --locked \
-    && cp "target/$PROFILE/usecode-agent-api" /usr/local/bin/
+    && cp "target/$PROFILE/uc-agent-api" /usr/local/bin/
 
 FROM docker.io/library/debian:trixie-slim
 
@@ -28,9 +28,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && ln -s /usr/bin/podman-remote /usr/local/bin/podman
 
-COPY --from=build /usr/local/bin/usecode-agent-api /usr/local/bin/usecode-agent-api
+COPY --from=build /usr/local/bin/uc-agent-api /usr/local/bin/uc-agent-api
 
 ENV USECODE_AGENT_BIND=0.0.0.0:8000
 EXPOSE 8000
 
-CMD ["usecode-agent-api"]
+CMD ["uc-agent-api"]

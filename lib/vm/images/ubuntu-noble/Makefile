@@ -13,9 +13,9 @@ noble-server-cloudimg-amd64.img:
 	@wget https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img -O noble-server-cloudimg-amd64.img
 
 dist/ubuntu-noble_$(version)_amd64.deb: noble-server-cloudimg-amd64.img
-	@mkdeb -v $(version)
+	@uc-deb-build -v $(version)
 
 dist: dist/ubuntu-noble_$(version)_amd64.deb
 
 publish:
-	@pubdeb
+	@uc-deb-publish

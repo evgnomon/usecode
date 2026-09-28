@@ -32,7 +32,7 @@ fn main() {
         .args(VIM_ARGS)
         .args(env::args_os().skip(1))
         .exec();
-    eprintln!("vi: vim: {err}");
+    eprintln!("uc-sys-vi: vim: {err}");
     exit(if err.kind() == io::ErrorKind::NotFound {
         127
     } else {

@@ -93,7 +93,7 @@ fn main() {
         .stderr(Stdio::null())
         .spawn()
         .unwrap_or_else(|e| {
-            eprintln!("git_repos: find: {e}");
+            eprintln!("uc-repo-status: find: {e}");
             exit(127);
         });
 

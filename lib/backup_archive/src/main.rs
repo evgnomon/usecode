@@ -22,7 +22,7 @@ fn rsync_args(user: &str) -> Vec<String> {
 fn main() {
     let user = env::var("USER").unwrap_or_default();
     let err = Command::new("rsync").args(rsync_args(&user)).exec();
-    eprintln!("backup_archive: rsync: {err}");
+    eprintln!("uc-media-backup: rsync: {err}");
     exit(if err.kind() == io::ErrorKind::NotFound {
         127
     } else {

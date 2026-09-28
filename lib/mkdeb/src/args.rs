@@ -7,9 +7,9 @@
 
 pub const HELP: &str = r#"Copyright (C) The Usecode Authors (see AUTHORS)
 
-mkdeb - Package files into a Debian (.deb) package
+uc-deb-build - Package files into a Debian (.deb) package
 
-Usage: mkdeb [OPTIONS]
+Usage: uc deb build [OPTIONS]
 
 Options:
   -n, --name NAME           Package name (default: from .deb.json or directory name)
@@ -36,7 +36,7 @@ Options:
     "section": "utils", "priority": "optional",
     "homepage": "https://example.com", "license": "MIT",
     "root": "./pkg-root", "tmpDir": "./.tmp" }
-  .deb.jsonc may contain comments (stripped via /usr/local/bin/jsonc).
+  .deb.jsonc may contain comments (stripped via /usr/local/bin/uc-data-jsonc).
   CLI arguments override values from these files.
   "root" specifies a directory whose contents are copied into the package
   root. E.g. if root is "./pkg-root" and it contains

@@ -1,17 +1,18 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! `uc vm`: the local KVM/QEMU machines of `vm`, and the same commands on
-//! Hetzner Cloud, DigitalOcean, OVHcloud Public Cloud and UpCloud with
-//! `--provider`.
+//! `uc vm`: the local KVM/QEMU machines of `uc-vm-local`, and the same
+//! commands on Hetzner Cloud, DigitalOcean, OVHcloud Public Cloud and UpCloud
+//! with `--provider`.
 //!
 //! Without `--provider` (or with `--provider local`) the command line goes to
-//! `vm` untouched. With a cloud provider, `create` takes the same size options
-//! and picks the cheapest server type that has at least the requested vCPUs,
-//! memory and disk. The server boots with the cloud-init user-data of the
-//! local machines and gets an ssh_config entry, so `ssh <name>` reaches the
-//! same user wherever the machine runs. The providers are driven through
-//! their REST APIs, with the credentials `uc cloud` uses from the
+//! `uc-vm-local` untouched. With a cloud provider, `create` takes the same
+//! size options and picks the cheapest server type that has at least the
+//! requested vCPUs, memory and disk. The server boots with the cloud-init
+//! user-data of the local machines and gets an ssh_config entry, so
+//! `ssh <name>` reaches the same user wherever the machine runs. The
+//! providers are driven through their REST APIs, with the credentials
+//! `uc cloud` uses from the
 //! repository's secrets.
 
 use crate::http;
@@ -97,8 +98,8 @@ pub fn main() -> ExitCode {
     };
     let Some(provider) = provider else {
         if matches!(args.first().map(String::as_str), Some("-h" | "--help")) {
-            // vm's own help, followed by what `uc vm` adds to it.
-            let _ = Command::new("vm").arg("--help").status();
+            // uc-vm-local's own help, followed by what `uc vm` adds to it.
+            let _ = Command::new("uc-vm-local").arg("--help").status();
             print!("{CLOUD_HELP}");
             return ExitCode::SUCCESS;
         }

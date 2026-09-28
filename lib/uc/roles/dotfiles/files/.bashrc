@@ -132,7 +132,7 @@ fi
 
 
 fzf-url-widget() {
-  fzurls < /dev/tty > /dev/tty 2>&1
+  uc-pick-url < /dev/tty > /dev/tty 2>&1
   READLINE_LINE=""
   READLINE_POINT=0
 }
@@ -142,7 +142,7 @@ if (( BASH_VERSINFO[0] >= 4 )); then
   bind -m vi-command -x '"\C-k": fzf-url-widget'
   bind -m vi-insert -x '"\C-k": fzf-url-widget'
 else
-  bind -m emacs-standard '"\C-k": " \C-b\C-k \C-u`fzurls < /dev/tty > /dev/tty 2>&1`\e\C-e\er\C-a\C-y\C-h\C-e\e \C-y\ey\C-x\C-x\C-f"'
+  bind -m emacs-standard '"\C-k": " \C-b\C-k \C-u`uc-pick-url < /dev/tty > /dev/tty 2>&1`\e\C-e\er\C-a\C-y\C-h\C-e\e \C-y\ey\C-x\C-x\C-f"'
   bind -m vi-command '"\C-k": "\C-z\C-k\C-z"'
   bind -m vi-insert '"\C-k": "\C-z\C-k\C-z"'
 fi

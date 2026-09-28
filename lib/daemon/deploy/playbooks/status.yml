@@ -20,7 +20,7 @@
   ignore_unreachable: true
   vars:
     usecode_group: usecode
-    usecode_binary: /usr/local/bin/uc-daemon
+    usecode_binary: /usr/local/bin/uc-net-mesh
     usecode_config_path: /etc/uc/config.toml
     _iface: "{{ usecode_interface | default('wg-usecode') }}"
     # WireGuard rehandshakes roughly every two minutes while traffic
@@ -122,7 +122,7 @@
           host: "{{ inventory_hostname }}"
           address: "{{ usecode_address | default('unknown') }}"
           endpoint: "{{ usecode_endpoint | default('') }}"
-          version: "{{ _version.stdout | default('') | trim | default('uc-daemon not installed', true) }}"
+          version: "{{ _version.stdout | default('') | trim | default('uc-net-mesh not installed', true) }}"
           config: "{{ (_validate.stdout | default('') | trim) | default((_validate.stderr | default('') | trim), true) | default('unreadable', true) }}"
           active: "{{ _u.active | default('unknown') }}"
           sub: "{{ _u.sub | default('unknown') }}"

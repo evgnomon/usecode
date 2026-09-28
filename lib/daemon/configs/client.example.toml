@@ -5,7 +5,7 @@
 # should be reachable through some other host's public address. Keep this
 # file `chmod 600`, owned by root: it may contain a peer preshared_key.
 #
-# This file is what `uc daemon export`/`import`/`forward` end up writing;
+# This file is what `uc net mesh export`/`import`/`forward` end up writing;
 # hand-editing it is fine too, this is just what the result looks like.
 # There is no "mode" - every host runs the same commands, and what a host
 # does follows from its config. See README.md for the recipe that
@@ -28,7 +28,7 @@ persistent_keepalive = 25
 
 # One [[service]] block per local process you want exposed elsewhere in
 # the mesh. local_port is the port the process actually listens on here.
-# `uc daemon forward web tcp 8080` writes this.
+# `uc net mesh forward web tcp 8080` writes this.
 [[service]]
 name       = "web"
 protocol   = "tcp"

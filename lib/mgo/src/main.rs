@@ -24,7 +24,7 @@ use crate::config::CFG;
 /// MONGO_USER and MONGO_PASSWORD override them. With no subcommand, a JSON
 /// query piped on stdin is executed.
 #[derive(Parser)]
-#[command(name = "mgo", version)]
+#[command(name = "uc-db-mongo", version)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,

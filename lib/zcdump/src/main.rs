@@ -3,7 +3,7 @@
 
 //! Fetch the zygote CA certificate (into ./ca_cert.pem) and the user_1/user_2
 //! function certificates from controller.zygote, bundle each user's cert and
-//! key into PKCS#12 with `mkp12`, then delete the plaintext key.
+//! key into PKCS#12 with `uc cert p12`, then delete the plaintext key.
 
 use std::env;
 use std::fs::{self, File};
@@ -16,7 +16,7 @@ fn code(r: std::io::Result<std::process::ExitStatus>, prog: &str) -> i32 {
     match r {
         Ok(s) => s.code().unwrap_or_else(|| 128 + s.signal().unwrap_or(0)),
         Err(e) => {
-            eprintln!("zcdump: {prog}: {e}");
+            eprintln!("uc-cert-p12-fetch: {prog}: {e}");
             if e.kind() == std::io::ErrorKind::NotFound {
                 127
             } else {
@@ -31,7 +31,7 @@ fn fetch(remote: &str, local: &str) -> i32 {
     let out = match File::create(local) {
         Ok(f) => f,
         Err(e) => {
-            eprintln!("zcdump: {local}: {e}");
+            eprintln!("uc-cert-p12-fetch: {local}: {e}");
             return 1;
         }
     };
@@ -60,7 +60,10 @@ fn main() {
             &format!("{local}/{user}_cert.pem"),
         );
         fetch(&format!("{remote}/{user}_key.pem"), &key);
-        code(Command::new("mkp12").arg(&user).status(), "mkp12");
+        code(
+            Command::new("uc-cert-p12-bundle").arg(&user).status(),
+            "uc-cert-p12-bundle",
+        );
         rc = match fs::remove_file(&key) {
             Ok(()) => 0,
             Err(e) => {

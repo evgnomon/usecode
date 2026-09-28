@@ -91,7 +91,7 @@ fn main() {
     let ((pass_thread, pass_r), (vault_thread, vault_r)) = match pipes {
         Ok(x) => x,
         Err(e) => {
-            eprintln!("y: pipe: {e}");
+            eprintln!("uc-cloud-play-run: pipe: {e}");
             exit(1);
         }
     };

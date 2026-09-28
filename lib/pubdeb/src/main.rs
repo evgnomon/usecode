@@ -13,7 +13,7 @@ use std::process::{Command, exit};
 
 fn required(key: &str) -> String {
     env::var(key).unwrap_or_else(|_| {
-        eprintln!("pubdeb: {key}: unbound variable");
+        eprintln!("uc-deb-publish: {key}: unbound variable");
         exit(1);
     })
 }
@@ -22,11 +22,11 @@ fn step(prog: &str, args: &[String]) {
     let rc = match Command::new(prog).args(args).status() {
         Ok(s) => s.code().unwrap_or_else(|| 128 + s.signal().unwrap_or(0)),
         Err(e) if e.kind() == io::ErrorKind::NotFound => {
-            eprintln!("pubdeb: {prog}: command not found");
+            eprintln!("uc-deb-publish: {prog}: command not found");
             127
         }
         Err(e) => {
-            eprintln!("pubdeb: {prog}: {e}");
+            eprintln!("uc-deb-publish: {prog}: {e}");
             126
         }
     };
@@ -75,7 +75,7 @@ fn main() {
         .arg(&repo)
         .arg(format!("archive:{user}/debian/"))
         .exec();
-    eprintln!("pubdeb: ssh: {err}");
+    eprintln!("uc-deb-publish: ssh: {err}");
     exit(if err.kind() == io::ErrorKind::NotFound {
         127
     } else {

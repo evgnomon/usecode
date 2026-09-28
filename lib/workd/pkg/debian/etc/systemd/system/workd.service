@@ -6,7 +6,7 @@ Description=workd service
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/workd serve
+ExecStart=/usr/bin/uc-work serve
 Restart=on-failure
 
 [Install]

@@ -48,7 +48,10 @@ fn glob_ext(dir: &str, ext: &str) -> Vec<String> {
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    let prog = args.first().map(String::as_str).unwrap_or("imgpress");
+    let prog = args
+        .first()
+        .map(String::as_str)
+        .unwrap_or("uc-media-compress");
     if args.len() < 2 || args.len() > 3 {
         println!("Usage: {prog} <directory> [quality]");
         println!("Example: {prog} images 50");

@@ -6,7 +6,7 @@
 //!
 //! hosts.yml is a hand-maintained Ansible file: its comments explain the
 //! mesh, and losing them to a round-trip through a YAML parser would
-//! cost more than the edit is worth. Since the only change uc daemon ever
+//! cost more than the edit is worth. Since the only change uc net mesh ever
 //! makes is "put one more host in a group", it is done on the text
 //! itself - the line is inserted where it belongs and every other byte
 //! of the file is left exactly as it was.

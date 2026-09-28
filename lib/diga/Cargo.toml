@@ -11,7 +11,7 @@ authors.workspace = true
 publish = false
 
 [[bin]]
-name = "diga"
+name = "uc-net-dig"
 path = "src/main.rs"
 
 [dependencies]

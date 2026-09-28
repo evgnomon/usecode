@@ -1,7 +1,7 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! natsup - run NATS server nodes (with JetStream) using Podman.
+//! uc-nats - run NATS server nodes (with JetStream) using Podman.
 
 mod cmd;
 mod health;
@@ -18,11 +18,11 @@ const DEFAULT_IMAGE: &str = "nats:2-alpine";
 const DEFAULT_NODE_COUNT: i64 = 3;
 
 const EXAMPLES: &str = "Examples:
-  natsup cluster              Create a 3-node cluster
-  natsup cluster --nodes 5    Create a 5-node cluster
-  natsup node --node-id 1     Create/start a single node
-  natsup status               Show cluster status
-  natsup remove               Remove all nodes and volumes
+  uc nats cluster            Create a 3-node cluster
+  uc nats cluster --nodes 5  Create a 5-node cluster
+  uc nats node --node-id 1   Create/start a single node
+  uc nats status             Show cluster status
+  uc nats remove             Remove all nodes and volumes
 
 Environment:
   NATS_NETWORK, CLUSTER_NAME, NATS_IMAGE, DATA_DIR, NATS_NODE_COUNT,
@@ -30,7 +30,7 @@ Environment:
 
 /// Run NATS JetStream nodes with Podman
 #[derive(Parser)]
-#[command(name = "natsup", after_help = EXAMPLES)]
+#[command(name = "uc-nats", after_help = EXAMPLES)]
 struct Cli {
     /// Podman network name (default: nats-cluster)
     #[arg(long, global = true)]
@@ -139,6 +139,11 @@ fn run(cli: Cli) -> Result<i32, String> {
 }
 
 fn main() -> ExitCode {
+    // One line for `uc help`, which lists this tool as `uc nats`.
+    if std::env::args().nth(1).as_deref() == Some("--summary") {
+        println!("run NATS JetStream nodes and clusters with Podman");
+        return ExitCode::SUCCESS;
+    }
     match run(Cli::parse()) {
         Ok(code) => ExitCode::from(u8::try_from(code).unwrap_or(1)),
         Err(e) => {

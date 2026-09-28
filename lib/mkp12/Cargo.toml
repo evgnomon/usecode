@@ -11,7 +11,7 @@ authors.workspace = true
 publish = false
 
 [[bin]]
-name = "mkp12"
+name = "uc-cert-p12-bundle"
 path = "src/main.rs"
 
 [dependencies]

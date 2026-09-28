@@ -17,7 +17,7 @@ use crate::swanctl::{Local, Peer};
 ///
 /// Example usage on alpha:
 ///
-///   sudo ipmesh \
+///   sudo uc net ipsec \
 ///     --local-ip 203.0.113.47 \
 ///     --local-id @alpha \
 ///     --virtual-ip 192.168.88.10/32 \
@@ -34,7 +34,7 @@ use crate::swanctl::{Local, Peer};
 ///   ipsec pki --self --ca --lifetime 3650 ... > caCert.pem
 ///   # Then generate per-host keys/certs signed by CA
 #[derive(Parser)]
-#[command(name = "ipmesh", verbatim_doc_comment)]
+#[command(name = "uc-net-ipsec", verbatim_doc_comment)]
 struct Cli {
     /// This host's public IPv4/IPv6 address
     #[arg(long)]

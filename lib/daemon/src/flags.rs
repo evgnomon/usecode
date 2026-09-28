@@ -1,10 +1,10 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! A tiny command-line flag parser with the same surface uc daemon's users
+//! A tiny command-line flag parser with the same surface uc net mesh's users
 //! already type: single-dash long flags (`-config PATH`, `-force`),
 //! `-flag=value` too, and parsing that stops at the first non-flag
-//! argument so `uc daemon forward NAME tcp 443` works unchanged.
+//! argument so `uc net mesh forward NAME tcp 443` works unchanged.
 
 use std::collections::HashMap;
 

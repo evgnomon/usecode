@@ -11,7 +11,7 @@ authors.workspace = true
 publish = false
 
 [[bin]]
-name = "ysys"
+name = "uc-db-resources-yaml"
 path = "src/main.rs"
 
 [dependencies]

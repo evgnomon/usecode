@@ -3,9 +3,9 @@ License-Identifier: HGL
 Copyright (C) The Usecode Authors (see AUTHORS)
 -->
 
-# usecode-mcp
+# uc-agent-mcp
 
-MCP server that operates usecode agent: it wraps the `usecode-agent-api` HTTP endpoints as MCP tools so an
+MCP server that operates usecode agent: it wraps the `uc-agent-api` HTTP endpoints as MCP tools so an
 AI agent can log in and act as a usecode agent client (OTP login, session lookup, logout).
 
 Written in Rust on top of [`rmcp`](https://crates.io/crates/rmcp), the official MCP Rust SDK, and
@@ -15,15 +15,15 @@ served over stdio.
 
 ```sh
 make build             # cargo build --profile release
-make install           # install the binary to /usr/local/bin/usecode-mcp
+make install           # install the binary to /usr/local/bin/uc-agent-mcp
 ```
 
 `make install` honours `DESTDIR` (with a trailing slash) and `PREFIX`, e.g.
-`make install PREFIX=$HOME/.local` to install to `~/.local/bin/usecode-mcp`.
+`make install PREFIX=$HOME/.local` to install to `~/.local/bin/uc-agent-mcp`.
 
 ## Run
 
-`usecode-mcp` needs a running `usecode-agent-api` to talk to. Start it first, in a separate terminal:
+`uc-agent-mcp` needs a running `uc-agent-api` to talk to. Start it first, in a separate terminal:
 
 ```sh
 cd ../api && USECODE_AGENT_NODE_NAME=api-1 cargo run   # http://localhost:8000
@@ -32,13 +32,13 @@ cd ../api && USECODE_AGENT_NODE_NAME=api-1 cargo run   # http://localhost:8000
 Then start the bot:
 
 ```sh
-usecode-mcp   # starts an MCP server over stdio
+uc-agent-mcp   # starts an MCP server over stdio
 ```
 
 By default the bot spreads its requests round-robin over both Caddy load balancers from
 `deploy/compose.yml` (`http://localhost:8430/api` and `http://localhost:8431/api`), failing
 over to the other if one can't be reached. Set `USECODE_MCP_API_BASE_URL` to pin it to a single
-address instead — a remote deployment, or a bare `usecode-agent-api` with no Caddy in front (see
+address instead — a remote deployment, or a bare `uc-agent-api` with no Caddy in front (see
 Configuration below).
 
 ## Configuration
@@ -56,7 +56,7 @@ directory, and anything already set in the environment wins over it.
 - `USECODE_MCP_API_KEY` — optional api_key (from `verify_otp`) used as the default
   `X-API-Key` for tools that accept an `api_key` argument, so an agent already tied to one
   usecode agent account doesn't have to pass it on every call.
-- `USECODE_MCP_REQUEST_TIMEOUT_SECONDS` — HTTP timeout for calls to `usecode-agent-api` (default `10`).
+- `USECODE_MCP_REQUEST_TIMEOUT_SECONDS` — HTTP timeout for calls to `uc-agent-api` (default `10`).
 - `USECODE_MCP_API_VERIFY_SSL` — set to `false` to skip TLS verification for an `https://`
   endpoint behind a self-signed certificate (default `true`).
 - `USECODE_MCP_COMPOSE_FILE` — path to the compose file used by `ensure_running` /
@@ -85,10 +85,10 @@ directory, and anything already set in the environment wins over it.
   of them combined).
 - `model_options()` — list the configurable fields for kick-starting the AI model
   container (llama-server), with defaults and allowed options.
-- `model_status()` — check whether the AI model container is running on the usecode-agent-api
+- `model_status()` — check whether the AI model container is running on the uc-agent-api
   host.
 - `model_start(image=None, hf_repo=None, device=None, ngl=None, alias=None, ctx_size=None, host=None, port=None)`
-  — kick-start the AI model container on the usecode-agent-api host. Defaults to
+  — kick-start the AI model container on the uc-agent-api host. Defaults to
   `ggml-org/Qwen3-0.6B-GGUF:Q4_0` on device `Vulkan0`, alias `local-model`, 32768-token context,
   `127.0.0.1:8080`; pass only the fields you want to override.
 - `model_stop()` — stop the running AI model container.
@@ -108,7 +108,7 @@ than failing the tool call.
 ## Add to Claude Code
 
 ```sh
-claude mcp add usecode -- usecode-mcp
+claude mcp add usecode -- uc-agent-mcp
 ```
 
 Pass config as env vars with `-e` if not using `.env`, e.g. to point at a non-default API:
@@ -116,7 +116,7 @@ Pass config as env vars with `-e` if not using `.env`, e.g. to point at a non-de
 ```sh
 claude mcp add usecode \
   -e USECODE_MCP_API_BASE_URL=http://localhost:8000 \
-  -- usecode-mcp
+  -- uc-agent-mcp
 ```
 
 Verify it's registered and reachable with `claude mcp list`, then check `health` from
@@ -130,9 +130,9 @@ In VS Code, Copilot Chat's agent mode picks up MCP servers from a workspace `.vs
 ```json
 {
   "servers": {
-    "usecode-mcp": {
+    "uc-agent-mcp": {
       "type": "stdio",
-      "command": "usecode-mcp",
+      "command": "uc-agent-mcp",
       "env": {
         "USECODE_MCP_API_BASE_URL": "http://localhost:8000"
       }
@@ -149,7 +149,7 @@ the Claude Code workflow below.
 For the [Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli) (`copilot`):
 
 ```sh
-copilot mcp add usecode -- usecode-mcp
+copilot mcp add usecode -- uc-agent-mcp
 ```
 
 Add env vars with `--env` if not using `.env`:
@@ -157,7 +157,7 @@ Add env vars with `--env` if not using `.env`:
 ```sh
 copilot mcp add usecode \
   --env USECODE_MCP_API_BASE_URL=http://localhost:8000 \
-  -- usecode-mcp
+  -- uc-agent-mcp
 ```
 
 This writes to `~/.copilot/mcp-config.json` (user scope, available in every session). Verify with
@@ -171,7 +171,7 @@ For clients that read raw JSON config (e.g. `mcpServers` in a config file):
 {
   "mcpServers": {
     "usecode": {
-      "command": "usecode-mcp"
+      "command": "uc-agent-mcp"
     }
   }
 }
@@ -181,7 +181,7 @@ For clients that read raw JSON config (e.g. `mcpServers` in a config file):
 
 - `src/server.rs` — the tool surface. Each `#[tool]` method's doc comment becomes the tool
   description shown to agents, so keep it accurate.
-- `src/client.rs` — HTTP calls to `usecode-agent-api`, including the round-robin/failover logic
+- `src/client.rs` — HTTP calls to `uc-agent-api`, including the round-robin/failover logic
   every call goes through (`Client::request`).
 - `src/compose.rs` — the local `deploy/compose.yml` lifecycle behind `ensure_running`/`stop`/
   `reload`/`logs_commands`.
@@ -191,7 +191,7 @@ To add a new tool: add a method to `Client` for the endpoint, then add a `#[tool
 `UsecodeServer` that calls it and hands the result to `answer` (or `acknowledge` for endpoints
 with no body).
 
-Make sure `usecode-agent-api` is running locally (see Run above) so there's something to talk to.
+Make sure `uc-agent-api` is running locally (see Run above) so there's something to talk to.
 
 ### Try changes without a client
 
@@ -208,7 +208,7 @@ printf '%s\n' \
 
 ### Try changes through Claude Code
 
-Clients spawn the installed `usecode-mcp` binary, so a change takes effect once it's rebuilt and
+Clients spawn the installed `uc-agent-mcp` binary, so a change takes effect once it's rebuilt and
 reinstalled (`make install`) and the server process is restarted:
 
 - Run `/mcp` in Claude Code and reconnect `usecode`, or restart the session.
@@ -227,6 +227,6 @@ make fmt     # cargo fmt
 
 The unit tests cover the retry/rotation rules, settings parsing, compose `ps` output parsing, and
 that the full tool list is still exposed. Anything touching the network is validated manually
-against a running `usecode-agent-api`, covering both the success path and the error path (e.g.
+against a running `uc-agent-api`, covering both the success path and the error path (e.g.
 call `me` with a bogus `api_key` and confirm you get back
 `{"error": ..., "status_code": 401}` rather than a failed tool call).

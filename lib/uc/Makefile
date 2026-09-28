@@ -6,7 +6,8 @@ SOURCES := $(shell find src tests -type f -name "*.rs") Cargo.toml $(ROOT_DIR)/C
 PROFILE ?= release
 TARGET ?= x86_64-unknown-linux-musl
 BINS := uc uc-encrypt uc-decrypt uc-configure uc-push uc-pull uc-ghcr uc-secret \
-	uc-image uc-repo uc-cert uc-deb uc-db uc-net uc-vm uc-nats uc-work uc-new uc-cloud
+	uc-image uc-repo uc-cert uc-deb uc-db uc-net uc-vm uc-new uc-cloud \
+	uc-agent uc-data uc-media uc-pick uc-sys
 OUT_DIR := $(ROOT_DIR)/target/$(TARGET)/$(PROFILE)
 OUTPUTS := $(addprefix $(OUT_DIR)/,$(BINS))
 DESTDIR ?= /
@@ -51,10 +52,10 @@ fmt:
 	@cargo fmt -p uc
 
 dist: build
-	@mkdeb
+	@uc-deb-build
 
 publish: dist
-	@pubdeb
+	@uc-deb-publish
 
 uninstall:
 	@rm -f $(INSTALLED) $(INSTALLED_ALIASES)

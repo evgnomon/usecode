@@ -1,6 +1,6 @@
 {
   "name": "workd",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A lightweight, portable, and user-friendly workflow manager for Linux.",
   "maintainer": "hg@evgnomon.org",
   "section": "admin",

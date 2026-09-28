@@ -1,7 +1,7 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! plat: per-host service deployment driver.
+//! uc-cloud-play-host: per-host service deployment driver.
 //!
 //! Manages env files under $PLAT_HOME and dispatches actions to per-blueprint
 //! scripts under $ROOT/lib/templates/lib/<service>/scripts/plat.
@@ -23,7 +23,7 @@ use crate::paths::Paths;
 
 /// Driver for per-host service deployments.
 #[derive(Parser)]
-#[command(name = "plat")]
+#[command(name = "uc-cloud-play-host")]
 struct Cli {
     #[command(subcommand)]
     command: Cmd,
