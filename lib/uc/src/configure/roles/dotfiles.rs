@@ -7,8 +7,7 @@
 use crate::configure::engine::{Outcome, Plan, Task};
 use crate::configure::modules::file;
 use crate::configure::modules::inflate::inflate;
-use crate::configure::roles::NOT_IN_DEV_CONTAINER;
-use crate::configure::vars::{Profile, Vars};
+use crate::configure::vars::Vars;
 use std::path::{Path, PathBuf};
 
 pub const LINKS: &str = "dotfiles/links";
@@ -27,7 +26,6 @@ const DOTFILES: &[&str] = &[
     ".bashrc",
     ".bashrc.d/mise-activate.sh",
     ".inputrc",
-    ".local/bin/foot-shell",
     ".local/bin/bazel",
     ".config/mise/config.toml",
     ".default-python-packages",
@@ -81,19 +79,6 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
         .tags(&["dotfiles"])
         .run(move |ctx| async move {
             inflate(&ctx, &home_templates, &ctx.vars().home, |_| true).await
-        }),
-    );
-
-    let desktop_templates = templates.join("desktop");
-    plan.add(
-        Task::new(
-            "dotfiles/desktop-templates",
-            "Inflate desktop template configs in the home",
-        )
-        .tags(&["dotfiles"])
-        .when(v.profile != Profile::DevContainer, NOT_IN_DEV_CONTAINER)
-        .run(move |ctx| async move {
-            inflate(&ctx, &desktop_templates, &ctx.vars().home, |_| true).await
         }),
     );
 

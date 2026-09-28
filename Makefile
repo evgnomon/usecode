@@ -68,7 +68,8 @@ rust:
 build: rust
 	@MAKE=$(MAKE) ./scripts/each_lib.sh $@
 
-install: rust
+# install only copies what build staged, so it runs under sudo without cargo.
+install:
 	@MAKE=$(MAKE) ./scripts/each_lib.sh $@
 
 link: rust

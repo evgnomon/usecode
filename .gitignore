@@ -91,7 +91,6 @@ zig-out
 .zig-cache
 *.css.map
 
-third_party
 *.tmp
 
 # usecode agent

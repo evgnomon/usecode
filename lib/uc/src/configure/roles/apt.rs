@@ -92,6 +92,7 @@ fn group(name: &str) -> &'static [&'static str] {
             "xclip", // Command-line X11 clipboard utility often used by terminal/editor integrations
             "libvirt-dev", // Development files for libvirt virtualization API for managing virtual machines
             "libglib2.0-bin", // GLib utilities for working with GObject-based libraries and applications
+            "scdoc", // Man page generator used to build the alacritty man pages
         ],
         // Packages requiring physical hardware (YubiKey, smartcard) — skipped on WSL2
         "hardware" => &[
@@ -112,7 +113,6 @@ fn group(name: &str) -> &'static [&'static str] {
             "brave-browser",    // Privacy-focused web browser with built-in ad blocking
             "yubioath-desktop", // YubiKey OATH desktop application for managing TOTP/HOTP codes
             "heif-gdk-pixbuf",  // HEIF/HEIC image format support for viewing modern image formats
-            "foot", // Fast and minimal Wayland terminal emulator for modern Linux desktops
             "dmidecode", // DMI/SMBIOS decoder for reading hardware information from BIOS
             "mdns-scan", // Multicast DNS scanner for discovering services on local network
             "gnumeric", // Spreadsheet application for data analysis and visualization
