@@ -107,7 +107,6 @@ fn group(name: &str) -> &'static [&'static str] {
         ],
         // Packages requiring a desktop/GPU — skipped on WSL2
         "desktop" => &[
-            "code",             // Visual Studio Code editor installed from the Microsoft Apt repository
             "fontconfig",       // Font cache tools (fc-cache) used when installing the Nerd Fonts
             "qemu-system-x86",  // x86/x86_64 system emulator for running virtual machines
             "brave-browser",    // Privacy-focused web browser with built-in ad blocking

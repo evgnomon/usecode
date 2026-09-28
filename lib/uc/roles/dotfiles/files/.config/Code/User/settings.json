@@ -355,7 +355,10 @@
     "chat.mcp.gallery.enabled": true,
     "claudeCode.preferredLocation": "panel",
     "workbench.editor.empty.hint": "hidden",
-    "yaml.disableSchemaDetection": [],
+    "yaml.disableSchemaDetection": [
+        "azure-pipelines.yml",
+        "azure-pipelines.yaml"
+    ],
     "remote.autoForwardPortsSource": "hybrid",
     "chat.tools.terminal.autoApprove": {
         "/^git -C /home/evgnomon/src/github\\.com/bosch/ms-playbook config user\\.name && git -C /home/evgnomon/src/github\\.com/bosch/ms-playbook config user\\.email && date \\+\"%B %d, %Y \\(%A\\)\"$/": {
