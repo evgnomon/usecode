@@ -35,7 +35,10 @@ claude mcp add usecode -e USECODE_MCP_API_KEY=<your API key> -- uc-agent-mcp
 ```
 
 `uc-agent-mcp` talks to `https://usecode.dev/api` out of the box, so the key is
-all it needs.
+all it needs. Using Cursor, Codex, Gemini CLI, opencode, Grok, Hermes, OpenClaw
+or another agent?
+[docs/coding-agents.md](docs/coding-agents.md) has a ready-to-paste setup for
+each of them.
 
 Head over to [usecode.dev](https://usecode.dev) to get started.
 
