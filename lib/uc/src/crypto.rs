@@ -122,7 +122,8 @@ pub fn encrypt_raw(plaintext: &[u8], password: &[u8]) -> Result<Vec<u8>> {
 pub fn decrypt_raw(raw: &[u8], password: &[u8]) -> Result<(Vec<u8>, Kdf)> {
     if raw.len() < MAGIC.len() + SALT_LEN || &raw[..MAGIC.len()] != MAGIC {
         return Err(Error::Format(
-            "missing the 'Salted__' header; the file was not produced by uc-encrypt".to_string(),
+            "missing the 'Salted__' header; the file was not produced by uc-secret-encrypt"
+                .to_string(),
         ));
     }
     let salt = &raw[MAGIC.len()..MAGIC.len() + SALT_LEN];

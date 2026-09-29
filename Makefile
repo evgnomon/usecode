@@ -1,7 +1,7 @@
 # License-Identifier: HGL
 # Copyright (C) The Usecode Authors (see AUTHORS)
 
-.PHONY: all ci deploy publish rust build version install link clean submodules check test lint fmt-html fmt headers headers-check authors up reload down logs
+.PHONY: all ci deploy publish rust build version install link clean submodules check typecheck test lint fmt-html fmt headers headers-check authors up reload down logs
 
 $(eval $(shell ./scripts/ci_wrapper.sh --env 2>/dev/null))
 
@@ -11,6 +11,8 @@ export VERSION
 ROOT_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 BUILD_DIR := $(ROOT_DIR)/build
 export ROOT_DIR BUILD_DIR
+
+include lib/profile.mk
 
 all: build
 
@@ -62,15 +64,18 @@ up reload down logs:
 
 # One cargo run builds every Rust crate in parallel with shared dependencies,
 # so the per-crate builds that each_lib.sh triggers find their binaries fresh.
+# DEBUG=1 builds the quick fast profile instead of release.
 rust:
-	@cargo build --workspace --profile release
+	@$(CARGO) build --workspace --profile $(PROFILE)
 
 build: rust
 	@MAKE=$(MAKE) ./scripts/each_lib.sh $@
 
 # install only copies what build staged, so it runs under sudo without cargo.
+# alacritty is left out: its binary is busy while the terminal runs, so it
+# installs on its own with make -C lib/alacritty install.
 install:
-	@MAKE=$(MAKE) ./scripts/each_lib.sh $@
+	@MAKE=$(MAKE) SKIP=alacritty ./scripts/each_lib.sh $@
 
 link: rust
 	@MAKE=$(MAKE) ./scripts/each_lib.sh $@
@@ -84,17 +89,21 @@ submodules:
 clean:
 	@rm -rf $(BUILD_DIR)
 	@MAKE=$(MAKE) ./scripts/each_lib.sh $@
-	@cargo clean
+	@$(CARGO) clean
 
 # The Rust crates under lib/ form one cargo workspace (see Cargo.toml).
 check: lint test
 	@cargo fmt --all --check
 
 test:
-	@cargo test --workspace
+	@$(CARGO) test --workspace
+
+# Type-checks everything without codegen, the quickest loop while editing.
+typecheck:
+	@$(CARGO) check --workspace --all-targets
 
 lint:
-	@cargo clippy --workspace --all-targets -- -D warnings
+	@$(CARGO) clippy --workspace --all-targets -- -D warnings
 
 fmt-html:
 	@if ! command -v djlint >/dev/null 2>&1; then \
@@ -107,7 +116,7 @@ fmt-html:
 fmt: fmt-html
 	@cargo fmt --all
 
-HGL := target/release/uc-repo-headers
+HGL := target/$(PROFILE)/uc-repo-headers
 
 headers:
 	@$(MAKE) -s -C lib/hgl build
@@ -117,7 +126,7 @@ headers-check:
 	@$(MAKE) -s -C lib/hgl build
 	@$(HGL) check
 
-UC_REPO := target/x86_64-unknown-linux-musl/release/uc-repo
+UC_REPO := target/x86_64-unknown-linux-musl/$(PROFILE)/uc-repo
 
 authors:
 	@$(MAKE) -s -C lib/uc build

@@ -18,12 +18,12 @@ name = "uc"
 path = "src/bin/uc.rs"
 
 [[bin]]
-name = "uc-encrypt"
-path = "src/bin/uc-encrypt.rs"
+name = "uc-secret-encrypt"
+path = "src/bin/uc-secret-encrypt.rs"
 
 [[bin]]
-name = "uc-decrypt"
-path = "src/bin/uc-decrypt.rs"
+name = "uc-secret-decrypt"
+path = "src/bin/uc-secret-decrypt.rs"
 
 [[bin]]
 name = "uc-configure"

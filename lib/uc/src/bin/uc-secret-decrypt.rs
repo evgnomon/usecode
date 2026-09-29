@@ -1,7 +1,7 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! `uc-decrypt <file>.asc` — decrypt back to `<file>`, keeping the `.asc`.
+//! `uc-secret-decrypt <file>.asc` — decrypt back to `<file>`, keeping the `.asc`.
 
 use std::io::Write;
 use std::process::ExitCode;
@@ -12,7 +12,7 @@ use uc::{Error, Result};
 const SUMMARY: &str = "decrypt a <file>.asc back to <file>, keeping the encrypted file";
 
 const USAGE: &str = "\
-Usage: uc decrypt [-c] [-f] <file>.asc
+Usage: uc secret decrypt [-c] [-f] <file>.asc
 
 Decrypts <file>.asc to <file>, keeping the encrypted file.
 
@@ -24,11 +24,11 @@ fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(Error::Usage(msg)) => {
-            eprintln!("uc-decrypt: {msg}\n\n{USAGE}");
+            eprintln!("uc-secret-decrypt: {msg}\n\n{USAGE}");
             ExitCode::from(2)
         }
         Err(err) => {
-            eprintln!("uc-decrypt: {err}");
+            eprintln!("uc-secret-decrypt: {err}");
             ExitCode::FAILURE
         }
     }

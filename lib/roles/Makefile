@@ -6,7 +6,8 @@
 NAMESPACE := $(shell awk '/^namespace:/ {print $$2}' galaxy.yml)
 NAME      := $(shell awk '/^name:/ {print $$2}' galaxy.yml)
 ROOT_DIR  ?= $(abspath $(CURDIR)/../..)
-VERSION   := $(shell $(ROOT_DIR)/target/release/uc-repo-version)
+include $(ROOT_DIR)/lib/profile.mk
+VERSION   := $(shell $(ROOT_DIR)/target/$(PROFILE)/uc-repo-version)
 DIST_DIR  := dist
 ARTIFACT  := $(DIST_DIR)/$(NAMESPACE)-$(NAME)-$(VERSION).tar.gz
 STAMP     := $(DIST_DIR)/$(NAMESPACE)-$(NAME)-$(VERSION).published

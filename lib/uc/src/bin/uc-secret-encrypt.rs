@@ -1,7 +1,7 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! `uc-encrypt <file>` — encrypt a file to `<file>.asc` and remove the original
+//! `uc-secret-encrypt <file>` — encrypt a file to `<file>.asc` and remove the original
 //! once the round trip has been verified.
 
 use std::path::PathBuf;
@@ -13,7 +13,7 @@ use uc::{Error, Result};
 const SUMMARY: &str = "encrypt a file to <file>.asc and remove the original";
 
 const USAGE: &str = "\
-Usage: uc encrypt [-f] <file>
+Usage: uc secret encrypt [-f] <file>
 
 Encrypts <file> to <file>.asc and removes <file> once the encrypted copy has
 been decrypted back and compared against it.
@@ -25,11 +25,11 @@ fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(Error::Usage(msg)) => {
-            eprintln!("uc-encrypt: {msg}\n\n{USAGE}");
+            eprintln!("uc-secret-encrypt: {msg}\n\n{USAGE}");
             ExitCode::from(2)
         }
         Err(err) => {
-            eprintln!("uc-encrypt: {err}");
+            eprintln!("uc-secret-encrypt: {err}");
             ExitCode::FAILURE
         }
     }

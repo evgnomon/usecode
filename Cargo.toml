@@ -98,3 +98,14 @@ inherits = "release"
 lto = false
 codegen-units = 16
 incremental = true
+
+# Quickest to rebuild while working on the code; make picks it with DEBUG=1.
+# Our own crates build incrementally with line tables for backtraces, and
+# dependencies skip debug info entirely, which keeps compiling and linking short.
+[profile.fast]
+inherits = "dev"
+debug = "line-tables-only"
+split-debuginfo = "unpacked"
+
+[profile.fast.package."*"]
+debug = false

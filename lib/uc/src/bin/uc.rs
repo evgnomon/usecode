@@ -3,8 +3,8 @@
 
 //! `uc` — the top level usecode command.
 //!
-//! Like `git`, it holds no subcommand logic of its own: `uc encrypt ...` runs
-//! the `uc-encrypt` executable, so new subcommands are added by dropping a
+//! Like `git`, it holds no subcommand logic of its own: `uc secret ...` runs
+//! the `uc-secret` executable, so new subcommands are added by dropping a
 //! `uc-<name>` executable next to `uc` or anywhere on `PATH`.
 
 use std::collections::BTreeSet;

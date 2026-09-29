@@ -46,7 +46,7 @@ fn openssl_decrypts_what_uc_encrypt_writes() {
     let armored = crypto::armor(&crypto::encrypt_raw(&plaintext, PASSWORD.as_bytes()).unwrap());
 
     let decrypted = openssl_enc(&["-d", "-aes-256-cbc", "-pbkdf2", "-a"], armored.as_bytes())
-        .expect("openssl failed to decrypt a uc-encrypt file");
+        .expect("openssl failed to decrypt a uc-secret-encrypt file");
     assert_eq!(decrypted, plaintext);
 }
 

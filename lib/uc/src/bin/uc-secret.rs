@@ -6,8 +6,8 @@
 //! Installed under the names of the tools it replaces (`getsecret`,
 //! `keychain`, `rchain`, `ghchain`, `ensure_vault`, `ensure_secret`,
 //! `rotate_keychain_pass`, `rotsec`), it behaves as they did. `encrypt`,
-//! `decrypt`, `server` and `serve` hand over to `uc-encrypt`, `uc-decrypt` and
-//! `uc-secret-server`.
+//! `decrypt`, `server` and `serve` hand over to `uc-secret-encrypt`,
+//! `uc-secret-decrypt` and `uc-secret-server`.
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::ffi::OsString;
@@ -94,13 +94,13 @@ enum Cmd {
         #[arg(last = true, requires = "playbook")]
         args: Vec<OsString>,
     },
-    /// Encrypt files with a password (same as `uc encrypt`).
+    /// Encrypt a file to <file>.asc with a password and remove the original.
     #[command(disable_help_flag = true)]
     Encrypt {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<OsString>,
     },
-    /// Decrypt files written by `uc secret encrypt` (same as `uc decrypt`).
+    /// Decrypt a <file>.asc written by `uc secret encrypt`, keeping it.
     #[command(disable_help_flag = true)]
     Decrypt {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -231,8 +231,8 @@ fn run(cmd: Cmd) -> anyhow::Result<ExitCode> {
         Cmd::Rotate { name, args, .. } => {
             name.store().rotate_secrets(&secret::blueprint(), &args)?
         }
-        Cmd::Encrypt { args } => return Ok(dispatch::exec("uc-encrypt", args)),
-        Cmd::Decrypt { args } => return Ok(dispatch::exec("uc-decrypt", args)),
+        Cmd::Encrypt { args } => return Ok(dispatch::exec("uc-secret-encrypt", args)),
+        Cmd::Decrypt { args } => return Ok(dispatch::exec("uc-secret-decrypt", args)),
         Cmd::Server { args } => return Ok(dispatch::exec("uc-secret-server", args)),
         Cmd::Serve { args } => {
             return Ok(dispatch::exec(

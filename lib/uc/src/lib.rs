@@ -4,8 +4,8 @@
 //! Shared implementation behind the `uc` command family.
 //!
 //! [`crypto`] carries the OpenSSL-compatible `aes-256-cbc` container format,
-//! [`cli`] the option parsing and terminal helpers shared by `uc-encrypt` and
-//! `uc-decrypt`, [`configure`] the parallel machine configurator behind
+//! [`cli`] the option parsing and terminal helpers shared by `uc-secret-encrypt` and
+//! `uc-secret-decrypt`, [`configure`] the parallel machine configurator behind
 //! `uc-configure`, [`registry`] the tunnelled image transfer behind
 //! `uc-push` and `uc-pull`, [`ghcr`] the GitHub Container Registry
 //! operations behind `uc-ghcr`, and [`password`], [`secret`] and [`repo`] the
@@ -54,7 +54,7 @@ impl fmt::Display for Error {
             Error::Format(msg) => write!(f, "{msg}"),
             Error::Decrypt => write!(
                 f,
-                "decryption failed (wrong password, or file not produced by uc-encrypt)"
+                "decryption failed (wrong password, or file not produced by uc-secret-encrypt)"
             ),
         }
     }

@@ -3,9 +3,9 @@
 
 ROOT_DIR ?= $(abspath ../..)
 SOURCES := $(shell find src tests -type f -name "*.rs") Cargo.toml $(ROOT_DIR)/Cargo.lock
-PROFILE ?= release
+include $(ROOT_DIR)/lib/profile.mk
 TARGET ?= x86_64-unknown-linux-musl
-BINS := uc uc-encrypt uc-decrypt uc-configure uc-push uc-pull uc-ghcr uc-secret \
+BINS := uc uc-secret-encrypt uc-secret-decrypt uc-configure uc-push uc-pull uc-ghcr uc-secret \
 	uc-image uc-repo uc-cert uc-deb uc-db uc-net uc-vm uc-new uc-cloud \
 	uc-agent uc-data uc-media uc-pick uc-sys
 OUT_DIR := $(ROOT_DIR)/target/$(TARGET)/$(PROFILE)
@@ -39,14 +39,14 @@ $(INSTALLED_ALIASES): $(BIN_DIR)/uc-secret
 
 check:
 	@cargo fmt -p uc --check
-	@cargo clippy -p uc --all-targets -- -D warnings
-	@cargo test -p uc
+	@$(CARGO) clippy -p uc --all-targets -- -D warnings
+	@$(CARGO) test -p uc
 
 test:
-	@cargo test -p uc
+	@$(CARGO) test -p uc
 
 lint:
-	@cargo clippy -p uc --all-targets -- -D warnings
+	@$(CARGO) clippy -p uc --all-targets -- -D warnings
 
 fmt:
 	@cargo fmt -p uc
@@ -61,4 +61,4 @@ uninstall:
 	@rm -f $(INSTALLED) $(INSTALLED_ALIASES)
 
 clean:
-	@cargo clean -p uc
+	@$(CARGO) clean -p uc

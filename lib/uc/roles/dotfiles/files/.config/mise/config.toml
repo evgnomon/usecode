@@ -49,3 +49,6 @@ yazi = "latest"
 "pipx:git-review" = "latest" # needed by Zuul
 "pipx:yamllint" = "latest"
 "pipx:yt-dlp" = "latest"
+mutagen = "latest"
+sccache = "latest"
+mold = "latest"

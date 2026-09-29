@@ -25,7 +25,7 @@ Debian or Ubuntu, there's a good chance some of it saves you a weekend too.
   machine locally (KVM/QEMU) or on Hetzner, DigitalOcean, OVHcloud or UpCloud,
   picks the cheapest server that fits the size you asked for, and adds an ssh
   entry so `ssh <name>` just works.
-- **Secrets that stay secret.** `uc encrypt` / `uc decrypt` for files, and
+- **Secrets that stay secret.** `uc secret encrypt` / `uc secret decrypt` for files, and
   `uc secret` for generating secrets and managing vault stores.
 - **An AI agent stack you can run yourself.** A small web app and API for
   chatting with AI agents, plus an MCP server (`uc-agent-mcp`) so Claude Code or

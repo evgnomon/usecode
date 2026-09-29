@@ -12,7 +12,7 @@ anywhere on `PATH`.
 
 ```sh
 uc help                # list the uc-* commands found on PATH
-uc encrypt secrets.txt # runs uc-encrypt
+uc secret gen          # runs uc-secret gen
 ```
 
 This crate ships the dispatcher, the two file encryption subcommands, which
@@ -32,18 +32,18 @@ It also ships the command groups — `uc image`, `uc repo`, `uc cert`,
 ## Encrypting files
 
 ```sh
-uc encrypt secrets.txt        # -> secrets.txt.asc, secrets.txt removed
-uc decrypt secrets.txt.asc    # -> secrets.txt, the .asc kept
-uc decrypt -c secrets.txt.asc # print the plaintext instead of writing it
+uc secret encrypt secrets.txt        # -> secrets.txt.asc, secrets.txt removed
+uc secret decrypt secrets.txt.asc    # -> secrets.txt, the .asc kept
+uc secret decrypt -c secrets.txt.asc # print the plaintext instead of writing it
 ```
 
 Both commands prompt for the password on the terminal and never echo it.
 
 * `-f` overwrites an existing output file; without it an existing file is an
   error.
-* `uc encrypt` decrypts its own output and compares it against the input before
+* `uc secret encrypt` decrypts its own output and compares it against the input before
   it removes the original, so a failed encryption never costs the plaintext.
-* `uc decrypt` accepts only `.asc` files and leaves the encrypted copy in place.
+* `uc secret decrypt` accepts only `.asc` files and leaves the encrypted copy in place.
 * Output files are written through a temporary sibling and renamed, with mode
   `0600`, so an interrupted run cannot leave a half-written file behind.
 
@@ -57,7 +57,7 @@ padding, base64 wrapped at 64 columns — so `openssl` remains a usable fallback
 openssl enc -d -aes-256-cbc -pbkdf2 -a -in secrets.txt.asc
 ```
 
-`uc decrypt` also opens files written with the pre-OpenSSL-3.0 MD5 key
+`uc secret decrypt` also opens files written with the pre-OpenSSL-3.0 MD5 key
 derivation, and says so when it does; re-encrypting upgrades them.
 
 ## Configuring the machine
@@ -177,7 +177,7 @@ uc secret edit -r                # edit this repository's store in vi
 uc secret ensure -r              # create it if missing, print its path
 uc secret rotate NAME            # re-encrypt under a new vault password
 uc secret rotate -r --playbook   # rotate this repository's secrets themselves
-uc secret encrypt notes.txt      # same as uc encrypt / uc decrypt
+uc secret encrypt notes.txt      # see Encrypting files
 uc secret server read acme prod db  # the SSH key authenticated secret server
 uc secret serve                  # same as uc secret server serve
 ```
@@ -202,7 +202,8 @@ in place, so an interrupted rotation can simply be run again. With
 it runs `rotate.yaml` in `~/src/github.com/$USER/blueprint` with the store
 as extra vars, passing anything after `--` to ansible-playbook.
 
-`encrypt` and `decrypt` are `uc encrypt` and `uc decrypt`. `server` runs
+`encrypt` and `decrypt` run `uc-secret-encrypt` and `uc-secret-decrypt`; see
+[Encrypting files](#encrypting-files). `server` runs
 `uc-secret-server` (was `secd`), the SSH key authenticated secret server, with
 its `upsert`, `read` and `serve` commands; `serve` on its own is a shortcut
 for `server serve`.

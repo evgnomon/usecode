@@ -8,9 +8,9 @@
 # symlinks to BIN), and then includes this file.
 
 ROOT_DIR ?= $(abspath $(dir $(lastword $(MAKEFILE_LIST)))..)
+include $(ROOT_DIR)/lib/profile.mk
 SOURCES := $(shell find src -type f) Cargo.toml $(ROOT_DIR)/Cargo.lock $(EXTRA_SOURCES)
 BIN ?= $(NAME)
-PROFILE ?= release
 OUTPUT := $(ROOT_DIR)/target/$(PROFILE)/$(BIN)
 DESTDIR ?= /
 PREFIX ?= /usr/local
@@ -27,7 +27,7 @@ all: build
 build: $(OUTPUT)
 
 $(OUTPUT): $(SOURCES)
-	@cargo build -p $(NAME) --profile $(PROFILE)
+	@$(CARGO) build -p $(NAME) --profile $(PROFILE)
 	@touch $(OUTPUT)
 
 install: $(INSTALL_BIN) $(INSTALL_ALIASES)
@@ -49,14 +49,14 @@ unlink:
 
 check:
 	@cargo fmt -p $(NAME) --check
-	@cargo clippy -p $(NAME) --all-targets -- -D warnings
-	@cargo test -p $(NAME)
+	@$(CARGO) clippy -p $(NAME) --all-targets -- -D warnings
+	@$(CARGO) test -p $(NAME)
 
 test:
-	@cargo test -p $(NAME)
+	@$(CARGO) test -p $(NAME)
 
 lint:
-	@cargo clippy -p $(NAME) --all-targets -- -D warnings
+	@$(CARGO) clippy -p $(NAME) --all-targets -- -D warnings
 
 fmt:
 	@cargo fmt -p $(NAME)
@@ -65,4 +65,4 @@ uninstall:
 	@rm -f $(INSTALL_BIN) $(INSTALL_ALIASES)
 
 clean:
-	@cargo clean -p $(NAME)
+	@$(CARGO) clean -p $(NAME)

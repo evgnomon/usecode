@@ -2,7 +2,7 @@
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
 //! Option parsing, password prompting and safe file replacement shared by the
-//! `uc-encrypt` and `uc-decrypt` binaries.
+//! `uc-secret-encrypt` and `uc-secret-decrypt` binaries.
 
 use crate::{Error, Result};
 use std::fs;
