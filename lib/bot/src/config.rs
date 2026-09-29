@@ -8,9 +8,10 @@ use std::env;
 
 use crate::error::Result;
 
-/// Default Caddy load balancers, matching `deploy/compose.yml`. Plain HTTP:
-/// locally Caddy serves no TLS, so there is no certificate to trust.
-const DEFAULT_API_BASE_URLS: [&str; 2] = ["http://localhost:8430/api", "http://localhost:8431/api"];
+/// Default endpoint: the hosted service at usecode.dev. For the local stack
+/// from `deploy/compose.yml`, set USECODE_MCP_API_BASE_URLS to its two Caddy
+/// load balancers (http://localhost:8430/api and http://localhost:8431/api).
+const DEFAULT_API_BASE_URLS: [&str; 1] = ["https://usecode.dev/api"];
 
 #[derive(Debug, Clone)]
 pub struct Settings {
@@ -148,7 +149,7 @@ mod tests {
     #[test]
     fn single_endpoint_replaces_the_list() {
         let mut settings = Settings::default();
-        assert_eq!(settings.endpoints().len(), 2);
+        assert_eq!(settings.endpoints(), vec!["https://usecode.dev/api"]);
         settings.api_base_url = Some("https://example.test/api".to_string());
         assert_eq!(settings.endpoints(), vec!["https://example.test/api"]);
     }

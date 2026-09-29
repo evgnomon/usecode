@@ -31,7 +31,8 @@ See `lib/app/README.md`, `lib/api/README.md`, and `lib/bot/README.md` for detail
 ## MCP bot
 
 `lib/bot` is an MCP server that lets an AI agent operate usecode agent (OTP login, session lookup,
-logout) against a running `lib/api` instance.
+logout). It talks to the hosted API at `https://usecode.dev/api` by default; set
+`USECODE_MCP_API_BASE_URLS` to point it at your own `lib/api` instead.
 
 ```sh
 cd lib/bot && make install && uc-agent-mcp   # starts an MCP server over stdio

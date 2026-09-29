@@ -23,23 +23,23 @@ make install           # install the binary to /usr/local/bin/uc-agent-mcp
 
 ## Run
 
-`uc-agent-mcp` needs a running `uc-agent-api` to talk to. Start it first, in a separate terminal:
+Out of the box, `uc-agent-mcp` talks to the hosted service at `https://usecode.dev/api`, so all
+you need is an API key:
 
 ```sh
-cd ../api && USECODE_AGENT_NODE_NAME=api-1 cargo run   # http://localhost:8000
+USECODE_MCP_API_KEY=<your API key> uc-agent-mcp   # starts an MCP server over stdio
 ```
 
-Then start the bot:
+Running your own stack instead? Start it with `make up` from the repo root and point the bot at
+both Caddy load balancers from `deploy/compose.yml`. Requests are spread round-robin over them,
+failing over to the other if one can't be reached:
 
 ```sh
-uc-agent-mcp   # starts an MCP server over stdio
+USECODE_MCP_API_BASE_URLS=http://localhost:8430/api,http://localhost:8431/api uc-agent-mcp
 ```
 
-By default the bot spreads its requests round-robin over both Caddy load balancers from
-`deploy/compose.yml` (`http://localhost:8430/api` and `http://localhost:8431/api`), failing
-over to the other if one can't be reached. Set `USECODE_MCP_API_BASE_URL` to pin it to a single
-address instead — a remote deployment, or a bare `uc-agent-api` with no Caddy in front (see
-Configuration below).
+Or set `USECODE_MCP_API_BASE_URL` to pin it to a single address, such as a bare `uc-agent-api`
+with no Caddy in front (see Configuration below).
 
 ## Configuration
 
@@ -47,9 +47,9 @@ Copy `.env.example` to `.env` and adjust as needed. The `.env` file is read from
 directory, and anything already set in the environment wins over it.
 
 - `USECODE_MCP_API_BASE_URLS` — the Caddy load balancers to spread requests over, as a JSON
-  array or a comma-separated list (default `["http://localhost:8430/api", "http://localhost:8431/api"]`,
-  matching `deploy/compose.yml`). Requests rotate over them, and one that can't reach an endpoint is
-  retried against the next. This is the tier *above* Caddy's own load balancing: Caddy already
+  array or a comma-separated list (default `["https://usecode.dev/api"]`; for the local stack use
+  `http://localhost:8430/api,http://localhost:8431/api`, matching `deploy/compose.yml`). Requests
+  rotate over them, and one that can't reach an endpoint is retried against the next. This is the tier *above* Caddy's own load balancing: Caddy already
   spreads requests over `api-1`/`api-2`, but a client pinned to one Caddy goes down with it.
 - `USECODE_MCP_API_BASE_URL` — single-endpoint override. When set it *replaces* the list above,
   so the bot talks to exactly that one address.

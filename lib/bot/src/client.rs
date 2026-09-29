@@ -477,7 +477,13 @@ mod tests {
 
     #[test]
     fn attempt_order_rotates_and_covers_every_endpoint() {
-        let settings = Arc::new(Settings::default());
+        let settings = Arc::new(Settings {
+            api_base_urls: vec![
+                "http://a.test/api".to_string(),
+                "http://b.test/api".to_string(),
+            ],
+            ..Settings::default()
+        });
         let client = Client::new(settings).unwrap();
         let first = client.attempt_order();
         let second = client.attempt_order();

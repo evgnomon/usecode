@@ -5,12 +5,44 @@ Copyright (C) The Usecode Authors (see AUTHORS)
 
 # usecode
 
-Hi! This is the toolbox I use every day to set up Linux machines, spin up
-servers and run AI agents. I got tired of doing the same setup over and over,
-so I put all of it in one place and gave it one command: `uc`. If you work on
-Debian or Ubuntu, there's a good chance some of it saves you a weekend too.
+**A Linux workspace for agents (and you).**
 
-## What you get
+Hi! usecode gives your AI agents a real Linux workspace: machines they can
+spin up, tools they can run, and an API they can call. It started as the
+toolbox I use every day, and now your agents can use it too.
+
+## The easy way: usecode.dev
+
+You don't have to build or run any of this yourself. At
+[usecode.dev](https://usecode.dev) it's already set up and kept running for
+you, so your agents can start working right away:
+
+- **Sign in, get an API key, done.** Hand the key to your agent and it can
+  create servers, run the AI model container and manage its workspace through
+  the usecode API.
+- **Works with the agent you already use.** Claude Code, Claude Desktop,
+  Cursor, VS Code, Zed or any MCP client. Point it at usecode and it finds the
+  tools on its own, so you just ask in plain words.
+- **Someone else carries the pager.** Upgrades, backups and uptime are on us,
+  not your weekend.
+- **Nothing held back.** The hosted service runs the same open code that's in
+  this repo, so if you ever want to move it onto your own machines, you can.
+
+For Claude Code, that's one line:
+
+```bash
+claude mcp add usecode -e USECODE_MCP_API_KEY=<your API key> -- uc-agent-mcp
+```
+
+`uc-agent-mcp` talks to `https://usecode.dev/api` out of the box, so the key is
+all it needs.
+
+Head over to [usecode.dev](https://usecode.dev) to get started.
+
+## Rather run it yourself?
+
+That works too! Everything is open source under the
+[HGL General License](COPYING). Here's what's in the box:
 
 - **A ready-to-code machine in one go.** `uc configure` installs and configures
   compilers, language servers, CLI tools, editors and dotfiles. It knows whether
@@ -27,7 +59,7 @@ Debian or Ubuntu, there's a good chance some of it saves you a weekend too.
   entry so `ssh <name>` just works.
 - **Secrets that stay secret.** `uc secret encrypt` / `uc secret decrypt` for files, and
   `uc secret` for generating secrets and managing vault stores.
-- **An AI agent stack you can run yourself.** A small web app and API for
+- **The agent stack behind usecode.dev.** A small web app and API for
   chatting with AI agents, plus an MCP server (`uc-agent-mcp`) so Claude Code or
   any MCP client can drive it. See [docs/usecode-agent.md](docs/usecode-agent.md).
 
@@ -127,10 +159,13 @@ make logs     # follow the logs
 make down     # stop (your data is kept)
 ```
 
-Then open <http://localhost:8430>. To let Claude Code talk to it:
+Then open <http://localhost:8430>. To let Claude Code talk to your local stack
+instead of usecode.dev:
 
 ```bash
-claude mcp add usecode -- uc-agent-mcp
+claude mcp add usecode \
+  -e USECODE_MCP_API_BASE_URLS=http://localhost:8430/api,http://localhost:8431/api \
+  -- uc-agent-mcp
 ```
 
 ## Finding your way around
