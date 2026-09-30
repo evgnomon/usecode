@@ -138,7 +138,7 @@ pub fn style_for(path: &str, content: &str) -> Option<Style> {
         e if e.len() == 1 && e.as_bytes()[0].is_ascii_digit() && e != "0" => Style::Roff,
         _ => match base {
             ".vimrc" | ".ideavimrc" => Style::Vim,
-            "README" => Style::Text,
+            "README" | "README.txt" => Style::Text,
             _ => Style::Hash,
         },
     })
@@ -225,6 +225,7 @@ mod tests {
         assert_eq!(style_for("man1/mkdeb.1", ""), Some(Style::Roff));
         assert_eq!(style_for("docs/make.bat", ""), Some(Style::Bat));
         assert_eq!(style_for("migrations/README", ""), Some(Style::Text));
+        assert_eq!(style_for("README.txt", ""), Some(Style::Text));
         assert_eq!(
             style_for(".config/Code/User/settings.json", ""),
             Some(Style::Slash)

@@ -23,7 +23,7 @@ session gets the usecode tools.
    cd lib/bot && make install    # installs /usr/local/bin/uc-agent-mcp
    ```
 
-   If you ran the [kickstart](../README.md#quick-start), it's already there.
+   If you ran the [kickstart](../README.txt), it's already there.
 
 Then pick your agent below. In every example, swap `<your API key>` for the key
 you got from usecode.dev.
@@ -362,8 +362,7 @@ Once it's connected, try asking your agent:
 
 - **Running your own stack?** Point the agent at it instead of usecode.dev by
   adding `USECODE_MCP_API_BASE_URLS=http://localhost:8430/api,http://localhost:8431/api`
-  next to the API key. See
-  [Run the agent stack locally](../README.md#run-the-agent-stack-locally).
+  next to the API key.
 - **"Command not found"?** Some desktop apps don't see your shell's `PATH`. Use
   the full path, `/usr/local/bin/uc-agent-mcp`, as the command.
 - **Getting 401 errors?** Your key has probably expired or been revoked. Grab a
