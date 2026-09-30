@@ -16,6 +16,7 @@ pub mod apply;
 pub mod bundle;
 pub mod config;
 pub mod daemon;
+pub mod firewall;
 pub mod flags;
 pub mod install;
 pub mod inventory;

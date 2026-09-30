@@ -6,13 +6,17 @@
 //! hands each section to its module ([`crate::setup::join`]), and the
 //! daemon takes it from there.
 //!
-//! Today only the mesh has one: a member's keypair and its config.toml,
-//! which is derived from the whole topology, so it is rendered on the
-//! control node, which has the inventory and the vault. `uc net mesh
-//! apply` builds and delivers it.
+//! The mesh has one: a member's keypair and its config.toml, which is
+//! derived from the whole topology, so it is rendered on the control
+//! node, which has the inventory and the vault. `uc net mesh apply`
+//! builds and delivers it.
 //!
-//! The file holds a private key: it only ever sits in 0700 directories,
-//! and is removed again once join has run.
+//! The firewall has one too: the host's [`crate::firewall::Settings`],
+//! edited with `uc net firewall` and delivered so the daemon on the host
+//! picks the policy up.
+//!
+//! The file can hold a private key: it only ever sits in 0700
+//! directories, and is removed again once join has run.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -21,6 +25,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::daemon::mesh;
 use crate::error::{Context, Result};
+use crate::firewall::Settings;
 use crate::inventory::{GROUP, Inventory};
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -29,6 +34,10 @@ pub struct Bundle {
     pub host: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mesh: Option<mesh::Delivery>,
+    /// The host's firewall settings, when `uc net firewall` delivered a
+    /// new policy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub firewall: Option<Settings>,
 }
 
 impl Bundle {
@@ -64,6 +73,7 @@ impl Bundle {
                 public_key: host.public_key.clone(),
                 config: format!("{}{body}", config_header(name)),
             }),
+            firewall: None,
         })
     }
 
@@ -87,4 +97,40 @@ fn config_header(name: &str) -> String {
          # design - it lives root-only in {dir}/private.key.\n\n",
         dir = crate::keys::DIR,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_mesh_bundle_without_a_firewall_section_still_decodes() {
+        let text = "host = \"edge\"\n\
+                    [mesh]\n\
+                    private_key = \"k\"\n\
+                    public_key = \"p\"\n\
+                    config = \"\"\n";
+        let bundle: Bundle = toml::from_str(text).unwrap();
+        assert!(bundle.firewall.is_none());
+        assert!(bundle.mesh.is_some());
+    }
+
+    #[test]
+    fn a_firewall_section_round_trips() {
+        let bundle = Bundle {
+            host: "edge".into(),
+            mesh: None,
+            firewall: Some(Settings {
+                ssh_port: Some(2657),
+                allow: vec!["tcp:443".into()],
+                ..Settings::default()
+            }),
+        };
+
+        let back: Bundle = toml::from_str(&bundle.encode().unwrap()).unwrap();
+        let settings = back.firewall.expect("firewall section");
+        assert_eq!(settings.ssh_port, Some(2657));
+        assert_eq!(settings.allow, vec!["tcp:443".to_string()]);
+        assert!(settings.enabled);
+    }
 }

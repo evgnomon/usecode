@@ -127,6 +127,29 @@ impl Target {
         Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
     }
 
+    /// Run `argv` on the target and return what it printed, trimmed:
+    /// directly if already root, otherwise through non-interactive sudo
+    /// (so a prompt is a failure, not a hang). For commands whose output
+    /// is the point, e.g. `uc net firewall status`.
+    pub fn output_as_root(&self, argv: &[String]) -> Result<String> {
+        let cmd = quote_args(argv);
+        let remote =
+            format!(r#"if [ "$(id -u)" -eq 0 ]; then {cmd}; else exec sudo -n -- {cmd}; fi"#);
+        let out = self
+            .shell(&remote, false)
+            .stderr(Stdio::inherit())
+            .output()
+            .with_ctx(|| format!("run {:?}", argv.first().map_or("", String::as_str)))?;
+        if !out.status.success() {
+            bail!(
+                "{} exited with {}",
+                argv.first().map_or("", String::as_str),
+                out.status
+            );
+        }
+        Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    }
+
     /// Make a fresh private directory on the target and copy each
     /// `(name, local path)` into it, mode 0700. Returns the directory.
     /// It is created by mktemp rather than at a fixed path because what

@@ -18,6 +18,10 @@ name = "uc-net-mesh"
 path = "src/main.rs"
 
 [[bin]]
+name = "uc-net-firewall"
+path = "src/bin/uc-net-firewall.rs"
+
+[[bin]]
 name = "usecoded"
 path = "src/bin/usecoded.rs"
 

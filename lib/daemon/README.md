@@ -60,6 +60,34 @@ root-only, same as `systemctl reload`. If you'd rather not go through
 `usecoded`, it's one line in and the answer back:
 `echo reload | socat - UNIX-CONNECT:/run/usecode/usecoded.sock`.
 
+### The firewall
+
+The daemon also closes the host down. One of its modules owns an inbound
+`iptables` chain (`UC_FIREWALL`) and, by default, drops everything except
+SSH - no settings file needed. It applies to IPv4 and IPv6, and keeps the
+loopback interface, established traffic, the DHCP client, and the
+WireGuard listen port and tunnel interface open, so turning it on doesn't
+break the mesh or the host's own network.
+
+Open a port, or move SSH off 22, from wherever you run `uc`:
+
+```sh
+uc net firewall status edge                 # what's open, and the live rules
+uc net firewall allow edge tcp:443          # from anywhere
+uc net firewall allow edge udp:8000-8100:10.0.0.0/8
+uc net firewall allow edge tcp:443:2001:db8::/32   # IPv6 source
+uc net firewall ssh-port edge 2657          # sshd isn't on 22
+```
+
+Each of those writes `/etc/uc/firewall.toml` on the host and reloads the
+daemon there, which reapplies the chain. The module never touches a rule
+it doesn't own, so anything else on the host keeps its own firewall
+rules. Because the daemon is the rules' owner now, it also turns off an
+enabled `nftables.service` (whose config usually `flush ruleset`s
+everything) so nothing wipes them out from under it. Stop the daemon and
+the chain goes away, so a host you can't reach otherwise doesn't stay
+locked.
+
 ## Quick install
 
 Got a box with systemd and ssh access? One command puts the daemon on

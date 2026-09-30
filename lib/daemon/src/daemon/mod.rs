@@ -19,6 +19,7 @@
 //! new service or a new binary.
 
 pub mod control;
+pub mod firewall;
 pub mod host;
 pub mod mesh;
 
@@ -47,7 +48,10 @@ pub trait Module {
 
 /// Every module, in the order they are reconciled.
 fn modules() -> Vec<Box<dyn Module>> {
-    vec![Box::new(mesh::Mesh::default())]
+    vec![
+        Box::new(mesh::Mesh::default()),
+        Box::new(firewall::Firewall::default()),
+    ]
 }
 
 /// What wakes the loop up before the next tick.

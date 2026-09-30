@@ -270,6 +270,11 @@ pub static NET: Group = Group {
         ),
         exec("ipsec", "full-mesh strongSwan IPsec VPN", &["uc-net-ipsec"]),
         exec(
+            "firewall",
+            "default-deny inbound firewall on hosts",
+            &["uc-net-firewall"],
+        ),
+        exec(
             "dig",
             "print only the A records of a DNS lookup",
             &["uc-net-dig"],

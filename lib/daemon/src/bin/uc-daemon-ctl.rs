@@ -10,17 +10,19 @@ use uc_daemon::{install, reload};
 
 const USAGE: &str = "usage: uc-daemon-ctl install|reload ARGS...";
 
+/// A subcommand's entry point, as `uc_daemon` exposes it.
+type Command = fn(&[String]) -> uc_daemon::error::Result<()>;
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let (name, run): (&str, fn(&[String]) -> uc_daemon::error::Result<()>) =
-        match args.first().map(String::as_str) {
-            Some("install") => ("install", install::run),
-            Some("reload") => ("reload", reload::run),
-            _ => {
-                eprintln!("{USAGE}");
-                return ExitCode::FAILURE;
-            }
-        };
+    let (name, run): (&str, Command) = match args.first().map(String::as_str) {
+        Some("install") => ("install", install::run),
+        Some("reload") => ("reload", reload::run),
+        _ => {
+            eprintln!("{USAGE}");
+            return ExitCode::FAILURE;
+        }
+    };
     match run(&args[1..]) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
