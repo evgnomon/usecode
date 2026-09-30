@@ -14,9 +14,9 @@ running, so your agents can start working today:
   2. Hand it to your agent. For Claude Code that's one line:
 
        claude mcp add usecode -e USECODE_MCP_API_KEY=<your key> -- uc-agent-mcp
+
 Cursor, Codex, Gemini CLI, opencode and friends, see:
 https://github.com/evgnomon/usecode/blob/master/docs/coding-agents.md
-Cursor, Codex, Gemini CLI, opencode and friends: see docs/coding-agents.md.
 
 Upgrades, backups and uptime are on us, not your weekend.
 
