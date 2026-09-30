@@ -22,8 +22,8 @@ name = "usecoded"
 path = "src/bin/usecoded.rs"
 
 [[bin]]
-name = "uc-daemon-install"
-path = "src/bin/uc-daemon-install.rs"
+name = "uc-daemon-ctl"
+path = "src/bin/uc-daemon-ctl.rs"
 
 [dependencies]
 base64 = "0.23"

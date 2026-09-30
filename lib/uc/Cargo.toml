@@ -82,10 +82,6 @@ name = "uc-new"
 path = "src/bin/uc-new.rs"
 
 [[bin]]
-name = "uc-cloud"
-path = "src/bin/uc-cloud.rs"
-
-[[bin]]
 name = "uc-agent"
 path = "src/bin/uc-agent.rs"
 

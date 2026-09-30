@@ -18,10 +18,6 @@ use crate::config::Settings;
 /// someone else and is never overwritten or removed.
 const MARKER: &str = "# Written by uc-agent-mcp";
 
-/// The key `create_server` installs on every server (see
-/// `client::local_ssh_public_key`).
-const IDENTITY_FILE: &str = "~/.ssh/aurora";
-
 pub const DEFAULT_USER: &str = "root";
 
 /// How often, and for how long, to wait on a create_server task before
@@ -34,6 +30,9 @@ pub struct Entry {
     pub host: String,
     pub hostname: String,
     pub user: String,
+    /// The private half of the key `create_server` installs
+    /// (`Settings::ssh_identity_file`).
+    pub identity_file: String,
     pub proxy_jump: Option<String>,
     pub server_id: Option<String>,
 }
@@ -45,8 +44,8 @@ impl Entry {
             text.push_str(&format!(" for usecode server {id}"));
         }
         text.push_str(&format!(
-            "\nHost {}\n  Hostname {}\n  IdentityFile {IDENTITY_FILE}\n  User {}\n",
-            self.host, self.hostname, self.user
+            "\nHost {}\n  Hostname {}\n  IdentityFile {}\n  User {}\n",
+            self.host, self.hostname, self.identity_file, self.user
         ));
         if let Some(jump) = &self.proxy_jump {
             text.push_str(&format!("  ProxyJump {jump}\n"));
@@ -119,13 +118,19 @@ pub fn remove(dir: &Path, host: &str) -> io::Result<Option<PathBuf>> {
 }
 
 /// The entry for a server as the API reports it, once it has an address.
-pub fn entry_for(server: &Value, user: &str, proxy_jump: Option<&str>) -> Option<Entry> {
+pub fn entry_for(
+    server: &Value,
+    user: &str,
+    identity_file: &str,
+    proxy_jump: Option<&str>,
+) -> Option<Entry> {
     let text = |key: &str| server.get(key).and_then(Value::as_str).map(str::to_string);
     let hostname = text("public_ip4").or_else(|| text("public_ip6"))?;
     Some(Entry {
         host: text("name")?,
         hostname,
         user: user.to_string(),
+        identity_file: identity_file.to_string(),
         proxy_jump: proxy_jump.map(str::to_string),
         server_id: text("id"),
     })
@@ -136,7 +141,7 @@ pub fn entry_for(server: &Value, user: &str, proxy_jump: Option<&str>) -> Option
 /// failures are only logged to stderr; `write_ssh_config` covers a retry.
 pub async fn write_when_ready(
     client: Client,
-    dir: PathBuf,
+    settings: std::sync::Arc<Settings>,
     task_id: String,
     name: String,
     user: String,
@@ -160,8 +165,15 @@ pub async fn write_when_ready(
         .into_iter()
         .flatten()
         .filter(|server| server.get("name").and_then(Value::as_str) == Some(&name))
-        .find_map(|server| entry_for(server, &user, proxy_jump.as_deref()));
-    match entry.map(|entry| write(&dir, &entry)) {
+        .find_map(|server| {
+            entry_for(
+                server,
+                &user,
+                settings.ssh_identity_file(),
+                proxy_jump.as_deref(),
+            )
+        });
+    match entry.map(|entry| write(&config_dir(&settings), &entry)) {
         Some(Ok(_)) => {}
         Some(Err(error)) => eprintln!("uc-agent-mcp: ssh config for {name}: {error}"),
         None => eprintln!("uc-agent-mcp: ssh config for {name}: server has no address yet"),
@@ -183,6 +195,7 @@ mod tests {
         entry_for(
             &json!({"id": "s1", "name": "web", "public_ip4": "1.2.3.4"}),
             DEFAULT_USER,
+            "~/.ssh/id_ed25519",
             jump,
         )
         .unwrap()
@@ -193,14 +206,22 @@ mod tests {
         assert_eq!(
             entry(Some("shadow")).render(),
             "# Written by uc-agent-mcp for usecode server s1\n\
-             Host web\n  Hostname 1.2.3.4\n  IdentityFile ~/.ssh/aurora\n  User root\n  ProxyJump shadow\n"
+             Host web\n  Hostname 1.2.3.4\n  IdentityFile ~/.ssh/id_ed25519\n  User root\n  ProxyJump shadow\n"
         );
         assert!(!entry(None).render().contains("ProxyJump"));
     }
 
     #[test]
     fn no_address_means_no_entry() {
-        assert!(entry_for(&json!({"name": "web"}), DEFAULT_USER, None).is_none());
+        assert!(
+            entry_for(
+                &json!({"name": "web"}),
+                DEFAULT_USER,
+                "~/.ssh/id_ed25519",
+                None
+            )
+            .is_none()
+        );
     }
 
     #[test]

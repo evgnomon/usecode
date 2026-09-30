@@ -12,8 +12,7 @@
 //! user-data of the local machines and gets an ssh_config entry, so
 //! `ssh <name>` reaches the same user wherever the machine runs. The
 //! providers are driven through their REST APIs, with the credentials
-//! `uc cloud` uses from the
-//! repository's secrets.
+//! from the repository's secrets.
 
 use crate::http;
 use anyhow::{Context, Result, bail};
@@ -755,8 +754,8 @@ fn ovh_endpoint(name: &str) -> Result<(&'static str, &'static str)> {
 }
 
 /// Credentials from the environment, else from the current repository's
-/// secret store, where `uc cloud` finds them too. The store is read once, on
-/// the first credential the environment does not have.
+/// secret store. The store is read once, on the first credential the
+/// environment does not have.
 #[derive(Default)]
 struct Credentials {
     secrets: Option<Value>,

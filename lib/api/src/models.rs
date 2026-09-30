@@ -169,10 +169,14 @@ pub struct CloudServerCreateIn {
     pub location: Option<String>,
     #[serde(default)]
     pub ssh_keys: Vec<String>,
-    /// OpenSSH public key to import as the provider's "aurora" key when the
-    /// account has no such key yet. Ignored when one already exists.
+    /// OpenSSH public key to import under `ssh_key_name` when the account
+    /// has no such key yet. Ignored when one already exists.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ssh_public_key: Option<String>,
+    /// Name of the provider account key to install (and to import
+    /// `ssh_public_key` under). Defaults to "id_ed25519".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ssh_key_name: Option<String>,
 }
 
 fn default_provider() -> String {
@@ -191,10 +195,14 @@ pub struct ServerCreateIn {
     pub image: String,
     #[serde(default)]
     pub ssh_keys: Vec<String>,
-    /// OpenSSH public key, used only if the provider account has no "aurora"
-    /// key yet.
+    /// OpenSSH public key, used only if the provider account has no key
+    /// named `ssh_key_name` (or a copy of this one) yet.
     #[serde(default)]
     pub ssh_public_key: Option<String>,
+    /// Name of the provider account key to install, e.g. "id_ed25519" (the
+    /// default).
+    #[serde(default)]
+    pub ssh_key_name: Option<String>,
 }
 
 fn default_image() -> String {

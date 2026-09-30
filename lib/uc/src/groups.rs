@@ -42,8 +42,7 @@ const fn alias(path: &'static str, summary: &'static str, argv: &'static [&'stat
 }
 
 pub const ALL: &[&Group] = &[
-    &IMAGE, &REPO, &CERT, &DEB, &DB, &NET, &DAEMON, &VM, &NEW, &CLOUD, &AGENT, &DATA, &MEDIA,
-    &PICK, &SYS,
+    &IMAGE, &REPO, &CERT, &DEB, &DB, &NET, &DAEMON, &VM, &NEW, &AGENT, &DATA, &MEDIA, &PICK, &SYS,
 ];
 
 pub static IMAGE: Group = Group {
@@ -281,12 +280,19 @@ pub static NET: Group = Group {
 
 pub static DAEMON: Group = Group {
     path: "uc daemon",
-    summary: "install the usecode daemon on hosts",
-    commands: &[exec(
-        "install",
-        "install the usecode daemon on a host with systemd",
-        &["uc-daemon-install"],
-    )],
+    summary: "install and reload the usecode daemon on hosts",
+    commands: &[
+        exec(
+            "install",
+            "install the usecode daemon on a host with systemd",
+            &["uc-daemon-ctl", "install"],
+        ),
+        exec(
+            "reload",
+            "have the daemon on hosts converge every module now",
+            &["uc-daemon-ctl", "reload"],
+        ),
+    ],
     fallback: None,
 };
 
@@ -318,48 +324,6 @@ pub static NEW: Group = Group {
         exec("unit", "a systemd unit running a command", &["uc-new-unit"]),
     ],
     fallback: None,
-};
-
-pub static CLOUD: Group = Group {
-    path: "uc cloud",
-    summary: "cloud providers and deployments",
-    commands: &[
-        exec(
-            "do",
-            "doctl with the repository's DigitalOcean token",
-            &["uc-cloud-do"],
-        ),
-        exec(
-            "hcloud",
-            "hcloud with a generated config",
-            &["uc-cloud-hcloud"],
-        ),
-        group("play", &CLOUD_PLAY),
-    ],
-    fallback: None,
-};
-
-pub static CLOUD_PLAY: Group = Group {
-    path: "uc cloud play",
-    summary: "run playbooks, per-host deployments and remote scripts",
-    commands: &[
-        exec(
-            "host",
-            "per-host service deployments",
-            &["uc-cloud-play-host"],
-        ),
-        exec(
-            "ssh",
-            "run a script and upload files on several servers",
-            &["uc-cloud-play-ssh"],
-        ),
-    ],
-    fallback: Some(Fallback {
-        argv: &["uc-cloud-play-run"],
-        summary: "run the repository playbook with its vault secrets, \
-                  passing the arguments to ansible-playbook",
-        bare: true,
-    }),
 };
 
 pub static AGENT: Group = Group {

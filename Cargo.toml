@@ -4,7 +4,6 @@
 [workspace]
 resolver = "3"
 members = [
-    "lib/annabelle",
     "lib/ansidist",
     "lib/api",
     "lib/backup_archive",
@@ -36,7 +35,6 @@ members = [
     "lib/natsup",
     "lib/num_argv",
     "lib/pg",
-    "lib/plat",
     "lib/pubdeb",
     "lib/repofqn",
     "lib/secd",
@@ -49,11 +47,8 @@ members = [
     "lib/ucversion",
     "lib/vi",
     "lib/vm",
-    "lib/wdoctl",
-    "lib/whcloud",
     "lib/workd",
     "lib/x",
-    "lib/y",
     "lib/yacht",
     "lib/ykattach",
     "lib/ysys",

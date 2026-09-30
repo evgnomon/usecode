@@ -34,7 +34,7 @@ sets the mesh up itself once `uc net mesh add NAME` and
   NAME      the host's name (and its name in the inventory)
   SSH_HOST  where it is reached over ssh; USER defaults to root. Leave
             it out when NAME is already an ssh alias (e.g. one written
-            by uc cloud / uc-agent-mcp)
+            by uc vm / uc-agent-mcp)
   --all     reinstall every host in the inventory, e.g. to roll out a
             new version of the daemon
 

@@ -11,7 +11,8 @@
 //!   there, and it needs nothing else on the host.
 //! - `usecoded join BUNDLE` hands each section of a [`Bundle`] to the
 //!   module it belongs to, which puts its files in place, and reloads
-//!   the daemon if anything changed.
+//!   the daemon if anything changed - through its control socket, so it
+//!   can say how each module took it.
 //!
 //! Each file is only written when it differs, and the service is
 //! restarted or reloaded only if one was, so running either again is
@@ -20,7 +21,7 @@
 use std::fs;
 
 use crate::bundle::Bundle;
-use crate::daemon::{host, mesh};
+use crate::daemon::{control, host, mesh};
 use crate::error::{Context, Result};
 
 pub const BINARY_PATH: &str = "/usr/local/bin/usecoded";
@@ -64,14 +65,25 @@ pub fn join(bundle_path: &str) -> Result<()> {
         changed |= mesh::accept(d).ctx("mesh")?;
     }
 
-    if changed {
-        // reload-or-restart also starts a stopped unit.
-        host::systemctl(&["reload-or-restart", "usecode"]).ctx(
-            "reload usecode (is the daemon installed? `uc daemon install` puts it on the host)",
-        )?;
-        println!("{}: delivered; usecode reloaded", bundle.host);
-    } else {
+    if !changed {
         println!("{}: already up to date", bundle.host);
+        return Ok(());
+    }
+    match control::request(control::SOCKET_PATH, "reload") {
+        Ok(answer) => {
+            println!("{}: delivered; usecode reloaded", bundle.host);
+            for line in answer.lines() {
+                println!("  {line}");
+            }
+        }
+        // Not running, or a daemon from before the control socket:
+        // reload-or-restart does both, and also starts a stopped unit.
+        Err(_) => {
+            host::systemctl(&["reload-or-restart", "usecode"]).ctx(
+                "reload usecode (is the daemon installed? `uc daemon install` puts it on the host)",
+            )?;
+            println!("{}: delivered; usecode reloaded", bundle.host);
+        }
     }
     Ok(())
 }

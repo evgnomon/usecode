@@ -18,6 +18,10 @@ ExecStart=/usr/local/bin/usecoded run
 # SIGHUP makes every module converge again, e.g. after
 # `uc net mesh apply` delivered a new config.
 ExecReload=/bin/kill -HUP $MAINPID
+# Home of the control socket, /run/usecode/usecoded.sock, which does the
+# same and answers with how each module did (`usecoded reload`).
+RuntimeDirectory=usecode
+RuntimeDirectoryMode=0755
 
 # Full root, deliberately: the daemon's job is setting the host up -
 # installing packages, writing /etc, managing interfaces and firewall

@@ -68,13 +68,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "annabelle"
-version = "0.1.0"
-dependencies = [
- "clap",
-]
-
-[[package]]
 name = "ansidist"
 version = "0.1.0"
 dependencies = [
@@ -2790,14 +2783,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 
 [[package]]
-name = "plat"
-version = "0.1.0"
-dependencies = [
- "clap",
- "regex",
-]
-
-[[package]]
 name = "portable-atomic"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4986,13 +4971,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "wdoctl"
-version = "0.1.0"
-dependencies = [
- "serde_json",
-]
-
-[[package]]
 name = "web-sys"
 version = "0.3.106"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5037,13 +5015,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7dcd9d09a39985f5344844e66b0c530a33843579125f23e21e9f0f220850f22a"
 dependencies = [
  "rustls-pki-types",
-]
-
-[[package]]
-name = "whcloud"
-version = "0.1.0"
-dependencies = [
- "libc",
 ]
 
 [[package]]
@@ -5287,13 +5258,6 @@ dependencies = [
  "curve25519-dalek 5.0.0",
  "rand_core 0.10.1",
  "zeroize",
-]
-
-[[package]]
-name = "y"
-version = "0.1.0"
-dependencies = [
- "libc",
 ]
 
 [[package]]

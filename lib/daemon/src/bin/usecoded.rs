@@ -6,6 +6,7 @@
 
 use std::process::ExitCode;
 
+use uc_daemon::daemon::control;
 use uc_daemon::{bail, daemon, error::Result, setup};
 
 const USAGE: &str = "usage: usecoded COMMAND
@@ -13,10 +14,14 @@ const USAGE: &str = "usage: usecoded COMMAND
   run           run the daemon (what usecode.service starts)
   setup         install this binary and usecode.service on this host
   join BUNDLE   take what the control node delivered and reload
+  reload        have the running daemon converge every module now,
+                and print how each one did
   version       print the version
 
 setup and join are run for you by `uc daemon install` and
-`uc net mesh apply`; they need root.";
+`uc net mesh apply`; they need root. reload talks to the daemon's
+control socket, which is root's too, so over ssh it's
+`ssh root@HOST usecoded reload`.";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -40,6 +45,14 @@ fn run(args: &[String]) -> Result<()> {
         ["join", bundle] => {
             require_root()?;
             setup::join(bundle)
+        }
+        ["reload"] => {
+            let answer = control::request(control::SOCKET_PATH, "reload")?;
+            print!("{answer}");
+            if control::failed(&answer) {
+                bail!("reload did not go cleanly (journalctl -u usecode has the details)");
+            }
+            Ok(())
         }
         ["version" | "-v" | "--version"] => {
             println!("usecoded {}", env!("CARGO_PKG_VERSION"));

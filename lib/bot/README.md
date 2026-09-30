@@ -63,6 +63,8 @@ directory, and anything already set in the environment wins over it.
   `logs_commands` (default `deploy/compose.yml` at the root of this checkout).
 - `USECODE_MCP_SSH_CONFIG_DIR` — where new servers' ssh config entries go (default
   `~/.ssh/config.d`).
+- `USECODE_MCP_SSH_PUBLIC_KEY` — the public key new servers get (default
+  `~/.ssh/id_ed25519.pub`); its private half goes in their ssh config entries.
 - `USECODE_MCP_CONTAINER_CLI` — `podman` (default, uses `podman-compose`, matching
   `uc push`/`uc pull`) or `docker` (uses `docker compose`).
 
@@ -105,12 +107,15 @@ directory, and anything already set in the environment wins over it.
   `create_server`/`delete_server` schedule.
 
 New servers come with your ssh key already set up. `create_server` looks for
-a key named `aurora` in your provider account and uses it. If you don't have
-one yet, it imports your local `~/.ssh/aurora.pub` under that name.
+a key named `id_ed25519` in your provider account and uses it. If you don't
+have one yet, it adds your local `~/.ssh/id_ed25519.pub` under that name for
+you. Use a different key? Point `USECODE_MCP_SSH_PUBLIC_KEY` at its `.pub`
+file, e.g. `~/.ssh/work.pub`, and it goes by `work` in the provider account.
 
 You don't even need the IP. Once the server is up, the bot drops an entry in
 `~/.ssh/config.d/<name>` with the address, user (`root` unless you pass
-`ssh_user`) and your `~/.ssh/aurora` key, so it's just:
+`ssh_user`) and your `~/.ssh/id_ed25519` key (the private half of whatever
+`USECODE_MCP_SSH_PUBLIC_KEY` points at), so it's just:
 
 ```sh
 ssh web-1

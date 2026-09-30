@@ -8,18 +8,22 @@
 //! thing the host can do - today the WireGuard mesh - and knows both
 //! what that thing needs and how to get the host there. The daemon only
 //! drives them: it reconciles every module when it starts, again on
-//! SIGHUP (`systemctl reload usecode`), and again every [`TICK`] so a
-//! module that was waiting on something picks it up by itself. SIGTERM
-//! stops every module and exits.
+//! SIGHUP (`systemctl reload usecode`) or a `reload` on its control
+//! socket ([`control`], `usecoded reload`, which also says how each
+//! module did), and again every [`TICK`] so a module that was waiting on
+//! something picks it up by itself. SIGTERM stops every module and exits.
 //!
 //! A module never takes the daemon down. What it can't do yet is a note
 //! in the journal and another try on the next tick; a real error is
 //! logged the same way. Adding a feature is adding a module here, not a
 //! new service or a new binary.
 
+pub mod control;
 pub mod host;
 pub mod mesh;
 
+use std::os::unix::net::UnixStream;
+use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::time::Duration;
 
 use crate::error::Result;
@@ -46,8 +50,23 @@ fn modules() -> Vec<Box<dyn Module>> {
     vec![Box::new(mesh::Mesh::default())]
 }
 
+/// What wakes the loop up before the next tick.
+pub enum Event {
+    /// Converge every module now; answer the control-socket client, if
+    /// the reload came from one, with how it went.
+    Reload(Option<UnixStream>),
+    Stop,
+}
+
 pub fn run() -> Result<()> {
+    // Blocked before any thread starts, so every thread inherits it.
     let signals = Signals::block()?;
+    let (events, rx) = mpsc::channel();
+    signals.forward(events.clone());
+    if let Err(e) = control::listen(control::SOCKET_PATH, events) {
+        eprintln!("control: {e}; reload with SIGHUP only");
+    }
+
     let mut modules = modules();
     eprintln!(
         "usecoded {} running: {}",
@@ -60,19 +79,19 @@ pub fn run() -> Result<()> {
     );
 
     let mut force = true;
+    let mut clients = Vec::new();
     loop {
-        for m in modules.iter_mut() {
-            if let Err(e) = m.reconcile(force) {
-                eprintln!("{}: {e}; trying again in {}s", m.name(), TICK.as_secs());
-            }
+        let report = reconcile(&mut modules, force);
+        for client in clients.drain(..) {
+            control::reply(client, &report);
         }
-        match signals.wait(TICK) {
-            Some(libc::SIGHUP) => {
-                eprintln!("reloading");
+        match rx.recv_timeout(TICK) {
+            Ok(Event::Reload(client)) => {
+                clients.extend(client);
                 force = true;
             }
-            Some(_) => break,
-            None => force = false,
+            Ok(Event::Stop) | Err(RecvTimeoutError::Disconnected) => break,
+            Err(RecvTimeoutError::Timeout) => force = false,
         }
     }
 
@@ -82,7 +101,24 @@ pub fn run() -> Result<()> {
             eprintln!("{}: stop: {e}", m.name());
         }
     }
+    let _ = std::fs::remove_file(control::SOCKET_PATH);
     Ok(())
+}
+
+/// Give every module a turn, logging what went wrong. Returns one line
+/// per module for a control-socket client.
+fn reconcile(modules: &mut [Box<dyn Module>], force: bool) -> String {
+    let mut report = String::new();
+    for m in modules.iter_mut() {
+        match m.reconcile(force) {
+            Ok(()) => report.push_str(&format!("{}: ok\n", m.name())),
+            Err(e) => {
+                eprintln!("{}: {e}; trying again in {}s", m.name(), TICK.as_secs());
+                report.push_str(&format!("{}: error: {e}\n", m.name()));
+            }
+        }
+    }
+    report
 }
 
 /// SIGHUP, SIGTERM and SIGINT, blocked so they queue up for
@@ -116,6 +152,26 @@ impl Signals {
         // SAFETY: the set was initialised in block(); siginfo may be null.
         let sig = unsafe { libc::sigtimedwait(&self.0, std::ptr::null_mut(), &ts) };
         (sig > 0).then_some(sig)
+    }
+
+    /// Turn signals into [`Event`]s from a thread of their own: SIGHUP
+    /// is a reload, anything else a stop.
+    fn forward(self, events: Sender<Event>) {
+        std::thread::spawn(move || {
+            loop {
+                let event = match self.wait(TICK) {
+                    None => continue,
+                    Some(libc::SIGHUP) => {
+                        eprintln!("reloading");
+                        Event::Reload(None)
+                    }
+                    Some(_) => Event::Stop,
+                };
+                if events.send(event).is_err() {
+                    return;
+                }
+            }
+        });
     }
 }
 

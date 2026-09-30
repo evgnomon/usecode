@@ -5,7 +5,7 @@
 # hosts through uc daemon install, which builds it, copies it over and
 # runs `usecoded setup` there.
 NAME := uc-daemon
-BIN := uc-daemon-install
+BIN := uc-daemon-ctl
 EXTRA_SOURCES := init/systemd/usecode.service
 
 include ../rust.mk

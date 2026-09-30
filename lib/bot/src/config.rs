@@ -13,6 +13,9 @@ use crate::error::Result;
 /// load balancers (http://localhost:8430/api and http://localhost:8431/api).
 const DEFAULT_API_BASE_URLS: [&str; 1] = ["https://usecode.dev/api"];
 
+/// The public key new servers get when USECODE_MCP_SSH_PUBLIC_KEY isn't set.
+const DEFAULT_SSH_PUBLIC_KEY: &str = "~/.ssh/id_ed25519.pub";
+
 #[derive(Debug, Clone)]
 pub struct Settings {
     // The Caddy load balancers in front of uc-agent-api, each routing /api/*
@@ -53,6 +56,11 @@ pub struct Settings {
     // Where create_server writes each new server's ssh_config entry.
     // Defaults to ~/.ssh/config.d, which ~/.ssh/config should Include.
     pub ssh_config_dir: Option<String>,
+
+    // Public key file create_server installs on new servers. Its file name
+    // without ".pub" is the key's name in the provider account, and the same
+    // path without ".pub" is the IdentityFile in their ssh_config entries.
+    pub ssh_public_key: String,
 }
 
 impl Default for Settings {
@@ -69,6 +77,7 @@ impl Default for Settings {
             compose_file: None,
             container_cli: "podman".to_string(),
             ssh_config_dir: None,
+            ssh_public_key: DEFAULT_SSH_PUBLIC_KEY.to_string(),
         }
     }
 }
@@ -129,6 +138,9 @@ impl Settings {
             settings.container_cli = raw;
         }
         settings.ssh_config_dir = var("SSH_CONFIG_DIR");
+        if let Some(raw) = var("SSH_PUBLIC_KEY") {
+            settings.ssh_public_key = raw.trim().to_string();
+        }
         settings
     }
 
@@ -138,6 +150,21 @@ impl Settings {
             Some(url) => vec![url.clone()],
             None => self.api_base_urls.clone(),
         }
+    }
+
+    /// The private key matching `ssh_public_key`: the same path without
+    /// ".pub", as ssh_config's IdentityFile wants it.
+    pub fn ssh_identity_file(&self) -> &str {
+        self.ssh_public_key
+            .strip_suffix(".pub")
+            .unwrap_or(&self.ssh_public_key)
+    }
+
+    /// The name the key goes by in the provider account: the key file's name
+    /// without ".pub", e.g. "id_ed25519".
+    pub fn ssh_key_name(&self) -> &str {
+        let identity = self.ssh_identity_file();
+        identity.rsplit('/').next().unwrap_or(identity)
     }
 }
 
@@ -158,6 +185,16 @@ mod tests {
         assert_eq!(settings.endpoints(), vec!["https://usecode.dev/api"]);
         settings.api_base_url = Some("https://example.test/api".to_string());
         assert_eq!(settings.endpoints(), vec!["https://example.test/api"]);
+    }
+
+    #[test]
+    fn identity_file_is_the_public_key_without_pub() {
+        let mut settings = Settings::default();
+        assert_eq!(settings.ssh_identity_file(), "~/.ssh/id_ed25519");
+        assert_eq!(settings.ssh_key_name(), "id_ed25519");
+        settings.ssh_public_key = "~/.ssh/work.pub".to_string();
+        assert_eq!(settings.ssh_identity_file(), "~/.ssh/work");
+        assert_eq!(settings.ssh_key_name(), "work");
     }
 
     #[test]

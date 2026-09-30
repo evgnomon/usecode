@@ -15,7 +15,7 @@ use std::ffi::OsString;
 use std::process::ExitCode;
 
 pub struct Group {
-    /// The words that reach this group, e.g. `uc cloud play`.
+    /// The words that reach this group, e.g. `uc image run`.
     pub path: &'static str,
     /// One line for `uc help` and the parent group's listing.
     pub summary: &'static str,
@@ -256,19 +256,14 @@ mod tests {
         );
         assert_eq!(
             exec_of(&DAEMON, &["install", "edge", "root@edge"]),
-            ["uc-daemon-install", "edge", "root@edge"]
+            ["uc-daemon-ctl", "install", "edge", "root@edge"]
+        );
+        assert_eq!(
+            exec_of(&DAEMON, &["reload", "edge"]),
+            ["uc-daemon-ctl", "reload", "edge"]
         );
         assert_eq!(exec_of(&VM, &[]), ["uc-vm-local"]);
         assert_eq!(exec_of(&VM, &["-h"]), ["uc-vm-local", "-h"]);
-        assert_eq!(exec_of(&CLOUD, &["play"]), ["uc-cloud-play-run"]);
-        assert_eq!(
-            exec_of(&CLOUD, &["play", "-t", "x"]),
-            ["uc-cloud-play-run", "-t", "x"]
-        );
-        assert_eq!(
-            exec_of(&CLOUD, &["play", "host", "ps"]),
-            ["uc-cloud-play-host", "ps"]
-        );
         assert_eq!(exec_of(&AGENT, &["mcp"]), ["uc-agent-mcp"]);
         assert_eq!(exec_of(&SYS, &["vi", "a.txt"]), ["uc-sys-vi", "a.txt"]);
     }

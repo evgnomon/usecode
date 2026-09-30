@@ -25,7 +25,7 @@ The last two replace the former `lib/pylib` Python package (`bp` and the
 `gh_image` Ansible module).
 
 It also ships the command groups — `uc image`, `uc repo`, `uc cert`,
-`uc deb`, `uc db`, `uc net`, `uc daemon`, `uc vm`, `uc new`, `uc cloud`,
+`uc deb`, `uc db`, `uc net`, `uc daemon`, `uc vm`, `uc new`,
 `uc agent`, `uc data`, `uc media`, `uc pick` and `uc sys` — which gather
 every tool in `lib/` under one command; see [Command groups](#command-groups).
 
@@ -263,13 +263,10 @@ switching scripts over to the `uc` commands is a good idea.
 | `uc db resources pods` | `uc-db-resources-pods` | `mkpod` |
 | `uc net mesh` | `uc-net-mesh` | |
 | `uc net ipsec`, `dig` | `uc-net-ipsec`, `uc-net-dig` | `ipmesh`, `diga` |
-| `uc daemon install` | `uc-daemon-install` | |
+| `uc daemon install`, `reload` | `uc-daemon-ctl install`, `reload` | |
 | `uc vm` | `uc-vm-local`, arguments and all; with `--provider`, built in (see below) | `vm` |
 | `uc nats`, `uc work` | `uc-nats`, `uc-work` themselves | `natsup`, `workd` |
 | `uc new role`, `workflow`, `script`, `unit` | `uc-new-role`, `uc-new-workflow`, `uc-new-script`, `uc-new-unit` | `mkarole`, `catalyze`, `shole`, `mkunit` |
-| `uc cloud do`, `hcloud` | `uc-cloud-do`, `uc-cloud-hcloud` | `wdoctl`, `whcloud` |
-| `uc cloud play [ARGS]` | `uc-cloud-play-run`: the repository playbook | `y` |
-| `uc cloud play host`, `ssh` | `uc-cloud-play-host`, `uc-cloud-play-ssh` | `plat`, `annabelle` |
 | `uc secret server` | `uc-secret-server` | `secd` |
 | `uc agent api`, `mcp` | `uc-agent-api`, `uc-agent-mcp` | `usecode-agent-api`, `usecode-mcp` |
 | `uc data pdf`, `tidy`, `jsonc` | `uc-data-pdf`, `uc-data-tidy`, `uc-data-jsonc` | `csv2pdf`, `tidycsv`, `jsonc` |
@@ -308,7 +305,7 @@ reaches the same user either way. `list`, `info`, `inspect`, `ip`, `start`,
 `mount` and `config` stay local. The providers are driven through their REST
 APIs (over `curl`, like `uc ghcr`), with the token from `HCLOUD_TOKEN` or
 `DIGITALOCEAN_ACCESS_TOKEN`, else `hetzner.prod` or `doctl.prod` in the
-current repository's secrets, as `uc cloud` finds it. OVHcloud signs requests
+current repository's secrets. OVHcloud signs requests
 with application keys instead: `OVH_APPLICATION_KEY`, `OVH_APPLICATION_SECRET`,
 `OVH_CONSUMER_KEY`, the Public Cloud project id in `OVH_CLOUD_PROJECT_SERVICE`
 and optionally `OVH_ENDPOINT` (`ovh-eu`, the default, `ovh-ca` or `ovh-us`),

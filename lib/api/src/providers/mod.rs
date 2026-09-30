@@ -204,10 +204,19 @@ pub(crate) fn items<'a>(
         })
 }
 
-/// Name of the ssh key every provisioned server gets: looked up on the
-/// provider account first, and imported from the caller's public key only
-/// when the account doesn't have it yet.
-pub(crate) const SSH_KEY_NAME: &str = "aurora";
+/// Name of the ssh key a provisioned server gets when the request names
+/// none: looked up on the provider account first, and imported from the
+/// caller's public key only when the account doesn't have it yet.
+const DEFAULT_SSH_KEY_NAME: &str = "id_ed25519";
+
+/// The account key name `spec` asks for, or [`DEFAULT_SSH_KEY_NAME`].
+pub(crate) fn ssh_key_name(spec: &CloudServerCreateIn) -> &str {
+    spec.ssh_key_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .unwrap_or(DEFAULT_SSH_KEY_NAME)
+}
 
 /// "type base64" of an OpenSSH public key, dropping the comment, so the same
 /// key compares equal whatever comment it was imported with.
@@ -219,13 +228,17 @@ fn key_material(public_key: &str) -> String {
         .join(" ")
 }
 
-/// The id of the account key to install: the one named [`SSH_KEY_NAME`],
-/// else one holding the same material as `public_key` (providers refuse a
-/// second copy of a key already imported under another name).
-pub(crate) fn existing_ssh_key(keys: &[Value], public_key: Option<&str>) -> Option<Value> {
+/// The id of the account key to install: the one called `name`, else one
+/// holding the same material as `public_key` (providers refuse a second copy
+/// of a key already imported under another name).
+pub(crate) fn existing_ssh_key(
+    keys: &[Value],
+    name: &str,
+    public_key: Option<&str>,
+) -> Option<Value> {
     let named = keys
         .iter()
-        .find(|key| key.get("name").and_then(Value::as_str) == Some(SSH_KEY_NAME));
+        .find(|key| key.get("name").and_then(Value::as_str) == Some(name));
     let same = || {
         let wanted = key_material(public_key?);
         keys.iter().find(|key| {
@@ -238,7 +251,7 @@ pub(crate) fn existing_ssh_key(keys: &[Value], public_key: Option<&str>) -> Opti
 }
 
 /// The key ids to create a server with: the caller's explicit ones plus the
-/// resolved [`SSH_KEY_NAME`] key, if any.
+/// resolved named key, if any.
 pub(crate) fn ssh_key_ids(spec: &CloudServerCreateIn, resolved: Option<Value>) -> Vec<Value> {
     spec.ssh_keys
         .iter()
@@ -353,18 +366,22 @@ mod tests {
     fn ssh_key_prefers_the_named_one_then_matching_material() {
         let keys = vec![
             json!({"id": 1, "name": "laptop", "public_key": "ssh-ed25519 AAAA me@laptop"}),
-            json!({"id": 2, "name": "aurora", "public_key": "ssh-ed25519 BBBB"}),
+            json!({"id": 2, "name": "id_ed25519", "public_key": "ssh-ed25519 BBBB"}),
         ];
         assert_eq!(
-            existing_ssh_key(&keys, Some("ssh-ed25519 AAAA")),
+            existing_ssh_key(&keys, "id_ed25519", Some("ssh-ed25519 AAAA")),
             Some(json!(2))
         );
         assert_eq!(
-            existing_ssh_key(&keys[..1], Some("ssh-ed25519 AAAA other\n")),
+            existing_ssh_key(&keys[..1], "id_ed25519", Some("ssh-ed25519 AAAA other\n")),
             Some(json!(1))
         );
-        assert_eq!(existing_ssh_key(&keys[..1], Some("ssh-ed25519 CCCC")), None);
-        assert_eq!(existing_ssh_key(&keys[..1], None), None);
+        assert_eq!(
+            existing_ssh_key(&keys[..1], "id_ed25519", Some("ssh-ed25519 CCCC")),
+            None
+        );
+        assert_eq!(existing_ssh_key(&keys[..1], "id_ed25519", None), None);
+        assert_eq!(existing_ssh_key(&keys, "work", None), None);
     }
 
     #[test]

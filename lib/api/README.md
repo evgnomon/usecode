@@ -40,9 +40,9 @@ Errors are `{"detail": "..."}`; a request that fails validation is a 422 whose
 - `GET /servers/types`, `POST /servers/sync`, `GET /servers/catalog` — the provider catalog,
   in our own type terminology (`{series}-{city}`, e.g. `x1-fsn`).
 - `POST /servers`, `DELETE /servers/{id}` — start a create/delete task and return it (`202`).
-  New servers get the provider account's `aurora` ssh key. The optional `ssh_public_key`
-  in the create body is imported as `aurora` only when the account doesn't have that key
-  (or a copy of it under another name) yet.
+  New servers get the provider account key named by `ssh_key_name` in the create body
+  (`id_ed25519` if left out). The optional `ssh_public_key` is imported under that name
+  only when the account doesn't have that key (or a copy of it under another name) yet.
 - `GET /servers`, `GET /servers/{id}`, `GET /tasks`, `GET /tasks/{id}`.
 
 See [docs/usecode-agent-architecture.md](../../docs/usecode-agent-architecture.md)

@@ -439,10 +439,11 @@ impl UsecodeServer {
     /// finishes), so this schedules the task and returns it; poll it with
     /// get_task until it 404s (meaning it finished), then use
     /// list_servers to find the new server. The server gets the provider
-    /// account's "aurora" ssh key; if the account has none yet, the local
-    /// ~/.ssh/aurora.pub is imported under that name. Once the server is
-    /// up, the bot writes ~/.ssh/config.d/<name> (user, ~/.ssh/aurora key,
-    /// and ProxyJump through `bastion` if given) so `ssh <name>` just works;
+    /// account's "id_ed25519" ssh key; if the account has none yet, the local
+    /// ~/.ssh/id_ed25519.pub is imported under that name (with
+    /// USECODE_MCP_SSH_PUBLIC_KEY set, that file and its name instead). Once
+    /// the server is up, the bot writes ~/.ssh/config.d/<name> (user, the
+    /// matching private key, and ProxyJump through `bastion` if given) so `ssh <name>` just works;
     /// the answer's `ssh_config` field says where. Pass `bastion` (e.g.
     /// "shadow") only when the user asks to go through one. Falls back to the
     /// configured USECODE_MCP_API_KEY.
@@ -466,11 +467,10 @@ impl UsecodeServer {
         let Some(task_id) = task.get("id").and_then(Value::as_str) else {
             return Json(task);
         };
-        let dir = ssh::config_dir(&self.settings);
-        let path = dir.join(&args.name);
+        let path = ssh::config_dir(&self.settings).join(&args.name);
         tokio::spawn(ssh::write_when_ready(
             self.client.clone(),
-            dir,
+            self.settings.clone(),
             task_id.to_string(),
             args.name,
             args.ssh_user
@@ -492,7 +492,8 @@ impl UsecodeServer {
     }
 
     /// Write (or rewrite) ~/.ssh/config.d/<name> for one of the caller's
-    /// servers: its IP, user (default "root"), the ~/.ssh/aurora key, and
+    /// servers: its IP, user (default "root"), the ~/.ssh/id_ed25519 key (or
+    /// the private half of USECODE_MCP_SSH_PUBLIC_KEY), and
     /// ProxyJump through `bastion` (e.g. "shadow") if given — so the user
     /// can `ssh <name>`. create_server already does this on its own; use this
     /// to change the bastion/user, or if that entry never appeared. Files
@@ -506,7 +507,12 @@ impl UsecodeServer {
             Err(error) => return Json(error.to_value()),
         };
         let user = args.ssh_user.as_deref().unwrap_or(ssh::DEFAULT_USER);
-        let Some(entry) = ssh::entry_for(&server, user, args.bastion.as_deref()) else {
+        let Some(entry) = ssh::entry_for(
+            &server,
+            user,
+            self.settings.ssh_identity_file(),
+            args.bastion.as_deref(),
+        ) else {
             return Json(json!({"error": "server has no public IP yet"}));
         };
         Json(match ssh::write(&ssh::config_dir(&self.settings), &entry) {

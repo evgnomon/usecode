@@ -1,7 +1,7 @@
 # License-Identifier: HGL
 # Copyright (C) The Usecode Authors (see AUTHORS)
 
-.PHONY: all ci deploy publish rust build version install link clean submodules check typecheck test lint fmt-html fmt headers headers-check authors up reload down logs
+.PHONY: all ci deploy publish build version install link clean submodules check typecheck test lint fmt-html fmt headers headers-check authors up reload down logs
 
 $(eval $(shell ./scripts/ci_wrapper.sh --env 2>/dev/null))
 
@@ -62,13 +62,11 @@ version:
 up reload down logs:
 	@./scripts/dev.sh $@
 
-# One cargo run builds every Rust crate in parallel with shared dependencies,
-# so the per-crate builds that each_lib.sh triggers find their binaries fresh.
+# Each Rust crate builds itself with cargo build -p. A workspace-wide build
+# here would resolve features differently and relink every binary to an older
+# artifact, so the next make would rebuild them all again.
 # Builds the quick fast profile; RELEASE=1 builds release instead.
-rust:
-	@$(CARGO) build --workspace --profile $(PROFILE)
-
-build: rust
+build:
 	@MAKE=$(MAKE) ./scripts/each_lib.sh $@
 
 # install only copies what build staged, so it runs under sudo without cargo.
@@ -77,10 +75,10 @@ build: rust
 install:
 	@MAKE=$(MAKE) SKIP=alacritty ./scripts/each_lib.sh $@
 
-link: rust
+link:
 	@MAKE=$(MAKE) ./scripts/each_lib.sh $@
 
-publish: rust
+publish:
 	@MAKE=$(MAKE) ./scripts/each_lib.sh $@
 
 submodules:

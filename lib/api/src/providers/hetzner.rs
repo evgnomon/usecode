@@ -9,8 +9,8 @@ use reqwest::Method;
 use serde_json::{Map, Value, json};
 
 use super::{
-    Call, ProviderResult, SSH_KEY_NAME, api_base, call, existing_ssh_key, field, items, merged,
-    require_field, ssh_key_ids, text, truthy,
+    Call, ProviderResult, api_base, call, existing_ssh_key, field, items, merged, require_field,
+    ssh_key_ids, ssh_key_name, text, truthy,
 };
 use crate::models::{CloudServer, CloudServerCreateIn};
 
@@ -92,11 +92,15 @@ pub async fn list_servers(credentials: &Value) -> ProviderResult<Vec<CloudServer
         .collect()
 }
 
-/// The account's [`SSH_KEY_NAME`] key, importing `public_key` under that
-/// name when the account has neither it nor a copy of `public_key`.
-async fn ssh_key(token: &str, public_key: Option<&str>) -> ProviderResult<Option<Value>> {
+/// The account's key called `name`, importing `public_key` under that name
+/// when the account has neither it nor a copy of `public_key`.
+async fn ssh_key(
+    token: &str,
+    name: &str,
+    public_key: Option<&str>,
+) -> ProviderResult<Option<Value>> {
     let body = get(token, "/ssh_keys", &[("per_page", "50")]).await?;
-    if let Some(id) = existing_ssh_key(items(PROVIDER, &body, "ssh_keys")?, public_key) {
+    if let Some(id) = existing_ssh_key(items(PROVIDER, &body, "ssh_keys")?, name, public_key) {
         return Ok(Some(id));
     }
     let Some(public_key) = public_key.map(str::trim).filter(|k| !k.is_empty()) else {
@@ -108,7 +112,7 @@ async fn ssh_key(token: &str, public_key: Option<&str>) -> ProviderResult<Option
         method: Method::POST,
         url: format!("{}/ssh_keys", api_base(PROVIDER, API_BASE)),
         query: &[],
-        body: Some(&json!({"name": SSH_KEY_NAME, "public_key": public_key})),
+        body: Some(&json!({"name": name, "public_key": public_key})),
         expect: &[201],
     })
     .await?;
@@ -129,7 +133,8 @@ pub async fn create_server(
     if let Some(city) = spec.location.as_deref().filter(|l| !l.is_empty()) {
         body.insert("location".into(), json!(location(city)));
     }
-    let ssh_keys = ssh_key_ids(spec, ssh_key(&token, spec.ssh_public_key.as_deref()).await?);
+    let resolved = ssh_key(&token, ssh_key_name(spec), spec.ssh_public_key.as_deref()).await?;
+    let ssh_keys = ssh_key_ids(spec, resolved);
     if !ssh_keys.is_empty() {
         body.insert("ssh_keys".into(), json!(ssh_keys));
     }

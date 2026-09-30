@@ -387,9 +387,11 @@ impl Client {
             .await
     }
 
-    /// Create a server. The local `~/.ssh/aurora.pub` always rides along;
-    /// the API imports it only when the provider account has no "aurora" key
-    /// yet, so the server is reachable over ssh either way.
+    /// Create a server. The local public key (`Settings::ssh_public_key`,
+    /// `~/.ssh/id_ed25519.pub` by default) always rides along with its name
+    /// ("id_ed25519"); the API imports it under that name only when the
+    /// provider account has no such key yet, so the server is reachable over
+    /// ssh either way.
     pub async fn create_server(
         &self,
         name: &str,
@@ -405,7 +407,8 @@ impl Client {
                     "type": server_type,
                     "image": image,
                     "ssh_keys": ssh_keys,
-                    "ssh_public_key": local_ssh_public_key(),
+                    "ssh_public_key": local_ssh_public_key(&self.settings),
+                    "ssh_key_name": self.settings.ssh_key_name(),
                 }))
                 .api_key(api_key),
         )
@@ -460,11 +463,9 @@ fn is_error(status: StatusCode) -> bool {
     status.is_client_error() || status.is_server_error()
 }
 
-/// The caller's `~/.ssh/aurora.pub`, if there is one.
-fn local_ssh_public_key() -> Option<String> {
-    let home = std::env::var_os("HOME")?;
-    let path = std::path::Path::new(&home).join(".ssh").join("aurora.pub");
-    std::fs::read_to_string(path)
+/// The caller's configured public key, if the file is there.
+fn local_ssh_public_key(settings: &Settings) -> Option<String> {
+    std::fs::read_to_string(crate::compose::expand_user(&settings.ssh_public_key))
         .ok()
         .map(|key| key.trim().to_string())
         .filter(|key| !key.is_empty())

@@ -44,6 +44,22 @@ journal and tries again a minute later - it never takes the service
 down. It converges again straight away on `systemctl reload usecode`,
 and whenever its config changes.
 
+The daemon also listens on a small control socket,
+`/run/usecode/usecoded.sock`, so your own tools can nudge it too - even
+from another machine over ssh:
+
+```sh
+uc daemon reload edge          # from your machine: a host in the inventory, or any ssh alias
+ssh root@edge usecoded reload  # the same thing by hand
+# mesh: ok
+```
+
+It answers once every module has had its turn, one line each, and exits
+non-zero if any of them hit an error - handy in scripts. The socket is
+root-only, same as `systemctl reload`. If you'd rather not go through
+`usecoded`, it's one line in and the answer back:
+`echo reload | socat - UNIX-CONNECT:/run/usecode/usecoded.sock`.
+
 ## Quick install
 
 Got a box with systemd and ssh access? One command puts the daemon on
@@ -322,6 +338,7 @@ segment (`8080`) means "this is what I run"; four segments
 sudo systemctl start usecode
 sudo systemctl stop usecode
 sudo systemctl reload usecode     # every module converges again now
+sudo usecoded reload              # the same, and prints how each module did
 sudo journalctl -u usecode        # what each module did, or is waiting for
 ```
 
@@ -353,12 +370,15 @@ kept as annotated references instead.
 - `cargo test` covers the parts that decide things: address allocation, config validation,
   rule building, forward-spec parsing and the `hosts.yml` edit.
 - `src/inventory/render.rs` derives one host's `config.toml` from the topology.
-- `src/bin/usecoded.rs` is the daemon binary: `run`, `setup`, `join`.
+- `src/bin/usecoded.rs` is the daemon binary: `run`, `setup`, `join`, `reload`.
 - `src/daemon/` is the daemon: the loop and the `Module` trait in `mod.rs`, what every module can use
-  (packages, root-owned files) in `host.rs`, and one file per module - `mesh.rs` today. A new feature is
+  (packages, root-owned files) in `host.rs`, the control socket (`usecoded reload`) in `control.rs`,
+  and one file per module - `mesh.rs` today. A new feature is
   a new module there, listed in `modules()`.
 - `src/app.rs` brings the tunnel and forwards up and down; the mesh module and `uc net mesh up` both use it.
 - `src/install.rs` is `uc daemon install`: build `usecoded`, copy it, run `usecoded setup`, per host.
+- `src/reload.rs` is `uc daemon reload`: run `usecoded reload` on each host over ssh.
+- `src/bin/uc-daemon-ctl.rs` is the control node's `uc daemon` binary: `install`, `reload`.
 - `src/setup.rs` is `usecoded setup` (install the binary and unit) and `usecoded join` (hand each bundle
   section to its module, then reload).
 - `src/bundle.rs` is what the control node delivers to a host, one section per module.
