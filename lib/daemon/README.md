@@ -26,9 +26,68 @@ addresses start to collide once there are more.
 cargo build -p uc-daemon --release     # the binary lands in ../../target/release/uc-net-mesh
 ```
 
-That is all the control node needs. `uc-net-mesh` itself installs nothing:
-targets get WireGuard, iptables, the binary and the systemd unit from the
-playbook, which is the only way uc-net-mesh is installed on a host.
+That is all the control node needs - no Ansible run required to install
+anything.
+
+## The usecode daemon
+
+Every host runs one service, `usecode.service`, which runs one binary:
+`usecoded run`. What it does is the sum of its modules, and the mesh is
+the first of them - more (think cluster setup, log collection) slot in
+next to it as the daemon grows, without a new service or a new binary.
+
+Each module knows what it needs and gets the host there by itself. The
+mesh module waits for a config and a key in `/etc/uc`; once they show
+up it installs WireGuard (and iptables, if you forward ports), and brings
+the tunnel up. If something isn't there yet it leaves a note in the
+journal and tries again a minute later - it never takes the service
+down. It converges again straight away on `systemctl reload usecode`,
+and whenever its config changes.
+
+## Quick install
+
+Got a box with systemd and ssh access? One command puts the daemon on
+it, binary and systemd service:
+
+```sh
+uc daemon install edge root@203.0.113.10
+```
+
+Run it from anywhere inside a checkout of this repo. It checks that the
+host is reachable and runs systemd, adds it to the inventory, builds a
+static `uc-net-mesh` for the host's architecture, copies it over and runs
+`usecoded setup` there, which installs the binary and the unit. No
+vault, no keys, no addresses. Run it again for the same name and it just
+reinstalls - the service is restarted only when something changed.
+`uc daemon install --all` does that for every host, which is how a new
+version of the daemon rolls out.
+
+Building for the host needs the musl target on your machine, once:
+
+```sh
+rustup target add x86_64-unknown-linux-musl     # aarch64-unknown-linux-musl for arm hosts
+```
+
+Already have the box as an ssh alias (servers made with usecode.dev get
+one in `~/.ssh/config.d/`)? Then the name is all it needs:
+
+```sh
+uc daemon install worker-2
+```
+
+The mesh starts out off. When you want the host in it, add it to the
+topology and hand every member the result:
+
+```sh
+uc net mesh add edge -endpoint vpn.example.com   # -endpoint only for a public host
+uc net mesh apply
+```
+
+Automatic package installs use apt-get, so they happen on Debian-family
+hosts; anywhere else, install `wireguard-tools` (and `iptables` for
+forwards) yourself and the daemon picks them up on its next start.
+
+The rest of this page is what that does under the hood.
 
 ## Managed: one topology, addresses handed out from it
 
@@ -82,24 +141,23 @@ usecode_services:
     local_port: 8080
 ```
 
-Then converge every host:
+Then hand every member the topology:
 
 ```sh
-ansible-playbook deploy/playbooks/usecode.yml
+uc net mesh apply
 ```
 
-Run it from the repo root: `ansible.cfg` there supplies the inventory and
-the roles path, so there are no flags to remember.
-
-That installs the binary, the dependencies, the host's credentials from
-the vault, a `config.toml` derived from the whole topology, and the
-systemd service - on every member, in one run. Peers are never written
+That works out each member's `config.toml` from the whole topology on
+your machine, takes its private key out of the vault, and drops both on
+the host with `usecoded join`, which reloads the daemon - and the
+daemon's mesh module sets the mesh up from there. A host that's down doesn't stop the
+rest; run `apply` again for it later. Peers are never written
 down: each host gets a `[[peer]]` for every other member automatically,
 with an `endpoint` only towards the ones that publish one, so the two
 sides of a link cannot drift apart.
 
 To see what the mesh is actually doing afterwards, there is a read-only
-companion playbook:
+playbook (run it from this directory, where `ansible.cfg` is):
 
 ```sh
 ansible-playbook deploy/playbooks/status.yml
@@ -112,14 +170,15 @@ it answers a ping over the tunnel. It changes nothing, and a host that is
 down is reported as down instead of ending the run.
 
 Growing the mesh is `uc net mesh add phone` and another
-`ansible-playbook deploy/playbooks/usecode.yml`; every existing host picks the
-new member up as a peer. Nothing else has to be edited.
+`uc net mesh apply`; every existing host picks the new member up as a
+peer. Nothing else has to be edited.
 
 The vault password comes from `deploy/vault-pass.sh`, which `ansible.cfg`
 names as the `vault_password_file`; being executable, it is run and its
 stdout used, so the password stays in whatever `getsecret` reads and
-never lands on disk here. `uc net mesh add` runs `ansible-vault` from the
-repo root too, so it resolves the password the same way. Swap the body of
+never lands on disk here. `uc net mesh add` and `uc daemon install` run
+`ansible-vault` from this directory, so they resolve the password the
+same way. The vault is only opened once a host has the mesh on. Swap the body of
 that script for your own secret store, or comment the setting out and
 uncomment `ask_vault_pass` to be prompted instead.
 
@@ -207,14 +266,16 @@ another - there's nothing that stops one config from having both kinds of
 
 ## Command reference
 
-Fleet (on the control node, inside a checkout - touches the topology, not
-any host):
+Fleet (on the control node, inside a checkout - `add` touches only the topology,
+`apply` delivers it to the members):
 
 ```text
 uc net mesh add NAME [-endpoint HOST[:PORT]] [-address IP] [-ansible-host HOST]
                    [-ansible-user USER] [-inventory DIR] [-vault-password-file FILE]
                                      put a host into the mesh: allocate its address,
                                      mint its keypair, record it in the inventory
+uc net mesh apply [NAME...]         hand every member (or those named) its key and
+                                     config; its daemon sets the mesh up from there
 ```
 
 `-address` pins a host to a specific address instead of the next free one,
@@ -260,8 +321,8 @@ segment (`8080`) means "this is what I run"; four segments
 ```text
 sudo systemctl start usecode
 sudo systemctl stop usecode
-sudo systemctl reload usecode
-sudo journalctl -u usecode
+sudo systemctl reload usecode     # every module converges again now
+sudo journalctl -u usecode        # what each module did, or is waiting for
 ```
 
 The configuration is root-only at `/etc/uc/config.toml`. `uc-net-mesh` refuses
@@ -276,7 +337,7 @@ kept as annotated references instead.
 - **No connection:** confirm both descriptors were imported on the correct host (`uc net mesh validate` lists peer/service counts).
 - **No handshake:** confirm the dialing side can reach the endpoint host's address:port over UDP.
 - **Handshake but no web page:** confirm the local program is listening on the port named in `forward`, the edge host's firewall allows the public port, and `uc net mesh status` shows the DNAT rule.
-- **Two hosts on the same address:** the playbook stops on "Assert every mesh address is unique" and prints host → address for the whole group. Fix the offending `host_vars` file; `uc net mesh add` won't allocate on top of a topology that already clashes either.
+- **Two hosts on the same address:** `uc net mesh apply` refuses to start and names both hosts. Fix the offending `host_vars` file; `uc net mesh add` won't allocate on top of a topology that already clashes either.
 - **Configuration error:** run `sudo uc net mesh validate` and follow the message - it reports every problem in the config at once, not just the first one.
 
 ## For developers
@@ -288,10 +349,20 @@ kept as annotated references instead.
 - `src/wg.rs` manages the WireGuard interface.
 - `src/iptables.rs` manages DNAT/forwarding rules for hosts with forward-rule services.
 - `src/keys.rs` manages this host's persistent WireGuard keypair.
-- `src/remote.rs` runs `uc-net-mesh` on another host over one ssh connection.
+- `src/remote.rs` stages files and runs commands on a host over one ssh connection (or locally).
 - `cargo test` covers the parts that decide things: address allocation, config validation,
   rule building, forward-spec parsing and the `hosts.yml` edit.
-- `init/systemd/usecode.service` is the unit the playbook installs.
-- `roles/usecode` applies the topology to one host.
-- `deploy/inventory` is the topology itself; `deploy/playbooks/usecode.yml` applies it to all of them.
+- `src/inventory/render.rs` derives one host's `config.toml` from the topology.
+- `src/bin/usecoded.rs` is the daemon binary: `run`, `setup`, `join`.
+- `src/daemon/` is the daemon: the loop and the `Module` trait in `mod.rs`, what every module can use
+  (packages, root-owned files) in `host.rs`, and one file per module - `mesh.rs` today. A new feature is
+  a new module there, listed in `modules()`.
+- `src/app.rs` brings the tunnel and forwards up and down; the mesh module and `uc net mesh up` both use it.
+- `src/install.rs` is `uc daemon install`: build `usecoded`, copy it, run `usecoded setup`, per host.
+- `src/setup.rs` is `usecoded setup` (install the binary and unit) and `usecoded join` (hand each bundle
+  section to its module, then reload).
+- `src/bundle.rs` is what the control node delivers to a host, one section per module.
+- `src/apply.rs` is `uc net mesh apply`: a bundle to every member, then `join` there.
+- `init/systemd/usecode.service` is the unit `setup` installs (it is compiled into the binary).
+- `deploy/inventory` is the topology itself; `uc net mesh apply` hands it to every member.
 - `deploy/playbooks/status.yml` reports the running state of every member back; it only reads.

@@ -117,6 +117,7 @@ fn group(name: &str) -> &'static [&'static str] {
             "mdns-scan", // Multicast DNS scanner for discovering services on local network
             "gnumeric", // Spreadsheet application for data analysis and visualization
             "mullvad-vpn", // Mullvad VPN desktop client installed from the Mullvad Apt repository
+            "amberol",     // Small, focused GNOME music player for local audio files
         ],
         "debian_desktop" => &[
             "qemu-system", // Generic QEMU system emulator meta-package for all architectures

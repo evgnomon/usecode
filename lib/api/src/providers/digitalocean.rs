@@ -9,8 +9,8 @@ use reqwest::Method;
 use serde_json::{Map, Value, json};
 
 use super::{
-    Call, ProviderError, ProviderResult, api_base, call, field, items, merged, require_field, text,
-    truthy,
+    Call, ProviderError, ProviderResult, SSH_KEY_NAME, api_base, call, existing_ssh_key, field,
+    items, merged, require_field, ssh_key_ids, text, truthy,
 };
 use crate::models::{CloudServer, CloudServerCreateIn};
 
@@ -81,6 +81,42 @@ pub async fn list_servers(credentials: &Value) -> ProviderResult<Vec<CloudServer
         .collect()
 }
 
+/// The account's [`SSH_KEY_NAME`] key, importing `public_key` under that
+/// name when the account has neither it nor a copy of `public_key`.
+async fn ssh_key(token: &str, public_key: Option<&str>) -> ProviderResult<Option<Value>> {
+    let body = get(token, "/account/keys", &[("per_page", "200")]).await?;
+    if let Some(id) = existing_ssh_key(items(PROVIDER, &body, "ssh_keys")?, public_key) {
+        return Ok(Some(id));
+    }
+    let Some(public_key) = public_key.map(str::trim).filter(|k| !k.is_empty()) else {
+        return Ok(None);
+    };
+    let created = call(Call {
+        provider: PROVIDER,
+        token,
+        method: Method::POST,
+        url: format!("{}/account/keys", api_base(PROVIDER, API_BASE)),
+        query: &[],
+        body: Some(&json!({"name": SSH_KEY_NAME, "public_key": public_key})),
+        expect: &[201],
+    })
+    .await?;
+    Ok(Some(
+        field(PROVIDER, field(PROVIDER, &created, "ssh_key")?, "id")?.clone(),
+    ))
+}
+
+/// DigitalOcean spells its Debian images with an arch suffix
+/// ("debian-13-x64"); accept the provider-neutral "debian-13" too, since
+/// that's the default image.
+fn image_slug(image: &str) -> String {
+    if image.starts_with("debian-") && !image.ends_with("-x64") {
+        format!("{image}-x64")
+    } else {
+        image.to_string()
+    }
+}
+
 pub async fn create_server(
     credentials: &Value,
     spec: &CloudServerCreateIn,
@@ -96,10 +132,11 @@ pub async fn create_server(
     let mut body = Map::new();
     body.insert("name".into(), json!(spec.name));
     body.insert("size".into(), json!(spec.server_type));
-    body.insert("image".into(), json!(spec.image));
+    body.insert("image".into(), json!(image_slug(&spec.image)));
     body.insert("region".into(), json!(region));
-    if !spec.ssh_keys.is_empty() {
-        body.insert("ssh_keys".into(), json!(spec.ssh_keys));
+    let ssh_keys = ssh_key_ids(spec, ssh_key(&token, spec.ssh_public_key.as_deref()).await?);
+    if !ssh_keys.is_empty() {
+        body.insert("ssh_keys".into(), json!(ssh_keys));
     }
     let response = call(Call {
         provider: PROVIDER,
@@ -205,6 +242,13 @@ pub async fn delete_server(credentials: &Value, server_id: &str) -> ProviderResu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn debian_gets_the_arch_suffix() {
+        assert_eq!(image_slug("debian-13"), "debian-13-x64");
+        assert_eq!(image_slug("debian-13-x64"), "debian-13-x64");
+        assert_eq!(image_slug("ubuntu-24-04-x64"), "ubuntu-24-04-x64");
+    }
 
     #[test]
     fn regions_collapse_to_cities() {

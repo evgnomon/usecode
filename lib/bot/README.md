@@ -61,6 +61,8 @@ directory, and anything already set in the environment wins over it.
   endpoint behind a self-signed certificate (default `true`).
 - `USECODE_MCP_COMPOSE_FILE` — path to the compose file used by `ensure_running` /
   `logs_commands` (default `deploy/compose.yml` at the root of this checkout).
+- `USECODE_MCP_SSH_CONFIG_DIR` — where new servers' ssh config entries go (default
+  `~/.ssh/config.d`).
 - `USECODE_MCP_CONTAINER_CLI` — `podman` (default, uses `podman-compose`, matching
   `uc push`/`uc pull`) or `docker` (uses `docker compose`).
 
@@ -96,10 +98,35 @@ directory, and anything already set in the environment wins over it.
   `delete_provider_credentials(provider)` / `list_provider_credentials()` — manage cloud
   provider credentials.
 - `list_servers()` / `list_server_types()` / `get_server(server_id)` /
-  `create_server(name, type, image="ubuntu-24.04", ssh_keys=None)` / `delete_server(server_id)` /
+  `create_server(name, type, image="debian-13", ssh_keys=None, bastion=None, ssh_user=None)` /
+  `write_ssh_config(server_id, bastion=None, ssh_user=None)` / `delete_server(server_id)` /
   `sync_servers()` / `list_catalog(provider=None, kind=None)` — manage servers.
 - `list_tasks()` / `get_task(task_id)` — follow the background tasks that
   `create_server`/`delete_server` schedule.
+
+New servers come with your ssh key already set up. `create_server` looks for
+a key named `aurora` in your provider account and uses it. If you don't have
+one yet, it imports your local `~/.ssh/aurora.pub` under that name.
+
+You don't even need the IP. Once the server is up, the bot drops an entry in
+`~/.ssh/config.d/<name>` with the address, user (`root` unless you pass
+`ssh_user`) and your `~/.ssh/aurora` key, so it's just:
+
+```sh
+ssh web-1
+```
+
+Want to go through a jump host? Ask for one, e.g. "create web-1 behind
+shadow", and the agent passes `bastion="shadow"`, which becomes
+`ProxyJump shadow` in the entry. Any `Host` you already have in your ssh
+config works. Changed your mind later, or the entry didn't show up because
+the session ended before the server was ready? `write_ssh_config` (re)writes
+it, and `delete_server` cleans it up. The bot only touches files it wrote
+itself, so your hand-made entries are safe. This needs
+`Include config.d/*` in `~/.ssh/config`; set `USECODE_MCP_SSH_CONFIG_DIR` to
+write somewhere else.
+
+New servers run Debian 13 unless you ask for something else.
 
 Every tool that talks to the API accepts an optional `api_key` and falls back to
 `USECODE_MCP_API_KEY`. API failures come back as `{"error": ..., "status_code": ...}` rather
@@ -186,6 +213,7 @@ For clients that read raw JSON config (e.g. `mcpServers` in a config file):
 - `src/compose.rs` — the local `deploy/compose.yml` lifecycle behind `ensure_running`/`stop`/
   `reload`/`logs_commands`.
 - `src/config.rs` — the `USECODE_MCP_*` settings.
+- `src/ssh.rs` — the `~/.ssh/config.d/<name>` entries written for new servers.
 
 To add a new tool: add a method to `Client` for the endpoint, then add a `#[tool]` method to
 `UsecodeServer` that calls it and hands the result to `answer` (or `acknowledge` for endpoints

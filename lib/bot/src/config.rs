@@ -49,6 +49,10 @@ pub struct Settings {
     // podman-compose, matching uc push and uc pull) or "docker"
     // (uses `docker compose`).
     pub container_cli: String,
+
+    // Where create_server writes each new server's ssh_config entry.
+    // Defaults to ~/.ssh/config.d, which ~/.ssh/config should Include.
+    pub ssh_config_dir: Option<String>,
 }
 
 impl Default for Settings {
@@ -64,6 +68,7 @@ impl Default for Settings {
             api_verify_ssl: true,
             compose_file: None,
             container_cli: "podman".to_string(),
+            ssh_config_dir: None,
         }
     }
 }
@@ -123,6 +128,7 @@ impl Settings {
         if let Some(raw) = var("CONTAINER_CLI") {
             settings.container_cli = raw;
         }
+        settings.ssh_config_dir = var("SSH_CONFIG_DIR");
         settings
     }
 

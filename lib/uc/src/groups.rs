@@ -42,7 +42,8 @@ const fn alias(path: &'static str, summary: &'static str, argv: &'static [&'stat
 }
 
 pub const ALL: &[&Group] = &[
-    &IMAGE, &REPO, &CERT, &DEB, &DB, &NET, &VM, &NEW, &CLOUD, &AGENT, &DATA, &MEDIA, &PICK, &SYS,
+    &IMAGE, &REPO, &CERT, &DEB, &DB, &NET, &DAEMON, &VM, &NEW, &CLOUD, &AGENT, &DATA, &MEDIA,
+    &PICK, &SYS,
 ];
 
 pub static IMAGE: Group = Group {
@@ -275,6 +276,17 @@ pub static NET: Group = Group {
             &["uc-net-dig"],
         ),
     ],
+    fallback: None,
+};
+
+pub static DAEMON: Group = Group {
+    path: "uc daemon",
+    summary: "install the usecode daemon on hosts",
+    commands: &[exec(
+        "install",
+        "install the usecode daemon on a host with systemd",
+        &["uc-daemon-install"],
+    )],
     fallback: None,
 };
 

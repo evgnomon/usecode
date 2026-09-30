@@ -169,6 +169,10 @@ pub struct CloudServerCreateIn {
     pub location: Option<String>,
     #[serde(default)]
     pub ssh_keys: Vec<String>,
+    /// OpenSSH public key to import as the provider's "aurora" key when the
+    /// account has no such key yet. Ignored when one already exists.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ssh_public_key: Option<String>,
 }
 
 fn default_provider() -> String {
@@ -187,10 +191,14 @@ pub struct ServerCreateIn {
     pub image: String,
     #[serde(default)]
     pub ssh_keys: Vec<String>,
+    /// OpenSSH public key, used only if the provider account has no "aurora"
+    /// key yet.
+    #[serde(default)]
+    pub ssh_public_key: Option<String>,
 }
 
 fn default_image() -> String {
-    "ubuntu-24.04".to_string()
+    "debian-13".to_string()
 }
 
 #[derive(Serialize)]

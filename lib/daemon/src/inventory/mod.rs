@@ -22,8 +22,15 @@
 //!
 //! Only hosts.yml and host_vars/<host>.yml are written by uc net mesh, and
 //! only ever by adding to them: a host file is created once, when the
-//! host joins, and is yours to hand-edit afterwards.
+//! host is installed or joins, and is yours to hand-edit afterwards. The
+//! one later write is turning the mesh on for an installed host, which
+//! appends its mesh facts to the end of the file.
+//!
+//! A host is in the inventory before it is in the mesh: `uc daemon
+//! install` records it with no address or key, and the mesh only starts
+//! for it once `uc net mesh add` sets `usecode_mesh_enabled`.
 
+mod render;
 mod vault;
 mod yamledit;
 
@@ -63,9 +70,19 @@ pub struct Settings {
     /// with a public address but no explicit port.
     #[serde(rename = "usecode_listen_port", default)]
     pub listen_port: i64,
+    /// The WireGuard interface on every member.
+    #[serde(rename = "usecode_interface", default)]
+    pub interface: String,
+    /// How often a member pings a peer it dials, to keep a NAT mapping
+    /// open.
+    #[serde(rename = "usecode_persistent_keepalive", default)]
+    pub persistent_keepalive: Option<i64>,
+    /// The tunnel MTU; 0 leaves it to the kernel.
+    #[serde(rename = "usecode_mtu", default)]
+    pub mtu: i64,
 }
 
-/// One mesh member's unique facts, stored in host_vars/<name>.yml.
+/// One host's unique facts, stored in host_vars/<name>.yml.
 /// Fields uc net mesh does not manage (extra Ansible vars, services added by
 /// hand) are preserved because uc net mesh only ever creates this file,
 /// never rewrites it.
@@ -78,14 +95,35 @@ pub struct Host {
     pub ansible_host: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub ansible_user: String,
+    /// "local" for the control node itself, which is set up without ssh.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub ansible_connection: String,
 
+    /// Whether this host is in the mesh. Off for a host that only has
+    /// the daemon installed; `uc net mesh add` turns it on together with
+    /// the address and key below.
+    #[serde(
+        rename = "usecode_mesh_enabled",
+        default,
+        skip_serializing_if = "std::ops::Not::not"
+    )]
+    pub mesh_enabled: bool,
     /// This host's tunnel address without a prefix length, e.g.
-    /// "10.10.0.3". The prefix comes from [`Settings::network`].
-    #[serde(rename = "usecode_address", default)]
+    /// "10.10.0.3". The prefix comes from [`Settings::network`]. Empty
+    /// until the host joins the mesh.
+    #[serde(
+        rename = "usecode_address",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
     pub address: String,
     /// The WireGuard public key of the keypair minted for this host; its
     /// private half lives in the vault, never here.
-    #[serde(rename = "usecode_public_key", default)]
+    #[serde(
+        rename = "usecode_public_key",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
     pub public_key: String,
     /// host:port other members should dial to reach this host. Empty
     /// means this host only dials out (it is behind NAT).
@@ -125,6 +163,28 @@ pub struct NewHost {
     pub endpoint: String,
     pub ansible_host: String,
     pub ansible_user: String,
+}
+
+/// Looks for the inventory in the current directory and its parents, so
+/// the commands that need it work anywhere inside a checkout. At each
+/// level lib/daemon is tried too, which is where it sits seen from the
+/// repo root.
+pub fn find() -> Result<PathBuf> {
+    let mut dir = std::env::current_dir().ctx("determine working directory")?;
+    loop {
+        for base in [dir.clone(), dir.join("lib/daemon")] {
+            let candidate = base.join(DEFAULT_DIR);
+            if candidate.join("hosts.yml").exists() {
+                return Ok(candidate);
+            }
+        }
+        if !dir.pop() {
+            bail!(
+                "no {DEFAULT_DIR} found in this directory or any parent; run this from a usecode \
+                 checkout"
+            );
+        }
+    }
 }
 
 impl Inventory {
@@ -227,11 +287,17 @@ impl Inventory {
             Err(e) => bail!("read {}: {e}", path.display()),
         };
 
-        let mut host: Host =
-            serde_yaml::from_str(&body).with_ctx(|| format!("parse {}", path.display()))?;
+        // An empty file is a host with nothing set, not a parse error.
+        let mut host: Host = match serde_yaml::from_str::<Option<Host>>(&body) {
+            Ok(host) => host.unwrap_or_default(),
+            Err(e) => bail!("parse {}: {e}", path.display()),
+        };
         host.name = name.to_string();
-        if host.address.is_empty() {
-            bail!("{}: usecode_address is required", path.display());
+        if host.mesh_enabled && host.address.is_empty() {
+            bail!(
+                "{}: usecode_mesh_enabled is set but usecode_address is not",
+                path.display()
+            );
         }
         Ok(host)
     }
@@ -241,32 +307,49 @@ impl Inventory {
         self.hosts.iter().find(|h| h.name == name)
     }
 
-    /// Record a new mesh member: allocate the host's tunnel address
-    /// (unless one was given), mint its WireGuard keypair, write
-    /// host_vars/<name>.yml, append the host to the usecode group in
-    /// hosts.yml, and store the private key in the vault. Returns the
-    /// host as recorded.
+    /// Record a host with the daemon only - no address, no key, the
+    /// mesh off: write host_vars/<name>.yml with how to reach it and
+    /// append it to the usecode group in hosts.yml. This needs nothing
+    /// from the vault. Returns the host as recorded.
+    pub fn add_host(&mut self, req: NewHost) -> Result<Host> {
+        self.check_new(&req.name)?;
+
+        let host = Host {
+            name: req.name,
+            ansible_host: req.ansible_host,
+            ansible_user: req.ansible_user,
+            ..Host::default()
+        };
+        self.write_host_vars(&host)?;
+        self.add_to_group(&host.name)?;
+
+        self.hosts.push(host.clone());
+        self.hosts.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(host)
+    }
+
+    /// Put a host into the mesh: allocate its tunnel address (unless one
+    /// was given), mint its WireGuard keypair, store the private key in
+    /// the vault, and record the rest in host_vars/<name>.yml. A host
+    /// that isn't in the inventory yet is added to it; one that already
+    /// is, with the mesh off (installed with `uc daemon install`), has
+    /// its mesh facts appended to its host_vars file. Returns the host as
+    /// recorded.
     ///
-    /// It is refused if the host is already in the inventory: re-adding
-    /// would mean minting a second keypair for a host that already has
-    /// one, which silently breaks its tunnel. Edit host_vars/<name>.yml
+    /// It is refused if the host is already in the mesh: re-adding would
+    /// mean minting a second keypair for a host that already has one,
+    /// which silently breaks its tunnel. Edit host_vars/<name>.yml
     /// instead.
     pub fn add(&mut self, req: NewHost, vault: &Vault) -> Result<Host> {
-        valid_name(&req.name)?;
-        if self.host(&req.name).is_some() {
-            bail!(
+        let existing = self.host(&req.name).cloned();
+        match &existing {
+            Some(h) if h.mesh_enabled || !h.address.is_empty() => bail!(
                 "{} is already in the mesh (see {})",
                 req.name,
                 self.host_vars_path(&req.name).display()
-            );
-        }
-        if self.host_vars_path(&req.name).exists() {
-            bail!(
-                "{} already exists but {} is not in the {GROUP} group; add it there or delete \
-                 the file",
-                self.host_vars_path(&req.name).display(),
-                req.name
-            );
+            ),
+            Some(_) => {}
+            None => self.check_new(&req.name)?,
         }
 
         let address = if req.address.is_empty() {
@@ -278,26 +361,62 @@ impl Inventory {
 
         let (private_key, public_key) = keys::new_pair()?;
 
-        let host = Host {
-            name: req.name.clone(),
-            ansible_host: req.ansible_host,
-            ansible_user: req.ansible_user,
-            address,
-            public_key,
-            endpoint: self.endpoint(&req.endpoint),
-            services: Vec::new(),
+        let endpoint = self.endpoint(&req.endpoint);
+        let host = match existing {
+            Some(h) => Host {
+                mesh_enabled: true,
+                address,
+                public_key,
+                endpoint,
+                ..h
+            },
+            None => Host {
+                name: req.name.clone(),
+                ansible_host: req.ansible_host,
+                ansible_user: req.ansible_user,
+                mesh_enabled: true,
+                address,
+                public_key,
+                endpoint,
+                ..Host::default()
+            },
         };
 
         // The private key goes in first: a vault write that fails (wrong
         // password, no ansible-vault) leaves the inventory untouched
         // rather than leaving a host with no key behind.
         vault.put(&host.name, &private_key)?;
-        self.write_host_vars(&host)?;
-        self.add_to_group(&host.name)?;
+        if self.host(&host.name).is_some() {
+            self.append_mesh_vars(&host)?;
+            self.hosts.retain(|h| h.name != host.name);
+        } else {
+            self.write_host_vars(&host)?;
+            self.add_to_group(&host.name)?;
+        }
 
         self.hosts.push(host.clone());
         self.hosts.sort_by(|a, b| a.name.cmp(&b.name));
         Ok(host)
+    }
+
+    /// Refuse a name that can't be a new host: unusable as a file name,
+    /// already in the inventory, or with a host_vars file left behind.
+    fn check_new(&self, name: &str) -> Result<()> {
+        valid_name(name)?;
+        if self.host(name).is_some() {
+            bail!(
+                "{name} is already in the inventory (see {})",
+                self.host_vars_path(name).display()
+            );
+        }
+        if self.host_vars_path(name).exists() {
+            bail!(
+                "{} already exists but {name} is not in the {GROUP} group; add it there or \
+                 delete the file",
+                self.host_vars_path(name).display()
+            );
+        }
+        Ok(())
     }
 
     /// Complete a dialable address: given just a host or IP, append the
@@ -307,11 +426,7 @@ impl Inventory {
         if value.is_empty() || value.contains(':') {
             return value.to_string();
         }
-        let port = match self.settings.listen_port {
-            0 => 51820,
-            p => p,
-        };
-        format!("{value}:{port}")
+        format!("{value}:{}", self.listen_port())
     }
 
     /// The lowest address in the configured network that no host holds
@@ -322,7 +437,7 @@ impl Inventory {
         let prefix = self.network()?;
 
         let mut taken: BTreeMap<Ipv4Addr, &str> = BTreeMap::new();
-        for h in &self.hosts {
+        for h in self.hosts.iter().filter(|h| !h.address.is_empty()) {
             let addr: Ipv4Addr = h.address.parse().with_ctx(|| {
                 format!(
                     "{}: usecode_address {:?} is not an IP address",
@@ -404,22 +519,64 @@ impl Inventory {
         let body = serde_yaml::to_string(host)
             .with_ctx(|| format!("encode host vars for {}", host.name))?;
 
-        let header = format!(
-            "---\n\
-             # {name} - one member of the uc net mesh mesh.\n\
-             #\n\
-             # Created by `uc net mesh add {name}`, and not touched by uc net mesh again:\n\
-             # edit it freely. usecode_address was allocated from usecode_network in\n\
-             # group_vars/{GROUP}/main.yml, and the private key half of\n\
-             # usecode_public_key is in group_vars/{GROUP}/secrets.yml under this host's\n\
-             # name.\n",
-            name = host.name
-        );
+        let header = if host.mesh_enabled {
+            format!(
+                "---\n\
+                 # {name} - one member of the usecode mesh.\n\
+                 #\n\
+                 # Created by `uc net mesh add {name}`, and not touched by uc net mesh again:\n\
+                 # edit it freely. {MESH_NOTE}",
+                name = host.name
+            )
+        } else {
+            format!(
+                "---\n\
+                 # {name} - a host running the usecode daemon, with the mesh off.\n\
+                 #\n\
+                 # Created by `uc daemon install {name}`: edit it freely. `uc net mesh add\n\
+                 # {name}` turns the mesh on for it by appending its address and key here.\n",
+                name = host.name
+            )
+        };
 
         let path = self.host_vars_path(&host.name);
         let dir = path.parent().unwrap_or(&self.dir);
         fs::create_dir_all(dir).with_ctx(|| format!("create {}", dir.display()))?;
         fs::write(&path, header + &body).with_ctx(|| format!("write {}", path.display()))?;
+        Ok(())
+    }
+
+    /// Turn the mesh on for a host already in the inventory by appending
+    /// its mesh facts to host_vars/<name>.yml. Appending top-level keys
+    /// leaves everything already in the file - comments, hand edits -
+    /// exactly as it was.
+    fn append_mesh_vars(&self, host: &Host) -> Result<()> {
+        let facts = Host {
+            mesh_enabled: true,
+            address: host.address.clone(),
+            public_key: host.public_key.clone(),
+            endpoint: host.endpoint.clone(),
+            ..Host::default()
+        };
+        let body = serde_yaml::to_string(&facts)
+            .with_ctx(|| format!("encode host vars for {}", host.name))?;
+        // Only the mesh keys: services stay whatever the file already says.
+        let body: String = body
+            .lines()
+            .filter(|l| !l.starts_with("usecode_services:"))
+            .map(|l| format!("{l}\n"))
+            .collect();
+
+        let path = self.host_vars_path(&host.name);
+        let mut text = fs::read_to_string(&path).with_ctx(|| format!("read {}", path.display()))?;
+        if !text.is_empty() && !text.ends_with('\n') {
+            text.push('\n');
+        }
+        text.push_str(&format!(
+            "\n# Mesh turned on by `uc net mesh add {}`. {MESH_NOTE}{body}",
+            host.name
+        ));
+        fs::write(&path, text).with_ctx(|| format!("write {}", path.display()))?;
         Ok(())
     }
 
@@ -437,6 +594,12 @@ impl Inventory {
         Ok(())
     }
 }
+
+/// Where a mesh host's facts come from, for the comment above them.
+const MESH_NOTE: &str = "usecode_address was allocated from\n\
+# usecode_network in group_vars/usecode/main.yml, and the private key half\n\
+# of usecode_public_key is in group_vars/usecode/secrets.yml under this\n\
+# host's name.\n";
 
 fn valid_name(name: &str) -> Result<()> {
     if name.is_empty() {

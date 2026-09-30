@@ -127,30 +127,18 @@ fn is_zero(n: &i64) -> bool {
     *n == 0
 }
 
-/// Written to the config path when no file exists yet. It is a starting
-/// point, not a working config.
-const DEFAULT_TEMPLATE: &str = r#"# uc net mesh config - run "uc net mesh export" to fill this in, then "uc net mesh
-# import" to add peers and "uc net mesh forward" to declare services. See
-# README.md for a worked recipe.
-
-[wireguard]
-interface = "wg-uc"
-address   = "10.10.0.2/24" # this host's WireGuard address (CIDR)
-"#;
-
 impl Config {
-    /// Read and validate the config file at `path`. If no file exists
-    /// there, write a commented-out template (root-only) and return an
-    /// error asking the caller to run `uc net mesh export` first, rather
-    /// than failing with a bare "no such file". Refuses to load a file
-    /// that is readable or writable by anyone other than its owner,
-    /// since it may contain WireGuard preshared keys.
+    /// Read and validate the config file at `path`. No file there is not
+    /// an error: it is a host the daemon was installed on before the
+    /// mesh was turned on, and it loads as an empty config with the mesh
+    /// off ([`Config::mesh_enabled`]). Refuses to load a file that is
+    /// readable or writable by anyone other than its owner, since it may
+    /// contain WireGuard preshared keys.
     pub fn load(path: &str) -> Result<Config> {
-        if ensure_default(path)? {
-            bail!(
-                "no config found; wrote a template to {path} - run `uc net mesh export` to fill in \
-                 this host's identity, then `uc net mesh import` to add peers"
-            );
+        match fs::metadata(path) {
+            Ok(_) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Config::default()),
+            Err(e) => bail!("stat {path}: {e}"),
         }
 
         check_permissions(path)?;
@@ -158,30 +146,6 @@ impl Config {
         let body = fs::read_to_string(path).with_ctx(|| format!("read {path}"))?;
         let cfg: Config = toml::from_str(&body).with_ctx(|| format!("parse {path}"))?;
         cfg.validate()?;
-        Ok(cfg)
-    }
-
-    /// Create a minimal config with just the wireguard interface section
-    /// (no peers, no services) and save it to `path`. Fails if a config
-    /// already exists there - use [`Config::load`] in that case. This is
-    /// what `uc net mesh export` calls the first time it runs on a host.
-    pub fn new_at(path: &str, iface: &str, address: &str, listen_port: i64) -> Result<Config> {
-        if Path::new(path).exists() {
-            bail!("{path} already exists");
-        }
-
-        let cfg = Config {
-            interface: Interface {
-                name: iface.to_string(),
-                address: address.to_string(),
-                listen_port,
-                mtu: 0,
-            },
-            ..Config::default()
-        };
-        parse_cidr(address)
-            .with_ctx(|| format!("address {address:?} must be a CIDR (e.g. 10.10.0.2/24)"))?;
-        cfg.save(path)?;
         Ok(cfg)
     }
 
@@ -260,6 +224,14 @@ impl Config {
         self.services.iter().filter(|s| s.is_forward()).collect()
     }
 
+    /// Whether this host is in the mesh at all. The mesh is off until a
+    /// `[wireguard]` section gives this host an address - which is how a
+    /// host comes out of `uc daemon install` - and everything that needs
+    /// the tunnel is skipped while it is.
+    pub fn mesh_enabled(&self) -> bool {
+        !self.interface.address.is_empty()
+    }
+
     /// This host's bare WireGuard IP (the CIDR in `wireguard.address`
     /// without its prefix length).
     pub fn address(&self) -> Result<String> {
@@ -275,20 +247,20 @@ impl Config {
     /// Check that the config is internally consistent. There is no mode
     /// to check against: every field is validated on its own terms, and
     /// a config with zero peers or zero services is valid (a freshly
-    /// exported host that hasn't imported or forwarded anything yet).
+    /// exported host that hasn't imported or forwarded anything yet), as
+    /// is one with no `[wireguard]` address (the mesh is off).
     pub fn validate(&self) -> Result<()> {
-        if self.interface.name.is_empty() {
-            bail!("wireguard.interface is required");
+        if self.mesh_enabled() {
+            if self.interface.name.is_empty() {
+                bail!("wireguard.interface is required");
+            }
+            parse_cidr(&self.interface.address).with_ctx(|| {
+                format!(
+                    "wireguard.address {:?} must be a CIDR (e.g. 10.10.0.2/24)",
+                    self.interface.address
+                )
+            })?;
         }
-        if self.interface.address.is_empty() {
-            bail!("wireguard.address is required");
-        }
-        parse_cidr(&self.interface.address).with_ctx(|| {
-            format!(
-                "wireguard.address {:?} must be a CIDR (e.g. 10.10.0.2/24)",
-                self.interface.address
-            )
-        })?;
 
         let mut errs: Vec<String> = Vec::new();
         for (i, p) in self.peers.iter().enumerate() {
@@ -351,7 +323,7 @@ fn join_errs(errs: Vec<String>) -> Result<()> {
 
 /// Make sure the directory holding the config exists. A directory
 /// uc net mesh creates is root-only from the start; one that already exists
-/// is left at whatever mode its owner chose (the Ansible role gives
+/// is left at whatever mode its owner chose (`usecoded setup` gives
 /// /etc/uc 0750 so a group can list it).
 fn ensure_private_dir(path: &str) -> Result<()> {
     let dir = Path::new(path).parent().unwrap_or(Path::new("."));
@@ -361,30 +333,6 @@ fn ensure_private_dir(path: &str) -> Result<()> {
     fs::create_dir_all(dir)
         .and_then(|_| fs::set_permissions(dir, fs::Permissions::from_mode(0o700)))
         .with_ctx(|| format!("create {}", dir.display()))
-}
-
-/// Write [`DEFAULT_TEMPLATE`] to `path`, root-only, if no file exists
-/// there yet. Reports whether it created the file.
-fn ensure_default(path: &str) -> Result<bool> {
-    match fs::metadata(path) {
-        Ok(_) => return Ok(false),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => bail!("stat {path}: {e}"),
-    }
-
-    ensure_private_dir(path)?;
-
-    let mut f = fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(path)
-        .with_ctx(|| format!("write {path}"))?;
-    f.write_all(DEFAULT_TEMPLATE.as_bytes())
-        .with_ctx(|| format!("write {path}"))?;
-
-    Ok(true)
 }
 
 /// Reject config files that are group- or world-readable, since they
@@ -420,6 +368,23 @@ mod tests {
     #[test]
     fn a_host_with_no_peers_is_valid() {
         base().validate().unwrap();
+    }
+
+    #[test]
+    fn an_empty_config_is_valid_with_the_mesh_off() {
+        let cfg = Config::default();
+        cfg.validate().unwrap();
+        assert!(!cfg.mesh_enabled());
+        assert!(base().mesh_enabled());
+    }
+
+    #[test]
+    fn a_missing_file_loads_with_the_mesh_off() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let cfg = Config::load(&path.to_string_lossy()).unwrap();
+        assert!(!cfg.mesh_enabled());
+        assert!(!path.exists());
     }
 
     #[test]

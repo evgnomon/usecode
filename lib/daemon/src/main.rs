@@ -8,30 +8,19 @@
 //! (accept inbound connections, forward traffic) follows from its
 //! config.
 
-#[macro_use]
-mod error;
-
-mod app;
-mod config;
-mod flags;
-mod inventory;
-mod iptables;
-mod keys;
-mod net;
-mod remote;
-mod wg;
-
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use config::{Config, Descriptor, Peer, Service};
+use uc_daemon::{app, apply, bail, config, err, error, flags, inventory, keys, net};
+
+use config::{Config, Descriptor, Interface, Peer, Service};
 use error::{Context, Result};
 use flags::FlagSet;
 use inventory::{Inventory, NewHost, Vault};
-use net::join_host_port;
+use net::{join_host_port, parse_cidr};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const SUMMARY: &str = "apply WireGuard mesh and port-forwarding config on this host";
@@ -68,13 +57,17 @@ fn run(args: &[String]) -> Result<()> {
             res
         }),
         "validate" => with_config(rest, NO_ROOT_REQUIRED, |cfg| {
-            println!(
-                "{}: OK (interface={}, peers={}, services={})",
-                config_path(rest),
-                cfg.interface.name,
-                cfg.peers.len(),
-                cfg.services.len()
-            );
+            if cfg.mesh_enabled() {
+                println!(
+                    "{}: OK (interface={}, peers={}, services={})",
+                    config_path(rest),
+                    cfg.interface.name,
+                    cfg.peers.len(),
+                    cfg.services.len()
+                );
+            } else {
+                println!("{}: OK (mesh off)", config_path(rest));
+            }
             Ok(())
         }),
         "add" => add(rest),
@@ -82,6 +75,7 @@ fn run(args: &[String]) -> Result<()> {
         "import" => import_peer(rest),
         "forward" => forward(rest),
         "unforward" => unforward(rest),
+        "apply" => apply::run(rest),
         "pubkey" => pubkey(),
         "genkey" => genkey(rest),
         "version" | "-v" | "--version" => {
@@ -109,11 +103,15 @@ from a mode you pick up front.
 
 Fleet (run on the control node, in a checkout of this repo):
   uc net mesh add NAME [-endpoint HOST:PORT] [-ansible-host HOST]
-                                       put a host into the mesh topology: allocate
-                                       the next free tunnel address, mint its
-                                       keypair, record it in the Ansible inventory
-                                       (private key into the vault), then run
-                                       ansible-playbook to converge every host
+                                       put a host into the mesh topology, or turn
+                                       the mesh on for one `uc daemon install` put
+                                       there: allocate the next free tunnel
+                                       address, mint its keypair, record it in the
+                                       Ansible inventory (private key into the
+                                       vault)
+  uc net mesh apply [NAME...]          hand every member (or those named) its
+                                       key and config; the usecode daemon
+                                       there sets the mesh up
 
 Setup (run on the host itself, for a mesh you drive by hand instead):
   uc net mesh export  [-out FILE] [-address CIDR] [-endpoint HOST:PORT]
@@ -191,8 +189,8 @@ fn require_root() -> Result<()> {
 /// "free" is a fact about every other host. So the topology lives in one
 /// place - the Ansible inventory - and add is the thing that reads all
 /// of it, allocates the lowest unused address, and records the new
-/// member. Nothing is configured on the host here; `ansible-playbook`
-/// applies the topology afterwards.
+/// member. Nothing is configured on the host here; `uc net mesh apply`
+/// delivers the topology afterwards.
 fn add(args: &[String]) -> Result<()> {
     let mut fs = FlagSet::new("add");
     fs.string("inventory", "")
@@ -221,7 +219,7 @@ fn add(args: &[String]) -> Result<()> {
     inventory::check_available()?;
 
     let dir = match fs.get_str("inventory") {
-        s if s.is_empty() => find_inventory()?,
+        s if s.is_empty() => inventory::find()?,
         s => PathBuf::from(s),
     };
 
@@ -252,31 +250,9 @@ fn add(args: &[String]) -> Result<()> {
     } else {
         println!("  endpoint   {}", host.endpoint);
     }
-    println!(
-        "\nApply the topology to every host (from {}):",
-        inv.root.display()
-    );
-    println!("  ansible-playbook deploy/playbooks/usecode.yml");
+    println!("\nHand every member the new topology:");
+    println!("  uc net mesh apply");
     Ok(())
-}
-
-/// Looks for the inventory in the current directory and its parents, so
-/// `uc net mesh add` works anywhere inside a checkout.
-fn find_inventory() -> Result<PathBuf> {
-    let mut dir = std::env::current_dir().ctx("determine working directory")?;
-    loop {
-        let candidate = dir.join(inventory::DEFAULT_DIR);
-        if candidate.join("hosts.yml").exists() {
-            return Ok(candidate);
-        }
-        if !dir.pop() {
-            bail!(
-                "no {} found in this directory or any parent; run `uc net mesh add` from a usecode \
-                 checkout, or pass -inventory DIR",
-                inventory::DEFAULT_DIR
-            );
-        }
-    }
 }
 
 /// Generates this host's persistent keypair if needed and writes a
@@ -297,22 +273,26 @@ fn export(args: &[String]) -> Result<()> {
     require_root()?;
 
     let path = fs.get_str("config");
-    let cfg = if Path::new(&path).exists() {
-        Config::load(&path)?
-    } else {
+    let mut cfg = Config::load(&path)?;
+    if !cfg.mesh_enabled() {
+        // No config, or one from `uc daemon install` with the mesh off:
+        // this is what turns it on.
         let address = fs.get_str("address");
         if address.is_empty() {
             bail!(
-                "no config at {path} yet; pass -address (e.g. -address 10.10.0.2/24) to create one"
+                "the mesh is off in {path}; pass -address (e.g. -address 10.10.0.2/24) to turn it on"
             );
         }
-        Config::new_at(
-            &path,
-            &fs.get_str("interface"),
-            &address,
-            fs.get_int("listen-port"),
-        )?
-    };
+        parse_cidr(&address)
+            .with_ctx(|| format!("address {address:?} must be a CIDR (e.g. 10.10.0.2/24)"))?;
+        cfg.interface = Interface {
+            name: fs.get_str("interface"),
+            address,
+            listen_port: fs.get_int("listen-port"),
+            mtu: 0,
+        };
+        cfg.save(&path)?;
+    }
 
     let public_key = keys::public_key()?;
     let address = cfg.address()?;
@@ -581,7 +561,6 @@ fn genkey(args: &[String]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use config::Interface;
 
     fn cfg_with_peer() -> Config {
         let mut cfg = Config {

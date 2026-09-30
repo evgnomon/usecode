@@ -10,5 +10,5 @@ set -e
 
 . "$HOME/.cargo/env"
 cd "$(dirname "$0")/../uc"
-make build
+make build RELEASE=1
 exec ../../target/x86_64-unknown-linux-musl/release/uc-configure "$@"

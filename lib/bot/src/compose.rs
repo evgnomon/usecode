@@ -30,7 +30,7 @@ pub struct ComposeError {
 
 pub type ComposeResult<T> = Result<T, ComposeError>;
 
-fn expand_user(raw: &str) -> PathBuf {
+pub fn expand_user(raw: &str) -> PathBuf {
     match raw.strip_prefix("~/") {
         Some(rest) => match std::env::var_os("HOME") {
             Some(home) => Path::new(&home).join(rest),

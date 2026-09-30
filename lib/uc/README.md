@@ -25,9 +25,9 @@ The last two replace the former `lib/pylib` Python package (`bp` and the
 `gh_image` Ansible module).
 
 It also ships the command groups — `uc image`, `uc repo`, `uc cert`,
-`uc deb`, `uc db`, `uc net`, `uc vm`, `uc new`, `uc cloud`, `uc agent`,
-`uc data`, `uc media`, `uc pick` and `uc sys` — which gather every tool in
-`lib/` under one command; see [Command groups](#command-groups).
+`uc deb`, `uc db`, `uc net`, `uc daemon`, `uc vm`, `uc new`, `uc cloud`,
+`uc agent`, `uc data`, `uc media`, `uc pick` and `uc sys` — which gather
+every tool in `lib/` under one command; see [Command groups](#command-groups).
 
 ## Encrypting files
 
@@ -261,8 +261,9 @@ switching scripts over to the `uc` commands is a good idea.
 | `uc db resources configmap` | `uc-db-resources-configmap` | `confmap` |
 | `uc db resources schema` | `uc-db-resources-schema` | `k8s_ddl` |
 | `uc db resources pods` | `uc-db-resources-pods` | `mkpod` |
-| `uc net mesh` | `uc-net-mesh` | `uc-daemon` |
+| `uc net mesh` | `uc-net-mesh` | |
 | `uc net ipsec`, `dig` | `uc-net-ipsec`, `uc-net-dig` | `ipmesh`, `diga` |
+| `uc daemon install` | `uc-daemon-install` | |
 | `uc vm` | `uc-vm-local`, arguments and all; with `--provider`, built in (see below) | `vm` |
 | `uc nats`, `uc work` | `uc-nats`, `uc-work` themselves | `natsup`, `workd` |
 | `uc new role`, `workflow`, `script`, `unit` | `uc-new-role`, `uc-new-workflow`, `uc-new-script`, `uc-new-unit` | `mkarole`, `catalyze`, `shole`, `mkunit` |
@@ -332,7 +333,7 @@ terminal are its own.
 ## Build
 
 ```sh
-make build    # cargo build --profile release --target x86_64-unknown-linux-musl
+make build    # cargo build --profile fast (RELEASE=1 for release) --target x86_64-unknown-linux-musl
 make check    # fmt --check, clippy -D warnings, tests
 make install  # install uc and its uc-* subcommands to /usr/local/bin
 ```

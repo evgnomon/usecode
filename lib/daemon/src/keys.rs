@@ -29,15 +29,6 @@ pub const PUBLIC_KEY_PATH: &str = "/etc/uc/wireguard/public.key";
 const B64: base64::engine::general_purpose::GeneralPurpose =
     base64::engine::general_purpose::STANDARD;
 
-/// This host's persistent WireGuard private key, generating and storing
-/// a new keypair on first call if none exists yet.
-pub fn ensure_private_key() -> Result<String> {
-    if let Some(key) = read_key(PRIVATE_KEY_PATH)? {
-        return Ok(key);
-    }
-    Ok(generate()?.0)
-}
-
 /// This host's persistent WireGuard public key, generating a keypair
 /// first if one doesn't exist yet.
 pub fn public_key() -> Result<String> {
@@ -45,6 +36,13 @@ pub fn public_key() -> Result<String> {
         return Ok(key);
     }
     Ok(generate()?.1)
+}
+
+/// This host's private key if it has one, without generating one: the
+/// daemon runs with /etc read-only, and a key it made up would not match
+/// the public key its peers were given anyway.
+pub fn private_key() -> Result<Option<String>> {
+    read_key(PRIVATE_KEY_PATH)
 }
 
 fn read_key(path: &str) -> Result<Option<String>> {

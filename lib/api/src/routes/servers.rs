@@ -165,6 +165,7 @@ async fn create_server(
             image: payload.image,
             location: Some(location),
             ssh_keys: payload.ssh_keys,
+            ssh_public_key: payload.ssh_public_key,
         },
     };
     let task = create_task(

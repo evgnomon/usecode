@@ -387,6 +387,9 @@ impl Client {
             .await
     }
 
+    /// Create a server. The local `~/.ssh/aurora.pub` always rides along;
+    /// the API imports it only when the provider account has no "aurora" key
+    /// yet, so the server is reachable over ssh either way.
     pub async fn create_server(
         &self,
         name: &str,
@@ -402,6 +405,7 @@ impl Client {
                     "type": server_type,
                     "image": image,
                     "ssh_keys": ssh_keys,
+                    "ssh_public_key": local_ssh_public_key(),
                 }))
                 .api_key(api_key),
         )
@@ -454,6 +458,16 @@ impl Client {
 
 fn is_error(status: StatusCode) -> bool {
     status.is_client_error() || status.is_server_error()
+}
+
+/// The caller's `~/.ssh/aurora.pub`, if there is one.
+fn local_ssh_public_key() -> Option<String> {
+    let home = std::env::var_os("HOME")?;
+    let path = std::path::Path::new(&home).join(".ssh").join("aurora.pub");
+    std::fs::read_to_string(path)
+        .ok()
+        .map(|key| key.trim().to_string())
+        .filter(|key| !key.is_empty())
 }
 
 #[cfg(test)]

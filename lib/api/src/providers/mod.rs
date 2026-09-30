@@ -204,6 +204,49 @@ pub(crate) fn items<'a>(
         })
 }
 
+/// Name of the ssh key every provisioned server gets: looked up on the
+/// provider account first, and imported from the caller's public key only
+/// when the account doesn't have it yet.
+pub(crate) const SSH_KEY_NAME: &str = "aurora";
+
+/// "type base64" of an OpenSSH public key, dropping the comment, so the same
+/// key compares equal whatever comment it was imported with.
+fn key_material(public_key: &str) -> String {
+    public_key
+        .split_whitespace()
+        .take(2)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// The id of the account key to install: the one named [`SSH_KEY_NAME`],
+/// else one holding the same material as `public_key` (providers refuse a
+/// second copy of a key already imported under another name).
+pub(crate) fn existing_ssh_key(keys: &[Value], public_key: Option<&str>) -> Option<Value> {
+    let named = keys
+        .iter()
+        .find(|key| key.get("name").and_then(Value::as_str) == Some(SSH_KEY_NAME));
+    let same = || {
+        let wanted = key_material(public_key?);
+        keys.iter().find(|key| {
+            key.get("public_key")
+                .and_then(Value::as_str)
+                .is_some_and(|k| key_material(k) == wanted)
+        })
+    };
+    named.or_else(same).and_then(|key| key.get("id").cloned())
+}
+
+/// The key ids to create a server with: the caller's explicit ones plus the
+/// resolved [`SSH_KEY_NAME`] key, if any.
+pub(crate) fn ssh_key_ids(spec: &CloudServerCreateIn, resolved: Option<Value>) -> Vec<Value> {
+    spec.ssh_keys
+        .iter()
+        .map(|key| Value::String(key.clone()))
+        .chain(resolved)
+        .collect()
+}
+
 /// `{**head, **tail}`: `head`'s keys first, `tail` overriding them.
 pub(crate) fn merged(head: Vec<(&str, Value)>, tail: &Value) -> Value {
     let mut map: Map<String, Value> = head.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
@@ -304,6 +347,24 @@ mod tests {
             Provider::parse("aws").unwrap_err().to_string(),
             "Unknown provider 'aws', expected one of ['digitalocean', 'hetzner']"
         );
+    }
+
+    #[test]
+    fn ssh_key_prefers_the_named_one_then_matching_material() {
+        let keys = vec![
+            json!({"id": 1, "name": "laptop", "public_key": "ssh-ed25519 AAAA me@laptop"}),
+            json!({"id": 2, "name": "aurora", "public_key": "ssh-ed25519 BBBB"}),
+        ];
+        assert_eq!(
+            existing_ssh_key(&keys, Some("ssh-ed25519 AAAA")),
+            Some(json!(2))
+        );
+        assert_eq!(
+            existing_ssh_key(&keys[..1], Some("ssh-ed25519 AAAA other\n")),
+            Some(json!(1))
+        );
+        assert_eq!(existing_ssh_key(&keys[..1], Some("ssh-ed25519 CCCC")), None);
+        assert_eq!(existing_ssh_key(&keys[..1], None), None);
     }
 
     #[test]

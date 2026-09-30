@@ -12,7 +12,10 @@ use super::*;
 /// Writes a minimal inventory to a temp dir and loads it. `host_vars`
 /// maps a host name to the body of its host_vars file; every one of them
 /// is also put in the usecode group.
-fn new_inventory(settings: &str, host_vars: &BTreeMap<&str, String>) -> (TempDir, Inventory) {
+pub(super) fn new_inventory(
+    settings: &str,
+    host_vars: &BTreeMap<&str, String>,
+) -> (TempDir, Inventory) {
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path().join("inventory");
     must_write(
@@ -258,4 +261,69 @@ fn a_host_name_has_to_be_a_file_name() {
     for bad in ["", "..", "a/b", "a b", "a:b"] {
         assert!(valid_name(bad).is_err(), "{bad:?} was accepted");
     }
+}
+
+// `uc daemon install` records a host with the mesh off: nothing but how
+// to reach it, and no vault involved.
+#[test]
+fn add_host_records_a_host_with_the_mesh_off() {
+    let (_tmp, mut inv) = new_inventory(DEFAULT_SETTINGS, &hosts_of(&[("edge", "10.10.0.1")]));
+
+    inv.add_host(NewHost {
+        name: "worker".into(),
+        ansible_host: "203.0.113.7".into(),
+        ansible_user: "root".into(),
+        ..NewHost::default()
+    })
+    .unwrap();
+
+    let back = Inventory::load(&inv.dir).unwrap();
+    let host = back.host("worker").expect("worker in the inventory");
+    assert!(!host.mesh_enabled);
+    assert!(host.address.is_empty() && host.public_key.is_empty());
+    assert_eq!(host.ansible_host, "203.0.113.7");
+
+    let text = fs::read_to_string(inv.host_vars_path("worker")).unwrap();
+    assert!(!text.contains("usecode_address"), "{text}");
+    assert!(!inv.secrets_path().exists());
+}
+
+// A host without the mesh holds no address, so it can't take one away
+// from the hosts that do.
+#[test]
+fn allocate_ignores_hosts_with_the_mesh_off() {
+    let mut vars = hosts_of(&[("edge", "10.10.0.1")]);
+    vars.insert("worker", "ansible_user: root\n".into());
+    let (_tmp, inv) = new_inventory(DEFAULT_SETTINGS, &vars);
+    assert_eq!(inv.allocate().unwrap(), "10.10.0.2");
+}
+
+// Turning the mesh on later appends to the host's file, keeping whatever
+// was written there by hand.
+#[test]
+fn turning_the_mesh_on_appends_to_the_host_file() {
+    let mut vars = BTreeMap::new();
+    vars.insert(
+        "worker",
+        "---\n# mine\nansible_user: root\nfoo: bar\n".to_string(),
+    );
+    let (_tmp, inv) = new_inventory(DEFAULT_SETTINGS, &vars);
+
+    let host = Host {
+        address: "10.10.0.1".into(),
+        public_key: "abc=".into(),
+        ..inv.host("worker").unwrap().clone()
+    };
+    inv.append_mesh_vars(&host).unwrap();
+
+    let text = fs::read_to_string(inv.host_vars_path("worker")).unwrap();
+    assert!(
+        text.starts_with("---\n# mine\nansible_user: root\nfoo: bar\n"),
+        "{text}"
+    );
+    let back = Inventory::load(&inv.dir).unwrap();
+    let host = back.host("worker").unwrap();
+    assert!(host.mesh_enabled);
+    assert_eq!(host.address, "10.10.0.1");
+    assert_eq!(host.public_key, "abc=");
 }

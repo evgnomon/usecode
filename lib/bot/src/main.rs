@@ -8,6 +8,7 @@ mod compose;
 mod config;
 mod error;
 mod server;
+mod ssh;
 
 use std::sync::Arc;
 

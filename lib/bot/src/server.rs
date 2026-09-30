@@ -17,6 +17,7 @@ use serde_json::{Map, Value, json};
 use crate::client::{ApiResult, Client};
 use crate::compose;
 use crate::config::Settings;
+use crate::ssh;
 
 #[derive(Debug, Deserialize, JsonSchema, Default)]
 pub struct ApiKeyArgs {
@@ -112,8 +113,9 @@ pub struct ServerIdArgs {
     pub api_key: Option<String>,
 }
 
+/// Debian 13 unless the user asks for something else.
 fn default_image() -> String {
-    "ubuntu-24.04".to_string()
+    "debian-13".to_string()
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -123,12 +125,35 @@ pub struct CreateServerArgs {
     /// usecode agent's own series-city type string, e.g. "x1-fsn1" or "y1-nyc3".
     #[serde(rename = "type")]
     pub server_type: String,
-    /// OS image slug, e.g. "ubuntu-24.04".
+    /// OS image slug. Defaults to "debian-13"; prefer it unless the user
+    /// asks for another OS.
     #[serde(default = "default_image")]
     pub image: String,
     /// Ids or names of ssh keys to install on the server.
     #[serde(default)]
     pub ssh_keys: Option<Vec<String>>,
+    /// Host alias from the user's ssh config to jump through (ProxyJump),
+    /// e.g. "shadow". Only set this when the user asks for a bastion.
+    #[serde(default)]
+    pub bastion: Option<String>,
+    /// User to log in as in the written ssh config entry (default "root").
+    #[serde(default)]
+    pub ssh_user: Option<String>,
+    #[serde(default)]
+    pub api_key: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SshConfigArgs {
+    /// The usecode agent server id.
+    pub server_id: String,
+    /// Host alias from the user's ssh config to jump through (ProxyJump),
+    /// e.g. "shadow". Only set this when the user asks for a bastion.
+    #[serde(default)]
+    pub bastion: Option<String>,
+    /// User to log in as (default "root").
+    #[serde(default)]
+    pub ssh_user: Option<String>,
     #[serde(default)]
     pub api_key: Option<String>,
 }
@@ -403,7 +428,9 @@ impl UsecodeServer {
     /// Create a new server. `type` is usecode agent's own series-city type string,
     /// not a cloud-provider type — e.g. "x1"/"x2"/"x4"/"x8" plus a city, such
     /// as "x1-fsn1" or "x8-ash"; or "y1"/"y2"/"y4"/"y8" plus a city, such as
-    /// "y1-nyc3". `image` is the OS image slug (e.g. "ubuntu-24.04"). Run
+    /// "y1-nyc3". `image` is the OS image slug; it defaults to "debian-13",
+    /// so leave it out (or pass "debian-13") unless the user asks for another
+    /// OS. Run
     /// sync_servers then list_catalog (kind="location" or
     /// kind="image") to see the caller's actual valid values instead of
     /// guessing. Requires credentials configured for whichever provider that
@@ -411,22 +438,86 @@ impl UsecodeServer {
     /// task (the server's IP and final status aren't known until the provider
     /// finishes), so this schedules the task and returns it; poll it with
     /// get_task until it 404s (meaning it finished), then use
-    /// list_servers to find the new server. Falls back to the
+    /// list_servers to find the new server. The server gets the provider
+    /// account's "aurora" ssh key; if the account has none yet, the local
+    /// ~/.ssh/aurora.pub is imported under that name. Once the server is
+    /// up, the bot writes ~/.ssh/config.d/<name> (user, ~/.ssh/aurora key,
+    /// and ProxyJump through `bastion` if given) so `ssh <name>` just works;
+    /// the answer's `ssh_config` field says where. Pass `bastion` (e.g.
+    /// "shadow") only when the user asks to go through one. Falls back to the
     /// configured USECODE_MCP_API_KEY.
     #[tool]
     async fn create_server(&self, args: Parameters<CreateServerArgs>) -> Json<Value> {
         let args = args.0;
-        answer(
-            self.client
-                .create_server(
-                    &args.name,
-                    &args.server_type,
-                    &args.image,
-                    args.ssh_keys.unwrap_or_default(),
-                    args.api_key,
-                )
-                .await,
-        )
+        let task = match self
+            .client
+            .create_server(
+                &args.name,
+                &args.server_type,
+                &args.image,
+                args.ssh_keys.unwrap_or_default(),
+                args.api_key.clone(),
+            )
+            .await
+        {
+            Ok(task) => task,
+            Err(error) => return Json(error.to_value()),
+        };
+        let Some(task_id) = task.get("id").and_then(Value::as_str) else {
+            return Json(task);
+        };
+        let dir = ssh::config_dir(&self.settings);
+        let path = dir.join(&args.name);
+        tokio::spawn(ssh::write_when_ready(
+            self.client.clone(),
+            dir,
+            task_id.to_string(),
+            args.name,
+            args.ssh_user
+                .unwrap_or_else(|| ssh::DEFAULT_USER.to_string()),
+            args.bastion,
+            args.api_key,
+        ));
+        let mut task = task;
+        if let Value::Object(map) = &mut task {
+            map.insert(
+                "ssh_config".to_string(),
+                json!({
+                    "path": path.to_string_lossy(),
+                    "note": "written once the server has an IP; call write_ssh_config if it doesn't show up",
+                }),
+            );
+        }
+        Json(task)
+    }
+
+    /// Write (or rewrite) ~/.ssh/config.d/<name> for one of the caller's
+    /// servers: its IP, user (default "root"), the ~/.ssh/aurora key, and
+    /// ProxyJump through `bastion` (e.g. "shadow") if given — so the user
+    /// can `ssh <name>`. create_server already does this on its own; use this
+    /// to change the bastion/user, or if that entry never appeared. Files
+    /// the bot didn't write itself are never overwritten. Falls back to the
+    /// configured USECODE_MCP_API_KEY.
+    #[tool]
+    async fn write_ssh_config(&self, args: Parameters<SshConfigArgs>) -> Json<Value> {
+        let args = args.0;
+        let server = match self.client.get_server(&args.server_id, args.api_key).await {
+            Ok(server) => server,
+            Err(error) => return Json(error.to_value()),
+        };
+        let user = args.ssh_user.as_deref().unwrap_or(ssh::DEFAULT_USER);
+        let Some(entry) = ssh::entry_for(&server, user, args.bastion.as_deref()) else {
+            return Json(json!({"error": "server has no public IP yet"}));
+        };
+        Json(match ssh::write(&ssh::config_dir(&self.settings), &entry) {
+            Ok(path) => json!({
+                "status": "written",
+                "path": path.to_string_lossy(),
+                "entry": entry.render(),
+                "ssh": format!("ssh {}", entry.host),
+            }),
+            Err(error) => json!({"error": error.to_string()}),
+        })
     }
 
     /// Delete a server by its usecode agent server id. This is irreversible — the
@@ -434,15 +525,28 @@ impl UsecodeServer {
     /// (the provider can take a while to tear the machine down), so this
     /// schedules the task and returns it; poll it with get_task until
     /// its state stops changing and it 404s (meaning it finished and the
-    /// server is gone). Falls back to the configured USECODE_MCP_API_KEY.
+    /// server is gone). The server's ~/.ssh/config.d entry is removed too,
+    /// if the bot wrote it. Falls back to the configured USECODE_MCP_API_KEY.
     #[tool]
     async fn delete_server(&self, args: Parameters<ServerIdArgs>) -> Json<Value> {
         let args = args.0;
-        answer(
-            self.client
-                .delete_server(&args.server_id, args.api_key)
-                .await,
-        )
+        let name = self
+            .client
+            .get_server(&args.server_id, args.api_key.clone())
+            .await
+            .ok()
+            .and_then(|server| server.get("name")?.as_str().map(str::to_string));
+        let result = self
+            .client
+            .delete_server(&args.server_id, args.api_key)
+            .await;
+        if result.is_ok()
+            && let Some(name) = name
+            && let Err(error) = ssh::remove(&ssh::config_dir(&self.settings), &name)
+        {
+            eprintln!("uc-agent-mcp: ssh config for {name}: {error}");
+        }
+        answer(result)
     }
 
     /// List the caller's in-flight background tasks (create_server/delete_server
@@ -591,6 +695,7 @@ mod tests {
             "list_server_types",
             "get_server",
             "create_server",
+            "write_ssh_config",
             "delete_server",
             "list_tasks",
             "get_task",
@@ -603,7 +708,7 @@ mod tests {
         ] {
             assert!(names.contains(&expected.to_string()), "missing {expected}");
         }
-        assert_eq!(names.len(), 29);
+        assert_eq!(names.len(), 30);
     }
 
     #[test]

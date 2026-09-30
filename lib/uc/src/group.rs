@@ -254,6 +254,10 @@ mod tests {
             exec_of(&NET, &["mesh", "add", "edge"]),
             ["uc-net-mesh", "add", "edge"]
         );
+        assert_eq!(
+            exec_of(&DAEMON, &["install", "edge", "root@edge"]),
+            ["uc-daemon-install", "edge", "root@edge"]
+        );
         assert_eq!(exec_of(&VM, &[]), ["uc-vm-local"]);
         assert_eq!(exec_of(&VM, &["-h"]), ["uc-vm-local", "-h"]);
         assert_eq!(exec_of(&CLOUD, &["play"]), ["uc-cloud-play-run"]);

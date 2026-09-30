@@ -1,64 +1,40 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! Runs uc net mesh commands on another host over ssh: it copies the local
-//! uc-net-mesh binary to the target and executes it there with the given
-//! arguments, so `uc net mesh --host NAME up` behaves like running
-//! `sudo uc net mesh up` after `ssh NAME`.
+//! Runs things on another host: a [`Target`] stages files in a private
+//! directory there and runs commands against them, as root when they
+//! need it. `uc daemon install` uses it to copy usecoded to a host
+//! and run `usecoded setup` there; `uc net mesh apply` to hand a
+//! member its bundle and run `usecoded join`.
 //!
-//! All of that takes several ssh invocations (copy, run, clean up), but
-//! the user should only ever authenticate once. So the first thing
-//! [`run`] does is open a master connection with stdio attached - any
-//! key passphrase, password, or 2FA prompt happens there, in the
+//! A target reached over ssh takes several ssh invocations (probe, copy,
+//! run, clean up), but the user should only ever authenticate once. So
+//! [`Target::ssh`] first opens a master connection with stdio attached -
+//! any key passphrase, password, or 2FA prompt happens there, in the
 //! terminal - and every later invocation rides that same connection
 //! through ssh's control socket instead of authenticating again.
 //!
-//! Nothing dispatches to this yet - the `--host` flag it exists for is
-//! not wired into the command table - so it is allowed to sit unused
-//! rather than be deleted and rewritten later.
-
-#![allow(dead_code)]
+//! The control node is a host too. [`Target::Local`] runs the same shell
+//! commands through `sh -c`, so both kinds go through one code path.
 
 use std::fs;
-use std::io::copy;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use tempfile::TempDir;
 
 use crate::error::{Context, Result};
+use crate::inventory::Host;
 
-/// Copy the currently running uc-net-mesh binary to `host` (an ssh
-/// destination, e.g. an entry in ~/.ssh/config) and execute it there
-/// with `args`, connecting stdio so interactive prompts (like a sudo
-/// password) work as they would locally.
-pub fn run(host: &str, args: &[String]) -> Result<()> {
-    let mut self_path = std::env::current_exe().ctx("locate uc-net-mesh executable")?;
-    if let Ok(resolved) = fs::canonicalize(&self_path) {
-        self_path = resolved;
-    }
-
-    let session = Session::dial(host)?;
-
-    let binary = session
-        .copy_binary(&self_path)
-        .with_ctx(|| format!("copy uc-net-mesh to {host}"))?;
-    let staging = Path::new(&binary)
-        .parent()
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_default();
-
-    let result = session
-        .exec(&binary, args)
-        .with_ctx(|| format!("run on {host}"));
-
-    session.remove_all(&staging);
-    result
+pub enum Target {
+    Local,
+    Ssh(Session),
 }
 
 /// A single authenticated ssh connection to a host, shared by every
-/// command [`run`] needs to issue there.
-struct Session {
+/// command issued there.
+pub struct Session {
     host: String,
     ctl: PathBuf,
     // Held for its lifetime: dropping it removes the control socket
@@ -66,12 +42,29 @@ struct Session {
     _dir: TempDir,
 }
 
-impl Session {
-    /// Open the master connection. It runs in the foreground until
-    /// authentication finishes (so prompts reach the terminal), then
-    /// puts itself in the background with no remote command (-N -f) and
-    /// waits for commands to be multiplexed onto it.
-    fn dial(host: &str) -> Result<Session> {
+impl Target {
+    /// How to reach an inventory host, the way ansible would: a local
+    /// connection for the control node, ssh otherwise.
+    pub fn for_host(host: &Host) -> Result<Target> {
+        if host.ansible_connection == "local" {
+            return Ok(Target::Local);
+        }
+        let addr = match host.ansible_host.as_str() {
+            "" => host.name.as_str(),
+            a => a,
+        };
+        match host.ansible_user.as_str() {
+            "" => Target::ssh(addr),
+            user => Target::ssh(&format!("{user}@{addr}")),
+        }
+    }
+
+    /// Open the master connection to `host`, an ssh destination
+    /// ([user@]host, or an alias from ~/.ssh/config). It runs in the
+    /// foreground until authentication finishes (so prompts reach the
+    /// terminal), then puts itself in the background with no remote
+    /// command (-N -f) and waits for commands to be multiplexed onto it.
+    pub fn ssh(host: &str) -> Result<Target> {
         let dir = tempfile::Builder::new()
             .prefix("uc-net-mesh-ssh-")
             .tempdir()
@@ -96,20 +89,113 @@ impl Session {
             bail!("connect to {host}: ssh exited with {status}");
         }
 
-        Ok(Session {
+        Ok(Target::Ssh(Session {
             host: host.to_string(),
             ctl,
             _dir: dir,
-        })
+        }))
     }
 
-    /// Build an ssh invocation that reuses the master connection rather
-    /// than opening (and authenticating) a new one. `opts` go before the
-    /// host and `remote` (the command to run there, if any) after it,
-    /// which is the order ssh requires - anything preceding the
-    /// destination that is not a recognized option is taken as the
-    /// destination itself.
-    fn ssh(&self, opts: &[&str], remote: Option<&str>) -> Command {
+    /// A command that runs the shell command line `remote` on the
+    /// target. `tty` asks for a terminal, which is what lets sudo prompt
+    /// for a password on the local terminal.
+    fn shell(&self, remote: &str, tty: bool) -> Command {
+        match self {
+            Target::Local => {
+                let mut cmd = Command::new("sh");
+                cmd.args(["-c", remote]);
+                cmd
+            }
+            Target::Ssh(s) => {
+                let mut cmd = s.ssh(if tty { &["-t"] } else { &[] });
+                cmd.arg(remote);
+                cmd
+            }
+        }
+    }
+
+    /// Run `remote` and return what it printed, trimmed.
+    pub fn output(&self, remote: &str) -> Result<String> {
+        let out = self
+            .shell(remote, false)
+            .stderr(Stdio::inherit())
+            .output()
+            .with_ctx(|| format!("run {remote:?}"))?;
+        if !out.status.success() {
+            bail!("{remote:?} exited with {}", out.status);
+        }
+        Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    }
+
+    /// Make a fresh private directory on the target and copy each
+    /// `(name, local path)` into it, mode 0700. Returns the directory.
+    /// It is created by mktemp rather than at a fixed path because what
+    /// is staged is about to be run under sudo: a predictable name under
+    /// /tmp could be pre-created or symlinked by another local user.
+    pub fn stage(&self, files: &[(&str, &Path)]) -> Result<String> {
+        let dir = self
+            .output(r#"d=$(mktemp -d "${TMPDIR:-/tmp}/uc-net-mesh.XXXXXXXX") && printf %s "$d""#)?;
+        if dir.is_empty() {
+            bail!("the target did not report a staging directory");
+        }
+        for (name, local) in files {
+            let staged = format!("{dir}/{name}");
+            let mut child = self
+                .shell(
+                    &format!(
+                        "umask 077 && cat > {q} && chmod 0700 {q}",
+                        q = shell_quote(&staged)
+                    ),
+                    false,
+                )
+                .stdin(Stdio::piped())
+                .spawn()?;
+            {
+                let data = fs::read(local).with_ctx(|| format!("read {}", local.display()))?;
+                let mut stdin = child.stdin.take().expect("piped stdin");
+                stdin.write_all(&data).with_ctx(|| format!("copy {name}"))?;
+            }
+            let status = child.wait()?;
+            if !status.success() {
+                self.remove_all(&dir);
+                bail!("copy {name}: exited with {status}");
+            }
+        }
+        Ok(dir)
+    }
+
+    /// Run `argv` on the target as root: directly if already root,
+    /// otherwise through sudo, with stdio attached for its prompt.
+    pub fn run_as_root(&self, argv: &[String]) -> Result<()> {
+        let cmd = quote_args(argv);
+        let remote =
+            format!(r#"if [ "$(id -u)" -eq 0 ]; then exec {cmd}; else exec sudo -- {cmd}; fi"#);
+        let status = self.shell(&remote, true).status()?;
+        if !status.success() {
+            bail!(
+                "{} exited with {status}",
+                argv.first().map_or("", String::as_str)
+            );
+        }
+        Ok(())
+    }
+
+    pub fn remove_all(&self, dir: &str) {
+        if dir.is_empty() || dir == "/" {
+            return;
+        }
+        let _ = self
+            .shell(&format!("rm -rf {}", shell_quote(dir)), false)
+            .status();
+    }
+}
+
+impl Session {
+    /// An ssh invocation that reuses the master connection rather than
+    /// opening (and authenticating) a new one. `opts` go before the host;
+    /// the caller appends the remote command after it, which is the order
+    /// ssh requires.
+    fn ssh(&self, opts: &[&str]) -> Command {
         let mut cmd = Command::new("ssh");
         cmd.args([
             "-o",
@@ -119,73 +205,7 @@ impl Session {
         ]);
         cmd.args(opts);
         cmd.arg(&self.host);
-        if let Some(remote) = remote {
-            cmd.arg(remote);
-        }
         cmd
-    }
-
-    /// Stream the local binary over ssh's stdin into a fresh private
-    /// directory on the host, and return its remote path. The directory
-    /// is created by mktemp rather than at a fixed path because the
-    /// binary is about to be run under sudo: a predictable name under
-    /// /tmp could be pre-created or symlinked by another local user.
-    fn copy_binary(&self, local_path: &Path) -> Result<String> {
-        let mut f =
-            fs::File::open(local_path).with_ctx(|| format!("open {}", local_path.display()))?;
-
-        const STAGE: &str = concat!(
-            r#"d=$(mktemp -d "${TMPDIR:-/tmp}/uc-net-mesh.XXXXXXXX") && "#,
-            r#"cat > "$d/uc-net-mesh" && chmod 0700 "$d/uc-net-mesh" && printf %s "$d""#
-        );
-
-        let mut child = self
-            .ssh(&[], Some(STAGE))
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()?;
-        {
-            let mut stdin = child.stdin.take().expect("piped stdin");
-            copy(&mut f, &mut stdin)?;
-        }
-        let out = child.wait_with_output()?;
-        if !out.status.success() {
-            bail!("ssh exited with {}", out.status);
-        }
-
-        let dir = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        if dir.is_empty() {
-            bail!("remote did not report a staging directory");
-        }
-        Ok(format!("{dir}/uc-net-mesh"))
-    }
-
-    fn remove_all(&self, dir: &str) {
-        if dir.is_empty() || dir == "/" {
-            return;
-        }
-        let _ = self
-            .ssh(&[], Some(&format!("rm -rf {}", shell_quote(dir))))
-            .status();
-    }
-
-    /// Run the staged binary on the host. Commands that touch WireGuard,
-    /// iptables, or /etc need root, so unless the ssh login is already
-    /// root they go through sudo; -t allocates a tty, which is what lets
-    /// sudo prompt for a password here on the local terminal.
-    fn exec(&self, binary: &str, args: &[String]) -> Result<()> {
-        let mut remote = format!("{} {}", shell_quote(binary), quote_args(args));
-        if needs_root(args) {
-            remote = format!(
-                r#"if [ "$(id -u)" -eq 0 ]; then exec {remote}; else exec sudo -- {remote}; fi"#
-            );
-        }
-
-        let status = self.ssh(&["-t"], Some(&remote)).status()?;
-        if !status.success() {
-            bail!("uc-net-mesh exited with {status}");
-        }
-        Ok(())
     }
 }
 
@@ -194,22 +214,10 @@ impl Drop for Session {
     /// the TempDir this holds.
     fn drop(&mut self) {
         let _ = self
-            .ssh(&["-O", "exit"], None)
+            .ssh(&["-O", "exit"])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status();
-    }
-}
-
-/// Whether a uc net mesh subcommand has to run as root on the target.
-/// Nearly everything does: even the read-only commands parse the config,
-/// which lives root-owned and mode 0600. Only the ones that touch no
-/// state at all are exempt.
-fn needs_root(args: &[String]) -> bool {
-    match args.first().map(String::as_str) {
-        None => false,
-        Some("version" | "-v" | "--version" | "help" | "-h" | "--help") => false,
-        Some(_) => true,
     }
 }
 
@@ -241,9 +249,20 @@ mod tests {
     }
 
     #[test]
-    fn only_the_stateless_commands_skip_sudo() {
-        assert!(!needs_root(&["version".to_string()]));
-        assert!(!needs_root(&[]));
-        assert!(needs_root(&["status".to_string()]));
+    fn a_local_target_stages_and_cleans_up() {
+        let src = tempfile::NamedTempFile::new().unwrap();
+        fs::write(src.path(), b"hello").unwrap();
+
+        let target = Target::Local;
+        let dir = target.stage(&[("greeting", src.path())]).unwrap();
+        let staged = Path::new(&dir).join("greeting");
+        assert_eq!(fs::read(&staged).unwrap(), b"hello");
+        assert_eq!(
+            target.output(&format!("cat {dir}/greeting")).unwrap(),
+            "hello"
+        );
+
+        target.remove_all(&dir);
+        assert!(!Path::new(&dir).exists());
     }
 }

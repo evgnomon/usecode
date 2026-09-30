@@ -1,38 +1,34 @@
 # License-Identifier: HGL
 # Copyright (C) The Usecode Authors (see AUTHORS)
 
+# The usecode daemon: the one service on every host. What it does is the
+# sum of its modules (today the WireGuard mesh); each one sets its part
+# of the host up once what it needs is there, and a module that can't
+# yet only logs a note and tries again - it never fails the service.
+
 [Unit]
-Description=usecode WireGuard tunnel and port-forwarding manager
+Description=usecode daemon
 Documentation=https://github.com/evgnomon/usecode
 After=network-online.target
 Wants=network-online.target
-ConditionFileNotEmpty=/etc/uc/config.toml
 
 [Service]
-Type=oneshot
-RemainAfterExit=yes
-ExecStartPre=/usr/local/bin/uc-net-mesh validate
-ExecStart=/usr/local/bin/uc-net-mesh up
-ExecReload=/usr/local/bin/uc-net-mesh reload
-ExecStop=/usr/local/bin/uc-net-mesh down
+Type=simple
+ExecStart=/usr/local/bin/usecoded run
+# SIGHUP makes every module converge again, e.g. after
+# `uc net mesh apply` delivered a new config.
+ExecReload=/bin/kill -HUP $MAINPID
 
-# uc net mesh needs root to create WireGuard interfaces, load private keys
-# and (on the server) manage nftables/ip_forward.
+# Full root, deliberately: the daemon's job is setting the host up -
+# installing packages, writing /etc, managing interfaces and firewall
+# rules - and every new module needs more of that, not less.
 User=root
 Group=root
 
-# Config holds WireGuard private keys; keep it out of reach of anything
-# this unit doesn't need.
-ProtectSystem=strict
-ProtectHome=true
-PrivateTmp=true
-ReadWritePaths=/proc/sys/net/ipv4/ip_forward
-NoNewPrivileges=false
-CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
-AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
-
-Restart=on-failure
+Restart=always
 RestartSec=5
+# Stopping takes each module down, e.g. the tunnel and its forwards.
+TimeoutStopSec=30
 
 [Install]
 WantedBy=multi-user.target

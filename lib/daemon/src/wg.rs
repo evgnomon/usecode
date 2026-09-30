@@ -81,7 +81,9 @@ pub fn status(iface: &str) -> (String, Result<()>) {
 }
 
 fn configure_device(cfg: &Config) -> Result<()> {
-    let priv_key = keys::ensure_private_key().ctx("load private key")?;
+    let priv_key = keys::private_key()
+        .ctx("load private key")?
+        .ok_or_else(|| crate::err!("no private key at {}", keys::PRIVATE_KEY_PATH))?;
 
     // One directory for every key file this call needs; dropping it
     // wipes them all, whichever step failed.

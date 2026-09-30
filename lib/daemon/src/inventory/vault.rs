@@ -15,16 +15,15 @@ use crate::inventory::Inventory;
 
 /// The single mapping, host name -> WireGuard private key, that the
 /// vault file holds. Keeping every host in one file (rather than one
-/// vaulted file per host) is what lets a playbook resolve any host's key
-/// by name: `usecode_private_keys[inventory_hostname]`.
+/// vaulted file per host) is what lets `uc daemon install` resolve any
+/// host's key by name.
 pub const PRIVATE_KEYS_VAR: &str = "usecode_private_keys";
 
 /// uc net mesh shells out to ansible-vault rather than implementing the
-/// format, so the file is exactly what `ansible-vault edit` and a
-/// playbook expect, and the password comes from wherever ansible
-/// normally finds it (a prompt, --vault-password-file,
-/// ANSIBLE_VAULT_PASSWORD_FILE, or ansible.cfg in the directory the
-/// playbooks run from).
+/// format, so the file is exactly what `ansible-vault edit` expects, and
+/// the password comes from wherever ansible normally finds it (a prompt,
+/// --vault-password-file, ANSIBLE_VAULT_PASSWORD_FILE, or ansible.cfg in
+/// the inventory's repo root).
 #[derive(Debug, Default)]
 pub struct Vault {
     /// The secrets file, encrypted in place.
@@ -58,6 +57,12 @@ impl Vault {
         }
         secrets.insert(host.to_string(), private_key.to_string());
         self.save(&secrets)
+    }
+
+    /// Every host's private key, by host name. Decrypting needs the
+    /// vault password, but only once there is a secrets file at all.
+    pub fn private_keys(&self) -> Result<BTreeMap<String, String>> {
+        self.load()
     }
 
     /// Decrypt the secrets file and return the host -> private key
@@ -168,6 +173,9 @@ impl Vault {
     fn command(&self, args: &[&str]) -> Command {
         let mut cmd = Command::new("ansible-vault");
         cmd.args(args);
+        // deploy/vault-pass.sh hands out a placeholder while there is no
+        // secrets file; this makes it produce the real password.
+        cmd.env("USECODE_VAULT_WRITE", "1");
         if !self.password_file.is_empty() {
             cmd.args(["--vault-password-file", &self.password_file]);
         }

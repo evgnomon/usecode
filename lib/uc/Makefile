@@ -6,7 +6,7 @@ SOURCES := $(shell find src tests -type f -name "*.rs") Cargo.toml $(ROOT_DIR)/C
 include $(ROOT_DIR)/lib/profile.mk
 TARGET ?= x86_64-unknown-linux-musl
 BINS := uc uc-secret-encrypt uc-secret-decrypt uc-configure uc-push uc-pull uc-ghcr uc-secret \
-	uc-image uc-repo uc-cert uc-deb uc-db uc-net uc-vm uc-new uc-cloud \
+	uc-image uc-repo uc-cert uc-deb uc-db uc-net uc-daemon uc-vm uc-new uc-cloud \
 	uc-agent uc-data uc-media uc-pick uc-sys
 OUT_DIR := $(ROOT_DIR)/target/$(TARGET)/$(PROFILE)
 OUTPUTS := $(addprefix $(OUT_DIR)/,$(BINS))

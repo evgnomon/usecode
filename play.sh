@@ -60,9 +60,9 @@ make init
 
 step "Building and installing the uc tools"
 cd "$USECODE_DIR"
-make
-sudo make install
-make link
+make RELEASE=1
+sudo make install RELEASE=1
+make link RELEASE=1
 
 step "All done"
 cat <<EOF

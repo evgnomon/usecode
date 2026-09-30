@@ -9,9 +9,21 @@ description = "WireGuard mesh + DNAT port forwarding manager"
 license.workspace = true
 publish = false
 
+[lib]
+name = "uc_daemon"
+path = "src/lib.rs"
+
 [[bin]]
 name = "uc-net-mesh"
 path = "src/main.rs"
+
+[[bin]]
+name = "usecoded"
+path = "src/bin/usecoded.rs"
+
+[[bin]]
+name = "uc-daemon-install"
+path = "src/bin/uc-daemon-install.rs"
 
 [dependencies]
 base64 = "0.23"

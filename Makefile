@@ -64,7 +64,7 @@ up reload down logs:
 
 # One cargo run builds every Rust crate in parallel with shared dependencies,
 # so the per-crate builds that each_lib.sh triggers find their binaries fresh.
-# DEBUG=1 builds the quick fast profile instead of release.
+# Builds the quick fast profile; RELEASE=1 builds release instead.
 rust:
 	@$(CARGO) build --workspace --profile $(PROFILE)
 
