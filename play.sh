@@ -50,10 +50,6 @@ make
 sudo make install
 sudo ldconfig
 
-cd ../ppkgs
-make
-sudo make install
-
 mkdir -p "$HOME/.vim"
 cd ../vim
 make init
