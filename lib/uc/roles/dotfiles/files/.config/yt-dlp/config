@@ -1,0 +1,17 @@
+# Best audio only, original codec (no re-encoding)
+-f bestaudio
+-x
+--audio-format best
+--embed-metadata
+--embed-thumbnail
+
+# Don't download the whole Mix/playlist from a single video link
+--no-playlist
+
+# Remember what was downloaded
+--download-archive ~/.config/yt-dlp/archive.txt
+
+# Output location and name
+-o "~/Music/%(artist,uploader)s - %(title)s.%(ext)s"
+--js-runtimes node
+--remote-components ejs:github

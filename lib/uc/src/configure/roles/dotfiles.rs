@@ -17,6 +17,7 @@ const DOTFILES: &[&str] = &[
     ".config/containers/registries.conf",
     ".config/hcloud/cli.sh",
     ".config/opencode/opencode.jsonc",
+    ".config/yt-dlp/config",
     ".ctags",
     ".gnupg/gpg.conf",
     ".gnupg/scdaemon.conf",
