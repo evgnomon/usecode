@@ -9,7 +9,7 @@
 --no-playlist
 
 # Remember what was downloaded
---download-archive ~/.config/yt-dlp/archive.txt
+--download-archive ~/Music/archive.txt
 
 # Output location and name
 -o "~/Music/%(artist,uploader)s - %(title)s.%(ext)s"
