@@ -101,13 +101,17 @@ fn status(args: &[String]) -> Result<()> {
             println!("  allow     {rule}");
         }
     }
-    // Opened by the daemon itself while `uc kube` has a controller here.
+    // Opened by the daemon itself while `uc kube` has a node here.
     if let Some(kube) = read_kube(&target)
         && kube.enabled
     {
+        let api = if kube.agent {
+            String::new()
+        } else {
+            format!("tcp:{} (API), ", kube::API_PORT)
+        };
         println!(
-            "  kube      tcp:{} (API), pod interfaces, {} peer controller(s)",
-            kube::API_PORT,
+            "  kube      {api}pod interfaces, {} peer node(s)",
             kube.peers.len()
         );
     }

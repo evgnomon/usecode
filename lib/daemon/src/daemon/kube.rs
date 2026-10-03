@@ -1,13 +1,14 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! Kubernetes, as a daemon module: the host as a k3s server.
+//! Kubernetes, as a daemon module: the host as a k3s server (controller)
+//! or agent (worker).
 //!
 //! The module reads [`crate::kube::SETTINGS_PATH`] (written by `uc kube`)
-//! and, while it says the host is a controller, renders k3s's config,
+//! and, while it says the host is a node, renders k3s's config,
 //! downloads and installs k3s with its official installer when it isn't
-//! there (or isn't the version asked for), and keeps `k3s.service`
-//! enabled and running - restarting it when its config changes. Turned
+//! there (or isn't the version asked for), and keeps `k3s.service` (or
+//! `k3s-agent.service` on a worker) enabled and running - restarting it when its config changes. Turned
 //! off, it stops k3s and leaves its data, or uninstalls it entirely when
 //! asked to purge.
 //!
@@ -27,10 +28,52 @@ use crate::kube::{self, Settings};
 
 /// Where the installer puts k3s and its helper scripts.
 const K3S_BIN: &str = "/usr/local/bin/k3s";
-const K3S_UNIT: &str = "k3s";
-const K3S_UNIT_PATH: &str = "/etc/systemd/system/k3s.service";
 const KILLALL: &str = "/usr/local/bin/k3s-killall.sh";
-const UNINSTALL: &str = "/usr/local/bin/k3s-uninstall.sh";
+
+/// How the installer sets k3s up for one role: its unit and the script
+/// that removes it again.
+struct Role {
+    exec: &'static str,
+    unit: &'static str,
+    unit_path: &'static str,
+    uninstall: &'static str,
+}
+
+const SERVER: Role = Role {
+    exec: "server",
+    unit: "k3s",
+    unit_path: "/etc/systemd/system/k3s.service",
+    uninstall: "/usr/local/bin/k3s-uninstall.sh",
+};
+
+const AGENT: Role = Role {
+    exec: "agent",
+    unit: "k3s-agent",
+    unit_path: "/etc/systemd/system/k3s-agent.service",
+    uninstall: "/usr/local/bin/k3s-agent-uninstall.sh",
+};
+
+impl Role {
+    fn of(settings: &Settings) -> (&'static Role, &'static Role) {
+        if settings.agent {
+            (&AGENT, &SERVER)
+        } else {
+            (&SERVER, &AGENT)
+        }
+    }
+
+    fn installed(&self) -> bool {
+        Path::new(self.unit_path).exists()
+    }
+
+    fn active(&self) -> bool {
+        systemctl_ok(&["is-active", "--quiet", self.unit])
+    }
+
+    fn enabled(&self) -> bool {
+        systemctl_ok(&["is-enabled", "--quiet", self.unit])
+    }
+}
 
 /// The official k3s installer.
 const INSTALLER_URL: &str = "https://get.k3s.io";
@@ -70,46 +113,55 @@ impl Module for Kube {
     }
 }
 
-/// Make the host the controller `settings` describes.
+/// Make the host the node `settings` describes.
 fn run(settings: &Settings) -> Result<()> {
+    let (role, other) = Role::of(settings);
+    if other.installed() {
+        bail!(
+            "k3s is set up here as a {}, not a {}; `uc kube disable HOST --purge` first",
+            other.exec,
+            role.exec
+        );
+    }
     let cfg = Config::load(config::DEFAULT_PATH)?;
     let body = kube::k3s_config(settings, &cfg)?;
     host::ensure_dir("/etc/rancher/k3s", 0o755)?;
     let mut restart = host::put(kube::K3S_CONFIG_PATH, body.as_bytes(), 0o600)?;
 
-    if let Some(why) = needs_install(settings) {
+    if let Some(why) = needs_install(settings, role) {
         eprintln!("kube: {why}; installing k3s");
-        install(settings)?;
+        install(settings, role)?;
         restart = true;
     }
 
     let action = if restart {
         "restart"
-    } else if !active() {
+    } else if !role.active() {
         "start"
     } else {
-        eprintln!("kube: k3s server running");
+        eprintln!("kube: k3s {} running", role.exec);
         return Ok(());
     };
-    host::systemctl(&["enable", "--quiet", K3S_UNIT])?;
+    host::systemctl(&["enable", "--quiet", role.unit])?;
     // k3s only reports ready once it has its datastore, which for a
     // controller joining others can take a while: don't wait for it here,
     // or the daemon (and whoever asked it to reload) waits with it.
-    host::systemctl(&["--no-block", action, K3S_UNIT])?;
+    host::systemctl(&["--no-block", action, role.unit])?;
     eprintln!(
-        "kube: k3s server {}{}",
+        "kube: k3s {} {}{}",
+        role.exec,
         if action == "restart" {
             "(re)starting"
         } else {
             "starting"
         },
-        role(settings)
+        place(settings)
     );
     Ok(())
 }
 
-/// How the controller fits in its cluster, for the log.
-fn role(settings: &Settings) -> String {
+/// How the node fits in its cluster, for the log.
+fn place(settings: &Settings) -> String {
     if settings.cluster_init {
         " (first of an HA control plane)".into()
     } else if !settings.server.is_empty() {
@@ -122,22 +174,24 @@ fn role(settings: &Settings) -> String {
 /// Stop k3s, and remove it entirely when the settings say purge. Nothing
 /// to do on a host that never had it.
 fn off(settings: &Settings, force: bool) -> Result<()> {
-    if !Path::new(K3S_UNIT_PATH).exists() {
+    // Whichever role k3s was installed as: purging wipes the settings'
+    // role along with everything else.
+    let Some(role) = [&SERVER, &AGENT].into_iter().find(|r| r.installed()) else {
         if force && Path::new(kube::SETTINGS_PATH).exists() {
             eprintln!("kube: off");
         }
         return Ok(());
-    }
+    };
     if settings.purge {
-        if Path::new(UNINSTALL).exists() {
-            sh(UNINSTALL, &[])?;
+        if Path::new(role.uninstall).exists() {
+            sh(role.uninstall, &[])?;
         }
         let _ = fs::remove_file(kube::K3S_CONFIG_PATH);
         eprintln!("kube: k3s uninstalled");
         return Ok(());
     }
-    if active() || enabled() {
-        host::systemctl(&["disable", "--now", K3S_UNIT])?;
+    if role.active() || role.enabled() {
+        host::systemctl(&["disable", "--now", role.unit])?;
         // Stopping the unit leaves the pods' containers running; this is
         // what takes them down too.
         if Path::new(KILLALL).exists() {
@@ -149,8 +203,8 @@ fn off(settings: &Settings, force: bool) -> Result<()> {
 }
 
 /// Why k3s has to be (re)installed, if it does.
-fn needs_install(settings: &Settings) -> Option<String> {
-    if !Path::new(K3S_BIN).exists() || !Path::new(K3S_UNIT_PATH).exists() {
+fn needs_install(settings: &Settings, role: &Role) -> Option<String> {
+    if !Path::new(K3S_BIN).exists() || !role.installed() {
         return Some("k3s is not installed".into());
     }
     if settings.version.is_empty() {
@@ -174,10 +228,10 @@ fn installed_version() -> Option<String> {
         .map(str::to_string)
 }
 
-/// Download the official installer and run it as a server install. It
-/// puts the binary, kubectl/crictl links and the k3s unit in place; the
-/// config it reads is already written.
-fn install(settings: &Settings) -> Result<()> {
+/// Download the official installer and run it as a server or agent
+/// install. It puts the binary, kubectl/crictl links and the unit in
+/// place; the config it reads is already written.
+fn install(settings: &Settings, role: &Role) -> Result<()> {
     host::ensure_tools(&[("curl", "curl")])?;
     let dir = tempfile::Builder::new()
         .prefix("usecoded-k3s-")
@@ -197,7 +251,7 @@ fn install(settings: &Settings) -> Result<()> {
 
     let mut cmd = Command::new("sh");
     cmd.arg(&script)
-        .env("INSTALL_K3S_EXEC", "server")
+        .env("INSTALL_K3S_EXEC", role.exec)
         .env("INSTALL_K3S_SKIP_START", "true")
         .stdout(Stdio::null());
     if settings.version.is_empty() {
@@ -229,14 +283,6 @@ fn sh(script: &str, args: &[&str]) -> Result<()> {
     Ok(())
 }
 
-fn active() -> bool {
-    systemctl_ok(&["is-active", "--quiet", K3S_UNIT])
-}
-
-fn enabled() -> bool {
-    systemctl_ok(&["is-enabled", "--quiet", K3S_UNIT])
-}
-
 fn systemctl_ok(args: &[&str]) -> bool {
     Command::new("systemctl")
         .args(args)
@@ -257,7 +303,7 @@ impl Stamp {
         let mtime = |p: &str| fs::metadata(p).and_then(|m| m.modified()).ok();
         Stamp(
             [mtime(kube::SETTINGS_PATH), mtime(config::DEFAULT_PATH)],
-            active(),
+            SERVER.active() || AGENT.active(),
         )
     }
 }
@@ -277,12 +323,12 @@ mod tests {
             cluster_init: true,
             ..Settings::default()
         };
-        assert!(role(&founder).contains("first"));
+        assert!(place(&founder).contains("first"));
         let joiner = Settings {
             server: "https://10.10.0.2:6443".into(),
             ..Settings::default()
         };
-        assert!(role(&joiner).contains("joining https://10.10.0.2:6443"));
-        assert_eq!(role(&Settings::default()), "");
+        assert!(place(&joiner).contains("joining https://10.10.0.2:6443"));
+        assert_eq!(place(&Settings::default()), "");
     }
 }

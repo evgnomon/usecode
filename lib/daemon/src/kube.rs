@@ -2,7 +2,8 @@
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
 //! Kubernetes on a host: the host as a k3s server (a controller), alone or
-//! as one of an HA control plane, and the settings file that says so.
+//! as one of an HA control plane, or as a k3s agent (a worker) that joins
+//! a controller - and the settings file that says so.
 //!
 //! The settings are an ordinary file on the host, [`SETTINGS_PATH`],
 //! written by `uc kube` and read by the daemon's kube module, which turns
@@ -16,6 +17,10 @@
 //! An existing single controller becomes the first of an HA control plane
 //! the same way - k3s moves its data over to etcd when it restarts with
 //! `cluster-init`.
+//!
+//! A worker ([`Settings::agent`]) runs pods and nothing else: it joins a
+//! controller through [`Settings::server`] with the cluster's token, the
+//! same way a controller joins the others.
 //!
 //! When the host is in the WireGuard mesh, the controllers talk to each
 //! other over it: the node's address is its mesh address and pod traffic
@@ -41,7 +46,8 @@ pub const K3S_CONFIG_PATH: &str = "/etc/rancher/k3s/config.yaml";
 /// copies to your machine.
 pub const KUBECONFIG_PATH: &str = "/etc/rancher/k3s/k3s.yaml";
 
-/// The join token a k3s server keeps, which more controllers need.
+/// The join token a k3s server keeps, which more controllers and workers
+/// need.
 pub const TOKEN_PATH: &str = "/var/lib/rancher/k3s/server/token";
 
 /// The Kubernetes API port.
@@ -63,6 +69,10 @@ pub struct Settings {
     /// This host founds an HA control plane (embedded etcd).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub cluster_init: bool,
+    /// The host is a worker (a k3s agent), not a controller. It joins
+    /// [`Settings::server`].
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub agent: bool,
     /// The API of the controller to join, e.g. `https://10.10.0.2:6443`.
     /// Empty for a single controller or the first of an HA one.
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -74,8 +84,8 @@ pub struct Settings {
     /// ones kubectl reaches it by. The mesh address is always added.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tls_san: Vec<String>,
-    /// The addresses of the other controllers, which the firewall lets in
-    /// (etcd, kubelet and pod traffic between nodes).
+    /// The addresses of the other nodes of the cluster, which the firewall
+    /// lets in (etcd, kubelet and pod traffic between nodes).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub peers: Vec<String>,
     /// The k3s version to run, e.g. `v1.31.4+k3s1`. Empty means the
@@ -116,6 +126,12 @@ impl Settings {
         if self.cluster_init && !self.server.is_empty() {
             bail!("a controller either founds the cluster or joins one, not both");
         }
+        if self.agent && self.cluster_init {
+            bail!("a worker can't found a cluster; it joins one");
+        }
+        if self.agent && self.enabled && self.server.is_empty() {
+            bail!("a worker needs the controller to join");
+        }
         if !self.server.is_empty() && self.token.is_empty() {
             bail!("joining {} needs the cluster's token", self.server);
         }
@@ -142,7 +158,9 @@ pub fn k3s_config(settings: &Settings, cfg: &Config) -> Result<String> {
         map.insert(k.into(), v);
     };
 
-    set("write-kubeconfig-mode", "0600".into());
+    if !settings.agent {
+        set("write-kubeconfig-mode", "0600".into());
+    }
     if settings.cluster_init {
         set("cluster-init", true.into());
     }
@@ -153,15 +171,23 @@ pub fn k3s_config(settings: &Settings, cfg: &Config) -> Result<String> {
         set("token", settings.token.as_str().into());
     }
 
-    let mut sans = settings.tls_san.clone();
+    // A worker serves no API, so it has no certificate to name.
+    let mut sans = if settings.agent {
+        Vec::new()
+    } else {
+        settings.tls_san.clone()
+    };
     if cfg.mesh_enabled() {
         let ip = cfg.address()?;
-        sans.insert(0, ip.clone());
+        if !settings.agent {
+            sans.insert(0, ip.clone());
+        }
         set("node-ip", ip.into());
         // Pod traffic between nodes rides the tunnel, which already
         // encrypts it.
         set("flannel-iface", cfg.interface.name.as_str().into());
-    } else {
+    } else if !settings.agent {
+        // The controllers pick the backend; workers follow it.
         set("flannel-backend", "wireguard-native".into());
     }
     sans.dedup();
@@ -179,21 +205,24 @@ pub fn k3s_config(settings: &Settings, cfg: &Config) -> Result<String> {
     ))
 }
 
-/// What the host firewall has to let in for a controller, as rules for
-/// the given family (`ipv4` true for iptables, false for ip6tables): the
-/// API, pods talking to their host, and the other controllers.
+/// What the host firewall has to let in for a node, as rules for the
+/// given family (`ipv4` true for iptables, false for ip6tables): the API
+/// (on a controller), pods talking to their host, and the other nodes.
 pub fn inbound_rules(settings: &Settings, ipv4: bool) -> Vec<Vec<String>> {
     if !settings.enabled {
         return Vec::new();
     }
-    let mut rules = vec![words(&[
-        "-p",
-        "tcp",
-        "--dport",
-        &API_PORT.to_string(),
-        "-j",
-        "ACCEPT",
-    ])];
+    let mut rules = Vec::new();
+    if !settings.agent {
+        rules.push(words(&[
+            "-p",
+            "tcp",
+            "--dport",
+            &API_PORT.to_string(),
+            "-j",
+            "ACCEPT",
+        ]));
+    }
     for iface in POD_INTERFACES {
         rules.push(words(&["-i", iface, "-j", "ACCEPT"]));
     }
@@ -294,6 +323,35 @@ mod tests {
     }
 
     #[test]
+    fn a_worker_joins_and_serves_no_api() {
+        let settings = Settings {
+            enabled: true,
+            agent: true,
+            server: "https://10.10.0.2:6443".into(),
+            token: "secret".into(),
+            tls_san: vec!["edge.example.com".into()],
+            peers: vec!["10.10.0.2".into()],
+            ..Settings::default()
+        };
+        let yaml = k3s_config(&settings, &mesh()).unwrap();
+        assert!(yaml.contains("server: https://10.10.0.2:6443"), "{yaml}");
+        assert!(yaml.contains("token: secret"), "{yaml}");
+        assert!(yaml.contains("node-ip: 10.10.0.2"), "{yaml}");
+        assert!(!yaml.contains("tls-san"), "{yaml}");
+        assert!(!yaml.contains("write-kubeconfig-mode"), "{yaml}");
+
+        let off_mesh = k3s_config(&settings, &Config::default()).unwrap();
+        assert!(!off_mesh.contains("flannel-backend"), "{off_mesh}");
+
+        let rules: Vec<String> = inbound_rules(&settings, true)
+            .iter()
+            .map(|r| r.join(" "))
+            .collect();
+        assert!(!rules.iter().any(|r| r.contains("6443")), "{rules:?}");
+        assert!(rules.contains(&"-s 10.10.0.2 -j ACCEPT".to_string()));
+    }
+
+    #[test]
     fn bad_settings_are_refused() {
         let both = Settings {
             cluster_init: true,
@@ -312,6 +370,18 @@ mod tests {
             ..Settings::default()
         };
         assert!(bad_peer.validate().is_err());
+        let lonely_worker = Settings {
+            enabled: true,
+            agent: true,
+            ..Settings::default()
+        };
+        assert!(lonely_worker.validate().is_err());
+        let founding_worker = Settings {
+            agent: true,
+            cluster_init: true,
+            ..Settings::default()
+        };
+        assert!(founding_worker.validate().is_err());
     }
 
     #[test]

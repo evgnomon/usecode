@@ -2,7 +2,8 @@
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
 //! Reads and extends the mesh topology, which lives in one place: a
-//! multi-file Ansible inventory under deploy/inventory.
+//! multi-file Ansible inventory under ~/.config/usecode/inventory. It is
+//! your own configuration, not part of the checkout.
 //!
 //! The topology is the single source of truth for who is in the mesh and
 //! what address each host holds. Nothing allocates an address on the
@@ -14,10 +15,10 @@
 //! The layout is:
 //!
 //! ```text
-//! deploy/inventory/hosts.yml                       group membership
-//! deploy/inventory/group_vars/usecode/main.yml     mesh-wide inputs
-//! deploy/inventory/group_vars/usecode/secrets.yml  vaulted private keys
-//! deploy/inventory/host_vars/<host>.yml            one host's unique facts
+//! ~/.config/usecode/inventory/hosts.yml                       group membership
+//! ~/.config/usecode/inventory/group_vars/usecode/main.yml     mesh-wide inputs
+//! ~/.config/usecode/inventory/group_vars/usecode/secrets.yml  vaulted private keys
+//! ~/.config/usecode/inventory/host_vars/<host>.yml            one host's unique facts
 //! ```
 //!
 //! Only hosts.yml and host_vars/<host>.yml are written by uc net mesh, and
@@ -50,9 +51,9 @@ use crate::net::{Prefix, next_addr};
 /// The inventory group whose members uc net mesh manages.
 pub const GROUP: &str = "usecode";
 
-/// Where the inventory lives inside a usecode checkout, relative to the
-/// repository root.
-pub const DEFAULT_DIR: &str = "deploy/inventory";
+/// Where the inventory lives, relative to the usecode config directory
+/// ($XDG_CONFIG_HOME/usecode, or ~/.config/usecode).
+pub const DEFAULT_DIR: &str = "inventory";
 
 /// The mesh-wide inputs, read from group_vars/usecode/main.yml. These
 /// are the knobs a human sets; every per-host value is derived from
@@ -143,11 +144,10 @@ pub struct Host {
 /// The topology as read off disk.
 #[derive(Debug)]
 pub struct Inventory {
-    /// The inventory root, e.g. `<repo>/deploy/inventory`.
+    /// The inventory root, e.g. `~/.config/usecode/inventory`.
     pub dir: PathBuf,
-    /// The directory ansible commands should run from - the repo root,
-    /// two levels above [`Inventory::dir`], which is where ansible.cfg
-    /// lives.
+    /// The directory ansible commands should run from - lib/daemon of
+    /// the usecode checkout, which is where ansible.cfg lives.
     pub root: PathBuf,
 
     pub settings: Settings,
@@ -165,24 +165,52 @@ pub struct NewHost {
     pub ansible_user: String,
 }
 
-/// Looks for the inventory in the current directory and its parents, so
-/// the commands that need it work anywhere inside a checkout. At each
-/// level lib/daemon is tried too, which is where it sits seen from the
-/// repo root.
+/// The inventory directory: $XDG_CONFIG_HOME/usecode/inventory, or
+/// ~/.config/usecode/inventory.
 pub fn find() -> Result<PathBuf> {
-    let mut dir = std::env::current_dir().ctx("determine working directory")?;
+    let config = match std::env::var_os("XDG_CONFIG_HOME") {
+        Some(dir) if !dir.is_empty() => PathBuf::from(dir),
+        _ => PathBuf::from(std::env::var("HOME").ctx("HOME is not set")?).join(".config"),
+    };
+    Ok(config.join("usecode").join(DEFAULT_DIR))
+}
+
+/// Start an empty inventory at `dir` - no hosts, the default mesh
+/// settings - unless one is already there. Never touches an existing one.
+pub fn init(dir: &Path) -> Result<()> {
+    let hosts = dir.join("hosts.yml");
+    if hosts.exists() {
+        return Ok(());
+    }
+    let settings = dir.join("group_vars").join(GROUP).join("main.yml");
+    fs::create_dir_all(settings.parent().expect("has a parent"))
+        .with_ctx(|| format!("create {}", dir.display()))?;
+    if !settings.exists() {
+        fs::write(&settings, include_str!("skel/main.yml"))
+            .with_ctx(|| format!("write {}", settings.display()))?;
+    }
+    fs::write(&hosts, include_str!("skel/hosts.yml"))
+        .with_ctx(|| format!("write {}", hosts.display()))?;
+    println!("started a new inventory at {}", dir.display());
+    Ok(())
+}
+
+/// lib/daemon of the usecode checkout, where ansible.cfg lives: looked
+/// for from the current directory up, falling back to the checkout this
+/// binary was built from.
+pub fn checkout() -> PathBuf {
+    let built_from = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let Ok(mut dir) = std::env::current_dir() else {
+        return built_from;
+    };
     loop {
         for base in [dir.clone(), dir.join("lib/daemon")] {
-            let candidate = base.join(DEFAULT_DIR);
-            if candidate.join("hosts.yml").exists() {
-                return Ok(candidate);
+            if base.join("ansible.cfg").exists() && base.join("Cargo.toml").exists() {
+                return base;
             }
         }
         if !dir.pop() {
-            bail!(
-                "no {DEFAULT_DIR} found in this directory or any parent; run this from a usecode \
-                 checkout"
-            );
+            return built_from;
         }
     }
 }
@@ -210,15 +238,9 @@ impl Inventory {
         let abs = fs::canonicalize(dir)
             .or_else(|_| std::env::current_dir().map(|cwd| cwd.join(dir)))
             .with_ctx(|| format!("resolve {}", dir.display()))?;
-        let root = abs
-            .parent()
-            .and_then(Path::parent)
-            .unwrap_or(&abs)
-            .to_path_buf();
-
         let mut inv = Inventory {
             dir: abs,
-            root,
+            root: checkout(),
             settings: Settings::default(),
             hosts: Vec::new(),
         };

@@ -56,7 +56,9 @@ pub fn run(args: &[String]) -> Result<()> {
         _ => {}
     }
 
-    let mut inv = Inventory::load(&inventory::find()?)?;
+    let dir = inventory::find()?;
+    inventory::init(&dir)?;
+    let mut inv = Inventory::load(&dir)?;
     let names: Vec<String> = match args {
         [flag] if flag == "--all" => inv.hosts.iter().map(|h| h.name.clone()).collect(),
         [n] => vec![record(&mut inv, n, n)?],

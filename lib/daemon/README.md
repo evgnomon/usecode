@@ -94,7 +94,7 @@ Want a cluster? The daemon can turn a host into a Kubernetes controller
 with [k3s](https://k3s.io), and you only ever talk to `uc kube`:
 
 ```sh
-uc kube enable edge          # a one-node cluster, and kubectl pointed at it
+uc kube enable edge --control    # a one-node cluster, and kubectl pointed at it
 kubectl get nodes
 ```
 
@@ -111,11 +111,25 @@ founds it - an existing single-node cluster works fine as the founder, k3s
 moves its data over - and the rest join:
 
 ```sh
-uc kube enable edge cave attic
+uc kube enable edge cave attic --control
 ```
 
 When you grow it later, list the whole control plane again; it's safe to
 run as often as you like.
+
+Want more room for your pods? Add workers - that's what `enable` does
+without `--control`. They run your workloads and leave running the
+cluster to the controllers:
+
+```sh
+uc kube enable box-1 box-2 --to edge
+```
+
+The daemon on each worker installs k3s as an agent and joins `edge`
+with the cluster's token, which `uc kube` fetches for you. Workers run
+the same k3s release as the controller unless you pass `--version`.
+Done with one? `uc kube disable box-1 --purge`, then
+`kubectl delete node box-1`.
 
 A few more things you can do:
 
@@ -123,7 +137,7 @@ A few more things you can do:
 uc kube connect edge                 # (re)add the cluster to your kubeconfig
 uc kube connect edge --server k8s.example.com --name prod
 uc kube status edge                  # settings, k3s, and the nodes
-uc kube enable edge --version v1.31.4+k3s1   # pin (or upgrade to) a release
+uc kube enable edge --control --version v1.31.4+k3s1   # pin (or upgrade to) a release
 uc kube disable edge                 # stop k3s, keep its data
 uc kube disable edge --purge         # uninstall k3s and wipe it
 ```
@@ -132,7 +146,7 @@ It plays nicely with the rest of the daemon. If the hosts are in the
 WireGuard mesh, the controllers talk over the tunnel; if not, pod traffic
 between them is encrypted with flannel's WireGuard backend. The firewall
 opens the API (6443), lets pods reach their host, and lets the other
-controllers in - nothing else. k3s runs as its own `k3s.service`, so
+nodes in - nothing else. k3s runs as its own `k3s.service`, so
 restarting or upgrading the daemon never takes your cluster down.
 
 ## Quick install
@@ -182,16 +196,21 @@ The rest of this page is what that does under the hood.
 
 ## Managed: one topology, addresses handed out from it
 
-The mesh lives in `deploy/inventory` - a multi-file Ansible inventory
+The mesh lives in `~/.config/usecode/inventory` (under `$XDG_CONFIG_HOME`
+if you set it) - your own multi-file Ansible inventory, kept out of the checkout,
 that is the single place recording which hosts exist and what address
 each one holds:
 
 ```text
-deploy/inventory/hosts.yml                       who is in the mesh
-deploy/inventory/group_vars/usecode/main.yml     the inputs you set: network, port, MTU
-deploy/inventory/group_vars/usecode/secrets.yml  every host's private key (ansible-vault)
-deploy/inventory/host_vars/<host>.yml            one host's address, public key, endpoint, services
+~/.config/usecode/inventory/hosts.yml                       who is in the mesh
+~/.config/usecode/inventory/group_vars/usecode/main.yml     the inputs you set: network, port, MTU
+~/.config/usecode/inventory/group_vars/usecode/secrets.yml  every host's private key (ansible-vault)
+~/.config/usecode/inventory/host_vars/<host>.yml            one host's address, public key, endpoint, services
 ```
+
+You don't have to create it: the first `uc daemon install` or
+`uc net mesh add` starts an empty one with sensible defaults
+(`10.10.0.0/24`, port 51820), and never touches it again after that.
 
 An address can only be picked safely by something that can see every
 other host, so nothing picks one on the host itself. `uc net mesh add` does
@@ -459,5 +478,5 @@ kept as annotated references instead.
 - `src/bundle.rs` is what the control node delivers to a host, one section per module.
 - `src/apply.rs` is `uc net mesh apply`: a bundle to every member, then `join` there.
 - `init/systemd/usecode.service` is the unit `setup` installs (it is compiled into the binary).
-- `deploy/inventory` is the topology itself; `uc net mesh apply` hands it to every member.
+- `~/.config/usecode/inventory` is the topology itself; `uc net mesh apply` hands it to every member.
 - `deploy/playbooks/status.yml` reports the running state of every member back; it only reads.

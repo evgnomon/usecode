@@ -1,7 +1,7 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! `uc kube`: Kubernetes (k3s) controllers on your hosts, from wherever
+//! `uc kube`: Kubernetes (k3s) controllers and workers on your hosts, from wherever
 //! you run `uc`. See [`uc_daemon::kube`] for what a host does with it.
 //!
 //! Like `uc net firewall`, every change is worked out against the host's
@@ -21,25 +21,33 @@ use std::time::{Duration, Instant};
 use serde_yaml::{Mapping, Value};
 use uc_daemon::bundle::Bundle;
 use uc_daemon::error::{Context, Result};
+use uc_daemon::inventory::{self, Inventory};
 use uc_daemon::kube::{self, Settings};
 use uc_daemon::remote::{Target, inventory_host};
 use uc_daemon::setup::BINARY_PATH;
 use uc_daemon::{bail, err};
 
-const SUMMARY: &str = "Kubernetes (k3s) controllers on your hosts, and kubectl for them";
+const SUMMARY: &str = "Kubernetes (k3s) on your hosts, and kubectl for them";
 
 const USAGE: &str = "usage: uc kube COMMAND [ARGS...]
 
 Kubernetes on your hosts, run by the usecode daemon there as a k3s
-controller. You say what you want; the daemon downloads k3s, starts it,
-and keeps it running.
+controller or worker. You say what you want; the daemon downloads k3s,
+starts it, and keeps it running.
 
-  enable HOST [HOST...]       make HOST a Kubernetes controller and add the
-                              cluster to your kubeconfig. One host is a
-                              cluster of its own; three or more are one HA
-                              control plane (embedded etcd), founded by the
-                              first. List the whole control plane every time
-                              you grow it: uc kube enable a b c
+  enable HOST [HOST...] --to CONTROLLER
+                              make HOST a worker of CONTROLLER's cluster:
+                              it runs your pods, the controllers run the
+                              cluster
+      --version VERSION       run this k3s release (default: the
+                              controller's)
+  enable HOST [HOST...] --control
+                              make HOST a controller and add the cluster to
+                              your kubeconfig. One host is a cluster of its
+                              own; three or more are one HA control plane
+                              (embedded etcd), founded by the first. List
+                              the whole control plane every time you grow
+                              it: uc kube enable a b c --control
       --version VERSION       run this k3s release (e.g. v1.31.4+k3s1)
                               instead of the current stable one
       --no-connect            don't touch your kubeconfig
@@ -50,7 +58,8 @@ and keeps it running.
                               ssh reaches HOST by)
   status HOST                 the settings, k3s, and the nodes
   disable HOST                stop k3s on HOST (its data is kept)
-      --purge                 uninstall k3s and delete its data
+      --purge                 uninstall k3s and delete its data; a worker
+                              stays listed until you kubectl delete node
 
 HOST is an inventory name or any ssh destination ([USER@]HOST or an alias
 from ~/.ssh/config). The daemon has to be on it: `uc daemon install HOST`.";
@@ -133,12 +142,35 @@ struct Node {
     cluster: String,
 }
 
+const ENABLE_USAGE: &str =
+    "usage: uc kube enable HOST [HOST...] --to CONTROLLER [--version VERSION]
+       uc kube enable HOST [HOST...] --control [--version VERSION] [--no-connect]";
+
+/// Workers by default; controllers with `--control`.
 fn enable(args: &[String]) -> Result<()> {
-    let usage = "usage: uc kube enable HOST [HOST...] [--version VERSION] [--no-connect]";
-    let (names, flags) = parse(args, &["--version"], &["--no-connect"])?;
+    let (names, flags) = parse(args, &["--to", "--version"], &["--control", "--no-connect"])?;
     if names.is_empty() {
-        bail!("{usage}");
+        bail!("{ENABLE_USAGE}");
     }
+    match (flag(&flags, "--control"), flag(&flags, "--to")) {
+        (Some(_), None) => enable_control(&names, &flags),
+        (None, Some(ctrl)) if flag(&flags, "--no-connect").is_none() => {
+            enable_workers(&names, ctrl, &flags)
+        }
+        (None, Some(_)) => bail!("--no-connect is for controllers (--control)"),
+        (Some(_), Some(_)) => bail!(
+            "--control and --to don't go together: a host is a controller or a worker\n\n{ENABLE_USAGE}"
+        ),
+        (None, None) => bail!(
+            "say which cluster the worker(s) join with --to CONTROLLER, or make them \
+             controllers with --control\n\n{ENABLE_USAGE}"
+        ),
+    }
+}
+
+/// Make `names` the control plane: one host alone, or the first founding
+/// an HA one the rest join.
+fn enable_control(names: &[&str], flags: &[(&str, &str)]) -> Result<()> {
     if names.len() == 2 {
         eprintln!(
             "note: an HA control plane needs three controllers to survive losing one; \
@@ -147,9 +179,14 @@ fn enable(args: &[String]) -> Result<()> {
     }
 
     let mut nodes = Vec::new();
-    for name in &names {
+    for name in names {
         let target = Target::reach(name)?;
         let settings = read_settings(&target)?;
+        if settings.agent && settings.enabled {
+            bail!(
+                "{name} is a worker; `uc kube disable {name} --purge` first to make it a controller"
+            );
+        }
         let public = public_address(name)?;
         let cluster = cluster_address(name, &public)?;
         nodes.push(Node {
@@ -184,7 +221,8 @@ fn enable(args: &[String]) -> Result<()> {
         let s = &mut node.settings;
         s.enabled = true;
         s.purge = false;
-        if let Some(v) = flag(&flags, "--version") {
+        s.agent = false;
+        if let Some(v) = flag(flags, "--version") {
             s.version = v.to_string();
         }
         if !s.tls_san.contains(&node.public) {
@@ -198,12 +236,8 @@ fn enable(args: &[String]) -> Result<()> {
                 server.clone()
             };
             s.token = token.clone();
-            s.peers = cluster_addrs
-                .iter()
-                .filter(|a| **a != node.cluster)
-                .filter(|a| a.parse::<IpAddr>().is_ok())
-                .cloned()
-                .collect();
+            // Keep the peers it has (its workers) and add the others.
+            add_peers(s, &cluster_addrs, &node.cluster);
         }
         // A single host keeps whatever cluster it was part of: enabling it
         // again after a disable shouldn't make it leave its control plane.
@@ -224,12 +258,137 @@ fn enable(args: &[String]) -> Result<()> {
         );
     }
 
-    if flag(&flags, "--no-connect").is_some() {
+    if flag(flags, "--no-connect").is_some() {
         println!("\nWhen it's up: uc kube connect {}", nodes[0].name);
         return Ok(());
     }
     let first = &nodes[0];
     connect(&first.target, &first.name, &first.name, &first.public)
+}
+
+/// Make `names` workers of the cluster `ctrl_name` is a controller of.
+fn enable_workers(names: &[&str], ctrl_name: &str, flags: &[(&str, &str)]) -> Result<()> {
+    let ctrl = Target::reach(ctrl_name)?;
+    let ctrl_settings = read_settings(&ctrl)?;
+    if !ctrl_settings.enabled || ctrl_settings.agent {
+        bail!(
+            "{ctrl_name} is not a Kubernetes controller; `uc kube enable {ctrl_name} --control` makes it one"
+        );
+    }
+    let token = match ctrl_settings.token.as_str() {
+        "" => read_token(&ctrl)?.ok_or_else(|| {
+            err!("k3s on {ctrl_name} isn't up yet; `uc kube status {ctrl_name}` shows when it is")
+        })?,
+        t => t.to_string(),
+    };
+    let ctrl_cluster = cluster_address(ctrl_name, &public_address(ctrl_name)?)?;
+    let server = format!("https://{}:{}", bracket(&ctrl_cluster), kube::API_PORT);
+    let version = flag(flags, "--version").unwrap_or(&ctrl_settings.version);
+
+    let mut workers = Vec::new();
+    for name in names {
+        let target = Target::reach(name)?;
+        let settings = read_settings(&target)?;
+        if settings.enabled && !settings.agent {
+            bail!(
+                "{name} is a controller; `uc kube disable {name} --purge` first to make it a worker"
+            );
+        }
+        let public = public_address(name)?;
+        let cluster = cluster_address(name, &public)?;
+        workers.push(Node {
+            name: name.to_string(),
+            target,
+            settings,
+            public,
+            cluster,
+        });
+    }
+    let worker_addrs: Vec<String> = workers.iter().map(|w| w.cluster.clone()).collect();
+
+    // Every node already in the cluster lets the new workers in (it only
+    // matters off the mesh, where the firewall goes by address). The
+    // controller knows them all as its peers.
+    let mut known = vec![ctrl_cluster.clone()];
+    known.extend(ctrl_settings.peers.iter().cloned());
+    let mut missed = Vec::new();
+    for addr in &known {
+        if worker_addrs.contains(addr) {
+            continue;
+        }
+        let Some(name) = host_at(addr, ctrl_name, &ctrl_cluster) else {
+            missed.push(addr.clone());
+            continue;
+        };
+        let target = Target::reach(&name)?;
+        let mut settings = read_settings(&target)?;
+        if !settings.enabled {
+            continue;
+        }
+        let before = settings.peers.len();
+        add_peers(&mut settings, &worker_addrs, addr);
+        if settings.peers.len() != before {
+            deliver(&target, &name, &settings)?;
+            println!("{name}: lets the new worker(s) in");
+        }
+    }
+
+    for w in &mut workers {
+        let s = &mut w.settings;
+        *s = Settings {
+            enabled: true,
+            agent: true,
+            server: server.clone(),
+            token: token.clone(),
+            version: version.to_string(),
+            peers: s.peers.clone(),
+            ..Settings::default()
+        };
+        add_peers(s, &known, &w.cluster);
+        add_peers(s, &worker_addrs, &w.cluster);
+        s.validate()?;
+        deliver(&w.target, &w.name, s)?;
+        println!("{}: Kubernetes worker (joins {ctrl_name})", w.name);
+    }
+
+    if !missed.is_empty() {
+        eprintln!(
+            "note: no inventory host has the address {}; if it's off the mesh, its \
+             firewall may not let the new workers in yet",
+            missed.join(", ")
+        );
+    }
+    println!("\nThey show up in a minute or so: kubectl get nodes");
+    Ok(())
+}
+
+/// Add `addrs` to the peers of `settings`, all but the node's own
+/// address `own`, and only addresses (the firewall can't use names).
+fn add_peers(settings: &mut Settings, addrs: &[String], own: &str) {
+    for a in addrs {
+        if a != own && a.parse::<IpAddr>().is_ok() && !settings.peers.contains(a) {
+            settings.peers.push(a.clone());
+        }
+    }
+}
+
+/// The inventory host the cluster reaches at `addr`, if there is one.
+/// The controller itself is known by the name it was given.
+fn host_at(addr: &str, ctrl_name: &str, ctrl_cluster: &str) -> Option<String> {
+    if addr == ctrl_cluster {
+        return Some(ctrl_name.to_string());
+    }
+    let inv = inventory::find()
+        .ok()
+        .and_then(|dir| Inventory::load(&dir).ok())?;
+    inv.hosts
+        .iter()
+        .find(|h| {
+            public_address(&h.name)
+                .and_then(|p| cluster_address(&h.name, &p))
+                .is_ok_and(|a| a == addr)
+        })
+        .map(|h| h.name.clone())
 }
 
 fn connect_cmd(args: &[String]) -> Result<()> {
@@ -246,8 +405,10 @@ fn connect_cmd(args: &[String]) -> Result<()> {
 
     // The API certificate has to be valid for the address kubectl uses.
     let mut settings = read_settings(&target)?;
-    if !settings.enabled {
-        bail!("{name} is not a Kubernetes controller; `uc kube enable {name}` makes it one");
+    if !settings.enabled || settings.agent {
+        bail!(
+            "{name} is not a Kubernetes controller; `uc kube enable {name} --control` makes it one"
+        );
     }
     if !settings.tls_san.contains(&address) {
         settings.tls_san.push(address.clone());
@@ -437,7 +598,9 @@ fn status(args: &[String]) -> Result<()> {
         "{name}: Kubernetes {}",
         if s.enabled { "on" } else { "off" }
     );
-    if s.cluster_init {
+    if s.agent {
+        println!("  role      worker, joined to {}", s.server);
+    } else if s.cluster_init {
         println!("  role      first controller of an HA control plane");
     } else if !s.server.is_empty() {
         println!("  role      controller, joined to {}", s.server);
@@ -459,8 +622,11 @@ fn status(args: &[String]) -> Result<()> {
         println!("  peer      {peer}");
     }
 
+    let unit = if s.agent { "k3s-agent" } else { "k3s" };
     let k3s = target
-        .output_as_root(&sh("systemctl is-active k3s 2>/dev/null || true"))
+        .output_as_root(&sh(&format!(
+            "systemctl is-active {unit} 2>/dev/null || true"
+        )))
         .unwrap_or_else(|e| e.to_string());
     println!(
         "\nk3s: {}",
@@ -470,7 +636,7 @@ fn status(args: &[String]) -> Result<()> {
             &k3s
         }
     );
-    if k3s == "active" {
+    if k3s == "active" && !s.agent {
         match target.output_as_root(&sh("k3s kubectl get nodes -o wide 2>&1")) {
             Ok(nodes) => println!("\n{nodes}"),
             Err(e) => println!("\nnodes: {e}"),
@@ -709,6 +875,20 @@ users:
         assert_eq!(flag(&flags, "--version"), Some("v1.31.4+k3s1"));
         assert!(flag(&flags, "--no-connect").is_some());
         assert!(parse(&args, &[], &[]).is_err());
+    }
+
+    #[test]
+    fn peers_are_added_once_without_the_node_itself() {
+        let mut s = Settings {
+            peers: vec!["10.10.0.5".into()],
+            ..Settings::default()
+        };
+        let addrs: Vec<String> = ["10.10.0.2", "10.10.0.5", "10.10.0.9", "edge.example.com"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        add_peers(&mut s, &addrs, "10.10.0.9");
+        assert_eq!(s.peers, vec!["10.10.0.5", "10.10.0.2"]);
     }
 
     #[test]

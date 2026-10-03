@@ -222,6 +222,7 @@ fn add(args: &[String]) -> Result<()> {
         s if s.is_empty() => inventory::find()?,
         s => PathBuf::from(s),
     };
+    inventory::init(&dir)?;
 
     let mut inv = Inventory::load(&dir)?;
     let vault = Vault::new(&inv, &fs.get_str("vault-password-file"));

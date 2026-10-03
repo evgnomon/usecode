@@ -327,3 +327,23 @@ fn turning_the_mesh_on_appends_to_the_host_file() {
     assert_eq!(host.address, "10.10.0.1");
     assert_eq!(host.public_key, "abc=");
 }
+
+#[test]
+fn init_starts_an_empty_inventory_and_keeps_an_existing_one() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("inventory");
+    init(&dir).expect("init");
+    let mut inv = Inventory::load(&dir).expect("load");
+    assert!(inv.hosts.is_empty());
+    assert_eq!(inv.settings.network, "10.10.0.0/24");
+
+    inv.add_host(NewHost {
+        name: "edge".to_string(),
+        ansible_user: "root".to_string(),
+        ..Default::default()
+    })
+    .expect("add");
+    init(&dir).expect("init again");
+    let back = Inventory::load(&dir).expect("reload");
+    assert_eq!(back.hosts.len(), 1);
+}

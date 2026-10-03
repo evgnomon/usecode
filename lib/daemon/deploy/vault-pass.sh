@@ -21,7 +21,7 @@
 # Only the password may reach stdout - anything else printed here is
 # taken as part of it and the decrypt fails with a wrong-password error.
 set -eu
-secrets="$(dirname "$0")/inventory/group_vars/usecode/secrets.yml"
+secrets="${XDG_CONFIG_HOME:-$HOME/.config}/usecode/inventory/group_vars/usecode/secrets.yml"
 if [ ! -e "$secrets" ] && [ -z "${USECODE_VAULT_WRITE:-}" ]; then
 	echo "no-secrets-yet"
 	exit 0
