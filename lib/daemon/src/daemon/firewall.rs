@@ -12,7 +12,9 @@
 //! converges this module.
 //!
 //! A host that is in the mesh keeps working: the WireGuard listen port
-//! and the tunnel interface are always allowed, next to SSH.
+//! and the tunnel interface are always allowed, next to SSH. So does a
+//! Kubernetes controller: while `uc kube` has one on the host, its API,
+//! its pods and its fellow controllers are let in too.
 //!
 //! The module also makes sure nothing else on the host will flush the
 //! rules out from under it: because iptables here is the nftables
@@ -29,6 +31,7 @@ use crate::config::{self, Config};
 use crate::daemon::{Module, host};
 use crate::error::Result;
 use crate::firewall::{self as fw, Settings};
+use crate::kube;
 
 #[derive(Default)]
 pub struct Firewall {
@@ -63,7 +66,8 @@ impl Module for Firewall {
         yield_conflicting_managers()?;
         let cfg = Config::load(config::DEFAULT_PATH)?;
         let ssh = fw::ssh_port(&settings);
-        fw::apply(&settings, ssh, &cfg)?;
+        let kube = kube::Settings::load(kube::SETTINGS_PATH)?;
+        fw::apply(&settings, ssh, &cfg, &kube)?;
 
         self.converged = Some(stamp);
         eprintln!(
@@ -108,12 +112,16 @@ fn enabled(unit: &str) -> bool {
 
 /// When the files the firewall depends on last changed.
 #[derive(PartialEq, Eq)]
-struct Stamp([Option<SystemTime>; 2]);
+struct Stamp([Option<SystemTime>; 3]);
 
 impl Stamp {
     fn now() -> Stamp {
         let mtime = |p: &str| fs::metadata(p).and_then(|m| m.modified()).ok();
-        Stamp([mtime(fw::SETTINGS_PATH), mtime(config::DEFAULT_PATH)])
+        Stamp([
+            mtime(fw::SETTINGS_PATH),
+            mtime(config::DEFAULT_PATH),
+            mtime(kube::SETTINGS_PATH),
+        ])
     }
 }
 

@@ -25,7 +25,7 @@ use std::process::{Command, Stdio};
 use tempfile::TempDir;
 
 use crate::error::{Context, Result};
-use crate::inventory::Host;
+use crate::inventory::{self, Host, Inventory};
 
 pub enum Target {
     Local,
@@ -42,7 +42,26 @@ pub struct Session {
     _dir: TempDir,
 }
 
+/// `name`'s entry in the inventory, if there is an inventory around and
+/// it lists the host. An inventory is a convenience, not a requirement:
+/// outside a checkout every name is just an ssh destination.
+pub fn inventory_host(name: &str) -> Option<Host> {
+    inventory::find()
+        .ok()
+        .and_then(|dir| Inventory::load(&dir).ok())
+        .and_then(|inv| inv.host(name).cloned())
+}
+
 impl Target {
+    /// How to reach `name` the way `uc daemon reload` does: through the
+    /// inventory if it is there, as an ssh destination if not.
+    pub fn reach(name: &str) -> Result<Target> {
+        match inventory_host(name) {
+            Some(host) => Target::for_host(&host),
+            None => Target::ssh(name),
+        }
+    }
+
     /// How to reach an inventory host, the way ansible would: a local
     /// connection for the control node, ssh otherwise.
     pub fn for_host(host: &Host) -> Result<Target> {

@@ -5,13 +5,14 @@
 //! every host (usecode.service).
 //!
 //! What it does is the sum of its [`Module`]s. Each module owns one
-//! thing the host can do - today the WireGuard mesh - and knows both
-//! what that thing needs and how to get the host there. The daemon only
-//! drives them: it reconciles every module when it starts, again on
-//! SIGHUP (`systemctl reload usecode`) or a `reload` on its control
-//! socket ([`control`], `usecoded reload`, which also says how each
-//! module did), and again every [`TICK`] so a module that was waiting on
-//! something picks it up by itself. SIGTERM stops every module and exits.
+//! thing the host can do - the WireGuard mesh, the firewall, Kubernetes -
+//! and knows both what that thing needs and how to get the host there.
+//! The daemon only drives them: it reconciles every module when it
+//! starts, again on SIGHUP (`systemctl reload usecode`) or a `reload` on
+//! its control socket ([`control`], `usecoded reload`, which also says
+//! how each module did), and again every [`TICK`] so a module that was
+//! waiting on something picks it up by itself. SIGTERM stops every
+//! module and exits.
 //!
 //! A module never takes the daemon down. What it can't do yet is a note
 //! in the journal and another try on the next tick; a real error is
@@ -21,6 +22,7 @@
 pub mod control;
 pub mod firewall;
 pub mod host;
+pub mod kube;
 pub mod mesh;
 
 use std::os::unix::net::UnixStream;
@@ -51,6 +53,7 @@ fn modules() -> Vec<Box<dyn Module>> {
     vec![
         Box::new(mesh::Mesh::default()),
         Box::new(firewall::Firewall::default()),
+        Box::new(kube::Kube::default()),
     ]
 }
 

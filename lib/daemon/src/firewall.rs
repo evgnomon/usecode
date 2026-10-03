@@ -9,7 +9,9 @@
 //! on every converge without touching any other firewall rule on the host.
 //! What is not explicitly allowed - SSH, the loopback interface,
 //! established traffic, the DHCP client, the WireGuard mesh the daemon may
-//! also run, and whatever [`Settings::allow`] lists - is dropped.
+//! also run, what a Kubernetes controller needs when the host is one
+//! ([`kube::inbound_rules`]), and whatever [`Settings::allow`] lists - is
+//! dropped.
 //!
 //! The settings are an ordinary file on the host, [`SETTINGS_PATH`],
 //! written by `uc net firewall` and read here. No file is not an error: it
@@ -23,6 +25,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::Config;
 use crate::error::{Context, Result};
+use crate::kube;
 use crate::net::parse_cidr;
 
 /// Where the firewall settings live on a host.
@@ -235,6 +238,7 @@ pub fn inbound_rules(
     settings: &Settings,
     ssh_port: u16,
     cfg: &Config,
+    kube: &kube::Settings,
 ) -> Result<Vec<Vec<String>>> {
     let mut rules: Vec<Vec<String>> = vec![
         rule(&["-i", "lo", "-j", "ACCEPT"]),
@@ -272,6 +276,8 @@ pub fn inbound_rules(
         }
         rules.push(rule(&["-i", cfg.interface.name.as_str(), "-j", "ACCEPT"]));
     }
+
+    rules.extend(kube::inbound_rules(kube, family == Family::V4));
 
     rules.push(rule(&[
         "-p",
@@ -344,15 +350,26 @@ pub fn accept(settings: &Settings) -> Result<bool> {
 /// Bring [`CHAIN`] to match `settings` in both families: create and hook
 /// it if needed, flush it, then append the policy's rules. Safe to call
 /// repeatedly.
-pub fn apply(settings: &Settings, ssh_port: u16, cfg: &Config) -> Result<()> {
+pub fn apply(
+    settings: &Settings,
+    ssh_port: u16,
+    cfg: &Config,
+    kube: &kube::Settings,
+) -> Result<()> {
     for family in FAMILIES {
-        apply_family(family, settings, ssh_port, cfg)?;
+        apply_family(family, settings, ssh_port, cfg, kube)?;
     }
     Ok(())
 }
 
-fn apply_family(family: Family, settings: &Settings, ssh_port: u16, cfg: &Config) -> Result<()> {
-    let rules = inbound_rules(family, settings, ssh_port, cfg)?;
+fn apply_family(
+    family: Family,
+    settings: &Settings,
+    ssh_port: u16,
+    cfg: &Config,
+    kube: &kube::Settings,
+) -> Result<()> {
+    let rules = inbound_rules(family, settings, ssh_port, cfg, kube)?;
 
     ensure_chain(family)?;
     run(family, &["-F", CHAIN]).with_ctx(|| format!("flush {} {CHAIN}", family.command()))?;
@@ -505,7 +522,16 @@ mod tests {
         settings.allow.push("tcp:443".into());
         settings.allow.push("udp:53:10.0.0.0/8".into());
 
-        let rules = joined(&inbound_rules(Family::V4, &settings, 2657, &mesh_config()).unwrap());
+        let rules = joined(
+            &inbound_rules(
+                Family::V4,
+                &settings,
+                2657,
+                &mesh_config(),
+                &kube::Settings::default(),
+            )
+            .unwrap(),
+        );
 
         assert!(rules[0].contains("-i lo"), "{rules:?}");
         assert!(
@@ -536,7 +562,16 @@ mod tests {
         settings.allow.push("tcp:8080:10.0.0.0/8".into());
         settings.allow.push("tcp:8443:2001:db8::/32".into());
 
-        let rules = joined(&inbound_rules(Family::V6, &settings, 22, &Config::default()).unwrap());
+        let rules = joined(
+            &inbound_rules(
+                Family::V6,
+                &settings,
+                22,
+                &Config::default(),
+                &kube::Settings::default(),
+            )
+            .unwrap(),
+        );
 
         assert!(
             rules.iter().any(|r| r.contains("-p ipv6-icmp")),
@@ -563,12 +598,43 @@ mod tests {
     #[test]
     fn a_host_without_the_mesh_only_opens_ssh() {
         let rules = joined(
-            &inbound_rules(Family::V4, &Settings::default(), 22, &Config::default()).unwrap(),
+            &inbound_rules(
+                Family::V4,
+                &Settings::default(),
+                22,
+                &Config::default(),
+                &kube::Settings::default(),
+            )
+            .unwrap(),
         );
         assert!(!rules.iter().any(|r| r.contains("51820")), "{rules:?}");
         assert!(!rules.iter().any(|r| r.contains("wg-uc")), "{rules:?}");
         assert!(rules.iter().any(|r| r.contains("--dport 22")));
         assert!(rules.iter().any(|r| r.contains("--sport 67")));
+    }
+
+    #[test]
+    fn a_kubernetes_controller_keeps_its_api_open_before_the_drop() {
+        let kube = kube::Settings {
+            enabled: true,
+            ..kube::Settings::default()
+        };
+        let rules = joined(
+            &inbound_rules(
+                Family::V4,
+                &Settings::default(),
+                22,
+                &Config::default(),
+                &kube,
+            )
+            .unwrap(),
+        );
+        assert!(
+            rules.iter().any(|r| r.contains("--dport 6443")),
+            "{rules:?}"
+        );
+        assert!(rules.iter().any(|r| r == "-i cni0 -j ACCEPT"), "{rules:?}");
+        assert_eq!(rules.last().unwrap(), "-j DROP");
     }
 
     #[test]

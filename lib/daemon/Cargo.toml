@@ -22,6 +22,10 @@ name = "uc-net-firewall"
 path = "src/bin/uc-net-firewall.rs"
 
 [[bin]]
+name = "uc-kube"
+path = "src/bin/uc-kube.rs"
+
+[[bin]]
 name = "usecoded"
 path = "src/bin/usecoded.rs"
 

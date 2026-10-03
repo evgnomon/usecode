@@ -1,0 +1,7 @@
+---
+# cp-1 - a host running the usecode daemon, with the mesh off.
+#
+# Created by `uc daemon install cp-1`: edit it freely. `uc net mesh add
+# cp-1` turns the mesh on for it by appending its address and key here.
+ansible_user: root
+usecode_services: []

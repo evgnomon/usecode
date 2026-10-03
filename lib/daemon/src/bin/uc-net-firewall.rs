@@ -15,7 +15,7 @@ use std::process::ExitCode;
 use uc_daemon::bundle::Bundle;
 use uc_daemon::error::{Context, Result};
 use uc_daemon::firewall::{self, Settings};
-use uc_daemon::inventory::{self, Inventory};
+use uc_daemon::kube;
 use uc_daemon::remote::Target;
 use uc_daemon::setup::BINARY_PATH;
 use uc_daemon::{bail, err};
@@ -100,6 +100,16 @@ fn status(args: &[String]) -> Result<()> {
         for rule in &settings.allow {
             println!("  allow     {rule}");
         }
+    }
+    // Opened by the daemon itself while `uc kube` has a controller here.
+    if let Some(kube) = read_kube(&target)
+        && kube.enabled
+    {
+        println!(
+            "  kube      tcp:{} (API), pod interfaces, {} peer controller(s)",
+            kube::API_PORT,
+            kube.peers.len()
+        );
     }
 
     for family in firewall::FAMILIES {
@@ -189,16 +199,7 @@ fn update(name: &str, f: impl FnOnce(&mut Settings) -> Result<()>) -> Result<()>
 }
 
 fn reach(name: &str) -> Result<Target> {
-    // An inventory is a convenience, not a requirement: outside a
-    // checkout the name is just an ssh destination.
-    let host = inventory::find()
-        .ok()
-        .and_then(|dir| Inventory::load(&dir).ok())
-        .and_then(|inv| inv.host(name).cloned());
-    match host {
-        Some(host) => Target::for_host(&host),
-        None => Target::ssh(name),
-    }
+    Target::reach(name)
 }
 
 /// The host's current settings; an empty or missing file is the default
@@ -214,14 +215,27 @@ fn read_settings(target: &Target) -> Result<Settings> {
     Settings::parse(&body)
 }
 
+/// The host's Kubernetes settings, if it has any and they can be read
+/// (the file is root's; status works without them).
+fn read_kube(target: &Target) -> Option<kube::Settings> {
+    let body = target
+        .output_as_root(&[
+            "sh".into(),
+            "-c".into(),
+            format!("cat {} 2>/dev/null || true", kube::SETTINGS_PATH),
+        ])
+        .ok()?;
+    kube::Settings::parse(&body).ok()
+}
+
 /// Hand the settings to the host's daemon through `usecoded join`, the
 /// same path `uc net mesh apply` uses, so the daemon writes the file and
 /// reloads with an answer.
 fn deliver(target: &Target, name: &str, settings: &Settings) -> Result<()> {
     let bundle = Bundle {
         host: name.to_string(),
-        mesh: None,
         firewall: Some(settings.clone()),
+        ..Bundle::default()
     };
 
     let local = tempfile::Builder::new()

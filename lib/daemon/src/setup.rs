@@ -23,7 +23,7 @@ use std::fs;
 use crate::bundle::Bundle;
 use crate::daemon::{control, host, mesh};
 use crate::error::{Context, Result};
-use crate::firewall;
+use crate::{firewall, kube};
 
 pub const BINARY_PATH: &str = "/usr/local/bin/usecoded";
 const CONFIG_DIR: &str = "/etc/uc";
@@ -67,6 +67,9 @@ pub fn join(bundle_path: &str) -> Result<()> {
     }
     if let Some(s) = &bundle.firewall {
         changed |= firewall::accept(s).ctx("firewall")?;
+    }
+    if let Some(s) = &bundle.kube {
+        changed |= kube::accept(s).ctx("kube")?;
     }
 
     if !changed {

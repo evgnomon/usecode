@@ -88,6 +88,53 @@ everything) so nothing wipes them out from under it. Stop the daemon and
 the chain goes away, so a host you can't reach otherwise doesn't stay
 locked.
 
+### Kubernetes
+
+Want a cluster? The daemon can turn a host into a Kubernetes controller
+with [k3s](https://k3s.io), and you only ever talk to `uc kube`:
+
+```sh
+uc kube enable edge          # a one-node cluster, and kubectl pointed at it
+kubectl get nodes
+```
+
+That's the whole thing. `enable` writes `/etc/uc/kube.toml` on the host
+and reloads the daemon there, which downloads k3s, starts it and keeps it
+running. Then it waits for the cluster to come up and adds it to your
+`~/.kube/config` (or the first file in `$KUBECONFIG`) as a context named
+after the host, and switches kubectl to it. Your other contexts are left
+alone.
+
+Need it to survive losing a machine? List three (or five) hosts and you
+get one highly available control plane with embedded etcd. The first one
+founds it - an existing single-node cluster works fine as the founder, k3s
+moves its data over - and the rest join:
+
+```sh
+uc kube enable edge cave attic
+```
+
+When you grow it later, list the whole control plane again; it's safe to
+run as often as you like.
+
+A few more things you can do:
+
+```sh
+uc kube connect edge                 # (re)add the cluster to your kubeconfig
+uc kube connect edge --server k8s.example.com --name prod
+uc kube status edge                  # settings, k3s, and the nodes
+uc kube enable edge --version v1.31.4+k3s1   # pin (or upgrade to) a release
+uc kube disable edge                 # stop k3s, keep its data
+uc kube disable edge --purge         # uninstall k3s and wipe it
+```
+
+It plays nicely with the rest of the daemon. If the hosts are in the
+WireGuard mesh, the controllers talk over the tunnel; if not, pod traffic
+between them is encrypted with flannel's WireGuard backend. The firewall
+opens the API (6443), lets pods reach their host, and lets the other
+controllers in - nothing else. k3s runs as its own `k3s.service`, so
+restarting or upgrading the daemon never takes your cluster down.
+
 ## Quick install
 
 Got a box with systemd and ssh access? One command puts the daemon on

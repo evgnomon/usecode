@@ -15,6 +15,9 @@
 //! edited with `uc net firewall` and delivered so the daemon on the host
 //! picks the policy up.
 //!
+//! And Kubernetes: the host's [`crate::kube::Settings`], written by
+//! `uc kube` so the daemon there runs it as a k3s controller.
+//!
 //! The file can hold a private key: it only ever sits in 0700
 //! directories, and is removed again once join has run.
 
@@ -27,6 +30,7 @@ use crate::daemon::mesh;
 use crate::error::{Context, Result};
 use crate::firewall::Settings;
 use crate::inventory::{GROUP, Inventory};
+use crate::kube;
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Bundle {
@@ -38,6 +42,9 @@ pub struct Bundle {
     /// new policy.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub firewall: Option<Settings>,
+    /// The host's Kubernetes settings, when `uc kube` delivered them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kube: Option<kube::Settings>,
 }
 
 impl Bundle {
@@ -73,7 +80,7 @@ impl Bundle {
                 public_key: host.public_key.clone(),
                 config: format!("{}{body}", config_header(name)),
             }),
-            firewall: None,
+            ..Bundle::default()
         })
     }
 
@@ -112,6 +119,7 @@ mod tests {
                     config = \"\"\n";
         let bundle: Bundle = toml::from_str(text).unwrap();
         assert!(bundle.firewall.is_none());
+        assert!(bundle.kube.is_none());
         assert!(bundle.mesh.is_some());
     }
 
@@ -125,6 +133,7 @@ mod tests {
                 allow: vec!["tcp:443".into()],
                 ..Settings::default()
             }),
+            ..Bundle::default()
         };
 
         let back: Bundle = toml::from_str(&bundle.encode().unwrap()).unwrap();
@@ -132,5 +141,20 @@ mod tests {
         assert_eq!(settings.ssh_port, Some(2657));
         assert_eq!(settings.allow, vec!["tcp:443".to_string()]);
         assert!(settings.enabled);
+    }
+
+    #[test]
+    fn a_kube_section_round_trips() {
+        let bundle = Bundle {
+            host: "edge".into(),
+            kube: Some(kube::Settings {
+                enabled: true,
+                token: "t".into(),
+                ..kube::Settings::default()
+            }),
+            ..Bundle::default()
+        };
+        let back: Bundle = toml::from_str(&bundle.encode().unwrap()).unwrap();
+        assert_eq!(back.kube, bundle.kube);
     }
 }
