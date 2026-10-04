@@ -2,7 +2,7 @@
 # Copyright (C) The Usecode Authors (see AUTHORS)
 
 [package]
-name = "tm"
+name = "terminal"
 version = "0.1.0"
 edition.workspace = true
 description = "Browser-style windows, tabs and splits in the terminal, on top of tmux"

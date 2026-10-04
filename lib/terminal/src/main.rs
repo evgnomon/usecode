@@ -1,7 +1,7 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! `tm`: windows, tabs and splits in the terminal, the way a browser has
+//! `uc terminal`: windows, tabs and splits in the terminal, the way a browser has
 //! them, kept by tmux underneath.
 //!
 //! A window here is a tmux session, a tab is a tmux window and a split is a
@@ -14,15 +14,15 @@ use std::process::{Command, ExitCode};
 
 #[derive(Parser)]
 #[command(
-    name = "tm",
-    bin_name = "tm",
+    name = "uc terminal",
+    bin_name = "uc terminal",
     about = "Windows, tabs and splits in the terminal, like a browser has them",
     after_help = "Examples:\n  \
-        tm window new work\n  \
-        tm window open work\n  \
-        tm tab new logs --in work\n  \
-        tm tab move logs --to play\n  \
-        tm split right"
+        uc terminal window new work\n  \
+        uc terminal window open work\n  \
+        uc terminal tab new logs --in work\n  \
+        uc terminal tab move logs --to play\n  \
+        uc terminal split right"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -129,7 +129,7 @@ enum SplitCmd {
     List,
     /// Close a split
     Close {
-        /// The split's number, from `tm split list` (the current one when left out)
+        /// The split's number, from `uc terminal split list` (the current one when left out)
         number: Option<u32>,
     },
 }
@@ -139,7 +139,7 @@ fn main() -> ExitCode {
     match run(cli.command) {
         Ok(()) => ExitCode::SUCCESS,
         Err(msg) => {
-            eprintln!("tm: {msg}");
+            eprintln!("uc terminal: {msg}");
             ExitCode::FAILURE
         }
     }
@@ -163,7 +163,7 @@ fn window(cmd: WindowCmd) -> Result<(), String> {
             ]) {
                 Ok(out) => out,
                 Err(msg) if msg == NOTHING_OPEN => {
-                    println!("No windows yet. Make one with: tm window new <name>");
+                    println!("No windows yet. Make one with: uc terminal window new <name>");
                     return Ok(());
                 }
                 Err(msg) => return Err(msg),
@@ -192,7 +192,7 @@ fn window(cmd: WindowCmd) -> Result<(), String> {
             }
             let made = tmux(&args)?;
             println!(
-                "Made window {}. Open it with: tm window open {}",
+                "Made window {}. Open it with: uc terminal window open {}",
                 made.trim(),
                 made.trim()
             );

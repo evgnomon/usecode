@@ -274,11 +274,12 @@ switching scripts over to the `uc` commands is a good idea.
 | `uc pick file`, `url` | `uc-pick-file`, `uc-pick-url` | `ff`, `fzurls` |
 | `uc sys yubikey`, `argv` | `uc-sys-yubikey`, `uc-sys-argv` | `ykattach`, `num_argv` |
 | `uc sys vi` | `uc-sys-vi` | `vi` |
-| `uc terminal` | `uc-terminal-tm`, arguments and all | `tm` |
+| `uc terminal` | `uc-terminal-tm`, arguments and all | |
 
 `vi` does its job by standing in for the real one on `PATH`, so that name
 stays installed as a symlink for good. `x` keeps its name too:
-it is the shortcut for `uc configure`.
+it is the shortcut for `uc configure`. For `uc terminal`, the dotfiles
+give you the shell alias `t`.
 
 ### Cloud VMs
 
