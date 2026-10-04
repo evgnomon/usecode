@@ -92,6 +92,8 @@ Examples:
   uc kube configure                       configure the current context
   uc kube configure --context prod -t hcloud_csi
   uc kube configure -e hcloud_primary_location=fsn1
+  uc kube configure -t forgejo -e forgejo_host=git.example.com
+                                          Forgejo on a Hetzner Volume
   uc kube configure -t smoke              a 10Gi test volume (-t failover,
                                           then -t smoke-clean deletes it)
 

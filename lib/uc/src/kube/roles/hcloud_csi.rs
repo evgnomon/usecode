@@ -40,12 +40,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::Arc;
 
-const PROVIDER_KEY: &str = "provider";
-const PROVIDER: &str = "hetzner";
+pub const PROVIDER_KEY: &str = "provider";
+pub const PROVIDER: &str = "hetzner";
 /// Where a node's location is recorded when no other label has it.
-const LOCATION_LABEL: &str = "hetzner-location";
+pub const LOCATION_LABEL: &str = "hetzner-location";
 /// The topology key the driver puts on every node and volume.
-const TOPOLOGY_KEY: &str = "csi.hetzner.cloud/location";
+pub const TOPOLOGY_KEY: &str = "csi.hetzner.cloud/location";
 const ROOT_SERVER_LABEL: &str = "instance.hetzner.cloud/is-root-server";
 const PROVIDED_BY_LABEL: &str = "instance.hetzner.cloud/provided-by";
 /// The locations Hetzner Cloud Volumes exist in.
@@ -59,8 +59,8 @@ const CHART: &str = "hcloud/hcloud-csi";
 /// The chart version this role was written against.
 const CHART_VERSION: &str = "2.23.0";
 const SECRET: &str = "hcloud";
-const GENERIC_CLASS: &str = "hcloud-volumes";
-const DRIVER: &str = "csi.hetzner.cloud";
+pub const GENERIC_CLASS: &str = "hcloud-volumes";
+pub const DRIVER: &str = "csi.hetzner.cloud";
 
 const TEST_NAMESPACE: &str = "csi-test";
 const TEST_NAME: &str = "csi-test";
