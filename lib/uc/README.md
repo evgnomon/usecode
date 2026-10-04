@@ -273,10 +273,10 @@ switching scripts over to the `uc` commands is a good idea.
 | `uc media backup`, `compress`, `yt` | `uc-media-backup`, `uc-media-compress`, `uc-media-yt` | `backup_archive`, `imgpress`, `ytdump` |
 | `uc pick file`, `url` | `uc-pick-file`, `uc-pick-url` | `ff`, `fzurls` |
 | `uc sys yubikey`, `argv` | `uc-sys-yubikey`, `uc-sys-argv` | `ykattach`, `num_argv` |
-| `uc sys docker`, `vi` | `uc-sys-docker`, `uc-sys-vi` | `docker`, `vi` |
+| `uc sys vi` | `uc-sys-vi` | `vi` |
 
-`docker` and `vi` do their job by standing in for the real ones on `PATH`, so
-those two names stay installed as symlinks for good. `x` keeps its name too:
+`vi` does its job by standing in for the real one on `PATH`, so that name
+stays installed as a symlink for good. `x` keeps its name too:
 it is the shortcut for `uc configure`.
 
 ### Cloud VMs

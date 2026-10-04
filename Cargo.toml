@@ -15,7 +15,6 @@ members = [
     "lib/csv2pdf",
     "lib/daemon",
     "lib/diga",
-    "lib/docker",
     "lib/extract-tool",
     "lib/ff",
     "lib/fzurls",

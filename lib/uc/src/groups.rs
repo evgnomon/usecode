@@ -423,11 +423,6 @@ pub static SYS: Group = Group {
             &["uc-sys-yubikey"],
         ),
         exec(
-            "docker",
-            "docker with ~/.docker config and sudo only when needed",
-            &["uc-sys-docker"],
-        ),
-        exec(
             "vi",
             "hardened vim without config, plugins, backups or modelines",
             &["uc-sys-vi"],
