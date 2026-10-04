@@ -46,7 +46,6 @@ members = [
     "lib/ucversion",
     "lib/vi",
     "lib/vm",
-    "lib/workd",
     "lib/x",
     "lib/yacht",
     "lib/ykattach",

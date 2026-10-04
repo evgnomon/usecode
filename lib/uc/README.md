@@ -265,7 +265,7 @@ switching scripts over to the `uc` commands is a good idea.
 | `uc net ipsec`, `dig` | `uc-net-ipsec`, `uc-net-dig` | `ipmesh`, `diga` |
 | `uc daemon install`, `reload` | `uc-daemon-ctl install`, `reload` | |
 | `uc vm` | `uc-vm-local`, arguments and all; with `--provider`, built in (see below) | `vm` |
-| `uc nats`, `uc work` | `uc-nats`, `uc-work` themselves | `natsup`, `workd` |
+| `uc nats` | `uc-nats` itself | `natsup` |
 | `uc new role`, `workflow`, `script`, `unit` | `uc-new-role`, `uc-new-workflow`, `uc-new-script`, `uc-new-unit` | `mkarole`, `catalyze`, `shole`, `mkunit` |
 | `uc secret server` | `uc-secret-server` | `secd` |
 | `uc agent api`, `mcp` | `uc-agent-api`, `uc-agent-mcp` | `usecode-agent-api`, `usecode-mcp` |

@@ -1,8 +1,0 @@
-#!/bin/bash
-# License-Identifier: HGL
-# Copyright (C) The Usecode Authors (see AUTHORS)
-
-set -e
-
-systemctl stop workd || true
-systemctl disable workd || true
