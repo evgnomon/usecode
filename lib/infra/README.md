@@ -85,6 +85,42 @@ and add `imagePullSecrets: [{name: registry}]` to the pod spec.
 New password? Edit `password` in `registry/registry-auth`, then
 `kubectl -n registry rollout restart deploy/registry`.
 
+## Metrics, logs and alerts
+
+A small monitoring stack with no Prometheus server and no UI to look after.
+Everything goes through kubectl, which makes it easy for you and for your
+agents to ask questions:
+
+```bash
+uc kube configure -t obs -e obs_enabled=true \
+  -e obs_alert_webhook=https://agent.$INFRA_DOMAIN/alerts
+```
+
+You get node-exporter and kube-state-metrics, VictoriaMetrics to scrape
+and keep them (30 days), vmalert with a handful of alerts (nodes, disks,
+memory, volumes, crash loops), and VictoriaLogs with a collector on every
+node for all container logs (14 days). Metrics and logs each sit on a 10Gi
+Hetzner Cloud Volume, in two different locations: metrics in your primary
+location, logs in the next one with workers. Losing a whole location costs
+you one of them, never both. Want them elsewhere? `obs_metrics_location`
+and `obs_logs_location` (e.g. `fsn1`, `hel1`). Only have workers in one
+location? Set `obs_logs_location` to it and both live there.
+
+Ask it something:
+
+```bash
+kubectl get --raw '/api/v1/namespaces/obs/services/vmsingle:8428/proxy/api/v1/query?query=up'
+kubectl get --raw '/api/v1/namespaces/obs/services/vlsingle:9428/proxy/select/logsql/query?query=_time:5m%20error&limit=20'
+```
+
+Your own apps get scraped once their Service (or Pod) has
+`prometheus.io/scrape: "true"` and `prometheus.io/port: "<port>"`.
+Firing alerts are POSTed to `<obs_alert_webhook>/api/v2/alerts`, the way
+Alertmanager would get them; without a webhook they're still evaluated and
+kept as the `ALERTS` series. More room or time: `obs_metrics_size`,
+`obs_logs_size`, `obs_metrics_retention`, `obs_logs_retention`. Your own
+alerts: `obs_alert_groups`, in the Prometheus rules format.
+
 ## Good to know
 
 - DNS lists the workers only. Traefik still answers on every node, control

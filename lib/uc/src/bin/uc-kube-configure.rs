@@ -97,7 +97,10 @@ Examples:
   uc kube configure -t registry -e registry_host=registry.example.com
                                           a container registry on a 10Gi
                                           Hetzner Volume
-  uc kube configure -t smoke              a 10Gi test volume (-t failover,
+  uc kube configure -t obs -e obs_enabled=true
+                                          metrics, logs and alerts, each
+                                          store on a Hetzner Volume
+  uc kube configure -t smoke             a 10Gi test volume (-t failover,
                                           then -t smoke-clean deletes it)
 
 Node locations come from the Hetzner Cloud API, with HCLOUD_TOKEN (or

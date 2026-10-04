@@ -17,8 +17,9 @@ use crate::configure::ctx::Ctx;
 use crate::configure::engine::{Outcome, Plan};
 use crate::configure::modules::command::Cmd;
 use crate::configure::vars::Vars;
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::de::DeserializeOwned;
+use serde_json::Value;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -27,9 +28,10 @@ pub use cluster::Cluster;
 /// Every task for the cluster.
 pub fn plan(cluster: &Arc<Cluster>, vars: &Vars) -> Result<Plan> {
     let mut plan = Plan::default();
-    roles::hcloud_csi::tasks(&mut plan, cluster, vars)?;
+    let layout = roles::hcloud_csi::tasks(&mut plan, cluster, vars)?;
     roles::forgejo::tasks(&mut plan, cluster, vars)?;
     roles::registry::tasks(&mut plan, cluster, vars)?;
+    roles::obs::tasks(&mut plan, cluster, vars, &layout)?;
     Ok(plan)
 }
 
@@ -98,4 +100,62 @@ pub fn files_dir(vars: &Vars, cluster: &Cluster) -> PathBuf {
     vars.home
         .join(".config/usecode/kube")
         .join(cluster.context.replace('/', "_"))
+}
+
+/// Adds the helm repository `name` at `url` to this machine's helm, and
+/// updates it when it doesn't know `chart` at `version` yet.
+pub async fn helm_repo(
+    ctx: &Ctx,
+    name: &str,
+    url: &str,
+    chart: &str,
+    version: &str,
+) -> Result<Outcome> {
+    let list = ctx
+        .cmd("helm")
+        .args(["repo", "list", "-o", "json"])
+        .any_code()
+        .read_only()
+        .output()
+        .await?;
+    // helm fails when there are no repositories at all.
+    let repos: Vec<Value> = if list.success() {
+        serde_json::from_str(&list.stdout)?
+    } else {
+        Vec::new()
+    };
+    let mut outcome = Outcome::Ok;
+    match repos.iter().find(|r| r["name"] == name) {
+        Some(r)
+            if r["url"].as_str().map(|u| u.trim_end_matches('/'))
+                == Some(url.trim_end_matches('/')) => {}
+        Some(r) => bail!("helm repository '{name}' points at {}, not {url}", r["url"]),
+        None => {
+            outcome = ctx
+                .cmd("helm")
+                .args(["repo", "add", name, url])
+                .run_step()
+                .await?;
+            if ctx.check() {
+                return Ok(outcome);
+            }
+        }
+    }
+    let found = ctx
+        .cmd("helm")
+        .args(["search", "repo", chart, "--version", version, "-o", "json"])
+        .any_code()
+        .read_only()
+        .output()
+        .await?;
+    let known = serde_json::from_str::<Vec<Value>>(&found.stdout).is_ok_and(|v| !v.is_empty());
+    if !known {
+        let update = ctx
+            .cmd("helm")
+            .args(["repo", "update", name])
+            .run_step()
+            .await?;
+        outcome = outcome.and(update);
+    }
+    Ok(outcome)
 }

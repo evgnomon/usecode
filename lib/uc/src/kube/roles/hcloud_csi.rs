@@ -32,7 +32,7 @@ use crate::configure::engine::{Outcome, Plan, Task};
 use crate::configure::modules::copy;
 use crate::configure::vars::Vars;
 use crate::kube::cluster::{Cluster, DEFAULT_CLASS, Taint};
-use crate::kube::{apply, files_dir, get_json, helm, kubectl, var};
+use crate::kube::{apply, files_dir, get_json, helm, helm_repo, kubectl, var};
 use crate::vm::{self, HetznerServer};
 use anyhow::{Result, anyhow, bail};
 use serde_json::{Value, json};
@@ -519,7 +519,9 @@ fn cluster_token(cluster: &Cluster) -> Option<String> {
         .filter(|t| !t.trim().is_empty())
 }
 
-pub fn tasks(plan: &mut Plan, cluster: &Arc<Cluster>, vars: &Vars) -> Result<()> {
+/// Adds the role's tasks, and returns the location plan, which the roles
+/// that keep data on volumes place it by.
+pub fn tasks(plan: &mut Plan, cluster: &Arc<Cluster>, vars: &Vars) -> Result<Arc<Layout>> {
     let settings = Settings::load(vars)?;
     let layout = Arc::new(Layout::new(cluster, settings, || hetzner_servers(cluster)));
     let dir = files_dir(vars, cluster);
@@ -629,7 +631,7 @@ pub fn tasks(plan: &mut Plan, cluster: &Arc<Cluster>, vars: &Vars) -> Result<()>
             "Add the Hetzner chart repository to helm",
         )
         .tags(&["storage"])
-        .run(move |ctx| async move { repo(&ctx, &version).await }),
+        .run(move |ctx| async move { helm_repo(&ctx, REPO, REPO_URL, CHART, &version).await }),
     );
 
     let (c, l, vf) = (cluster.clone(), layout.clone(), values_file);
@@ -725,7 +727,7 @@ pub fn tasks(plan: &mut Plan, cluster: &Arc<Cluster>, vars: &Vars) -> Result<()>
             Ok(Outcome::changed(out.stdout.contains("deleted")))
         }),
     );
-    Ok(())
+    Ok(layout)
 }
 
 async fn token(ctx: &Ctx, cluster: &Cluster) -> Result<Outcome> {
@@ -769,57 +771,6 @@ async fn token(ctx: &Ctx, cluster: &Cluster) -> Result<Outcome> {
         .output()
         .await?;
     Ok(Outcome::Changed)
-}
-
-async fn repo(ctx: &Ctx, version: &str) -> Result<Outcome> {
-    let list = ctx
-        .cmd("helm")
-        .args(["repo", "list", "-o", "json"])
-        .any_code()
-        .read_only()
-        .output()
-        .await?;
-    // helm fails when there are no repositories at all.
-    let repos: Vec<Value> = if list.success() {
-        serde_json::from_str(&list.stdout)?
-    } else {
-        Vec::new()
-    };
-    let mut outcome = Outcome::Ok;
-    match repos.iter().find(|r| r["name"] == REPO) {
-        Some(r) if r["url"].as_str().map(|u| u.trim_end_matches('/')) == Some(REPO_URL) => {}
-        Some(r) => bail!(
-            "helm repository '{REPO}' points at {}, not {REPO_URL}",
-            r["url"]
-        ),
-        None => {
-            outcome = ctx
-                .cmd("helm")
-                .args(["repo", "add", REPO, REPO_URL])
-                .run_step()
-                .await?;
-            if ctx.check() {
-                return Ok(outcome);
-            }
-        }
-    }
-    let found = ctx
-        .cmd("helm")
-        .args(["search", "repo", CHART, "--version", version, "-o", "json"])
-        .any_code()
-        .read_only()
-        .output()
-        .await?;
-    let known = serde_json::from_str::<Vec<Value>>(&found.stdout).is_ok_and(|v| !v.is_empty());
-    if !known {
-        let update = ctx
-            .cmd("helm")
-            .args(["repo", "update", REPO])
-            .run_step()
-            .await?;
-        outcome = outcome.and(update);
-    }
-    Ok(outcome)
 }
 
 async fn install(
