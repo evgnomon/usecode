@@ -10,9 +10,9 @@ use crate::error::AppError;
 
 // Raw provider/internal server states that count as "up" — everything else
 // (off, new, archive, deleting, migrating, rebuilding, unknown, ...) is
-// "paused". Hetzner and DigitalOcean use disjoint vocabularies, so this maps
-// both into the two states our API ever exposes.
-const UP_STATUSES: &[&str] = &["running", "active", "starting", "initializing"];
+// "paused". Hetzner, DigitalOcean and UpCloud use disjoint vocabularies, so
+// this maps all of them into the two states our API ever exposes.
+const UP_STATUSES: &[&str] = &["running", "active", "started", "starting", "initializing"];
 
 pub fn normalize_server_status(raw: &str) -> &'static str {
     if UP_STATUSES.contains(&raw.to_lowercase().as_str()) {
@@ -186,8 +186,8 @@ fn default_provider() -> String {
 #[derive(Deserialize)]
 pub struct ServerCreateIn {
     // Our own type terminology, e.g. "x1-fsn" or "y1-nyc" — series (x1, x2,
-    // x4, x8 for Hetzner; y1, y2, y4, y8 for DigitalOcean) plus our own city
-    // code.
+    // x4, x8 for Hetzner; y1, y2, y4, y8 for DigitalOcean; u1, u2, ... for
+    // UpCloud) plus our own city code.
     pub name: String,
     #[serde(rename = "type")]
     pub r#type: String,
@@ -287,8 +287,8 @@ pub struct TaskListOut {
 
 #[derive(Deserialize)]
 pub struct ProviderCredentialsIn {
-    // Shape is provider-specific, e.g. {"apiKey": "..."} for Hetzner and
-    // DigitalOcean.
+    // Shape is provider-specific, e.g. {"apiKey": "..."} for Hetzner,
+    // DigitalOcean and UpCloud.
     pub credentials: Map<String, Value>,
 }
 

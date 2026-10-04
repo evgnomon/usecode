@@ -36,7 +36,7 @@ Errors are `{"detail": "..."}`; a request that fails validation is a 422 whose
 ## Providers, servers and tasks
 
 - `PUT|GET|DELETE /providers/{provider}/credentials`, `GET /providers/credentials` —
-  per-user provider credentials (`hetzner`, `digitalocean`), encrypted at rest.
+  per-user provider credentials (`hetzner`, `digitalocean`, `upcloud`), encrypted at rest.
 - `GET /servers/types`, `POST /servers/sync`, `GET /servers/catalog` — the provider catalog,
   in our own type terminology (`{series}-{city}`, e.g. `x1-fsn`).
 - `POST /servers`, `DELETE /servers/{id}` — start a create/delete task and return it (`202`).
@@ -100,7 +100,8 @@ provider that accepts `{to, sender, message}`) before deploying.
 - `USECODE_AGENT_BIND` — listen address, default `0.0.0.0:8000`.
 - `USECODE_AGENT_MODEL_CONTAINER_CLI` — container tooling used for `/models/*`: `podman`
   (default) or `docker`.
-- `USECODE_AGENT_HETZNER_API_BASE` / `USECODE_AGENT_DIGITALOCEAN_API_BASE` — override a
+- `USECODE_AGENT_HETZNER_API_BASE` / `USECODE_AGENT_DIGITALOCEAN_API_BASE` /
+  `USECODE_AGENT_UPCLOUD_API_BASE` — override a
   provider's API base URL, e.g. to point at a fake in tests.
 - `RUST_LOG` — log filter, default `info`.
 
@@ -137,7 +138,7 @@ is picked up where it left off. To add a migration, add the next
   partition resolution.
 - `src/store.rs` — row storage over the shards.
 - `src/tasks.rs`, `src/server_tasks.rs` — the task engine and the server workflows.
-- `src/providers/` — Hetzner and DigitalOcean clients.
+- `src/providers/` — Hetzner, DigitalOcean and UpCloud clients.
 - `src/routes/`, `src/web.rs` — the JSON API and the web UI.
 
 ## Notes

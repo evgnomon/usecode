@@ -25,6 +25,7 @@
 
 mod digitalocean;
 mod hetzner;
+mod upcloud;
 
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -35,7 +36,7 @@ use serde_json::{Map, Value};
 use crate::models::{CloudServer, CloudServerCreateIn};
 
 /// Every provider name, sorted.
-pub const PROVIDERS: &[&str] = &["digitalocean", "hetzner"];
+pub const PROVIDERS: &[&str] = &["digitalocean", "hetzner", "upcloud"];
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProviderError {
@@ -60,7 +61,7 @@ pub enum ProviderError {
         provider: &'static str,
         detail: String,
     },
-    #[error("Unknown provider '{0}', expected one of ['digitalocean', 'hetzner']")]
+    #[error("Unknown provider '{0}', expected one of ['digitalocean', 'hetzner', 'upcloud']")]
     Unknown(String),
 }
 
@@ -70,6 +71,7 @@ pub type ProviderResult<T> = Result<T, ProviderError>;
 pub enum Provider {
     Hetzner,
     DigitalOcean,
+    UpCloud,
 }
 
 impl Provider {
@@ -77,6 +79,7 @@ impl Provider {
         match name {
             "hetzner" => Ok(Self::Hetzner),
             "digitalocean" => Ok(Self::DigitalOcean),
+            "upcloud" => Ok(Self::UpCloud),
             other => Err(ProviderError::Unknown(other.to_string())),
         }
     }
@@ -85,6 +88,7 @@ impl Provider {
         match self {
             Self::Hetzner => "hetzner",
             Self::DigitalOcean => "digitalocean",
+            Self::UpCloud => "upcloud",
         }
     }
 
@@ -96,6 +100,7 @@ impl Provider {
         match self {
             Self::Hetzner => hetzner::list_servers(credentials).await,
             Self::DigitalOcean => digitalocean::list_servers(credentials).await,
+            Self::UpCloud => upcloud::list_servers(credentials).await,
         }
     }
 
@@ -103,6 +108,7 @@ impl Provider {
         match self {
             Self::Hetzner => hetzner::list_server_types(credentials).await,
             Self::DigitalOcean => digitalocean::list_server_types(credentials).await,
+            Self::UpCloud => upcloud::list_server_types(credentials).await,
         }
     }
 
@@ -110,6 +116,7 @@ impl Provider {
         match self {
             Self::Hetzner => hetzner::list_locations(credentials).await,
             Self::DigitalOcean => digitalocean::list_locations(credentials).await,
+            Self::UpCloud => upcloud::list_locations(credentials).await,
         }
     }
 
@@ -117,6 +124,7 @@ impl Provider {
         match self {
             Self::Hetzner => hetzner::list_images(credentials).await,
             Self::DigitalOcean => digitalocean::list_images(credentials).await,
+            Self::UpCloud => upcloud::list_images(credentials).await,
         }
     }
 
@@ -128,6 +136,7 @@ impl Provider {
         match self {
             Self::Hetzner => hetzner::create_server(credentials, spec).await,
             Self::DigitalOcean => digitalocean::create_server(credentials, spec).await,
+            Self::UpCloud => upcloud::create_server(credentials, spec).await,
         }
     }
 
@@ -135,6 +144,7 @@ impl Provider {
         match self {
             Self::Hetzner => hetzner::delete_server(credentials, server_id).await,
             Self::DigitalOcean => digitalocean::delete_server(credentials, server_id).await,
+            Self::UpCloud => upcloud::delete_server(credentials, server_id).await,
         }
     }
 }
@@ -358,7 +368,7 @@ mod tests {
         );
         assert_eq!(
             Provider::parse("aws").unwrap_err().to_string(),
-            "Unknown provider 'aws', expected one of ['digitalocean', 'hetzner']"
+            "Unknown provider 'aws', expected one of ['digitalocean', 'hetzner', 'upcloud']"
         );
     }
 

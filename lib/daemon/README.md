@@ -128,8 +128,31 @@ uc kube enable box-1 box-2 --to edge
 The daemon on each worker installs k3s as an agent and joins `edge`
 with the cluster's token, which `uc kube` fetches for you. Workers run
 the same k3s release as the controller unless you pass `--version`.
-Done with one? `uc kube disable box-1 --purge`, then
-`kubectl delete node box-1`.
+Done with one? `uc kube remove box-1`.
+
+Machines get old, so swapping one is a single command, controller or
+worker:
+
+```sh
+uc kube replace cave den
+```
+
+`den` joins in `cave`'s role at the k3s release the cluster already
+runs. Once it's ready, `cave` is drained, its node (and etcd member) is
+deleted, and k3s is wiped there. The rest of the cluster forgets
+`cave`'s address, and anyone who joined through it joins through another
+controller now. If `cave` founded the control plane, another controller
+takes over that role. Controllers that have to restart for this do it one at
+a time, so the control plane keeps its quorum the whole way. Swapping
+your only controller works too: it moves to embedded etcd first so `den`
+can join it. It finds every node through the cluster itself, so hosts
+you only know by an ssh alias are told too, makes sure `cave` is out of
+etcd, and moves your kubectl contexts over to `den`. Is `cave` already
+dead? Add `--via edge` (any controller still up) and it goes on without
+it.
+
+`uc kube remove cave` does the second half on its own, for when you're
+shrinking rather than swapping.
 
 A few more things you can do:
 
@@ -140,6 +163,8 @@ uc kube status edge                  # settings, k3s, and the nodes
 uc kube enable edge --control --version v1.31.4+k3s1   # pin (or upgrade to) a release
 uc kube disable edge                 # stop k3s, keep its data
 uc kube disable edge --purge         # uninstall k3s and wipe it
+uc kube replace cave den --no-drain  # swap without waiting for pods to move
+uc kube remove box-1 --via edge      # take out a host that is already gone
 ```
 
 It plays nicely with the rest of the daemon. If the hosts are in the

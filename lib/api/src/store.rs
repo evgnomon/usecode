@@ -291,11 +291,12 @@ const TASK_COLUMNS: &str =
     "id, user_id, kind, assignee, state, resources, payload, error, created_at, updated_at";
 
 // Prefix used when a provider's server type doesn't have a mapping yet and
-// one needs to be minted on the fly, e.g. "x9" or "y9".
+// one needs to be minted on the fly, e.g. "x9", "y9" or "u9".
 fn series_prefix(provider: &str) -> String {
     match provider {
         "hetzner" => "x".to_string(),
         "digitalocean" => "y".to_string(),
+        "upcloud" => "u".to_string(),
         other => other.chars().take(1).collect(),
     }
 }

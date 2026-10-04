@@ -31,6 +31,10 @@
 //! carries both — `assignee` for the task itself, `user_partition` for
 //! everything the handler touches on the user's behalf.
 
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Duration;
+
 use anyhow::{Result, anyhow};
 use serde_json::Value;
 use uuid::Uuid;
@@ -84,12 +88,44 @@ pub async fn create_task(
         .await
 }
 
+/// Ids of the tasks a step is running for in this process. The request
+/// that creates a task advances it right away while the sweep may pick it up
+/// too; a step that takes a while (UpCloud answers a create in several
+/// seconds) would otherwise run twice and provision two servers.
+fn running() -> &'static Mutex<HashSet<Uuid>> {
+    static RUNNING: OnceLock<Mutex<HashSet<Uuid>>> = OnceLock::new();
+    RUNNING.get_or_init(Default::default)
+}
+
+/// Holds a task's place in [`running`] until dropped.
+struct Running(Uuid);
+
+impl Running {
+    fn claim(task_id: Uuid) -> Option<Self> {
+        let mut running = running().lock().unwrap_or_else(|e| e.into_inner());
+        running.insert(task_id).then(|| Self(task_id))
+    }
+}
+
+impl Drop for Running {
+    fn drop(&mut self) {
+        running()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&self.0);
+    }
+}
+
 /// Run the task's current step once. Returns the task's new state, or
 /// `None` if the task is no longer around (finished, or never existed).
 ///
 /// Only the assignee calls this — it names the node whose database holds the
-/// task, so a caller that isn't that node has nothing to advance.
+/// task, so a caller that isn't that node has nothing to advance. If a step
+/// of this task is already running here, the task is returned as it is.
 pub async fn advance(app: &App, assignee: &str, task_id: &Uuid) -> Result<Option<TaskRecord>> {
+    let Some(_running) = Running::claim(*task_id) else {
+        return app.store.get_task(assignee, task_id).await;
+    };
     let Some(task) = app.store.get_task(assignee, task_id).await? else {
         return Ok(None);
     };
@@ -159,6 +195,26 @@ pub async fn advance(app: &App, assignee: &str, task_id: &Uuid) -> Result<Option
     }
 }
 
+// How long the request that created a task waits for its first step before
+// answering with the task as it stands. Clients give up after about ten
+// seconds, and some providers take longer than that to accept a create.
+const INLINE_STEP_BUDGET: Duration = Duration::from_secs(5);
+
+/// [`advance`] a task the request just created, waiting for the step at most
+/// [`INLINE_STEP_BUDGET`]. A step that takes longer carries on in the
+/// background, and the task is returned as it was.
+pub async fn advance_briefly(app: &Arc<App>, task: TaskRecord) -> Result<Option<TaskRecord>> {
+    let step = tokio::spawn({
+        let app = Arc::clone(app);
+        let (assignee, id) = (task.assignee.clone(), task.id);
+        async move { advance(&app, &assignee, &id).await }
+    });
+    match tokio::time::timeout(INLINE_STEP_BUDGET, step).await {
+        Ok(joined) => joined?,
+        Err(_) => Ok(Some(task)),
+    }
+}
+
 /// Advance every one of *this* instance's outstanding tasks once. Runs on a
 /// periodic timer so tasks suspended on a slow provider operation (e.g.
 /// "wait for deletion to finish", which can take hours) eventually get
@@ -175,4 +231,18 @@ pub async fn sweep(app: &App) -> Result<()> {
         advance(app, node, &task.id).await?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_task_runs_one_step_at_a_time() {
+        let id = Uuid::new_v4();
+        let first = Running::claim(id).expect("free");
+        assert!(Running::claim(id).is_none());
+        drop(first);
+        assert!(Running::claim(id).is_some());
+    }
 }

@@ -89,7 +89,7 @@ pub struct ModelStartArgs {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SetProviderCredentialsArgs {
-    /// Cloud provider, e.g. "hetzner" or "digitalocean".
+    /// Cloud provider: "hetzner", "digitalocean" or "upcloud".
     pub provider: String,
     /// Credentials object whose shape depends on the provider.
     pub credentials: Value,
@@ -99,7 +99,7 @@ pub struct SetProviderCredentialsArgs {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ProviderArgs {
-    /// Cloud provider, e.g. "hetzner" or "digitalocean".
+    /// Cloud provider: "hetzner", "digitalocean" or "upcloud".
     pub provider: String,
     #[serde(default)]
     pub api_key: Option<String>,
@@ -168,7 +168,7 @@ pub struct TaskIdArgs {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct CatalogArgs {
-    /// Only entries from this provider ("hetzner"/"digitalocean").
+    /// Only entries from this provider ("hetzner"/"digitalocean"/"upcloud").
     #[serde(default)]
     pub provider: Option<String>,
     /// Only entries of this kind ("location"/"server_type"/"image").
@@ -346,6 +346,7 @@ impl UsecodeServer {
     /// `credentials` is a JSON object whose shape depends on `provider`:
     /// - "hetzner": {"apiKey": "<hetzner cloud api token>"}
     /// - "digitalocean": {"apiKey": "<digitalocean api token>"}
+    /// - "upcloud": {"apiKey": "<upcloud api token>"}
     /// Other providers may require different fields (e.g. clientId/
     /// clientSecret) — check that provider's docs. Falls back to the
     /// configured USECODE_MCP_API_KEY.
@@ -363,7 +364,7 @@ impl UsecodeServer {
     }
 
     /// Check whether the caller has credentials configured for one cloud
-    /// provider ("hetzner" or "digitalocean"). Falls back to the configured
+    /// provider ("hetzner", "digitalocean" or "upcloud"). Falls back to the configured
     /// USECODE_MCP_API_KEY.
     #[tool]
     async fn provider_credentials_status(&self, args: Parameters<ProviderArgs>) -> Json<Value> {
@@ -376,7 +377,7 @@ impl UsecodeServer {
     }
 
     /// Remove the caller's stored credentials for a cloud provider
-    /// ("hetzner" or "digitalocean"). Falls back to the configured
+    /// ("hetzner", "digitalocean" or "upcloud"). Falls back to the configured
     /// USECODE_MCP_API_KEY.
     #[tool]
     async fn delete_provider_credentials(&self, args: Parameters<ProviderArgs>) -> Json<Value> {
@@ -389,7 +390,8 @@ impl UsecodeServer {
         )
     }
 
-    /// List every supported cloud provider ("hetzner", "digitalocean") and
+    /// List every supported cloud provider ("hetzner", "digitalocean",
+    /// "upcloud") and
     /// whether the caller has credentials configured for it. Falls back to the
     /// configured USECODE_MCP_API_KEY.
     #[tool]
@@ -592,7 +594,7 @@ impl UsecodeServer {
     /// List the provider catalog data mirrored by the most recent
     /// sync_servers call — every location, server type, and OS image
     /// each configured provider offers, as raw provider data. Optionally
-    /// filter by `provider` ("hetzner"/"digitalocean") and/or `kind`
+    /// filter by `provider` ("hetzner"/"digitalocean"/"upcloud") and/or `kind`
     /// ("location"/"server_type"/"image"). Use this to see valid city codes
     /// (e.g. what to put after the "-" in "x1-fsn1") and valid `image` values
     /// for create_server, instead of guessing at provider naming. Run

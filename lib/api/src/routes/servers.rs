@@ -32,7 +32,7 @@ use crate::server_tasks::{
     CREATE_SERVER, CreateRequested, DELETE_SERVER, DeletePayload, REQUESTED,
 };
 use crate::store::{NewServer, ServerRow};
-use crate::tasks::{advance, create_task};
+use crate::tasks::{advance_briefly, create_task};
 
 pub fn router() -> Router<Arc<App>> {
     Router::new()
@@ -178,7 +178,7 @@ async fn create_server(
         serde_json::to_value(requested).map_err(anyhow::Error::from)?,
     )
     .await?;
-    let advanced = advance(&app, &task.assignee, &task.id).await?;
+    let advanced = advance_briefly(&app, task.clone()).await?;
     Ok((
         StatusCode::ACCEPTED,
         Json(task_out(advanced.unwrap_or(task))),
@@ -366,7 +366,7 @@ async fn delete_server(
         serde_json::to_value(payload).map_err(anyhow::Error::from)?,
     )
     .await?;
-    let advanced = advance(&app, &task.assignee, &task.id).await?;
+    let advanced = advance_briefly(&app, task.clone()).await?;
     Ok((
         StatusCode::ACCEPTED,
         Json(task_out(advanced.unwrap_or(task))),
