@@ -87,3 +87,4 @@ alias d='cd "$(fd --type d | fzf)"'
 alias gr="uc-repo-open"
 alias cn='cn --config ~/.continue/config.yaml'
 alias k=kubectl
+alias t='uc terminal'

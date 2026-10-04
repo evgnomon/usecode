@@ -1,7 +1,7 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! Download best audio as opus with yt-dlp, tracking downloads in `.files`.
+//! Download best audio as m4a (AAC) with yt-dlp, tracking downloads in `.files`.
 
 use std::env;
 use std::io;
@@ -11,11 +11,11 @@ use std::process::{Command, exit};
 fn ytdlp_args(home: &str) -> Vec<String> {
     [
         "-f",
-        "bestaudio",
+        "bestaudio[ext=m4a]/bestaudio",
         "--no-playlist",
         "--extract-audio",
         "--audio-format",
-        "opus",
+        "m4a",
         "--embed-metadata",
         "--embed-thumbnail",
         "--js-runtimes",

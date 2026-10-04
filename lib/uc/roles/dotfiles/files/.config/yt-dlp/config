@@ -1,7 +1,7 @@
-# Best audio only, original codec (no re-encoding)
--f bestaudio
+# Best AAC audio as m4a (no re-encoding), plays on Google Home, Alexa and iPad
+-f "bestaudio[ext=m4a]/bestaudio"
 -x
---audio-format best
+--audio-format m4a
 --embed-metadata
 --embed-thumbnail
 

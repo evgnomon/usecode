@@ -6,7 +6,8 @@
 //! [`crypto`] carries the OpenSSL-compatible `aes-256-cbc` container format,
 //! [`cli`] the option parsing and terminal helpers shared by `uc-secret-encrypt` and
 //! `uc-secret-decrypt`, [`configure`] the parallel machine configurator behind
-//! `uc-configure`, [`registry`] the tunnelled image transfer behind
+//! `uc-configure`, [`kube`] the same configurator for a Kubernetes cluster
+//! behind `uc-kube-configure`, [`registry`] the tunnelled image transfer behind
 //! `uc-push` and `uc-pull`, [`ghcr`] the GitHub Container Registry
 //! operations behind `uc-ghcr`, and [`password`], [`secret`] and [`repo`] the
 //! generator and ansible-vault secret stores behind `uc-secret`.
@@ -25,6 +26,7 @@ pub mod ghcr;
 pub mod group;
 pub mod groups;
 pub mod http;
+pub mod kube;
 pub mod password;
 pub mod registry;
 pub mod repo;

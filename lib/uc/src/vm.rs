@@ -669,6 +669,41 @@ fn upcloud_server(server: &Value, ips: &[Value]) -> Server {
     }
 }
 
+/// A Hetzner Cloud server as `uc kube configure` matches it to a node.
+#[derive(Debug, Clone, Default)]
+pub struct HetznerServer {
+    pub name: String,
+    pub location: String,
+    pub ipv4: Option<String>,
+}
+
+/// The Hetzner Cloud API token: `HCLOUD_TOKEN`, else `hetzner.prod` in the
+/// current repository's secrets, as `uc vm` finds it.
+pub fn hetzner_token() -> Result<String> {
+    Credentials::default().get("HCLOUD_TOKEN", "hetzner.prod")
+}
+
+/// Every server of the Hetzner Cloud project `token` belongs to.
+pub fn hetzner_servers(token: &str) -> Result<Vec<HetznerServer>> {
+    let api = Api {
+        provider: Provider::Hetzner,
+        base: HETZNER_API.to_string(),
+        auth: Auth::Bearer(token.to_string()),
+    };
+    Ok(api
+        .list("/servers", "servers")?
+        .iter()
+        .map(hetzner_server)
+        .map(|s| HetznerServer {
+            name: s.name,
+            location: s.location,
+            ipv4: s.ipv4,
+        })
+        .collect())
+}
+
+const HETZNER_API: &str = "https://api.hetzner.cloud/v1";
+
 /// A client for the provider's REST API, over [`crate::http`].
 struct Api {
     provider: Provider,
@@ -802,7 +837,7 @@ impl Api {
         let mut creds = Credentials::default();
         let (base, auth) = match provider {
             Provider::Hetzner => (
-                "https://api.hetzner.cloud/v1",
+                HETZNER_API,
                 Auth::Bearer(creds.get("HCLOUD_TOKEN", "hetzner.prod")?),
             ),
             Provider::DigitalOcean => (

@@ -41,6 +41,7 @@ members = [
     "lib/shole",
     "lib/sqlize",
     "lib/tidycsv",
+    "lib/tm",
     "lib/trust_ca",
     "lib/uc",
     "lib/ucversion",

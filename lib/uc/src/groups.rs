@@ -43,6 +43,7 @@ const fn alias(path: &'static str, summary: &'static str, argv: &'static [&'stat
 
 pub const ALL: &[&Group] = &[
     &IMAGE, &REPO, &CERT, &DEB, &DB, &NET, &DAEMON, &VM, &NEW, &AGENT, &DATA, &MEDIA, &PICK, &SYS,
+    &TERMINAL,
 ];
 
 pub static IMAGE: Group = Group {
@@ -388,7 +389,7 @@ pub static MEDIA: Group = Group {
         ),
         exec(
             "yt",
-            "download the best audio as opus with yt-dlp",
+            "download the best audio as m4a with yt-dlp",
             &["uc-media-yt"],
         ),
     ],
@@ -435,3 +436,9 @@ pub static SYS: Group = Group {
     ],
     fallback: None,
 };
+
+pub static TERMINAL: Group = alias(
+    "uc terminal",
+    "browser-style windows, tabs and splits in the terminal",
+    &["uc-terminal-tm"],
+);

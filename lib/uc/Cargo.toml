@@ -30,6 +30,10 @@ name = "uc-configure"
 path = "src/bin/uc-configure.rs"
 
 [[bin]]
+name = "uc-kube-configure"
+path = "src/bin/uc-kube-configure.rs"
+
+[[bin]]
 name = "uc-push"
 path = "src/bin/uc-push.rs"
 
@@ -100,6 +104,10 @@ path = "src/bin/uc-pick.rs"
 [[bin]]
 name = "uc-sys"
 path = "src/bin/uc-sys.rs"
+
+[[bin]]
+name = "uc-terminal"
+path = "src/bin/uc-terminal.rs"
 
 [dependencies]
 aes = "0.9"

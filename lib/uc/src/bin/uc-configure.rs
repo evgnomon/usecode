@@ -125,6 +125,7 @@ fn main() -> ExitCode {
             extra: cli.extra_vars,
             roles_dir: cli.roles,
             config_file: cli.config,
+            need_roles: true,
         },
     };
     match configure::run(opts) {

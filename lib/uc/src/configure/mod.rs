@@ -51,8 +51,25 @@ pub struct Options {
 
 /// Plans and runs the configuration. Returns whether every task succeeded.
 pub fn run(opts: Options) -> Result<bool> {
+    run_with(opts, "uc configure", |vars| {
+        Ok((
+            roles::plan(vars),
+            format!("profile {}", vars.profile.name()),
+        ))
+    })
+}
+
+/// Runs the plan `build` makes from the run's variables, with everything
+/// `uc configure` offers: tags, `--check`, `--list`, `--graph`, the jobs
+/// limit and the recap. `build` also returns what the run targets, shown
+/// in the opening line after `name`.
+pub fn run_with(
+    opts: Options,
+    name: &str,
+    build: impl FnOnce(&Vars) -> Result<(Plan, String)>,
+) -> Result<bool> {
     let vars = Arc::new(Vars::load(opts.load)?);
-    let mut plan = roles::plan(&vars);
+    let (mut plan, target) = build(&vars)?;
     plan.resolve()?;
     let selected = plan.select(&opts.selection);
 
@@ -91,9 +108,8 @@ pub fn run(opts: Options) -> Result<bool> {
         .unwrap_or(0);
     let out = Reporter::new(opts.color, opts.verbose, width, selected.len());
     eprintln!(
-        "uc configure: {} tasks, profile {}, {} at a time{}",
+        "{name}: {} tasks, {target}, {} at a time{}",
         selected.len(),
-        vars.profile.name(),
         opts.jobs,
         if opts.check { ", check mode" } else { "" }
     );

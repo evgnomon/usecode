@@ -60,6 +60,10 @@ starts it, and keeps it running.
   disable HOST                stop k3s on HOST (its data is kept)
       --purge                 uninstall k3s and delete its data; a worker
                               stays listed until you kubectl delete node
+  configure [OPTIONS]         set up the cluster kubectl points at, like
+                              `uc configure` does this machine: Hetzner
+                              Cloud Volumes for your PVCs, for a start.
+                              `uc kube configure -h` for the options
 
 HOST is an inventory name or any ssh destination ([USER@]HOST or an alias
 from ~/.ssh/config). The daemon has to be on it: `uc daemon install HOST`.";
@@ -97,8 +101,26 @@ fn run(args: &[String]) -> Result<()> {
         "connect" => connect_cmd(rest),
         "status" => status(rest),
         "disable" => disable(rest),
+        "configure" => configure(rest),
         other => bail!("{USAGE}\n\nunknown command {other:?}"),
     }
+}
+
+/// Hands over to `uc-kube-configure`, found next to this executable or on
+/// PATH. It only returns when that cannot be run.
+fn configure(args: &[String]) -> Result<()> {
+    use std::os::unix::process::CommandExt;
+    const PROGRAM: &str = "uc-kube-configure";
+    let beside = std::env::current_exe()
+        .ok()
+        .and_then(|exe| Some(exe.parent()?.join(PROGRAM)))
+        .filter(|p| p.is_file());
+    let mut cmd = match beside {
+        Some(path) => Command::new(path),
+        None => Command::new(PROGRAM),
+    };
+    let err = cmd.arg0(PROGRAM).args(args).exec();
+    bail!("running {PROGRAM}: {err}")
 }
 
 /// Positional words and `(--flag, value)` pairs, as [`parse`] splits them.

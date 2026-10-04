@@ -14,6 +14,9 @@ use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+/// The standard usecode checkout, relative to the home directory.
+const CHECKOUT: &str = "src/github.com/evgnomon/usecode";
+
 /// The installation profile, which switches whole roles on and off.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum Profile {
@@ -123,6 +126,9 @@ pub struct LoadOptions {
     pub extra: Vec<String>,
     pub roles_dir: Option<PathBuf>,
     pub config_file: Option<PathBuf>,
+    /// The plan reads files and templates from the roles directory, so it
+    /// must be found; `uc kube configure` reads none.
+    pub need_roles: bool,
 }
 
 impl Vars {
@@ -148,19 +154,19 @@ impl Vars {
             },
         };
 
-        let roles_dir = match opts.roles_dir {
-            Some(dir) => dir,
-            None => find_roles_dir(&home)?,
+        let roles_dir = match opts.roles_dir.map_or_else(|| find_roles_dir(&home), Ok) {
+            // Links point into this tree and the checkout is found from it,
+            // so it must not carry `..` or a relative prefix.
+            Ok(dir) => std::fs::canonicalize(&dir)
+                .with_context(|| format!("roles directory {}", dir.display()))?,
+            Err(_) if !opts.need_roles => home.join(CHECKOUT).join("lib/uc/roles"),
+            Err(err) => return Err(err),
         };
-        // Links point into this tree and the checkout is found from it, so
-        // it must not carry `..` or a relative prefix.
-        let roles_dir = std::fs::canonicalize(&roles_dir)
-            .with_context(|| format!("roles directory {}", roles_dir.display()))?;
         let usecode_dir = roles_dir
             .ancestors()
             .nth(3)
             .map(Path::to_path_buf)
-            .unwrap_or_else(|| home.join("src/github.com/evgnomon/usecode"));
+            .unwrap_or_else(|| home.join(CHECKOUT));
 
         let local_bin = home.join(".local/bin");
         let cache_dir = home.join(".cache/blueprint");
@@ -379,7 +385,7 @@ fn find_roles_dir(home: &Path) -> Result<PathBuf> {
     if let Ok(exe) = std::env::current_exe() {
         bases.extend(from(exe));
     }
-    bases.push(home.join("src/github.com/evgnomon/usecode"));
+    bases.push(home.join(CHECKOUT));
     let found = bases
         .iter()
         .map(|b| b.join("lib/uc/roles"))
