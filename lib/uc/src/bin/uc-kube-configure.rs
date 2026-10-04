@@ -94,6 +94,9 @@ Examples:
   uc kube configure -e hcloud_primary_location=fsn1
   uc kube configure -t forgejo -e forgejo_host=git.example.com
                                           Forgejo on a Hetzner Volume
+  uc kube configure -t registry -e registry_host=registry.example.com
+                                          a container registry on a 10Gi
+                                          Hetzner Volume
   uc kube configure -t smoke              a 10Gi test volume (-t failover,
                                           then -t smoke-clean deletes it)
 

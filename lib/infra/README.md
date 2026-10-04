@@ -7,14 +7,14 @@ Copyright (C) The Usecode Authors (see AUTHORS)
 
 What runs on top of a usecode k3s cluster (`uc kube`): cert-manager for
 Let's Encrypt certificates, a small nginx site on your domain so you
-can see the whole path work end to end, and a private container registry
-on `registry.<your domain>` for your own images. Traffic comes in through the
-Traefik that k3s ships with; nothing about k3s is changed.
+can see the whole path work end to end. Traffic comes in through the
+Traefik that k3s ships with; nothing about k3s is changed. Your private
+container registry is one more step on top: `uc kube configure -t registry`
+(below).
 
 ```
 k8s/cert-manager/   chart values and the Let's Encrypt ClusterIssuer
 k8s/nginx/          nginx Deployment, Service and Ingress (HTTPS, HTTP redirected)
-k8s/registry/       the container registry, its volume, login and Ingress
 dns.sh              points a name's A records at the workers
 bootstrap.sh        installs everything and updates DNS
 ```
@@ -38,16 +38,29 @@ source ~/.bashrc.d/cloudflare.sh
 lib/infra/bootstrap.sh
 ```
 
-It installs cert-manager, points `$INFRA_DOMAIN` and `registry.$INFRA_DOMAIN`
-at the workers' public IPv4 addresses, installs nginx and the registry, waits until public DNS agrees, and only then adds the
-ClusterIssuer. Until the issuer exists cert-manager asks Let's Encrypt for
+It installs cert-manager, points `$INFRA_DOMAIN` at the workers' public
+IPv4 addresses, installs nginx, waits until public DNS agrees, and only then
+adds the ClusterIssuer. Until the issuer exists cert-manager asks Let's Encrypt for
 nothing, so it never validates against stale DNS.
 
 Running it again changes nothing. Added or replaced a worker? Just
-`lib/infra/dns.sh` and `lib/infra/dns.sh registry.$INFRA_DOMAIN` to fix
-the records.
+`lib/infra/dns.sh` to fix the records.
 
 ## Your registry
+
+A private registry for your own images, with its images on a 10Gi Hetzner
+Cloud Volume, so it can move to another worker and take them along:
+
+```bash
+source ~/.bashrc.d/cloudflare.sh
+uc kube configure -t registry -e registry_host=registry.$INFRA_DOMAIN \
+  -e registry_dns_target=$INFRA_DOMAIN
+```
+
+`registry_dns_target` makes the name a CNAME to your domain, so it follows
+the workers by itself. Want more room? `-e registry_size=50Gi` grows the
+volume (it never shrinks). Put the variables in your user config and plain
+`uc kube configure` keeps it all in shape.
 
 The first run makes one login, user `usecode` with a random password, and
 keeps it in a secret. Log in from your machine:
@@ -78,9 +91,9 @@ New password? Edit `password` in `registry/registry-auth`, then
   planes included, so keep that in mind for the firewall.
 - Traefik's load balancer listens on IPv4 only, so `dns.sh` removes AAAA
   records for the domain.
-- The registry keeps images on one node's disk (k3s's `local-path`). If
-  that node goes away, so do the images; push them again or back up
-  `/var/lib/rancher/k3s/storage` on it.
+- The registry runs on one worker at a time, in the volume's location. If
+  that worker goes away, it starts on another one there with the same
+  images; with a single worker there, it waits for it to come back.
 - Traefik closes a request after 60 seconds by default, so pushing a very
   large layer over a slow line can fail. Push from somewhere close to the
   cluster, or raise `entryPoints.websecure.transport.respondingTimeouts.readTimeout`

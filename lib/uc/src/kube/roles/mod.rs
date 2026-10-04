@@ -7,3 +7,4 @@
 
 pub mod forgejo;
 pub mod hcloud_csi;
+pub mod registry;

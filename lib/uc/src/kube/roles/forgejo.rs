@@ -252,7 +252,11 @@ pub fn tasks(plan: &mut Plan, cluster: &Arc<Cluster>, vars: &Vars) -> Result<()>
                 settings.dns_target.is_some(),
                 "forgejo_dns_target is not set; the name is yours to point",
             )
-            .run(move |ctx| async move { dns(&ctx, &s).await }),
+            .run(move |ctx| async move {
+                let host = s.host.as_deref().unwrap_or_default();
+                let target = s.dns_target.as_deref().unwrap_or_default();
+                dns(&ctx, host, target, &s.dns_zone).await
+            }),
     );
 
     let vf = values_file.clone();
@@ -328,38 +332,7 @@ async fn report(ctx: &Ctx, cluster: &Cluster, s: &Settings) -> Result<Outcome> {
         ));
     }
 
-    let workers: Vec<&Node> = cluster
-        .nodes
-        .iter()
-        .filter(|n| !n.control_plane && n.label(PROVIDER_KEY) == Some(PROVIDER))
-        .collect();
-    // The location the class keeps its volumes in; on the first run
-    // hcloud-volumes doesn't exist yet, and the scheduler picks a worker in
-    // the primary location.
-    let class_location = if class_known {
-        let class = get_json(ctx, cluster, &["get", "storageclass", &s.class]).await?;
-        class["allowedTopologies"][0]["matchLabelExpressions"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .find(|e| e["key"] == TOPOLOGY_KEY)
-            .and_then(|e| e["values"][0].as_str())
-            .map(str::to_string)
-    } else {
-        None
-    };
-    let usable: Vec<&str> = workers
-        .iter()
-        .filter(|n| match &class_location {
-            Some(loc) => worker_location(n) == Some(loc.as_str()),
-            None => true,
-        })
-        .map(|n| n.name.as_str())
-        .collect();
-    let place = class_location
-        .as_deref()
-        .map(|l| format!(" in {l}"))
-        .unwrap_or_default();
+    let (usable, place) = volume_workers(ctx, cluster, &s.class, class_known).await?;
     match usable.len() {
         0 => problems.push(format!(
             "Forgejo runs on Hetzner Cloud workers only, and there is none{place}: \
@@ -401,8 +374,48 @@ async fn report(ctx: &Ctx, cluster: &Cluster, s: &Settings) -> Result<Outcome> {
     bail!("fix these first:\n- {}", problems.join("\n- "))
 }
 
+/// The Hetzner Cloud workers a pod with a volume in `class` can run on, and
+/// " in <location>" when the class keeps its volumes in one.
+pub(super) async fn volume_workers(
+    ctx: &Ctx,
+    cluster: &Cluster,
+    class: &str,
+    class_known: bool,
+) -> Result<(Vec<String>, String)> {
+    // The location the class keeps its volumes in; on the first run
+    // hcloud-volumes doesn't exist yet, and the scheduler picks a worker in
+    // the primary location.
+    let class_location = if class_known {
+        let class = get_json(ctx, cluster, &["get", "storageclass", class]).await?;
+        class["allowedTopologies"][0]["matchLabelExpressions"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|e| e["key"] == TOPOLOGY_KEY)
+            .and_then(|e| e["values"][0].as_str())
+            .map(str::to_string)
+    } else {
+        None
+    };
+    let usable = cluster
+        .nodes
+        .iter()
+        .filter(|n| !n.control_plane && n.label(PROVIDER_KEY) == Some(PROVIDER))
+        .filter(|n| match &class_location {
+            Some(loc) => worker_location(n) == Some(loc.as_str()),
+            None => true,
+        })
+        .map(|n| n.name.clone())
+        .collect();
+    let place = class_location
+        .as_deref()
+        .map(|l| format!(" in {l}"))
+        .unwrap_or_default();
+    Ok((usable, place))
+}
+
 /// Notes when `host` does not resolve to a node.
-async fn check_resolves(ctx: &Ctx, cluster: &Cluster, host: &str) -> Result<()> {
+pub(super) async fn check_resolves(ctx: &Ctx, cluster: &Cluster, host: &str) -> Result<()> {
     let lookup = host.to_string();
     let resolved: Vec<IpAddr> = tokio::task::spawn_blocking(move || {
         (lookup.as_str(), 443)
@@ -437,12 +450,9 @@ async fn check_resolves(ctx: &Ctx, cluster: &Cluster, host: &str) -> Result<()> 
     Ok(())
 }
 
-/// Keeps `host` a CNAME to the DNS target on Cloudflare, the only record
-/// for that name, then waits until public DNS follows it.
-async fn dns(ctx: &Ctx, s: &Settings) -> Result<Outcome> {
-    let host = s.host.as_deref().unwrap_or_default();
-    let target = s.dns_target.as_deref().unwrap_or_default();
-    let zone = s.dns_zone.as_str();
+/// Keeps `host` a CNAME to `target` on Cloudflare, the only record for
+/// that name in `zone`, then waits until public DNS follows it.
+pub(super) async fn dns(ctx: &Ctx, host: &str, target: &str, zone: &str) -> Result<Outcome> {
     let cf = |args: &[&str]| {
         ctx.cmd("cf")
             .args(["dns", "records"])
@@ -661,7 +671,7 @@ async fn install(
 }
 
 /// The bytes in a Kubernetes quantity like `10Gi`, `20G` or `512Mi`.
-fn bytes(quantity: &str) -> Option<u128> {
+pub(super) fn bytes(quantity: &str) -> Option<u128> {
     let q = quantity.trim();
     let split = q.find(|c: char| !c.is_ascii_digit()).unwrap_or(q.len());
     let (n, unit) = q.split_at(split);

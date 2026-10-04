@@ -29,6 +29,7 @@ pub fn plan(cluster: &Arc<Cluster>, vars: &Vars) -> Result<Plan> {
     let mut plan = Plan::default();
     roles::hcloud_csi::tasks(&mut plan, cluster, vars)?;
     roles::forgejo::tasks(&mut plan, cluster, vars)?;
+    roles::registry::tasks(&mut plan, cluster, vars)?;
     Ok(plan)
 }
 
