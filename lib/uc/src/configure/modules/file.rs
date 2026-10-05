@@ -100,6 +100,13 @@ async fn sudo_stat(ctx: &Ctx, path: &Path) -> Result<Option<Stat>> {
     Ok(Some(Stat { kind, mode }))
 }
 
+/// Whether the link at `path` points at nothing. A target that cannot be
+/// looked at, such as one under `/root`, is not taken as missing.
+fn dangling(path: &Path) -> bool {
+    path.metadata()
+        .is_err_and(|err| err.kind() == std::io::ErrorKind::NotFound)
+}
+
 /// `state: directory`, creating parents. `mode` is applied when given.
 pub async fn directory(ctx: &Ctx, path: &Path, mode: Option<u32>, sudo: bool) -> Result<Outcome> {
     match stat(ctx, path, sudo).await? {
@@ -117,11 +124,26 @@ pub async fn directory(ctx: &Ctx, path: &Path, mode: Option<u32>, sudo: bool) ->
             kind: Kind::Link(_),
             ..
         }) if path.is_dir() => return Ok(Outcome::Ok),
+        // A dangling link holds nothing, it is left over from a moved or
+        // deleted target, so the directory takes its place.
+        Some(Stat {
+            kind: Kind::Link(_),
+            ..
+        }) if dangling(path) => {
+            if ctx.check() {
+                return Ok(Outcome::Changed);
+            }
+            absent(ctx, path, sudo).await?;
+        }
         Some(_) => bail!("{} exists and is not a directory", path.display()),
         None => {}
     }
     if ctx.check() {
         return Ok(Outcome::Changed);
+    }
+    // Make the parent first, so a dangling link further up is replaced too.
+    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty() && !p.is_dir()) {
+        Box::pin(directory(ctx, parent, None, sudo)).await?;
     }
     let mode = mode.unwrap_or(0o755);
     if elevated(ctx, sudo) {
@@ -423,6 +445,25 @@ mod tests {
             absent(&c, &dir.join("x"), false).await.unwrap(),
             Outcome::Ok
         );
+    }
+
+    #[tokio::test]
+    async fn directory_replaces_dangling_links() {
+        let dir = scratch("dangling");
+        let c = ctx(false);
+        let d = dir.join("d");
+        std::os::unix::fs::symlink(dir.join("gone"), &d).unwrap();
+        assert_eq!(
+            directory(&c, &d.join("sub"), None, false).await.unwrap(),
+            Outcome::Changed
+        );
+        assert!(d.is_dir() && !d.is_symlink());
+
+        let file = dir.join("file");
+        std::fs::write(&file, "x").unwrap();
+        let live = dir.join("live");
+        std::os::unix::fs::symlink(&file, &live).unwrap();
+        assert!(directory(&c, &live, None, false).await.is_err());
     }
 
     #[tokio::test]

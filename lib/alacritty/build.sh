@@ -14,6 +14,18 @@ STAGE="$BUILD_DIR$PREFIX"
 
 export CDPATH=
 
+# Checked before cargo: a release build takes minutes, and a missing scdoc or
+# header would only surface at the end of it.
+missing=""
+for pkg in ${APT_BUILD_DEPS:-}; do
+    dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q "install ok installed" || missing="$missing $pkg"
+done
+if [ -n "$missing" ]; then
+    echo "alacritty: missing build deps:$missing" >&2
+    echo "alacritty: run 'make -C lib/alacritty build-deps' to install them" >&2
+    exit 1
+fi
+
 cargo build --release --locked --quiet
 [ target/release/alacritty -nt "$STAGE/bin/alacritty" ] || exit 0
 echo "alacritty: staging into $STAGE"

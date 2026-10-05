@@ -14,7 +14,7 @@ APT_BUILD_DEPS := cmake g++ pkg-config libfreetype-dev libfontconfig1-dev \
 	desktop-file-utils
 
 build: $(ALACRITTY_SRC)/.git
-	@cd $(ALACRITTY_SRC) && BUILD_DIR=$(BUILD_DIR) bash $(CURDIR)/build.sh
+	@cd $(ALACRITTY_SRC) && BUILD_DIR=$(BUILD_DIR) APT_BUILD_DEPS="$(APT_BUILD_DEPS)" bash $(CURDIR)/build.sh
 
 $(ALACRITTY_SRC)/.git:
 	@mkdir -p $(dir $(ALACRITTY_SRC))
