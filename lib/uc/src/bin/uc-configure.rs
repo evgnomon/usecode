@@ -126,6 +126,7 @@ fn main() -> ExitCode {
             roles_dir: cli.roles,
             config_file: cli.config,
             need_roles: true,
+            overlay: Vec::new(),
         },
     };
     match configure::run(opts) {

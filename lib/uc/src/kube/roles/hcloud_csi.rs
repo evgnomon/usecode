@@ -281,7 +281,7 @@ impl Layout {
                     if top.len() > 1 {
                         layout.warnings.push(format!(
                             "{} have as many nodes each; {} is primary, \
-                         -e hcloud_primary_location=... picks another",
+                         set hcloud_primary_location to pick another",
                             top.iter()
                                 .map(|s| s.as_str())
                                 .collect::<Vec<_>>()

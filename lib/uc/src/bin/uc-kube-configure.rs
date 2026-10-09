@@ -48,7 +48,8 @@ struct Cli {
     #[arg(short, long, value_name = "N", default_value_t = 4)]
     jobs: usize,
 
-    /// Set a variable, e.g. -e hcloud_primary_location=fsn1 (repeatable).
+    /// Set a variable, e.g. -e hcloud_primary_location=fsn1 (repeatable);
+    /// it wins over the user config.
     #[arg(short = 'e', long = "extra-var", value_name = "KEY=VALUE")]
     extra_vars: Vec<String>,
 
@@ -76,7 +77,8 @@ struct Cli {
     #[arg(short, long)]
     verbose: bool,
 
-    /// The user config file, whose variables the roles read too
+    /// The user config file the roles read their variables from: its top
+    /// level, then `kube.<context>` over it
     /// [default: ~/src/github.com/<user>/config/config.yaml].
     #[arg(long, value_name = "FILE", env = "UC_CONFIGURE_CONFIG")]
     config: Option<PathBuf>,
@@ -91,17 +93,22 @@ Examples:
   uc kube configure -C                    show the plan and what would change
   uc kube configure                       configure the current context
   uc kube configure --context prod -t hcloud_csi
-  uc kube configure -e hcloud_primary_location=fsn1
   uc kube configure -t forgejo -e forgejo_host=git.example.com
-                                          Forgejo on a Hetzner Volume
-  uc kube configure -t registry -e registry_host=registry.example.com
-                                          a container registry on a 10Gi
-                                          Hetzner Volume
-  uc kube configure -t obs -e obs_enabled=true
-                                          metrics, logs and alerts, each
-                                          store on a Hetzner Volume
-  uc kube configure -t smoke             a 10Gi test volume (-t failover,
-                                          then -t smoke-clean deletes it)
+                                          try a setting once before keeping it
+
+What a cluster gets comes from your user config, so plain
+`uc kube configure` keeps it all in shape. Settings for every cluster sit
+at the top level, settings for one under kube.<context>, and -e wins over
+both:
+
+  kube:
+    cp-1:
+      forgejo_host: git.example.com        Forgejo on a Hetzner Volume
+      registry_host: registry.example.com  a private container registry
+      obs_enabled: true                    metrics, logs and alerts
+
+`-t smoke` makes a 10Gi test volume (-t failover moves it, -t smoke-clean
+deletes it).
 
 Node locations come from the Hetzner Cloud API, with HCLOUD_TOKEN (or
 hetzner.prod in your secrets, as for uc vm); the cluster keeps the token in
@@ -115,7 +122,13 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
     let read_only = cli.check || cli.list || cli.list_tags || cli.graph;
     let ask = !read_only && !cli.yes;
-    let context = cli.context;
+    let context = match cli.context.map_or_else(kube::cluster::current_context, Ok) {
+        Ok(context) => context,
+        Err(err) => {
+            eprintln!("uc kube configure: {err:#}");
+            return ExitCode::FAILURE;
+        }
+    };
     let opts = Options {
         selection: Selection {
             tags: cli.tags,
@@ -136,10 +149,11 @@ fn main() -> ExitCode {
             roles_dir: None,
             config_file: cli.config,
             need_roles: false,
+            overlay: vec!["kube".into(), context.clone()],
         },
     };
     let result = configure::run_with(opts, "uc kube configure", |vars| {
-        let cluster = Arc::new(Cluster::load(context.as_deref())?);
+        let cluster = Arc::new(Cluster::load(Some(&context))?);
         if ask {
             confirm(&cluster)?;
         }

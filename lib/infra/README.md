@@ -46,21 +46,47 @@ nothing, so it never validates against stale DNS.
 Running it again changes nothing. Added or replaced a worker? Just
 `lib/infra/dns.sh` to fix the records.
 
+## Settings for `uc kube configure`
+
+Everything below is switched on from your user config
+(`~/src/github.com/<you>/config/config.yaml`, also at `~/.config/usecode`),
+so a plain `uc kube configure` keeps the whole cluster in shape. Settings
+for one cluster go under `kube.<context>`; settings at the top level count
+for every cluster:
+
+```yaml
+kube:
+  cp-1:
+    registry_host: registry.example.com
+    registry_dns_target: example.com
+    obs_enabled: true
+    obs_alert_webhook: https://agent.example.com/alerts
+```
+
+Want to try something once first? `-e key=value` wins over the config for
+that run. A long config can be split up: `include: [kube.yaml]` (or a
+directory of `*.yaml`) pulls other files in, and the including file wins.
+
 ## Your registry
 
 A private registry for your own images, with its images on a 10Gi Hetzner
 Cloud Volume, so it can move to another worker and take them along:
 
+```yaml
+kube:
+  cp-1:
+    registry_host: registry.example.com
+    registry_dns_target: example.com
+```
+
 ```bash
 source ~/.bashrc.d/cloudflare.sh
-uc kube configure -t registry -e registry_host=registry.$INFRA_DOMAIN \
-  -e registry_dns_target=$INFRA_DOMAIN
+uc kube configure -t registry
 ```
 
 `registry_dns_target` makes the name a CNAME to your domain, so it follows
-the workers by itself. Want more room? `-e registry_size=50Gi` grows the
-volume (it never shrinks). Put the variables in your user config and plain
-`uc kube configure` keeps it all in shape.
+the workers by itself. Want more room? `registry_size: 50Gi` grows the
+volume (it never shrinks).
 
 The first run makes one login, user `usecode` with a random password, and
 keeps it in a secret. Log in from your machine:
@@ -91,9 +117,15 @@ A small monitoring stack with no Prometheus server and no UI to look after.
 Everything goes through kubectl, which makes it easy for you and for your
 agents to ask questions:
 
+```yaml
+kube:
+  cp-1:
+    obs_enabled: true
+    obs_alert_webhook: https://agent.example.com/alerts
+```
+
 ```bash
-uc kube configure -t obs -e obs_enabled=true \
-  -e obs_alert_webhook=https://agent.$INFRA_DOMAIN/alerts
+uc kube configure -t obs
 ```
 
 You get node-exporter and kube-state-metrics, VictoriaMetrics to scrape

@@ -13,7 +13,7 @@
 //! It answers on `https://<registry_host>` through k3s's Traefik, with a
 //! Let's Encrypt certificate from the `letsencrypt` ClusterIssuer that
 //! `lib/infra/bootstrap.sh` sets up. With `registry_dns_target` the role
-//! keeps the name a CNAME to it on Cloudflare, with `cf`; otherwise point it
+//! keeps the name a CNAME to it on Cloudflare's API; otherwise point it
 //! at the workers yourself (`lib/infra/dns.sh <registry_host>`).
 //!
 //! Variables (`-e` or the user config):
@@ -38,7 +38,7 @@ use crate::configure::vars::Vars;
 use crate::kube::cluster::{CONTROL_PLANE, Cluster};
 use crate::kube::roles::forgejo::{bytes, check_resolves, dns, volume_workers};
 use crate::kube::roles::hcloud_csi::{DRIVER, GENERIC_CLASS, PROVIDER, PROVIDER_KEY};
-use crate::kube::{apply, get_json, kubectl, var};
+use crate::kube::{apply, get_json, kubectl, unset, var};
 use crate::password::{self, Charset};
 use anyhow::{Result, bail};
 use serde_json::{Value, json};
@@ -262,7 +262,7 @@ pub fn tasks(plan: &mut Plan, cluster: &Arc<Cluster>, vars: &Vars) -> Result<()>
         .after(["registry/report"])
         .when(
             settings.dns_target.is_some(),
-            "registry_dns_target is not set; the name is yours to point",
+            "registry_dns_target is not set; the name is yours to point at the workers",
         )
         .run(move |ctx| async move {
             let host = s.host.as_deref().unwrap_or_default();
@@ -300,7 +300,7 @@ pub fn tasks(plan: &mut Plan, cluster: &Arc<Cluster>, vars: &Vars) -> Result<()>
     plan.gate(
         start,
         settings.host.is_some(),
-        "registry_host is not set (e.g. -e registry_host=registry.example.com)",
+        &unset(cluster, "registry_host", "registry.example.com"),
     );
     Ok(())
 }

@@ -34,8 +34,15 @@ compilers, language servers, CLI tools, and development libraries.
 # Provide user configs:
 
 ```bash
-git clone ssh://git@github.com:YOURUSER/config.git ~/.config/usecode
+git clone ssh://git@github.com:YOURUSER/config.git ~/src/github.com/YOURUSER/config
 ```
+
+`config.yaml` in there is read by `uc configure` and `uc kube configure`;
+`include: [more.yaml, conf.d]` pulls in other files (a directory means its
+`*.yaml`), and the including file's own keys win. `uc configure` links
+`~/.config/usecode` to this repository, so the mesh inventory and the
+cluster files it writes are kept there too. Already have a
+`~/.config/usecode` directory? Move what's in it into the repository first.
 
 # Dev Container Setup
 

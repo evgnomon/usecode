@@ -129,6 +129,9 @@ pub struct LoadOptions {
     /// The plan reads files and templates from the roles directory, so it
     /// must be found; `uc kube configure` reads none.
     pub need_roles: bool,
+    /// A section of the user config laid over its top level before `-e`,
+    /// e.g. `["kube", "cp-1"]` for what only that cluster gets.
+    pub overlay: Vec<String>,
 }
 
 impl Vars {
@@ -217,10 +220,9 @@ impl Vars {
 
         let mut context = vars.base_context();
         if has_config {
-            let raw = std::fs::read_to_string(&config_file)
+            let mut yaml = read_config(&config_file, &mut Vec::new())?;
+            apply_overlay(&mut yaml, &opts.overlay)
                 .with_context(|| format!("reading {}", config_file.display()))?;
-            let yaml: serde_yaml::Value = serde_yaml::from_str(&raw)
-                .with_context(|| format!("parsing {}", config_file.display()))?;
             let rendered = render_strings(yaml, &Value::from(context.clone()))
                 .with_context(|| format!("rendering {}", config_file.display()))?;
             vars.config = serde_yaml::from_value(rendered.clone())
@@ -409,6 +411,108 @@ fn parse_extra(items: &[String]) -> Result<BTreeMap<String, serde_yaml::Value>> 
     Ok(extra)
 }
 
+/// The key listing the files a config file pulls in.
+const INCLUDE: &str = "include";
+
+/// Reads a config file with everything it includes: `include:` names files
+/// or directories (their `*.yaml` and `*.yml`, in name order), relative to
+/// the including file. Included files are merged in order, and the file's
+/// own keys win over all of them. `seen` holds the files being read, to
+/// catch an include loop.
+fn read_config(path: &Path, seen: &mut Vec<PathBuf>) -> Result<serde_yaml::Value> {
+    use serde_yaml::Value as Y;
+    let canonical =
+        std::fs::canonicalize(path).with_context(|| format!("reading {}", path.display()))?;
+    if seen.contains(&canonical) {
+        bail!("{} includes itself", path.display());
+    }
+    let raw =
+        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    let mut own: Y =
+        serde_yaml::from_str(&raw).with_context(|| format!("parsing {}", path.display()))?;
+    if own.is_null() {
+        own = Y::Mapping(Default::default());
+    }
+    let Y::Mapping(map) = &mut own else {
+        bail!("{} is not a mapping of keys", path.display());
+    };
+    let includes = match map.remove(INCLUDE) {
+        None | Some(Y::Null) => Vec::new(),
+        Some(Y::String(one)) => vec![one],
+        Some(many) => serde_yaml::from_value(many)
+            .with_context(|| format!("{}: include is not a list of paths", path.display()))?,
+    };
+    let base = path.parent().unwrap_or(Path::new("."));
+    seen.push(canonical);
+    let mut merged = Y::Mapping(Default::default());
+    for include in includes {
+        for file in include_files(&base.join(&include))
+            .with_context(|| format!("{}: include {include}", path.display()))?
+        {
+            merge(&mut merged, read_config(&file, seen)?);
+        }
+    }
+    seen.pop();
+    merge(&mut merged, own);
+    Ok(merged)
+}
+
+/// A file as itself, a directory as its YAML files in name order.
+fn include_files(path: &Path) -> Result<Vec<PathBuf>> {
+    if !path.is_dir() {
+        return Ok(vec![path.to_path_buf()]);
+    }
+    let mut files = std::fs::read_dir(path)?
+        .map(|e| e.map(|e| e.path()))
+        .collect::<std::io::Result<Vec<_>>>()?;
+    files.retain(|f| f.is_file() && f.extension().is_some_and(|e| e == "yaml" || e == "yml"));
+    files.sort();
+    Ok(files)
+}
+
+/// Lays `over` onto `base`: mappings merge key by key, anything else is
+/// replaced.
+fn merge(base: &mut serde_yaml::Value, over: serde_yaml::Value) {
+    use serde_yaml::Value as Y;
+    match (base, over) {
+        (Y::Mapping(base), Y::Mapping(over)) => {
+            for (k, v) in over {
+                match base.get_mut(&k) {
+                    Some(slot) => merge(slot, v),
+                    None => {
+                        base.insert(k, v);
+                    }
+                }
+            }
+        }
+        (base, over) => *base = over,
+    }
+}
+
+/// Merges the section at `path` (e.g. `kube.cp-1`) over the top level, if
+/// the config has it.
+fn apply_overlay(config: &mut serde_yaml::Value, path: &[String]) -> Result<()> {
+    if path.is_empty() {
+        return Ok(());
+    }
+    let mut section = &*config;
+    for key in path {
+        match section.get(key.as_str()) {
+            Some(next) => section = next,
+            None => return Ok(()),
+        }
+    }
+    if section.is_null() {
+        return Ok(());
+    }
+    if !section.is_mapping() {
+        bail!("{} is not a mapping of keys", path.join("."));
+    }
+    let section = section.clone();
+    merge(config, section);
+    Ok(())
+}
+
 /// Renders every Jinja string in the user config, as Ansible does lazily.
 fn render_strings(value: serde_yaml::Value, ctx: &Value) -> Result<serde_yaml::Value> {
     use serde_yaml::Value as Y;
@@ -444,6 +548,39 @@ mod tests {
         let out = render_strings(yaml, &vars.template).unwrap();
         assert_eq!(out["prefix"].as_str(), Some("Debian/src"));
         assert_eq!(out["n"].as_i64(), Some(3));
+    }
+
+    #[test]
+    fn config_includes_merge_under_the_including_file() {
+        let dir = std::env::temp_dir().join(format!("uc-vars-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("conf.d")).unwrap();
+        let write = |name: &str, body: &str| std::fs::write(dir.join(name), body).unwrap();
+        write(
+            "config.yaml",
+            "include: [base.yaml, conf.d]\na: main\nkube:\n  cp-1:\n    host: main\n",
+        );
+        write("base.yaml", "a: base\nb: base\n");
+        write(
+            "conf.d/10-kube.yaml",
+            "kube:\n  cp-1:\n    host: inc\n    size: 5Gi\n",
+        );
+        write("conf.d/notes.txt", "not: read\n");
+        let mut out = read_config(&dir.join("config.yaml"), &mut Vec::new()).unwrap();
+        assert_eq!(out["a"].as_str(), Some("main"));
+        assert_eq!(out["b"].as_str(), Some("base"));
+        assert_eq!(out["kube"]["cp-1"]["host"].as_str(), Some("main"));
+        assert_eq!(out["kube"]["cp-1"]["size"].as_str(), Some("5Gi"));
+        assert!(out.get("include").is_none() && out.get("not").is_none());
+
+        apply_overlay(&mut out, &["kube".into(), "cp-1".into()]).unwrap();
+        assert_eq!(out["host"].as_str(), Some("main"));
+        apply_overlay(&mut out, &["kube".into(), "other".into()]).unwrap();
+
+        write("base.yaml", "include: config.yaml\n");
+        let err = read_config(&dir.join("config.yaml"), &mut Vec::new()).unwrap_err();
+        assert!(format!("{err:#}").contains("includes itself"));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

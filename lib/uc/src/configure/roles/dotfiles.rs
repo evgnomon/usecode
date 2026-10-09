@@ -8,6 +8,7 @@ use crate::configure::engine::{Outcome, Plan, Task};
 use crate::configure::modules::file;
 use crate::configure::modules::inflate::inflate;
 use crate::configure::vars::Vars;
+use anyhow::Context;
 use std::path::{Path, PathBuf};
 
 pub const LINKS: &str = "dotfiles/links";
@@ -149,6 +150,31 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
                 }
                 Ok(outcome)
             }),
+    );
+
+    let config_dir = v.config_dir.clone();
+    plan.add(
+        Task::new(
+            "dotfiles/usecode-config",
+            "Link ~/.config/usecode to the config repository",
+        )
+        .tags(&["dotfiles"])
+        .when(
+            v.config_dir.is_dir(),
+            format!("{} is not cloned", v.config_dir.display()),
+        )
+        .run(move |ctx| async move {
+            let dest = ctx.vars().home.join(".config/usecode");
+            file::link(&ctx, &config_dir, &dest, false)
+                .await
+                .with_context(|| {
+                    format!(
+                        "move what is in {} into {} first",
+                        dest.display(),
+                        config_dir.display()
+                    )
+                })
+        }),
     );
 
     plan.add(

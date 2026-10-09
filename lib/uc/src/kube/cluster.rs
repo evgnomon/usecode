@@ -74,12 +74,7 @@ impl Cluster {
     pub fn load(context: Option<&str>) -> Result<Cluster> {
         let context = match context {
             Some(c) => c.to_string(),
-            None => kubectl(&["config", "current-context"])
-                .context(
-                    "kubectl has no current context; pass --context or `uc kube connect HOST`",
-                )?
-                .trim()
-                .to_string(),
+            None => current_context()?,
         };
         let server = kubectl(&[
             "config",
@@ -107,6 +102,14 @@ impl Cluster {
             server,
         })
     }
+}
+
+/// The context kubectl points at.
+pub fn current_context() -> Result<String> {
+    Ok(kubectl(&["config", "current-context"])
+        .context("kubectl has no current context; pass --context or `uc kube connect HOST`")?
+        .trim()
+        .to_string())
 }
 
 /// Runs kubectl and returns its stdout, failing with its stderr.

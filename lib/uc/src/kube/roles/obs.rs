@@ -57,7 +57,7 @@ use crate::kube::roles::forgejo::bytes;
 use crate::kube::roles::hcloud_csi::{
     self, DRIVER, GENERIC_CLASS, Layout, PROVIDER, PROVIDER_KEY, TOPOLOGY_KEY,
 };
-use crate::kube::{apply, files_dir, get_json, helm, helm_repo, kubectl, var};
+use crate::kube::{apply, files_dir, get_json, helm, helm_repo, kubectl, unset, var};
 use anyhow::{Result, bail};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -229,7 +229,7 @@ impl Placement {
             p.problems.push(format!(
                 "{m} is the only location with Hetzner Cloud workers, and logs go to another \
                  one than metrics: add a worker in another location, or keep both in {m} \
-                 with -e obs_logs_location={m}"
+                 with obs_logs_location: {m}"
             ));
         }
         if p.workers.is_empty() {
@@ -559,7 +559,7 @@ pub fn tasks(plan: &mut Plan, cluster: &Arc<Cluster>, vars: &Vars, layout: &Layo
     plan.gate(
         start,
         settings.enabled,
-        "obs_enabled is not set (e.g. -e obs_enabled=true)",
+        &unset(cluster, "obs_enabled", "true"),
     );
     Ok(())
 }
@@ -972,7 +972,7 @@ mod tests {
         let l = layout(&[("w1", "fsn1"), ("w2", "fsn1")]);
         let p = Placement::new(&l, None, None);
         assert!(p.logs.is_none());
-        assert!(p.problems[0].contains("obs_logs_location=fsn1"));
+        assert!(p.problems[0].contains("obs_logs_location: fsn1"));
         let p = Placement::new(&l, None, Some("fsn1"));
         assert_eq!(p.logs.as_deref(), Some("fsn1"));
         assert!(p.problems.is_empty());

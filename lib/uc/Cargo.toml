@@ -120,6 +120,8 @@ libc.workspace = true
 md-5 = "0.11"
 minijinja.workspace = true
 minijinja-contrib = { version = "2", features = ["pycompat"] }
+reqwest = { workspace = true, features = ["json", "query", "rustls-no-provider"] }
+rustls-graviola = "0.4"
 pbkdf2 = { version = "0.13", default-features = false, features = ["hmac"] }
 rpassword.workspace = true
 serde_json = { workspace = true, features = ["preserve_order"] }

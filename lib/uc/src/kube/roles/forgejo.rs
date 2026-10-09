@@ -46,15 +46,15 @@ use crate::configure::ctx::Ctx;
 use crate::configure::engine::{Outcome, Plan, Task};
 use crate::configure::modules::copy;
 use crate::configure::vars::Vars;
+use crate::kube::cloudflare::{self, Cloudflare};
 use crate::kube::cluster::{CONTROL_PLANE, Cluster, Node};
 use crate::kube::roles::hcloud_csi::{
     DRIVER, GENERIC_CLASS, LOCATION_LABEL, PROVIDER, PROVIDER_KEY, TOPOLOGY_KEY,
 };
-use crate::kube::{apply, files_dir, get_json, helm, kubectl, var};
+use crate::kube::{apply, files_dir, get_json, helm, kubectl, unset, var};
 use crate::password::{self, Charset};
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Result, bail};
 use serde_json::{Value, json};
-use std::collections::BTreeSet;
 use std::net::{IpAddr, ToSocketAddrs};
 use std::path::Path;
 use std::sync::Arc;
@@ -250,7 +250,7 @@ pub fn tasks(plan: &mut Plan, cluster: &Arc<Cluster>, vars: &Vars) -> Result<()>
             .after(["forgejo/report"])
             .when(
                 settings.dns_target.is_some(),
-                "forgejo_dns_target is not set; the name is yours to point",
+                "forgejo_dns_target is not set; the name is yours to point at the workers",
             )
             .run(move |ctx| async move {
                 let host = s.host.as_deref().unwrap_or_default();
@@ -301,7 +301,7 @@ pub fn tasks(plan: &mut Plan, cluster: &Arc<Cluster>, vars: &Vars) -> Result<()>
     plan.gate(
         start,
         settings.host.is_some(),
-        "forgejo_host is not set (e.g. -e forgejo_host=git.example.com)",
+        &unset(cluster, "forgejo_host", "git.example.com"),
     );
     Ok(())
 }
@@ -453,20 +453,15 @@ pub(super) async fn check_resolves(ctx: &Ctx, cluster: &Cluster, host: &str) -> 
 /// Keeps `host` a CNAME to `target` on Cloudflare, the only record for
 /// that name in `zone`, then waits until public DNS follows it.
 pub(super) async fn dns(ctx: &Ctx, host: &str, target: &str, zone: &str) -> Result<Outcome> {
-    let cf = |args: &[&str]| {
-        ctx.cmd("cf")
-            .args(["dns", "records"])
-            .args(args.iter().copied())
-    };
-    let hint = "is cf installed and CLOUDFLARE_API_TOKEN set? (source ~/.bashrc.d/cloudflare.sh)";
+    let cf = Cloudflare::from_env()?;
+    // A CNAME to a name that resolves nowhere would only take the host down.
+    let want = cloudflare::resolve(target).await?;
+    if want.is_empty() {
+        bail!("{target} does not resolve, so neither would {host}; lib/infra/dns.sh {target}");
+    }
 
-    let listed = cf(&["list", "-z", zone, "--name", host])
-        .read_only()
-        .output()
-        .await
-        .map_err(|e| anyhow!("{e:#}\n{hint}"))?;
-    let records: Vec<Value> = serde_json::from_str(&listed.stdout)
-        .map_err(|e| anyhow!("reading `cf dns records list`: {e}"))?;
+    let zone_id = cf.zone_id(zone).await?;
+    let records = cf.records(&zone_id, host).await?;
     let wanted = |r: &Value| {
         r["type"] == "CNAME"
             && r["proxied"] == false
@@ -491,9 +486,7 @@ pub(super) async fn dns(ctx: &Ctx, host: &str, target: &str, zone: &str) -> Resu
             r["content"].as_str().unwrap_or("?")
         );
         if !ctx.check() {
-            cf(&["delete", id, "-z", zone, "-q", "--force"])
-                .output()
-                .await?;
+            cf.delete(&zone_id, id).await?;
         }
         ctx.log(&format!("removed {what}"));
         outcome = Outcome::Changed;
@@ -501,18 +494,15 @@ pub(super) async fn dns(ctx: &Ctx, host: &str, target: &str, zone: &str) -> Resu
     if keep.is_none() {
         // Not proxied: Traefik answers Let's Encrypt itself, as for the
         // other names.
-        let body = json!({
+        let record = json!({
             "type": "CNAME",
             "name": host,
             "content": target,
             "proxied": false,
             "ttl": 60,
-        })
-        .to_string();
+        });
         if !ctx.check() {
-            cf(&["create", "-z", zone, "-q", "--body", &body])
-                .output()
-                .await?;
+            cf.create(&zone_id, &record).await?;
         }
         ctx.log(&format!("CNAME {host} -> {target} (new)"));
         outcome = Outcome::Changed;
@@ -521,22 +511,8 @@ pub(super) async fn dns(ctx: &Ctx, host: &str, target: &str, zone: &str) -> Resu
         return Ok(outcome);
     }
 
-    let resolve = |name: &str| {
-        ctx.cmd("dig")
-            .args(["+short", name, "A", "@1.1.1.1"])
-            .any_code()
-            .read_only()
-            .output()
-    };
-    let ips = |out: &str| -> BTreeSet<IpAddr> {
-        out.lines().filter_map(|l| l.trim().parse().ok()).collect()
-    };
-    let want = ips(&resolve(target).await?.stdout);
-    if want.is_empty() {
-        bail!("{target} does not resolve, so neither will {host}; lib/infra/dns.sh {target}");
-    }
     for _ in 0..60 {
-        if ips(&resolve(host).await?.stdout) == want {
+        if cloudflare::resolve(host).await? == want {
             ctx.log(&format!("{host} resolves to the workers"));
             return Ok(outcome);
         }

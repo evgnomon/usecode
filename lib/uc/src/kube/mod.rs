@@ -10,6 +10,7 @@
 //! any task starts, and the [`roles`] change that cluster with kubectl and
 //! helm, both pinned to that context.
 
+pub mod cloudflare;
 pub mod cluster;
 pub mod roles;
 
@@ -92,6 +93,14 @@ pub fn var<T: DeserializeOwned>(vars: &Vars, key: &str) -> Result<Option<T>> {
     serde_json::from_value(json)
         .map(Some)
         .with_context(|| format!("variable {key}"))
+}
+
+/// Why a role is off: `key` is missing, and where it goes in the config.
+pub fn unset(cluster: &Cluster, key: &str, example: &str) -> String {
+    format!(
+        "{key} is not set; put `{key}: {example}` under kube.{} in your config",
+        cluster.context
+    )
 }
 
 /// Where the files written for a cluster are kept, next to the mesh

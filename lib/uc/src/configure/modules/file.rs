@@ -142,7 +142,10 @@ pub async fn directory(ctx: &Ctx, path: &Path, mode: Option<u32>, sudo: bool) ->
         return Ok(Outcome::Changed);
     }
     // Make the parent first, so a dangling link further up is replaced too.
-    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty() && !p.is_dir()) {
+    if let Some(parent) = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty() && !p.is_dir())
+    {
         Box::pin(directory(ctx, parent, None, sudo)).await?;
     }
     let mode = mode.unwrap_or(0o755);
