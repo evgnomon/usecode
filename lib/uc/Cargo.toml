@@ -133,6 +133,10 @@ path = "src/bin/uc-fs.rs"
 name = "uc-kube-logs"
 path = "src/bin/uc-kube-logs.rs"
 
+[[bin]]
+name = "uc-forward"
+path = "src/bin/uc-forward.rs"
+
 [dependencies]
 aes = "0.9"
 anyhow.workspace = true
@@ -155,5 +159,5 @@ serde = { workspace = true, features = ["derive"] }
 serde_yaml.workspace = true
 sha1 = "0.11"
 sha2 = "0.11"
-tokio = { workspace = true, features = ["fs", "io-std", "macros", "process", "rt-multi-thread", "sync", "time", "io-util"] }
+tokio = { workspace = true, features = ["fs", "io-std", "macros", "process", "rt-multi-thread", "signal", "sync", "time", "io-util"] }
 zeroize = "1"

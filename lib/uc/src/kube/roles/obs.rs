@@ -47,18 +47,35 @@
 //!   in VictoriaMetrics as the `ALERTS` series.
 //! * `obs_alert_groups`: more vmalert rule groups, in the Prometheus rules
 //!   format, next to the built-in `cluster` group.
+//! * `obs_dashboards_dir`: where your vmui dashboards are, one `.json` file
+//!   each (default: `dashboards` next to the chart values, in
+//!   `~/.config/usecode/kube/<context>`).
+//!
+//! With the [`rustfs`](super::rustfs) role, vmui gets dashboards you keep in
+//! code. The role checks and uploads them to the `obs-dashboards` bucket,
+//! next to a built-in `cluster.json` (a file of yours by that name replaces
+//! it), and a sidecar of VictoriaMetrics copies the bucket to
+//! `-vmui.customDashboardsPath` every minute with a read-only key of its
+//! own, kept in obs/vmui-dashboards-s3. The role never deletes from the
+//! bucket, so `uc fs cp` works too, and `uc fs rm` takes one away.
+//! The format: <https://github.com/VictoriaMetrics/VictoriaMetrics/tree/master/app/vmui/packages/vmui/public/dashboards>.
 
 use crate::configure::ctx::Ctx;
 use crate::configure::engine::{Outcome, Plan, Task};
 use crate::configure::modules::copy;
 use crate::configure::vars::Vars;
+use crate::fs::{self, Store};
 use crate::kube::cluster::{CONTROL_PLANE, Cluster};
+use crate::kube::remote::{kubectl_json, port_forward};
 use crate::kube::roles::forgejo::bytes;
 use crate::kube::roles::hcloud_csi::{
     self, DRIVER, GENERIC_CLASS, Layout, PROVIDER, PROVIDER_KEY, TOPOLOGY_KEY,
 };
+use crate::kube::roles::rustfs;
 use crate::kube::{apply, files_dir, get_json, helm, helm_repo, kubectl, unset, var};
-use anyhow::{Result, bail};
+use crate::password::{self, Charset};
+use anyhow::{Context, Result, bail};
+use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -77,6 +94,15 @@ pub const LOGS: &str = "vlsingle";
 const LOGS_CLAIM: &str = "vlsingle-data";
 pub const LOGS_PORT: u16 = 9428;
 const ALERTS_PORT: u16 = 8880;
+
+/// The bucket the dashboards are kept in, also the user that reads it.
+const DASHBOARDS: &str = "obs-dashboards";
+const DASHBOARDS_POLICY: &str = "obs-dashboards-read";
+const DASHBOARDS_SECRET: &str = "vmui-dashboards-s3";
+const DASHBOARDS_PATH: &str = "/dashboards";
+const RCLONE_IMAGE: &str = "rclone/rclone:1.75.1";
+/// The dashboard every cluster gets.
+const BUILT_IN: &[(&str, &str)] = &[("cluster.json", include_str!("obs-dashboards/cluster.json"))];
 
 /// One helm release of the stack.
 #[derive(Debug, Clone)]
@@ -163,6 +189,9 @@ pub struct Settings {
     pub placement: Placement,
     pub webhook: Option<String>,
     pub alert_groups: Vec<Value>,
+    /// Whether the rustfs role runs, which keeps the dashboards.
+    pub rustfs: bool,
+    pub dashboards_dir: PathBuf,
 }
 
 /// Where each store keeps its volume, from the hcloud_csi [`Layout`].
@@ -250,7 +279,8 @@ impl Placement {
 }
 
 impl Settings {
-    pub fn load(vars: &Vars, layout: &Layout) -> Result<Settings> {
+    /// `files` is where the chart values go.
+    pub fn load(vars: &Vars, layout: &Layout, files: &Path) -> Result<Settings> {
         let webhook: Option<String> = var(vars, "obs_alert_webhook")?;
         let webhook = webhook
             .map(|w| w.trim().trim_end_matches('/').to_string())
@@ -274,6 +304,14 @@ impl Settings {
             ),
             webhook,
             alert_groups: var(vars, "obs_alert_groups")?.unwrap_or_default(),
+            rustfs: var::<String>(vars, "rustfs_host")?.is_some_and(|h| !h.trim().is_empty()),
+            dashboards_dir: match var::<String>(vars, "obs_dashboards_dir")? {
+                Some(d) => match d.strip_prefix("~/") {
+                    Some(rest) => vars.home.join(rest),
+                    None => PathBuf::from(d),
+                },
+                None => files.join("dashboards"),
+            },
         })
     }
 
@@ -326,8 +364,8 @@ impl Settings {
                 "fullnameOverride": release.name,
                 "service": {"annotations": port(8080)},
             }),
-            METRICS => json!({
-                "server": {
+            METRICS => {
+                let mut server = json!({
                     "fullnameOverride": METRICS,
                     // A Deployment on our own claim, which outlives the release.
                     "mode": "deployment",
@@ -339,8 +377,18 @@ impl Settings {
                         "requests": {"cpu": "100m", "memory": "256Mi"},
                         "limits": {"memory": "1Gi"},
                     },
-                },
-            }),
+                });
+                if self.rustfs {
+                    // Helm merges these into the chart's own extraArgs.
+                    server["extraArgs"] = json!({"vmui.customDashboardsPath": DASHBOARDS_PATH});
+                    server["extraVolumes"] = json!([{"name": "dashboards", "emptyDir": {}}]);
+                    server["extraVolumeMounts"] = json!([
+                        {"name": "dashboards", "mountPath": DASHBOARDS_PATH, "readOnly": true},
+                    ]);
+                    server["extraContainers"] = json!([dashboards_sidecar()]);
+                }
+                json!({"server": server})
+            }
             "vmalert" => {
                 let mut server = json!({
                     "fullnameOverride": release.name,
@@ -435,10 +483,38 @@ impl Settings {
     }
 }
 
+/// rclone copying the dashboards bucket to where vmui reads them, every
+/// minute. vmui reads the folder on every request, so no restart is needed.
+fn dashboards_sidecar() -> Value {
+    let key = |key: &str| json!({"secretKeyRef": {"name": DASHBOARDS_SECRET, "key": key}});
+    let env = |name: &str, value: String| json!({"name": format!("RCLONE_CONFIG_RUSTFS_{name}"), "value": value});
+    json!({
+        "name": "dashboards",
+        "image": RCLONE_IMAGE,
+        "command": ["/bin/sh", "-c", format!(
+            "while true; do rclone sync --log-level NOTICE rustfs:{DASHBOARDS} {DASHBOARDS_PATH}; sleep 60; done"
+        )],
+        "env": [
+            env("TYPE", "s3".into()),
+            env("PROVIDER", "Other".into()),
+            env("ENDPOINT", format!(
+                "http://{}.{}.svc:{}", rustfs::NAME, rustfs::NAMESPACE, rustfs::PORT
+            )),
+            {"name": "RCLONE_CONFIG_RUSTFS_ACCESS_KEY_ID", "valueFrom": key("access-key")},
+            {"name": "RCLONE_CONFIG_RUSTFS_SECRET_ACCESS_KEY", "valueFrom": key("secret-key")},
+        ],
+        "volumeMounts": [{"name": "dashboards", "mountPath": DASHBOARDS_PATH}],
+        "resources": {
+            "requests": {"cpu": "5m", "memory": "16Mi"},
+            "limits": {"memory": "128Mi"},
+        },
+    })
+}
+
 pub fn tasks(plan: &mut Plan, cluster: &Arc<Cluster>, vars: &Vars, layout: &Layout) -> Result<()> {
-    let settings = Arc::new(Settings::load(vars, layout)?);
-    let start = plan.tasks().len();
     let dir = files_dir(vars, cluster);
+    let settings = Arc::new(Settings::load(vars, layout, &dir)?);
+    let start = plan.tasks().len();
     let header = format!(
         "# Written by `uc kube configure -t obs` for context {}.\n\
          # It is rewritten on every run: change the variables, not this file.\n",
@@ -524,11 +600,28 @@ pub fn tasks(plan: &mut Plan, cluster: &Arc<Cluster>, vars: &Vars, layout: &Layo
         .run(move |ctx| async move { volumes(&ctx, &c, &s).await }),
     );
 
+    let (c, s) = (cluster.clone(), settings.clone());
+    plan.add(
+        Task::new(
+            "obs/dashboards",
+            "Upload the vmui dashboards to RustFS, with a read-only key for VictoriaMetrics",
+        )
+        .tags(&["obs"])
+        .after(["obs/namespace", "rustfs/verify"])
+        .when(
+            settings.rustfs,
+            "rustfs_host is not set, so vmui has no dashboards of yours",
+        )
+        .run(move |ctx| async move { dashboards(&ctx, &c, &s).await }),
+    );
+
     let base = files_dir(vars, cluster);
     for r in RELEASES {
         let mut after = vec!["obs/namespace", "obs/repos", "obs/files"];
         match r.name {
-            METRICS | LOGS => after.push("obs/volumes"),
+            // Its sidecar reads the dashboards with that key.
+            METRICS => after.extend(["obs/volumes", "obs/dashboards"]),
+            LOGS => after.push("obs/volumes"),
             // Its datasource has to answer before it starts evaluating.
             "vmalert" => after.push("obs/metrics"),
             // Nowhere to send logs before VictoriaLogs is there.
@@ -665,6 +758,255 @@ async fn volumes(ctx: &Ctx, cluster: &Cluster, s: &Settings) -> Result<Outcome> 
         }
     }
     apply(ctx, cluster, &s.claims(&sizes[0], &sizes[1]).to_string()).await
+}
+
+/// The vmui dashboard format, to catch a broken file before vmui does: one
+/// file it can't read hides all of them. As vmui, it ignores unknown fields.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+struct Dashboard {
+    title: Option<String>,
+    filename: Option<String>,
+    rows: Option<Vec<Row>>,
+}
+
+#[derive(Deserialize)]
+#[allow(dead_code)]
+struct Row {
+    title: Option<String>,
+    panels: Option<Vec<Panel>>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+struct Panel {
+    title: Option<String>,
+    description: Option<String>,
+    unit: Option<String>,
+    expr: Option<Vec<String>>,
+    alias: Option<Vec<String>>,
+    show_legend: Option<bool>,
+    width: Option<i64>,
+}
+
+/// Why vmui would not show `body`, if it wouldn't.
+fn check_dashboard(body: &str) -> Result<()> {
+    let d: Dashboard = serde_json::from_str(body)?;
+    let rows = d.rows.unwrap_or_default();
+    if rows.is_empty() {
+        bail!("it has no rows, so vmui leaves it out");
+    }
+    for (i, row) in rows.iter().enumerate() {
+        for (j, panel) in row.panels.iter().flatten().enumerate() {
+            let at = format!("row {}, panel {}", i + 1, j + 1);
+            if panel.expr.as_ref().is_none_or(|e| e.is_empty()) {
+                bail!("{at} has no expr");
+            }
+            if let Some(w) = panel.width
+                && !(1..=12).contains(&w)
+            {
+                bail!("{at} is {w} wide; a row is 12");
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The built-in dashboards, then the `.json` files in `dir`, which replace
+/// one of the same name, all checked.
+fn dashboard_files(dir: &Path) -> Result<BTreeMap<String, String>> {
+    let mut files: BTreeMap<String, String> = BUILT_IN
+        .iter()
+        .map(|(name, body)| (name.to_string(), body.to_string()))
+        .collect();
+    if dir.is_dir() {
+        for entry in std::fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
+            let path = entry?.path();
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if path.extension().is_some_and(|e| e == "json") && path.is_file() {
+                let body = std::fs::read_to_string(&path)
+                    .with_context(|| format!("reading {}", path.display()))?;
+                files.insert(name.to_string(), body);
+            }
+        }
+    }
+    for (name, body) in &files {
+        check_dashboard(body).with_context(|| format!("the dashboard {name}"))?;
+    }
+    Ok(files)
+}
+
+/// Read access to the dashboards bucket, nothing else.
+fn read_policy() -> Value {
+    json!({
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Action": ["s3:GetBucketLocation", "s3:ListBucket"],
+                "Resource": [format!("arn:aws:s3:::{DASHBOARDS}")],
+            },
+            {
+                "Effect": "Allow",
+                "Action": ["s3:GetObject"],
+                "Resource": [format!("arn:aws:s3:::{DASHBOARDS}/*")],
+            },
+        ],
+    })
+}
+
+async fn dashboards(ctx: &Ctx, cluster: &Cluster, s: &Settings) -> Result<Outcome> {
+    let files = dashboard_files(&s.dashboards_dir)?;
+    if ctx.check() && ctx.deps_changed() {
+        return Ok(Outcome::Skipped("checked once RustFS is installed".into()));
+    }
+    let mut changed = false;
+
+    // The key VictoriaMetrics reads with, made once: the secret is the
+    // source of truth. Read without the run's log, which would show it.
+    let found = kubectl(ctx, cluster)
+        .args([
+            "-n",
+            NAMESPACE,
+            "get",
+            "secret",
+            DASHBOARDS_SECRET,
+            "-o",
+            "name",
+        ])
+        .any_code()
+        .read_only()
+        .output()
+        .await?;
+    let secret_key = if found.success() {
+        let secret = kubectl_json(
+            &cluster.context,
+            &["-n", NAMESPACE, "get", "secret", DASHBOARDS_SECRET],
+        )
+        .await?;
+        fs::secret_field(&secret, "secret-key")?
+    } else if ctx.check() {
+        // No key yet, so no user that has it: the rest is still checked.
+        changed = true;
+        String::new()
+    } else {
+        let key = password::generate(
+            40,
+            Charset {
+                letters: true,
+                digits: true,
+                symbols: false,
+            },
+        )?;
+        // `create`, not `apply`: apply would keep a copy of the key in the
+        // last-applied annotation.
+        let secret = json!({
+            "apiVersion": "v1",
+            "kind": "Secret",
+            "metadata": {"name": DASHBOARDS_SECRET, "namespace": NAMESPACE},
+            "stringData": {"access-key": DASHBOARDS, "secret-key": key},
+        });
+        kubectl(ctx, cluster)
+            .args(["create", "-f", "-"])
+            .stdin(secret.to_string())
+            .output()
+            .await?;
+        changed = true;
+        key
+    };
+
+    let root = kubectl_json(
+        &cluster.context,
+        &[
+            "-n",
+            rustfs::NAMESPACE,
+            "get",
+            "secret",
+            rustfs::ROOT_SECRET,
+        ],
+    )
+    .await
+    .context("reading the RustFS root keys; is the rustfs role done?")?;
+    let forward = port_forward(
+        &cluster.context,
+        rustfs::NAMESPACE,
+        &format!("svc/{}", rustfs::NAME),
+        rustfs::PORT,
+    )
+    .await?;
+    let root = Store::new(
+        &forward.url,
+        &fs::secret_field(&root, "access-key")?,
+        &fs::secret_field(&root, "secret-key")?,
+    );
+
+    let has_bucket = root.buckets().await?.iter().any(|(b, _)| b == DASHBOARDS);
+    if !has_bucket {
+        if !ctx.check() {
+            root.make_bucket(DASHBOARDS).await?;
+        }
+        changed = true;
+    }
+    if root.policies().await?.get(DASHBOARDS_POLICY).is_none() {
+        if !ctx.check() {
+            root.add_policy(DASHBOARDS_POLICY, &read_policy()).await?;
+        }
+        changed = true;
+    }
+    // The user is right when its key reads the bucket under our policy.
+    let users = root.users().await?;
+    let attached = users[DASHBOARDS]["policyName"].as_str() == Some(DASHBOARDS_POLICY);
+    let reader = Store::new(&forward.url, DASHBOARDS, &secret_key);
+    if !attached || reader.list(DASHBOARDS, "", true).await.is_err() {
+        if !ctx.check() {
+            root.add_user(DASHBOARDS, &secret_key).await?;
+            root.set_user_policy(DASHBOARDS, DASHBOARDS_POLICY).await?;
+        }
+        changed = true;
+    }
+
+    // Only what changed. Nothing is deleted, so `uc fs cp` adds more.
+    let stored: Vec<String> = if has_bucket {
+        root.list(DASHBOARDS, "", true)
+            .await?
+            .objects
+            .into_iter()
+            .map(|o| o.key)
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let mut uploaded = Vec::new();
+    for (name, body) in &files {
+        let same = if stored.contains(name) {
+            let mut current = Vec::new();
+            root.get(DASHBOARDS, name, &mut current).await?;
+            current == body.as_bytes()
+        } else {
+            false
+        };
+        if !same {
+            if !ctx.check() {
+                root.put(DASHBOARDS, name, body.clone().into_bytes())
+                    .await?;
+            }
+            uploaded.push(name.as_str());
+        }
+    }
+    if !uploaded.is_empty() {
+        ctx.log(&format!("uploading {}", uploaded.join(", ")));
+        changed = true;
+    }
+    ctx.log(&format!(
+        "in the {DASHBOARDS} bucket: {} (the built-in ones and {}/*.json)",
+        files.keys().cloned().collect::<Vec<_>>().join(", "),
+        s.dashboards_dir.display()
+    ));
+    Ok(Outcome::changed(changed))
 }
 
 async fn install(
@@ -884,6 +1226,27 @@ async fn verify(ctx: &Ctx, cluster: &Cluster, s: &Settings) -> Result<Outcome> {
         ctx.log("container logs are coming in");
     }
 
+    if s.rustfs {
+        let shown = raw(proxy(METRICS, METRICS_PORT, "/vmui/custom-dashboards")).await?;
+        let count = serde_json::from_str::<Value>(&shown.stdout)
+            .ok()
+            .and_then(|v| v["dashboardsSettings"].as_array().map(Vec::len))
+            .unwrap_or(0);
+        if count == 0 {
+            // The sidecar copies them within a minute of starting.
+            ctx.note(&format!(
+                "vmui has no dashboards yet: {}; kubectl -n {NAMESPACE} logs deployment/{METRICS} \
+                 -c dashboards tells why",
+                shown.combined().trim()
+            ));
+        } else {
+            ctx.log(&format!(
+                "vmui has {count} dashboards: uc forward {NAMESPACE}, then \
+                 http://localhost:{METRICS_PORT}/vmui/#/dashboards"
+            ));
+        }
+    }
+
     if !problems.is_empty() {
         bail!("{}", problems.join("\n"));
     }
@@ -916,6 +1279,8 @@ mod tests {
             placement: Placement::new(&layout(&[("w1", "fsn1"), ("w2", "hel1")]), None, None),
             webhook: webhook.map(str::to_string),
             alert_groups: Vec::new(),
+            rustfs: false,
+            dashboards_dir: PathBuf::from("/nonexistent"),
         }
     }
 
@@ -1048,6 +1413,71 @@ mod tests {
         let groups = s.rule_groups();
         assert_eq!(groups[0]["name"], "cluster");
         assert_eq!(groups[1]["name"], "mine");
+    }
+
+    #[test]
+    fn dashboards_come_with_rustfs() {
+        let s = settings(None);
+        assert!(
+            s.values(release(METRICS))["server"]
+                .get("extraContainers")
+                .is_none()
+        );
+        let s = Settings {
+            rustfs: true,
+            ..settings(None)
+        };
+        let server = &s.values(release(METRICS))["server"];
+        assert_eq!(
+            server["extraArgs"]["vmui.customDashboardsPath"],
+            DASHBOARDS_PATH
+        );
+        let sidecar = &server["extraContainers"][0];
+        assert_eq!(sidecar["image"], RCLONE_IMAGE);
+        assert_eq!(
+            sidecar["env"][3]["valueFrom"]["secretKeyRef"]["name"],
+            DASHBOARDS_SECRET
+        );
+        // VictoriaMetrics only reads what the sidecar writes.
+        assert_eq!(server["extraVolumeMounts"][0]["readOnly"], true);
+    }
+
+    #[test]
+    fn the_built_in_dashboards_are_valid() {
+        let files = dashboard_files(Path::new("/nonexistent")).unwrap();
+        assert!(files.contains_key("cluster.json"));
+    }
+
+    #[test]
+    fn broken_dashboards_are_caught() {
+        assert!(check_dashboard("{").is_err());
+        assert!(check_dashboard(r#"{"title": "empty"}"#).is_err());
+        assert!(check_dashboard(r#"{"rows": [{"panels": [{"title": "x"}]}]}"#).is_err());
+        assert!(
+            check_dashboard(r#"{"rows": [{"panels": [{"expr": ["up"], "width": 13}]}]}"#).is_err()
+        );
+        assert!(check_dashboard(r#"{"rows": [{"panels": [{"expr": "up"}]}]}"#).is_err());
+        assert!(check_dashboard(r#"{"rows": [{"panels": [{"expr": ["up"], "x": 1}]}]}"#).is_ok());
+    }
+
+    #[test]
+    fn yours_replace_the_built_in_ones() {
+        let dir = std::env::temp_dir().join(format!("uc-obs-dashboards-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mine = r#"{"title": "mine", "rows": [{"panels": [{"expr": ["up"]}]}]}"#;
+        std::fs::write(dir.join("cluster.json"), mine).unwrap();
+        std::fs::write(dir.join("notes.txt"), "not a dashboard").unwrap();
+        let files = dashboard_files(&dir).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files["cluster.json"], mine);
+    }
+
+    #[test]
+    fn the_reader_only_reads_its_bucket() {
+        let policy = read_policy().to_string();
+        assert!(!policy.contains("Put") && !policy.contains("Delete") && !policy.contains("s3:*"));
+        assert!(policy.contains(&format!("arn:aws:s3:::{DASHBOARDS}/*")));
     }
 
     #[test]

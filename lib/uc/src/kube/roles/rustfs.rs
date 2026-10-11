@@ -16,7 +16,7 @@
 //! `lib/infra/bootstrap.sh` sets up. With `rustfs_dns_target` the role keeps
 //! the name a CNAME to it on Cloudflare's API; otherwise point it at the
 //! workers yourself (`lib/infra/dns.sh <rustfs_host>`). The web console is
-//! not exposed: `kubectl -n rustfs port-forward svc/rustfs 9001`.
+//! not exposed: `uc forward rustfs` brings it to localhost.
 //!
 //! Variables (`-e` or the user config):
 //!
@@ -44,14 +44,14 @@ use anyhow::{Result, bail};
 use serde_json::{Value, json};
 use std::sync::Arc;
 
-const NAMESPACE: &str = "rustfs";
-const NAME: &str = "rustfs";
+pub const NAMESPACE: &str = "rustfs";
+pub const NAME: &str = "rustfs";
 const IMAGE: &str = "rustfs/rustfs:1.0.1";
 const CLAIM: &str = "rustfs-data";
-const ROOT_SECRET: &str = "rustfs-root";
+pub const ROOT_SECRET: &str = "rustfs-root";
 const TLS_SECRET: &str = "rustfs-tls";
 const ISSUER: &str = "letsencrypt";
-const PORT: u16 = 9000;
+pub const PORT: u16 = 9000;
 const CONSOLE_PORT: u16 = 9001;
 /// The image's user and group.
 const UID: u32 = 10001;
@@ -537,8 +537,8 @@ async fn verify(ctx: &Ctx, cluster: &Cluster, s: &Settings) -> Result<Outcome> {
     ctx.log(&format!("https://{host} is up"));
     ctx.note(&format!(
         "keys: kubectl -n {NAMESPACE} get secret {ROOT_SECRET} -o jsonpath='{{.data.access-key}}' \
-         | base64 -d (and secret-key); console: kubectl -n {NAMESPACE} port-forward svc/{NAME} \
-         {CONSOLE_PORT}, then http://localhost:{CONSOLE_PORT}"
+         | base64 -d (and secret-key); console: uc forward {NAMESPACE}, then \
+         http://localhost:{CONSOLE_PORT}/rustfs/console/"
     ));
     Ok(Outcome::Ok)
 }

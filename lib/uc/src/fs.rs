@@ -15,6 +15,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use base64::Engine;
 use hmac::{Hmac, KeyInit, Mac};
 use reqwest::{Method, StatusCode};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::sync::OnceLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -25,6 +26,8 @@ const INGRESS: &str = "rustfs";
 const ROOT_SECRET: &str = "rustfs-root";
 /// RustFS, like MinIO, takes any region; this is the one they report.
 const REGION: &str = "us-east-1";
+/// Where RustFS's admin API is.
+const ADMIN: &str = "/rustfs/admin/v3";
 
 /// The HTTP client: no overall timeout, since an object can be big.
 fn client() -> &'static reqwest::Client {
@@ -297,6 +300,63 @@ impl Store {
             .await?;
         Ok(())
     }
+
+    /// A call to RustFS's admin API, signed with root keys. Under its own
+    /// prefix it takes plain JSON; MinIO's `/minio/admin` wants it encrypted.
+    async fn admin(
+        &self,
+        method: Method,
+        op: &str,
+        query: &[(&str, &str)],
+        body: Vec<u8>,
+    ) -> Result<String> {
+        let path = format!("{ADMIN}/{op}");
+        Ok(self.call(method, &path, query, body).await?.text().await?)
+    }
+
+    /// The users, by access key, each with its `policyName` and `status`.
+    pub async fn users(&self) -> Result<Value> {
+        let text = self
+            .admin(Method::GET, "list-users", &[], Vec::new())
+            .await?;
+        serde_json::from_str(&text).context("reading the user list")
+    }
+
+    /// The policies, by name.
+    pub async fn policies(&self) -> Result<Value> {
+        let text = self
+            .admin(Method::GET, "list-canned-policies", &[], Vec::new())
+            .await?;
+        serde_json::from_str(&text).context("reading the policy list")
+    }
+
+    /// Adds the policy `name`, or replaces it.
+    pub async fn add_policy(&self, name: &str, policy: &Value) -> Result<()> {
+        let body = serde_json::to_vec(policy)?;
+        self.admin(Method::PUT, "add-canned-policy", &[("name", name)], body)
+            .await?;
+        Ok(())
+    }
+
+    /// Adds the user `access_key`, or sets its secret key, enabled.
+    pub async fn add_user(&self, access_key: &str, secret_key: &str) -> Result<()> {
+        let body = serde_json::to_vec(&json!({"secretKey": secret_key, "status": "enabled"}))?;
+        self.admin(Method::PUT, "add-user", &[("accessKey", access_key)], body)
+            .await?;
+        Ok(())
+    }
+
+    /// Gives `user` the policy `policy`, in place of the one it had.
+    pub async fn set_user_policy(&self, user: &str, policy: &str) -> Result<()> {
+        let query = [
+            ("policyName", policy),
+            ("userOrGroup", user),
+            ("isGroup", "false"),
+        ];
+        self.admin(Method::PUT, "set-user-or-group-policy", &query, Vec::new())
+            .await?;
+        Ok(())
+    }
 }
 
 /// The bucket and the key of `<bucket>:<key>` (or `s3://<bucket>/<key>`),
@@ -327,10 +387,16 @@ pub fn split(path: &str) -> Result<(String, String)> {
     Ok((bucket.to_string(), key.to_string()))
 }
 
-fn secret_field(secret: &serde_json::Value, field: &str) -> Result<String> {
-    let raw = secret["data"][field]
-        .as_str()
-        .ok_or_else(|| anyhow!("{NAMESPACE}/{ROOT_SECRET} has no {field}"))?;
+/// `field` of a Secret read as JSON, decoded.
+pub fn secret_field(secret: &Value, field: &str) -> Result<String> {
+    let raw = secret["data"][field].as_str().ok_or_else(|| {
+        let meta = &secret["metadata"];
+        anyhow!(
+            "{}/{} has no {field}",
+            meta["namespace"].as_str().unwrap_or(NAMESPACE),
+            meta["name"].as_str().unwrap_or(ROOT_SECRET)
+        )
+    })?;
     let bytes = base64::engine::general_purpose::STANDARD.decode(raw)?;
     Ok(String::from_utf8(bytes)?.trim().to_string())
 }

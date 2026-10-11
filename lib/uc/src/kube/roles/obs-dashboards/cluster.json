@@ -1,0 +1,76 @@
+{
+  "title": "Cluster",
+  "rows": [
+    {
+      "title": "Nodes",
+      "panels": [
+        {
+          "title": "CPU busy",
+          "unit": "%",
+          "width": 6,
+          "expr": ["100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m])))"]
+        },
+        {
+          "title": "Memory used",
+          "unit": "%",
+          "width": 6,
+          "expr": ["100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)"]
+        },
+        {
+          "title": "Disk used",
+          "unit": "%",
+          "width": 6,
+          "expr": ["100 * (1 - node_filesystem_avail_bytes{fstype!~\"tmpfs|overlay|squashfs\"} / node_filesystem_size_bytes{fstype!~\"tmpfs|overlay|squashfs\"})"]
+        },
+        {
+          "title": "Network in and out",
+          "unit": "B/s",
+          "width": 6,
+          "expr": [
+            "sum by (instance) (rate(node_network_receive_bytes_total{device!~\"lo|veth.*|cni.*|flannel.*\"}[5m]))",
+            "sum by (instance) (rate(node_network_transmit_bytes_total{device!~\"lo|veth.*|cni.*|flannel.*\"}[5m]))"
+          ],
+          "alias": ["in", "out"]
+        }
+      ]
+    },
+    {
+      "title": "Workloads",
+      "panels": [
+        {
+          "title": "Memory by namespace",
+          "unit": "B",
+          "width": 6,
+          "expr": ["sum by (namespace) (container_memory_working_set_bytes{container!=\"\"})"]
+        },
+        {
+          "title": "CPU by namespace",
+          "unit": "cores",
+          "width": 6,
+          "expr": ["sum by (namespace) (rate(container_cpu_usage_seconds_total{container!=\"\"}[5m]))"]
+        },
+        {
+          "title": "Container restarts in the last hour",
+          "width": 6,
+          "expr": ["sum by (namespace, pod) (increase(kube_pod_container_status_restarts_total[1h])) > 0"]
+        },
+        {
+          "title": "Pods not running",
+          "width": 6,
+          "expr": ["sum by (namespace, phase) (kube_pod_status_phase{phase=~\"Pending|Unknown|Failed\"}) > 0"]
+        }
+      ]
+    },
+    {
+      "title": "Volumes",
+      "panels": [
+        {
+          "title": "Volume used",
+          "unit": "%",
+          "width": 12,
+          "expr": ["100 * (1 - kubelet_volume_stats_available_bytes / kubelet_volume_stats_capacity_bytes)"]
+        }
+      ]
+    }
+  ]
+}

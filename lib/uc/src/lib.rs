@@ -26,6 +26,7 @@ pub mod configure;
 pub mod crypto;
 pub mod dispatch;
 pub mod dns;
+pub mod forward;
 pub mod fs;
 pub mod ghcr;
 pub mod group;

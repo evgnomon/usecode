@@ -153,9 +153,8 @@ uc fs cp -r backups:scripts ~/restore/
 uc fs rm -r backups:2026/
 ```
 
-The web console stays private; reach it with
-`kubectl -n rustfs port-forward svc/rustfs 9001` and open
-http://localhost:9001. Need more room? `rustfs_size: 50Gi` grows the
+The web console stays private; `uc forward rustfs` brings it to
+http://localhost:9001/rustfs/console/. Need more room? `rustfs_size: 50Gi` grows the
 volume (it never shrinks).
 
 ## Your mail server
@@ -297,6 +296,30 @@ uc kube logs -p backend -f              # every backend-* pod
 uc kube logs -n shop -e --since 24h     # a namespace's errors of the last day
 uc kube logs pods -e --since 24h        # which pods had errors, and how many
 uc kube logs timeout -healthz           # words, or any LogsQL filter
+```
+
+To look around in a browser, `uc forward obs` puts vmui (metrics and your
+dashboards), the logs UI and vmalert on localhost until you press Ctrl-C:
+
+```bash
+uc forward obs      # http://localhost:8428/vmui/, :9428/select/vmui/, :8880/
+uc forward          # what else there is to forward, by namespace
+```
+
+It works for any namespace, your own apps too (`uc forward shop`), and picks
+the same local ports every time, so bookmarks keep working.
+
+With RustFS on the cluster, vmui's Dashboards tab shows dashboards you keep
+in code: drop `.json` files in `~/.config/usecode/kube/<context>/dashboards`
+(or wherever `obs_dashboards_dir` says) and run `uc kube configure -t obs`.
+A `cluster.json` with nodes, workloads and volumes comes built in. Each file
+is checked before it's uploaded, and shows up within a minute. The format is
+[vmui's own](https://github.com/VictoriaMetrics/VictoriaMetrics/tree/master/app/vmui/packages/vmui/public/dashboards):
+
+```json
+{"title": "Shop", "rows": [{"panels": [
+  {"title": "Requests", "width": 6, "expr": ["sum(rate(http_requests_total[5m]))"]}
+]}]}
 ```
 
 Or ask it directly:
