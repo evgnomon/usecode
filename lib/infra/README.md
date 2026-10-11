@@ -111,6 +111,53 @@ and add `imagePullSecrets: [{name: registry}]` to the pod spec.
 New password? Edit `password` in `registry/registry-auth`, then
 `kubectl -n registry rollout restart deploy/registry`.
 
+## Your object storage
+
+S3-compatible object storage with [RustFS](https://rustfs.com), on a 10Gi
+Hetzner Cloud Volume, so it can move to another worker and take your
+buckets along. Handy for backups, uploads, or anything that speaks S3:
+
+```yaml
+kube:
+  cp-1:
+    rustfs_host: s3.example.com
+    rustfs_dns_target: example.com
+```
+
+```bash
+source ~/.bashrc.d/cloudflare.sh
+uc kube configure -t rustfs
+```
+
+The S3 API is at `https://s3.example.com` (path-style), and inside the
+cluster at `http://rustfs.rustfs.svc:9000`. The first run makes random
+root keys and keeps them in a secret:
+
+```bash
+kubectl -n rustfs get secret rustfs-root -o jsonpath='{.data.access-key}' | base64 -d
+kubectl -n rustfs get secret rustfs-root -o jsonpath='{.data.secret-key}' | base64 -d
+```
+
+From your machine, `uc fs cp` copies files and directories in and out,
+the way `cp` and `scp` do: `<bucket>:` is a bucket, anything else is a local
+path. It finds the name and the keys on the cluster, so there's nothing to
+set up:
+
+```bash
+uc fs mb backups
+uc fs cp db.tar.gz backups:2026/
+uc fs cp -r scripts backups:
+uc fs ls backups:2026/
+uc fs cp backups:2026/db.tar.gz .
+uc fs cp -r backups:scripts ~/restore/
+uc fs rm -r backups:2026/
+```
+
+The web console stays private; reach it with
+`kubectl -n rustfs port-forward svc/rustfs 9001` and open
+http://localhost:9001. Need more room? `rustfs_size: 50Gi` grows the
+volume (it never shrinks).
+
 ## Your mail server
 
 Your own mail, with [Stalwart](https://stalw.art) (SMTP, IMAP and JMAP in

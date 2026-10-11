@@ -3148,6 +3148,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "roxmltree"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c20b6793b5c2fa6553b250154b78d6d0db37e72700ae35fad9387a46f487c97"
+
+[[package]]
 name = "rpassword"
 version = "7.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4540,12 +4546,14 @@ dependencies = [
  "cbc 0.2.1",
  "clap",
  "getrandom 0.3.4",
+ "hmac 0.13.0",
  "libc",
  "md-5",
  "minijinja",
  "minijinja-contrib",
  "pbkdf2 0.13.0",
  "reqwest",
+ "roxmltree",
  "rpassword",
  "rustls-graviola",
  "serde",

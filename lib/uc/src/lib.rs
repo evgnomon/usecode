@@ -16,7 +16,8 @@
 //! ...) that hand over to the standalone tools, found through [`dispatch`],
 //! and [`authors`] is `uc repo authors`. [`vm`] is `uc vm`, which adds the
 //! cloud providers to the local machines of `vm`, and [`mail`] is `uc mail`,
-//! which looks after the mail server on a cluster.
+//! which looks after the mail server on a cluster, and [`fs`] is `uc fs`,
+//! buckets and objects on the cluster's S3 object storage.
 
 pub mod authors;
 pub mod cli;
@@ -24,6 +25,7 @@ pub mod configure;
 pub mod crypto;
 pub mod dispatch;
 pub mod dns;
+pub mod fs;
 pub mod ghcr;
 pub mod group;
 pub mod groups;

@@ -125,6 +125,10 @@ path = "src/bin/uc-mail-settings.rs"
 name = "uc-dns"
 path = "src/bin/uc-dns.rs"
 
+[[bin]]
+name = "uc-fs"
+path = "src/bin/uc-fs.rs"
+
 [dependencies]
 aes = "0.9"
 anyhow.workspace = true
@@ -132,10 +136,12 @@ base64 = "0.23"
 cbc = "0.2"
 clap = { workspace = true, features = ["derive", "env"] }
 getrandom.workspace = true
+hmac = "0.13"
 libc.workspace = true
 md-5 = "0.11"
 minijinja.workspace = true
 minijinja-contrib = { version = "2", features = ["pycompat"] }
+roxmltree = "0.20"
 reqwest = { workspace = true, features = ["json", "query", "rustls-no-provider"] }
 rustls-graviola = "0.4"
 pbkdf2 = { version = "0.13", default-features = false, features = ["hmac"] }
@@ -145,5 +151,5 @@ serde = { workspace = true, features = ["derive"] }
 serde_yaml.workspace = true
 sha1 = "0.11"
 sha2 = "0.11"
-tokio = { workspace = true, features = ["macros", "process", "rt-multi-thread", "sync", "time", "io-util"] }
+tokio = { workspace = true, features = ["fs", "io-std", "macros", "process", "rt-multi-thread", "sync", "time", "io-util"] }
 zeroize = "1"

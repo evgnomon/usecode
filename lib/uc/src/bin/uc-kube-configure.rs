@@ -105,6 +105,7 @@ both:
     cp-1:
       forgejo_host: git.example.com        Forgejo on a Hetzner Volume
       registry_host: registry.example.com  a private container registry
+      rustfs_host: s3.example.com          S3 object storage on a Hetzner Volume
       mail_host: mail.example.com          Stalwart mail on a Hetzner Volume
       obs_enabled: true                    metrics, logs and alerts
 
