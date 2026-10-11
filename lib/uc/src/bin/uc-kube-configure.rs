@@ -105,6 +105,7 @@ both:
     cp-1:
       forgejo_host: git.example.com        Forgejo on a Hetzner Volume
       registry_host: registry.example.com  a private container registry
+      mail_host: mail.example.com          Stalwart mail on a Hetzner Volume
       obs_enabled: true                    metrics, logs and alerts
 
 `-t smoke` makes a 10Gi test volume (-t failover moves it, -t smoke-clean

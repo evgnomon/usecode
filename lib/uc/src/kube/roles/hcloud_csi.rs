@@ -493,7 +493,7 @@ fn hetzner_servers(cluster: &Cluster) -> Result<Vec<HetznerServer>, String> {
 }
 
 /// The token in kube-system/hcloud, if the cluster has it.
-fn cluster_token(cluster: &Cluster) -> Option<String> {
+pub(crate) fn cluster_token(cluster: &Cluster) -> Option<String> {
     use base64::Engine;
     let out = std::process::Command::new("kubectl")
         .args([

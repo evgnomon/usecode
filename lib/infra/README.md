@@ -111,6 +111,65 @@ and add `imagePullSecrets: [{name: registry}]` to the pod spec.
 New password? Edit `password` in `registry/registry-auth`, then
 `kubectl -n registry rollout restart deploy/registry`.
 
+## Your mail server
+
+Your own mail, with [Stalwart](https://stalw.art) (SMTP, IMAP and JMAP in
+one), on a 10Gi Hetzner Cloud Volume, so it can move to another worker
+and take your mail along:
+
+```yaml
+kube:
+  cp-1:
+    mail_host: mail.example.com
+    mail_node: worker-1        # optional: keep Stalwart on this worker
+```
+
+```bash
+uc kube configure -t mail
+```
+
+The web admin is at `https://mail.example.com/admin`. The first run makes a
+recovery admin, user `admin` with a random password:
+
+```bash
+kubectl -n mail get secret mail-admin -o jsonpath='{.data.password}' | base64 -d
+```
+
+Log in and go through Stalwart's wizard: use `mail.example.com` as the
+hostname and keep the HTTP listener on 8080 (Traefik talks to it). Then
+add your domain, and let `uc mail configure` do the part that decides
+whether your mail is trusted:
+
+```bash
+source ~/.bashrc.d/cloudflare.sh
+uc mail configure -C     # see what it would change
+uc mail configure
+```
+
+It points `mail.example.com` at the worker Stalwart answers on, and gives
+each domain its MX, SPF, DKIM, DMARC (`p=reject`; `mail_dmarc_policy`
+changes it), TLS reporting and the SRV records mail apps look for. It
+also sets the workers' reverse DNS to the mail name on Hetzner, hands the
+mail ports the Let's Encrypt certificate the cluster gets for the name, and
+switches off Stalwart's own DNS, DKIM rotation and ACME, which would fight
+it. A domain whose NS records aren't Cloudflare's gets the records to add
+by hand instead. Run it again after adding a domain, once the certificate
+is first issued, and if Stalwart moves to another worker.
+
+The worker's address is the mail name's, so Stalwart moving would leave DNS
+behind. `mail_node` pins it to one worker so that never happens; without
+it, the role's check fails as soon as the mail name and the mail ports
+disagree, and `uc mail configure` puts them back together.
+
+Ports 25, 465, 587, 993 and 995 answer on the worker Stalwart runs on, so
+it sees who's really sending. One thing only Hetzner can do: they block
+outgoing mail on new projects until you ask.
+
+Once you have an admin of your own, `mail_recovery_admin: false` drops the
+recovery login (then give `uc mail configure` yours in `UC_MAIL_USER` and
+`UC_MAIL_PASSWORD`). When cert-manager renews the certificate, run the role
+again so Stalwart picks it up.
+
 ## Metrics, logs and alerts
 
 A small monitoring stack with no Prometheus server and no UI to look after.

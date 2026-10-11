@@ -7,7 +7,7 @@ include $(ROOT_DIR)/lib/profile.mk
 TARGET ?= x86_64-unknown-linux-musl
 BINS := uc uc-secret-encrypt uc-secret-decrypt uc-configure uc-kube-configure uc-push uc-pull uc-ghcr uc-secret \
 	uc-image uc-repo uc-cert uc-deb uc-db uc-net uc-daemon uc-vm uc-new \
-	uc-agent uc-data uc-media uc-pick uc-sys uc-terminal
+	uc-agent uc-data uc-media uc-pick uc-sys uc-terminal uc-mail uc-mail-configure uc-mail-settings
 OUT_DIR := $(ROOT_DIR)/target/$(TARGET)/$(PROFILE)
 OUTPUTS := $(addprefix $(OUT_DIR)/,$(BINS))
 DESTDIR ?= /

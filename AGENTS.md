@@ -23,3 +23,6 @@ General rules for working in the usecode project.
 * Each module sets its part of the host up itself once its preconditions are there, and retries until they are. It logs what it's waiting for and never fails the service.
 * `uc daemon install` only puts `usecoded` and the unit on a host. The control node only delivers files (`usecoded join`, one bundle section per module, e.g. `uc net mesh apply`).
 * No Ansible role or playbook for installing. See `lib/daemon/AGENTS.md` for details.
+
+# The user's config
+* The user config is `~/.config/usecode` (the same directory as `~/src/github.com/<user>/config`).

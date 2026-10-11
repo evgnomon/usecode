@@ -43,7 +43,7 @@ const fn alias(path: &'static str, summary: &'static str, argv: &'static [&'stat
 
 pub const ALL: &[&Group] = &[
     &IMAGE, &REPO, &CERT, &DEB, &DB, &NET, &DAEMON, &VM, &NEW, &AGENT, &DATA, &MEDIA, &PICK, &SYS,
-    &TERMINAL,
+    &TERMINAL, &MAIL,
 ];
 
 pub static IMAGE: Group = Group {
@@ -279,6 +279,24 @@ pub static NET: Group = Group {
             "dig",
             "print only the A records of a DNS lookup",
             &["uc-net-dig"],
+        ),
+    ],
+    fallback: None,
+};
+
+pub static MAIL: Group = Group {
+    path: "uc mail",
+    summary: "look after the mail server on your cluster",
+    commands: &[
+        exec(
+            "configure",
+            "DNS, reverse DNS and Stalwart settings for trusted mail",
+            &["uc-mail-configure"],
+        ),
+        exec(
+            "settings",
+            "IMAP and SMTP settings for mail apps",
+            &["uc-mail-settings"],
         ),
     ],
     fallback: None,

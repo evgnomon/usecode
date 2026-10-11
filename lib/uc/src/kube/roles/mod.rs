@@ -7,5 +7,6 @@
 
 pub mod forgejo;
 pub mod hcloud_csi;
+pub mod mail;
 pub mod obs;
 pub mod registry;

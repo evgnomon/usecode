@@ -5,7 +5,7 @@
 name = "uc"
 version = "0.1.0"
 edition.workspace = true
-description = "usecode command line tool, its OpenSSL-compatible file encryption subcommands, the parallel machine configurator and the container registry push/pull, GHCR image management, the secret stores and the command groups over the usecode tools"
+description = "usecode command line tool, its OpenSSL-compatible file encryption subcommands, the parallel machine configurator and the container registry push/pull, GHCR image management, the secret stores, the mail server's DNS and the command groups over the usecode tools"
 license.workspace = true
 authors.workspace = true
 
@@ -108,6 +108,18 @@ path = "src/bin/uc-sys.rs"
 [[bin]]
 name = "uc-terminal"
 path = "src/bin/uc-terminal.rs"
+
+[[bin]]
+name = "uc-mail"
+path = "src/bin/uc-mail.rs"
+
+[[bin]]
+name = "uc-mail-configure"
+path = "src/bin/uc-mail-configure.rs"
+
+[[bin]]
+name = "uc-mail-settings"
+path = "src/bin/uc-mail-settings.rs"
 
 [dependencies]
 aes = "0.9"

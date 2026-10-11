@@ -18,7 +18,8 @@ pub const HINT: &str = "source ~/.bashrc.d/cloudflare.sh; the token needs Zone:R
 /// Tries per request; transport errors, 429 and 5xx are tried again.
 const TRIES: u32 = 3;
 
-fn client() -> &'static reqwest::Client {
+/// The HTTP client every API call here and in [`crate::mail`] goes through.
+pub(crate) fn client() -> &'static reqwest::Client {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
     CLIENT.get_or_init(|| {
         // graviola is pure Rust, so the static musl build needs no C
@@ -33,7 +34,7 @@ fn client() -> &'static reqwest::Client {
 }
 
 /// Sends a request built by `build`, trying again on errors that may pass.
-async fn send(
+pub(crate) async fn send(
     what: &str,
     build: impl Fn() -> reqwest::RequestBuilder,
 ) -> Result<reqwest::Response> {
@@ -123,11 +124,19 @@ impl Cloudflare {
 
     /// Every record named `name` in the zone.
     pub async fn records(&self, zone_id: &str, name: &str) -> Result<Vec<Value>> {
+        self.list(zone_id, &[("name", name)]).await
+    }
+
+    /// The zone's records matching the API's `filter`, e.g.
+    /// `[("name.endswith", "._domainkey.example.com")]`.
+    pub async fn list(&self, zone_id: &str, filter: &[(&str, &str)]) -> Result<Vec<Value>> {
+        let mut query = filter.to_vec();
+        query.push(("per_page", "5000"));
         let records = self
             .call(
                 Method::GET,
                 &format!("/zones/{zone_id}/dns_records"),
-                &[("name", name), ("per_page", "100")],
+                &query,
                 None,
             )
             .await?;
@@ -160,18 +169,23 @@ impl Cloudflare {
 /// The A addresses public DNS gives for `name`, asked over HTTPS at
 /// 1.1.1.1, not the local resolver, which may cache an old answer.
 pub async fn resolve(name: &str) -> Result<BTreeSet<IpAddr>> {
-    let what = format!("resolving {name} at {DOH}");
+    Ok(addresses(&lookup(name, "A").await?))
+}
+
+/// Public DNS's whole JSON answer for `name` and `kind` (`NS`, `TXT`, ...),
+/// asked over HTTPS as [`resolve`] does.
+pub async fn lookup(name: &str, kind: &str) -> Result<Value> {
+    let what = format!("resolving {kind} {name} at {DOH}");
     let reply = send(&what, || {
         client()
             .get(DOH)
             .header("accept", "application/dns-json")
-            .query(&[("name", name), ("type", "A")])
+            .query(&[("name", name), ("type", kind)])
     })
     .await?
     .error_for_status()
     .map_err(|e| anyhow!("{what}: {e}"))?;
-    let reply: Value = reply.json().await.map_err(|e| anyhow!("{what}: {e}"))?;
-    Ok(addresses(&reply))
+    reply.json().await.map_err(|e| anyhow!("{what}: {e}"))
 }
 
 /// The A records of a DNS JSON answer; a CNAME chain's names are left out.
