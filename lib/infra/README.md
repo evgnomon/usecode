@@ -170,6 +170,50 @@ recovery login (then give `uc mail configure` yours in `UC_MAIL_USER` and
 `UC_MAIL_PASSWORD`). When cert-manager renews the certificate, run the role
 again so Stalwart picks it up.
 
+## Your name servers
+
+Your own authoritative DNS, with [PowerDNS](https://www.powerdns.com),
+when you'd like your zones to live on your cluster too. You get two name
+servers that share nothing: each has its own SQLite database on its own
+10Gi Hetzner Cloud Volume, and they never run on the same node, so losing
+one leaves the other answering. They're on for every cluster, so a plain
+`uc kube configure` (or just this part of it) sets them up:
+
+```bash
+uc kube configure -t dns
+```
+
+Rather not have them? `dns_enabled: false` at the top level of your
+config turns them off everywhere, or under `kube.<context>` for one
+cluster.
+
+Like Traefik on 80 and 443, port 53 (UDP and TCP) answers on every node
+and hands each query to whichever instance is up, wherever it runs. So
+your name servers are simply the workers `$INFRA_DOMAIN` already points
+at. The volumes are spread over your locations (`dns_locations: [nbg1,
+fsn1]` picks them), and `dns_instances: 3` adds one. There's nothing to
+open in the hosts' firewalls: like 80 and 443, port 53 is forwarded to the
+pods before the daemon's inbound chain sees it.
+
+Then look after your zones with `uc dns`, which makes every change on
+every name server:
+
+```bash
+uc dns servers                         # where they run and answer
+uc dns zone add example.com            # ns1, ns2 on the workers, with glue
+uc dns add example.com @ A 192.0.2.10
+uc dns add example.com www CNAME @
+uc dns add example.com @ MX '10 mail'
+uc dns set example.com @ TXT 'v=spf1 mx -all'
+uc dns rm example.com www CNAME
+uc dns list example.com
+```
+
+`zone add` prints the name servers and glue to give your registrar. If a
+name server was down while you changed something, `uc dns list` points out
+where they disagree, and `uc dns sync --from pdns-1` catches the other one
+up (`-C` shows what it would do first).
+
 ## Metrics, logs and alerts
 
 A small monitoring stack with no Prometheus server and no UI to look after.

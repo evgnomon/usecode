@@ -5,6 +5,7 @@
 //! [`configure::roles`](crate::configure::roles). Task ids are
 //! `<role>/<step>`, so `-t hcloud_csi` selects a role.
 
+pub mod dns;
 pub mod forgejo;
 pub mod hcloud_csi;
 pub mod mail;

@@ -12,6 +12,7 @@
 
 pub mod cloudflare;
 pub mod cluster;
+pub mod remote;
 pub mod roles;
 
 use crate::configure::ctx::Ctx;
@@ -33,6 +34,7 @@ pub fn plan(cluster: &Arc<Cluster>, vars: &Vars) -> Result<Plan> {
     roles::forgejo::tasks(&mut plan, cluster, vars)?;
     roles::registry::tasks(&mut plan, cluster, vars)?;
     roles::mail::tasks(&mut plan, cluster, vars)?;
+    roles::dns::tasks(&mut plan, cluster, vars, &layout)?;
     roles::obs::tasks(&mut plan, cluster, vars, &layout)?;
     Ok(plan)
 }

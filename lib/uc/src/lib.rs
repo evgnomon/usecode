@@ -23,6 +23,7 @@ pub mod cli;
 pub mod configure;
 pub mod crypto;
 pub mod dispatch;
+pub mod dns;
 pub mod ghcr;
 pub mod group;
 pub mod groups;

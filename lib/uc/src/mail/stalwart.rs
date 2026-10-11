@@ -7,11 +7,9 @@
 //! they work before the mail name resolves or has a certificate.
 
 use crate::kube::cloudflare::{client, send};
-use anyhow::{Context, Result, anyhow, bail};
+use crate::kube::remote::{Forward, port_forward};
+use anyhow::{Result, anyhow, bail};
 use serde_json::{Value, json};
-use std::process::Stdio;
-use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::{Child, Command};
 
 const USING: [&str; 2] = ["urn:ietf:params:jmap:core", "urn:stalwart:jmap"];
 
@@ -21,7 +19,7 @@ pub struct Stalwart {
     password: String,
     account: String,
     /// The port-forward; dropping it ends it.
-    _forward: Child,
+    _forward: Forward,
 }
 
 impl Stalwart {
@@ -35,45 +33,8 @@ impl Stalwart {
         user: &str,
         password: &str,
     ) -> Result<Stalwart> {
-        let mut forward = Command::new("kubectl")
-            .args(["--context", context, "-n", namespace, "port-forward"])
-            .arg(format!("svc/{service}"))
-            .arg(format!(":{port}"))
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .context("running kubectl port-forward; is kubectl installed?")?;
-        let stdout = forward.stdout.take().expect("stdout is piped");
-        let mut lines = BufReader::new(stdout).lines();
-        // "Forwarding from 127.0.0.1:41235 -> 8080"
-        let local = tokio::time::timeout(std::time::Duration::from_secs(30), async {
-            while let Some(line) = lines.next_line().await? {
-                if let Some(addr) = line
-                    .strip_prefix("Forwarding from ")
-                    .and_then(|l| l.split_whitespace().next())
-                    .filter(|a| a.starts_with("127.0.0.1:"))
-                {
-                    return Ok(addr.to_string());
-                }
-            }
-            Err(anyhow!("kubectl port-forward ended"))
-        })
-        .await
-        .map_err(|_| anyhow!("kubectl port-forward to svc/{service} did not start in 30s"));
-        let local = match local.and_then(|r| r) {
-            Ok(local) => local,
-            Err(err) => {
-                let _ = forward.start_kill();
-                let out = forward.wait_with_output().await?;
-                bail!("{err:#}: {}", String::from_utf8_lossy(&out.stderr).trim());
-            }
-        };
-        // Keep reading so kubectl never blocks on a full pipe.
-        tokio::spawn(async move { while let Ok(Some(_)) = lines.next_line().await {} });
-
-        let url = format!("http://{local}");
+        let forward = port_forward(context, namespace, &format!("svc/{service}"), port).await?;
+        let url = forward.url.clone();
         let session: Value = send("Stalwart's JMAP session", || {
             client()
                 .get(format!("{url}/jmap/session"))

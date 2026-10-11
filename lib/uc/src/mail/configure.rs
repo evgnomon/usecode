@@ -24,6 +24,7 @@ use super::records::{self, Data, DkimKey, Record, Server};
 use super::stalwart::Stalwart;
 use crate::kube::Cluster;
 use crate::kube::cloudflare::{self, Cloudflare, client, send};
+use crate::kube::remote::{kubectl, kubectl_json};
 use crate::kube::roles::hcloud_csi::{LOCATION_LABEL, PROVIDER, PROVIDER_KEY, cluster_token};
 use crate::kube::roles::mail::{ADMIN_SECRET, HTTP_PORT, NAME, NAMESPACE, TLS_SECRET};
 use anyhow::{Context, Result, anyhow, bail};
@@ -311,31 +312,6 @@ enum Host {
     },
     /// Anywhere else, or Cloudflare without a token that can edit it: why.
     Manual(String),
-}
-
-/// kubectl against `context`, returning its stdout.
-async fn kubectl(context: &str, args: &[&str]) -> Result<String> {
-    let out = tokio::process::Command::new("kubectl")
-        .args(["--context", context])
-        .args(args)
-        .stdin(std::process::Stdio::null())
-        .output()
-        .await
-        .context("running kubectl; is it installed?")?;
-    if !out.status.success() {
-        bail!(
-            "`kubectl {}` failed: {}",
-            args.join(" "),
-            String::from_utf8_lossy(&out.stderr).trim()
-        );
-    }
-    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
-}
-
-async fn kubectl_json(context: &str, args: &[&str]) -> Result<Value> {
-    let mut args = args.to_vec();
-    args.extend(["-o", "json"]);
-    Ok(serde_json::from_str(&kubectl(context, &args).await?)?)
 }
 
 /// The recovery admin from mail/mail-admin, unless `UC_MAIL_USER` and
