@@ -288,7 +288,18 @@ you one of them, never both. Want them elsewhere? `obs_metrics_location`
 and `obs_logs_location` (e.g. `fsn1`, `hel1`). Only have workers in one
 location? Set `obs_logs_location` to it and both live there.
 
-Ask it something:
+For logs, `uc kube logs` is the easy way in. It shows every container on the
+cluster in one stream, including pods that are already gone:
+
+```bash
+uc kube logs -f                         # everything, following
+uc kube logs -p backend -f              # every backend-* pod
+uc kube logs -n shop -e --since 24h     # a namespace's errors of the last day
+uc kube logs pods -e --since 24h        # which pods had errors, and how many
+uc kube logs timeout -healthz           # words, or any LogsQL filter
+```
+
+Or ask it directly:
 
 ```bash
 kubectl get --raw '/api/v1/namespaces/obs/services/vmsingle:8428/proxy/api/v1/query?query=up'

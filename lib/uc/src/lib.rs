@@ -17,7 +17,8 @@
 //! and [`authors`] is `uc repo authors`. [`vm`] is `uc vm`, which adds the
 //! cloud providers to the local machines of `vm`, and [`mail`] is `uc mail`,
 //! which looks after the mail server on a cluster, and [`fs`] is `uc fs`,
-//! buckets and objects on the cluster's S3 object storage.
+//! buckets and objects on the cluster's S3 object storage, and [`logs`] is
+//! `uc kube logs`, the container logs of the whole cluster.
 
 pub mod authors;
 pub mod cli;
@@ -31,6 +32,7 @@ pub mod group;
 pub mod groups;
 pub mod http;
 pub mod kube;
+pub mod logs;
 pub mod mail;
 pub mod password;
 pub mod registry;

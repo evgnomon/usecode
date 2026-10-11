@@ -64,7 +64,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-const NAMESPACE: &str = "obs";
+pub const NAMESPACE: &str = "obs";
 const VM_REPO: &str = "vm";
 const VM_REPO_URL: &str = "https://victoriametrics.github.io/helm-charts/";
 const PROM_REPO: &str = "prometheus-community";
@@ -73,9 +73,9 @@ const PROM_REPO_URL: &str = "https://prometheus-community.github.io/helm-charts"
 const METRICS: &str = "vmsingle";
 const METRICS_CLAIM: &str = "vmsingle-data";
 const METRICS_PORT: u16 = 8428;
-const LOGS: &str = "vlsingle";
+pub const LOGS: &str = "vlsingle";
 const LOGS_CLAIM: &str = "vlsingle-data";
-const LOGS_PORT: u16 = 9428;
+pub const LOGS_PORT: u16 = 9428;
 const ALERTS_PORT: u16 = 8880;
 
 /// One helm release of the stack.
@@ -892,7 +892,7 @@ async fn verify(ctx: &Ctx, cluster: &Cluster, s: &Settings) -> Result<Outcome> {
         proxy(METRICS, METRICS_PORT, "/api/v1/query?query=up")
     ));
     ctx.note(&format!(
-        "query logs: kubectl get --raw '{}'",
+        "query logs: uc kube logs -e --since 5m, or kubectl get --raw '{}'",
         proxy(
             LOGS,
             LOGS_PORT,

@@ -129,6 +129,10 @@ path = "src/bin/uc-dns.rs"
 name = "uc-fs"
 path = "src/bin/uc-fs.rs"
 
+[[bin]]
+name = "uc-kube-logs"
+path = "src/bin/uc-kube-logs.rs"
+
 [dependencies]
 aes = "0.9"
 anyhow.workspace = true

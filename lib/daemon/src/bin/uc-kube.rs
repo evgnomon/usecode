@@ -82,6 +82,9 @@ starts it, and keeps it running.
                               `uc configure` does this machine: Hetzner
                               Cloud Volumes for your PVCs, for a start.
                               `uc kube configure -h` for the options
+  logs [OPTIONS] [WORDS...]   the logs of every container on the cluster,
+                              by namespace, pod, label, node or words;
+                              `uc kube logs -h` for the options
 
 HOST is an inventory name or any ssh destination ([USER@]HOST or an alias
 from ~/.ssh/config). The daemon has to be on it: `uc daemon install HOST`.";
@@ -121,26 +124,27 @@ fn run(args: &[String]) -> Result<()> {
         "disable" => disable(rest),
         "remove" => remove(rest),
         "replace" => replace(rest),
-        "configure" => configure(rest),
+        "configure" => hand_over("uc-kube-configure", rest),
+        "logs" => hand_over("uc-kube-logs", rest),
         other => bail!("{USAGE}\n\nunknown command {other:?}"),
     }
 }
 
-/// Hands over to `uc-kube-configure`, found next to this executable or on
-/// PATH. It only returns when that cannot be run.
-fn configure(args: &[String]) -> Result<()> {
+/// Hands over to `program` (`uc-kube-configure`, `uc-kube-logs`), found
+/// next to this executable or on PATH. It only returns when that cannot be
+/// run.
+fn hand_over(program: &str, args: &[String]) -> Result<()> {
     use std::os::unix::process::CommandExt;
-    const PROGRAM: &str = "uc-kube-configure";
     let beside = std::env::current_exe()
         .ok()
-        .and_then(|exe| Some(exe.parent()?.join(PROGRAM)))
+        .and_then(|exe| Some(exe.parent()?.join(program)))
         .filter(|p| p.is_file());
     let mut cmd = match beside {
         Some(path) => Command::new(path),
-        None => Command::new(PROGRAM),
+        None => Command::new(program),
     };
-    let err = cmd.arg0(PROGRAM).args(args).exec();
-    bail!("running {PROGRAM}: {err}")
+    let err = cmd.arg0(program).args(args).exec();
+    bail!("running {program}: {err}")
 }
 
 /// Positional words and `(--flag, value)` pairs, as [`parse`] splits them.
