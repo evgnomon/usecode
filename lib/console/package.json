@@ -1,0 +1,40 @@
+{
+  "name": "usecode-console",
+  "private": true,
+  "version": "0.1.0",
+  "description": "usecode.dev: the landing page, pricing, sign up and log in",
+  "license": "SEE LICENSE IN ../../COPYING",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json && vite build && tsc -p tsconfig.server.json",
+    "start": "node dist/server/main.js",
+    "test": "tsc -p tsconfig.json && tsc -p tsconfig.server.json && node --test 'dist/test/*.test.js'"
+  },
+  "dependencies": {
+    "@hono/node-server": "2.1.4",
+    "hono": "4.13.13",
+    "postgres": "3.4.9"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.3.3",
+    "@types/node": "26.6.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "lucide-react": "1.55.0",
+    "radix-ui": "1.8.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "tailwind-merge": "3.7.0",
+    "tailwindcss": "4.3.3",
+    "tw-animate-css": "1.4.0",
+    "typescript": "7.0.2",
+    "vite": "8.3.4"
+  }
+}

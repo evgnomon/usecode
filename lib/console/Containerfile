@@ -1,0 +1,25 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
+# Build context: lib/console.
+FROM docker.io/library/node:24-alpine AS build
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY index.html vite.config.ts tsconfig.json tsconfig.server.json ./
+COPY public ./public
+COPY src ./src
+COPY server ./server
+COPY test ./test
+RUN npm run build && npm prune --omit=dev
+
+FROM docker.io/library/node:24-alpine
+WORKDIR /app
+ENV NODE_ENV=production PORT=8080
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/dist ./dist
+COPY package.json ./
+COPY migrations ./migrations
+USER node
+EXPOSE 8080
+CMD ["node", "dist/server/main.js"]

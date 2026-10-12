@@ -108,6 +108,7 @@ both:
       rustfs_host: s3.example.com          S3 object storage on a Hetzner Volume
       mail_host: mail.example.com          Stalwart mail on a Hetzner Volume
       obs_enabled: true                    metrics, logs and alerts
+      console_host: usecode.dev            the usecode.dev console and its Postgres
 
 `-t smoke` makes a 10Gi test volume (-t failover moves it, -t smoke-clean
 deletes it).

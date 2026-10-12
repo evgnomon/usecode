@@ -1,0 +1,178 @@
+/*
+ * License-Identifier: HGL
+ * Copyright (C) The Usecode Authors (see AUTHORS)
+ */
+
+/*
+ * Declare, then delegate. One token set, two themes, as shadcn/ui variables.
+ * Light is the default; .dark on <html> (set by /theme.js before the page
+ * paints) switches it, and .light or .dark on any element shows that theme
+ * inside. Teal is the agent's colour: in-progress work, focus and the one
+ * primary action. The states (desired, reconciling, settled, drift, failed)
+ * are the only other colours.
+ */
+
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *):not(.light *));
+
+:root,
+.light {
+  color-scheme: light;
+  --radius: 0.5rem;
+  --background: #fafafb;
+  --foreground: #15181d;
+  --card: #ffffff;
+  --card-foreground: #15181d;
+  --popover: #ffffff;
+  --popover-foreground: #15181d;
+  --primary: #0f766e;
+  --primary-foreground: #ffffff;
+  --secondary: #f4f5f7;
+  --secondary-foreground: #15181d;
+  --muted: #f4f5f7;
+  --muted-foreground: #646a77;
+  --accent: #f4f5f7;
+  --accent-foreground: #15181d;
+  --destructive: #b4403f;
+  --border: #e4e6ea;
+  --border-strong: #cdd1d8;
+  --input: #cdd1d8;
+  --ring: #0f766e;
+  --agent-soft: rgba(15, 118, 110, 0.07);
+  --agent-glow: rgba(15, 118, 110, 0.18);
+  --settled: #2f7a55;
+  --settled-soft: rgba(47, 122, 85, 0.08);
+  --drift: #8a5a00;
+  --drift-soft: rgba(176, 120, 10, 0.09);
+  --failed: #b4403f;
+  --failed-soft: rgba(180, 64, 63, 0.08);
+}
+
+.dark {
+  color-scheme: dark;
+  --background: #0e1013;
+  --foreground: #e6e8eb;
+  --card: #16191e;
+  --card-foreground: #e6e8eb;
+  --popover: #16191e;
+  --popover-foreground: #e6e8eb;
+  --primary: #2dd4bf;
+  --primary-foreground: #04201c;
+  --secondary: #1c2026;
+  --secondary-foreground: #e6e8eb;
+  --muted: #1c2026;
+  --muted-foreground: #8a919c;
+  --accent: #1c2026;
+  --accent-foreground: #e6e8eb;
+  --destructive: #f2807a;
+  --border: #262a31;
+  --border-strong: #353a43;
+  --input: #353a43;
+  --ring: #2dd4bf;
+  --agent-soft: rgba(45, 212, 191, 0.09);
+  --agent-glow: rgba(45, 212, 191, 0.24);
+  --settled: #5cc48e;
+  --settled-soft: rgba(92, 196, 142, 0.1);
+  --drift: #e8b14f;
+  --drift-soft: rgba(232, 177, 79, 0.1);
+  --failed: #f2807a;
+  --failed-soft: rgba(242, 128, 122, 0.1);
+}
+
+@theme inline {
+  --font-sans: "Geist", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "Geist Mono", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-agent-soft: var(--agent-soft);
+  --color-agent-glow: var(--agent-glow);
+  --color-settled: var(--settled);
+  --color-settled-soft: var(--settled-soft);
+  --color-drift: var(--drift);
+  --color-drift-soft: var(--drift-soft);
+  --color-failed: var(--failed);
+  --color-failed-soft: var(--failed-soft);
+
+  /* 150 to 250ms, ease-out; a 2s breath only on what the agent is working on. */
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --animate-ring: ring 2s ease-in-out infinite;
+  --animate-breathe: breathe 2s ease-in-out infinite;
+  --animate-breathe-bg: breathe-bg 2s ease-in-out infinite;
+  --animate-feed-in: feed-in 250ms cubic-bezier(0.2, 0, 0, 1) both;
+
+  @keyframes ring {
+    0%, 100% { box-shadow: 0 0 0 0 var(--agent-glow); }
+    50% { box-shadow: 0 0 0 4px var(--agent-glow); }
+  }
+  @keyframes breathe {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.55; }
+  }
+  @keyframes breathe-bg {
+    0%, 100% { background-color: transparent; }
+    50% { background-color: var(--agent-soft); }
+  }
+  @keyframes feed-in {
+    from { opacity: 0; transform: translateY(-2px); }
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground text-sm antialiased;
+  }
+  .light,
+  .dark {
+    @apply bg-background text-foreground;
+  }
+  h1, h2, h3, h4 {
+    @apply font-medium tracking-tight;
+  }
+}
+
+/* Reduced motion keeps the words and drops the movement. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* The page's column, with a 16px gutter on phones. */
+@utility wrap {
+  width: 100%;
+  max-width: 1040px;
+  margin-inline: auto;
+  padding-inline: 1rem;
+  @variant sm {
+    padding-inline: 1.5rem;
+  }
+}

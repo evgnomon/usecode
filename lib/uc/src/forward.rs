@@ -109,6 +109,13 @@ const HINTS: &[Hint] = &[
         path: "/",
     },
     Hint {
+        namespace: "console",
+        service: "console",
+        port: 8080,
+        what: "console",
+        path: "/",
+    },
+    Hint {
         namespace: "registry",
         service: "registry",
         port: 5000,

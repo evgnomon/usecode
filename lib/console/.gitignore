@@ -1,0 +1,10 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
+node_modules/
+dist/
+*.tsbuildinfo
+*.log
+.env
+.env.*
+.vite/

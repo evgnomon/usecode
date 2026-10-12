@@ -36,6 +36,8 @@
   hosts: localhost
   collections:
     - evgnomon.usecode
+  roles:
+    - z_defaults
   tasks:
     - name: Add front
       add_host:
@@ -43,8 +45,8 @@
         groups: front
         ansible_user: "root"
       with_items:
-        - front-a-1.zygote.run
-        - front-b-1.zygote.run
+        - front-a-1.{{ z_domain }}
+        - front-b-1.{{ z_domain }}
   tags:
     - z_deploy
     - never

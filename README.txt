@@ -4,13 +4,20 @@ Copyright (C) The Usecode Authors (see AUTHORS)
 usecode - Container for agents
 ==============================
 
-Hi! usecode gives your AI agents a real Linux workspace: machines they can
-spin up, tools they can run, and an API they can call.
+Use code! When your coding agent can run code, it solves problems better and
+burns fewer tokens doing it, so it has more time left for the interesting
+stuff.
+
+To run code, an agent needs a place to run it; it can't work in a void.
+usecode is that container: machines your agent can spin up, tools it can
+run, and an API it can call.
+
+usecode is open source and freely distributed. The code is right here.
 
 The easiest way to use it is usecode.dev. It's already set up and kept
 running, so your agents can start working today:
 
-  1. Sign in at https://usecode.dev and get an API key.
+  1. Sign in at https://usecode.dev (free for individuals) and get an API key.
   2. Hand it to your agent. For Claude Code that's one line:
 
        claude mcp add usecode -e USECODE_MCP_API_KEY=<your key> -- uc-agent-mcp
@@ -24,8 +31,8 @@ Upgrades, backups and uptime are on us, not your weekend.
 Running it yourself
 -------------------
 
-All the code is here under the HGL General License (COPYING), and it's the
-same code usecode.dev runs. On a Debian or Ubuntu box:
+The code is here under the HGL General License (COPYING). On a Debian or
+Ubuntu box:
 
   bash <(curl -fsSL https://raw.githubusercontent.com/evgnomon/usecode/refs/heads/master/play.sh)
 

@@ -23,8 +23,8 @@ What it does:
     - ~/.pki/nssdb                        (Brave/Chrome, via certutil)
 
 Examples:
-  uc cert trust cr.main.sys.local.zygote.run:443
-  uc cert trust --remove cr.main.sys.local.zygote.run:443
+  uc cert trust registry.example.com:443
+  uc cert trust --remove registry.example.com:443
   uc cert trust --list             # all custom-trusted CAs across stores
   uc cert trust --list example.com # only CAs whose host matches \"example.com\"
 
