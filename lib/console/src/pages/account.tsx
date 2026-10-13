@@ -8,7 +8,7 @@ import { EmptyNodes, Pill } from "@/components/console";
 import { ErrorNote, Notice, Section } from "@/components/layout";
 import { PLANS, TEAM_PRICE } from "@/content";
 import { goTo, useMe, type Me } from "@/lib/api";
-import { Link, navigate, useLocation, useTitle } from "@/lib/router";
+import { Link, navigate, useLocation } from "@/lib/router";
 
 const date = (iso: string) =>
   new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
@@ -60,7 +60,6 @@ function Subscription({ me }: { me: Me }) {
 }
 
 export function Account() {
-  useTitle("Your account · usecode.dev");
   const { me, refresh } = useMe();
   const { query } = useLocation();
   const justSubscribed = query.get("subscribed") === "1";

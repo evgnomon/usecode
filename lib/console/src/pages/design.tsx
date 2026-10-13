@@ -23,7 +23,6 @@ import {
   type Option,
 } from "@/components/console";
 import { PageHead, Section, ThemeSwitch } from "@/components/layout";
-import { useTitle } from "@/lib/router";
 import { cn } from "@/lib/utils";
 
 // Spelled out so Tailwind sees every class.
@@ -200,7 +199,6 @@ function AddNode({ id }: { id?: string }) {
 }
 
 export function Design() {
-  useTitle("Theme · usecode.dev");
   return (
     <>
       <PageHead title="Declare, then delegate">

@@ -7,12 +7,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ErrorNote, Section } from "@/components/layout";
 import { post, useMe } from "@/lib/api";
-import { Link, navigate, useLocation, useTitle } from "@/lib/router";
+import { Link, navigate, useLocation } from "@/lib/router";
 import { safeNext } from "@/lib/safe-next";
 
 export function AuthForm({ mode }: { mode: "login" | "signup" }) {
   const signup = mode === "signup";
-  useTitle(`${signup ? "Sign up" : "Log in"} · usecode.dev`);
   const { refresh } = useMe();
   const { query } = useLocation();
   const [email, setEmail] = useState("");

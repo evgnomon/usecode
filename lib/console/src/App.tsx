@@ -3,7 +3,7 @@
 
 import type { ReactNode } from "react";
 import { Layout } from "@/components/layout";
-import { useLocation } from "@/lib/router";
+import { useLocation, useTitle } from "@/lib/router";
 import { Account } from "@/pages/account";
 import { AuthForm } from "@/pages/auth";
 import { Design } from "@/pages/design";
@@ -11,17 +11,29 @@ import { Home } from "@/pages/home";
 import { NotFound } from "@/pages/not-found";
 import { Pricing } from "@/pages/pricing";
 
+export interface Page {
+  title: string;
+  render: () => ReactNode;
+  /** Built into HTML ahead of time (src/prerender.tsx), so it reads without JavaScript. */
+  prerender?: boolean;
+}
+
 // Keep in step with PAGES in server/app.ts.
-const PAGES: Record<string, () => ReactNode> = {
-  "/": () => <Home />,
-  "/pricing": () => <Pricing />,
-  "/login": () => <AuthForm key="login" mode="login" />,
-  "/signup": () => <AuthForm key="signup" mode="signup" />,
-  "/account": () => <Account />,
-  "/design": () => <Design />,
+export const PAGES: Record<string, Page> = {
+  "/": { title: "usecode.dev, container for agents", render: () => <Home />, prerender: true },
+  "/pricing": { title: "Pricing · usecode.dev", render: () => <Pricing />, prerender: true },
+  // Radix's switch and progress style themselves inline, which the CSP only lets scripts do.
+  "/design": { title: "Theme · usecode.dev", render: () => <Design /> },
+  "/login": { title: "Log in · usecode.dev", render: () => <AuthForm key="login" mode="login" /> },
+  "/signup": { title: "Sign up · usecode.dev", render: () => <AuthForm key="signup" mode="signup" /> },
+  "/account": { title: "Your account · usecode.dev", render: () => <Account /> },
 };
+
+export const NOT_FOUND: Page = { title: "Not found · usecode.dev", render: () => <NotFound />, prerender: true };
 
 export function App() {
   const { path } = useLocation();
-  return <Layout>{(PAGES[path] ?? (() => <NotFound />))()}</Layout>;
+  const page = PAGES[path] ?? NOT_FOUND;
+  useTitle(page.title);
+  return <Layout>{page.render()}</Layout>;
 }

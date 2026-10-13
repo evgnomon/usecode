@@ -2,10 +2,9 @@
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
 import { Section } from "@/components/layout";
-import { Link, useTitle } from "@/lib/router";
+import { Link } from "@/lib/router";
 
 export function NotFound() {
-  useTitle("Not found · usecode.dev");
   return (
     <Section>
       <div className="wrap max-w-[680px]">

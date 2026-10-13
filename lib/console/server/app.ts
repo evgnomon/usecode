@@ -58,11 +58,18 @@ async function credentials(c: Context<Env>): Promise<{ email: string; password: 
   return { email: auth.normalizeEmail(String(body.email ?? "")), password: String(body.password ?? "") };
 }
 
-/** `clientDir` holds the built pages: index.html, assets/, and public/'s files. */
+/**
+ * `clientDir` holds the built pages: index.html, assets/, public/'s files,
+ * and pages/ with the ones src/prerender.tsx rendered ahead of time.
+ */
 export function createApp(sql: Sql, config: Config, clientDir: string): Hono<Env> {
   const app = new Hono<Env>();
   const limiter = new Limiter();
-  let shell: Promise<string> | undefined;
+  const files = new Map<string, Promise<string>>();
+  const file = (name: string) => {
+    if (!files.has(name)) files.set(name, readFile(join(clientDir, name), "utf8"));
+    return files.get(name)!;
+  };
 
   app.get("/healthz", async (c) => {
     await sql`SELECT 1`;
@@ -184,10 +191,14 @@ export function createApp(sql: Sql, config: Config, clientDir: string): Hono<Env
   app.get("/account", async (c, next) => (c.var.user ? next() : c.redirect("/login?next=/account")));
   app.get("/login", async (c, next) => (c.var.user ? c.redirect("/account") : next()));
   app.get("/signup", async (c, next) => (c.var.user ? c.redirect("/account") : next()));
+  // A prerendered page if there is one, else the app renders it in the browser.
   const page = async (c: Context<Env>) => {
-    shell ??= readFile(join(clientDir, "index.html"), "utf8");
+    const path = c.req.path;
+    const known = PAGES.includes(path);
+    const name = !known ? "404" : path === "/" ? "index" : path.slice(1);
+    const html = await file(`pages/${name}.html`).catch(() => file("index.html"));
     c.header("cache-control", "no-cache");
-    return c.html(await shell, PAGES.includes(c.req.path) ? 200 : 404);
+    return c.html(html, known ? 200 : 404);
   };
   // A path with an extension is a file from public/, the rest are pages.
   app.get("*", async (c, next) => (/\.\w+$/.test(c.req.path) ? next() : page(c)));

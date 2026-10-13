@@ -3,7 +3,15 @@
 
 // Just enough routing for a handful of pages: the address bar is the state.
 
-import { useEffect, useSyncExternalStore, type ComponentProps, type MouseEvent } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useSyncExternalStore,
+  type ComponentProps,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 
 const listeners = new Set<() => void>();
 
@@ -23,9 +31,19 @@ export function navigate(to: string, { replace = false } = {}) {
   listeners.forEach((l) => l());
 }
 
+const current = () => location.pathname + location.search;
+
+// Where the prerender (src/prerender.tsx) is, as there's no address bar there.
+const StaticHref = createContext<string | null>(null);
+
+export function StaticLocation({ href, children }: { href: string; children: ReactNode }) {
+  return <StaticHref.Provider value={href}>{children}</StaticHref.Provider>;
+}
+
 /** The path and the query, e.g. "/login?next=/pricing". */
 export function useLocation(): { path: string; query: URLSearchParams } {
-  const href = useSyncExternalStore(subscribe, () => location.pathname + location.search);
+  const staticHref = useContext(StaticHref);
+  const href = useSyncExternalStore(subscribe, current, () => staticHref ?? current());
   const [path = "/", search = ""] = href.split("?", 2);
   return { path, query: new URLSearchParams(search) };
 }

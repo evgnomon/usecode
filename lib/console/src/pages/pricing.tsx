@@ -8,7 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { ErrorNote, Notice, PageHead, Section } from "@/components/layout";
 import { CONTACT, PLANS, REPO_URL, TEAM_PRICE } from "@/content";
 import { goTo, useMe } from "@/lib/api";
-import { Link, useTitle } from "@/lib/router";
+import { Link } from "@/lib/router";
 import { Faqs } from "./home";
 
 type Plan = (typeof PLANS)[keyof typeof PLANS];
@@ -83,7 +83,6 @@ function TeamAction() {
 }
 
 export function Pricing() {
-  useTitle("Pricing · usecode.dev");
   return (
     <>
       <PageHead title="Free for you, simple for teams">

@@ -10,7 +10,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc -p tsconfig.json && vite build && tsc -p tsconfig.server.json",
+    "build": "tsc -p tsconfig.json && vite build && vite build --ssr src/prerender.tsx --outDir dist/prerender && node dist/prerender/prerender.js dist/client && tsc -p tsconfig.server.json",
     "start": "node dist/server/main.js",
     "test": "tsc -p tsconfig.json && tsc -p tsconfig.server.json && node --test 'dist/test/*.test.js'"
   },

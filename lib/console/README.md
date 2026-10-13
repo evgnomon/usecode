@@ -67,6 +67,12 @@ see `lib/uc/src/kube/roles/console.rs` for the rest.
 Copy lives in `src/content.ts` and the pages are in `src/pages/`. The API
 they call is in `server/app.ts`.
 
+The landing page, pricing and the 404 are rendered to plain HTML at build
+time (`src/prerender.tsx`, the pages marked `prerender` in `src/App.tsx`),
+so search engines, AI tools and `curl` read the whole page without running
+any JavaScript. The browser then picks them up and carries on as an app.
+The account and login pages stay browser-only.
+
 The look is one set of tokens in `src/index.css`, light and dark, mapped
 onto shadcn/ui's variables, so a component from `npx shadcn add <name>`
 picks the theme up as it is. `/design` shows all of it: the tokens, the

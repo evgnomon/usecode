@@ -8,7 +8,7 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -43,6 +43,9 @@ before(async () => {
   assert.deepEqual(await migrate(sql, `${root}migrations`), [], "applied once");
   client = await mkdtemp(join(tmpdir(), "console-client-"));
   await writeFile(join(client, "index.html"), "<!doctype html><title>console</title>");
+  await mkdir(join(client, "pages"));
+  await writeFile(join(client, "pages/index.html"), "<!doctype html><title>home, prerendered</title>");
+  await writeFile(join(client, "pages/404.html"), "<!doctype html><title>not found, prerendered</title>");
   await writeFile(join(client, "icon.svg"), "<svg/>");
   app = createApp(sql, cfg, client);
   globalThis.fetch = (async (input: string | URL, init?: RequestInit) => {
@@ -95,15 +98,18 @@ function webhook(event: unknown, secret = "whsec_test") {
 
 test("the pages and their files are served", { skip: !url }, async () => {
   const get = browser();
-  for (const path of ["/", "/pricing", "/login", "/signup", "/design"]) {
+  for (const path of ["/pricing", "/login", "/signup", "/design"]) {
     const res = await get(path);
     assert.equal(res.status, 200, path);
     assert.match(await res.text(), /<title>console<\/title>/, path);
     assert.equal(res.headers.get("cache-control"), "no-cache", path);
   }
+  const home = await get("/");
+  assert.equal(home.status, 200);
+  assert.match(await home.text(), /<title>home, prerendered<\/title>/, "a prerendered page wins");
   const missing = await get("/nope");
   assert.equal(missing.status, 404);
-  assert.match(await missing.text(), /<title>console<\/title>/, "the app says it's not found");
+  assert.match(await missing.text(), /<title>not found, prerendered<\/title>/);
   assert.equal((await get("/api/nope")).status, 404);
   assert.equal((await get("/healthz")).status, 200);
   assert.match((await get("/icon.svg")).headers.get("content-type") ?? "", /^image\/svg\+xml/);

@@ -1,14 +1,14 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Activity, type Line } from "@/components/console";
 import { Section } from "@/components/layout";
 import { FAQS, FEATURES, MOTIVATION, REPO_URL, STEPS } from "@/content";
 import { useMe } from "@/lib/api";
-import { Link, useTitle } from "@/lib/router";
+import { Link } from "@/lib/router";
 
 // What the agent sounds like while it works, newest first.
 const HERO_FEED: Line[] = [
@@ -23,21 +23,22 @@ export function Faqs() {
     <Section>
       <div className="wrap max-w-[680px]">
         <h2 className="mb-3 text-base">Questions</h2>
-        <Accordion type="multiple">
-          {FAQS.map((f) => (
-            <AccordionItem key={f.q} value={f.q} className="last:border-b">
-              <AccordionTrigger className="cursor-pointer">{f.q}</AccordionTrigger>
-              <AccordionContent className="text-muted-foreground">{f.a}</AccordionContent>
-            </AccordionItem>
-          ))}
-        </Accordion>
+        {/* <details> rather than an accordion, so the answers are in the page's HTML for anything reading it. */}
+        {FAQS.map((f) => (
+          <details key={f.q} className="group border-b">
+            <summary className="flex cursor-pointer list-none items-start justify-between gap-4 rounded-md py-4 text-sm font-medium outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 [&::-webkit-details-marker]:hidden">
+              {f.q}
+              <ChevronDown className="pointer-events-none size-4 shrink-0 translate-y-0.5 text-muted-foreground transition-transform duration-200 group-open:rotate-180" />
+            </summary>
+            <p className="pb-4 text-sm text-muted-foreground">{f.a}</p>
+          </details>
+        ))}
       </div>
     </Section>
   );
 }
 
 export function Home() {
-  useTitle("usecode.dev, container for agents");
   const { me } = useMe();
   return (
     <>
