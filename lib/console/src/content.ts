@@ -47,29 +47,121 @@ export const PLANS = {
   },
 };
 
-// The opening of the landing page: why usecode exists, one stanza at a time.
+/**
+ * A journey reads "From here to there", then what you don't have to do. The
+ * prompt is what you'd ask the agent, the steps what it does about it.
+ */
+export type Journey = { from: string; without: string; prompt: string; steps: string[] };
+
+// The opening of the landing page. The hero rolls the journeys three at a
+// time, and plays the one in the middle in a console underneath.
 export const MOTIVATION = {
-  site: "usecode.dev",
-  tagline: "Where intelligence uses code, and code makes intelligence.",
-  stanzas: [
-    [
-      "Use code to think.",
-      "Use code to build the base.",
-      "Use code to run code.",
-      "Use code to package it.",
-      "Use code to deploy it.",
-      "Use code to reuse it.",
-    ],
-    [
-      "Use code to build the agent.",
-      "Use code to run the agent.",
-      "Use code to package the agent.",
-      "Use code to deploy the agent.",
-      "Use code to improve the agent.",
-    ],
-    ["Use code.", "Again.", "And again."],
-  ],
-  close: "This is the way intelligence compounds.",
+  ask: "Ask your agent to",
+  tagline: "Use code!",
+  journeys: [
+    {
+      from: "From prompt to app,",
+      without: "without rebuilding the stack.",
+      prompt: "build a guestbook and put it online",
+      steps: ["Wrote app/ and its tests, 14 passing", "Built ghcr.io/you/guestbook:1", "Deployed to the cluster, 2 replicas", "Live at guestbook.you.dev"],
+    },
+    {
+      from: "From laptop to cluster,",
+      without: "without rewriting the deploy.",
+      prompt: "move this from my laptop to the cluster",
+      steps: ["Read the compose file, 3 services", "Same images, now as Deployments", "Volumes moved to RustFS", "Running on 3 nodes"],
+    },
+    {
+      from: "From one container to many pods,",
+      without: "without re-solving scale.",
+      prompt: "it's slow at lunch, scale it",
+      steps: ["p95 at 1.8s, CPU-bound", "Autoscaling 2 to 12 pods", "Load spread across 3 nodes", "p95 back to 120ms"],
+    },
+    {
+      from: "From one agent to a team,",
+      without: "without relearning what’s known.",
+      prompt: "give the new agent what we know",
+      steps: ["Shared the workspace and its notes", "Same nodes, same keys, scoped", "Second agent picked up the queue", "2 agents, 0 repeated work"],
+    },
+    {
+      from: "From your first user to your billionth,",
+      without: "without starting over.",
+      prompt: "we're on the front page, hold on",
+      steps: ["Traffic up 40x in 6 minutes", "Joined 4 nodes to the mesh", "Database read replicas added", "Holding, errors at 0.01%"],
+    },
+    {
+      from: "From our servers to yours,",
+      without: "without lock-in.",
+      prompt: "move everything onto my own servers",
+      steps: ["Your 3 servers joined the mesh", "Copied the data, checksums match", "DNS switched over", "Off ours, on yours"],
+    },
+    {
+      from: "From one cloud to the next,",
+      without: "without rewriting a thing.",
+      prompt: "it's cheaper over there, move us",
+      steps: ["New nodes up on the other cloud", "Same config, applied as is", "Traffic moved, no errors", "Old nodes drained and gone"],
+    },
+    {
+      from: "From someone else’s cloud to your own nodes,",
+      without: "without handing over your data.",
+      prompt: "keep the data on our own hardware",
+      steps: ["The rack in the office joined the mesh", "Storage pinned to your nodes", "Encrypted between every host", "Your data, on your disks"],
+    },
+    {
+      from: "From a fresh host to a working node,",
+      without: "without a playbook.",
+      prompt: "here's a new box, set it up",
+      steps: ["usecoded installed", "Joined the WireGuard mesh", "kubelet up, node ready", "node-05 settled"],
+    },
+    {
+      from: "From a vulnerable kernel to a patched one,",
+      without: "without downtime.",
+      prompt: "there's a kernel CVE out, patch us",
+      steps: ["3 of 5 nodes affected", "Draining node-02, pods moved", "Patched and rebooted, one at a time", "All 5 nodes patched, 0 requests dropped"],
+    },
+    {
+      from: "From git push to running,",
+      without: "without a rented pipeline.",
+      prompt: "deploy every push to main",
+      steps: ["Watching main on GitHub", "a1f3c9e pushed, building", "Tests green, image pushed", "Rolled out in 48s"],
+    },
+    {
+      from: "From “it’s down?” to “here’s why”,",
+      without: "built in.",
+      prompt: "checkout is failing, why?",
+      steps: ["Read logs across 3 nodes", "500s since 14:02, a bad migration", "Rolled back to v41", "Checkout working, fix in a branch"],
+    },
+    {
+      from: "From a domain name to email and DNS,",
+      without: "without five SaaS bills.",
+      prompt: "set up mail and DNS for shop.dev",
+      steps: ["Zone created, records applied", "Mail server up, DKIM signed", "SPF and DMARC in place", "hello@shop.dev receiving"],
+    },
+    {
+      from: "From any agent to the same machines,",
+      without: "without a new integration.",
+      prompt: "let my other agent use these nodes",
+      steps: ["Issued it an API key", "Same MCP tools, same cluster", "It deployed its first service", "2 agents, one place to run"],
+    },
+    {
+      from: "From a hosted model to your own,",
+      without: "without changing the workflow.",
+      prompt: "run our own model on the GPU box",
+      steps: ["GPU node found, drivers ready", "Model pulled, 40 GB", "Serving on the same API", "Your agents now use it"],
+    },
+    {
+      from: "From side project to paying customers,",
+      without: "without building billing.",
+      prompt: "let people pay for this",
+      steps: ["Plans and prices set up", "Checkout page added", "Receipts and invoices on", "First customer paid"],
+    },
+  ] as Journey[],
+  close: "From burning tokens to compounding them.",
+  body:
+    "The agent writes the code, tests it, builds it, deploys it, and patches " +
+    "it when something breaks. usecode is where all of it runs, on any node, " +
+    "anywhere, configured the way you need it or the way that works best.",
+  ship: "The agent builds. You watch it ship.",
 };
 
 export const FEATURES = [

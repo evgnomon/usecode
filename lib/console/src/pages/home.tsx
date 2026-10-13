@@ -5,6 +5,7 @@ import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Activity, type Line } from "@/components/console";
+import { Journeys } from "@/components/journeys";
 import { Section } from "@/components/layout";
 import { FAQS, FEATURES, MOTIVATION, REPO_URL, STEPS } from "@/content";
 import { useMe } from "@/lib/api";
@@ -42,45 +43,40 @@ export function Home() {
   const { me } = useMe();
   return (
     <>
-      <section className="pt-12 pb-8 sm:pt-16 sm:pb-12">
-        <div className="wrap grid items-center gap-12 md:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+      <section className="pt-14 pb-10 text-center sm:pt-24 sm:pb-16">
+        <div className="wrap max-w-[760px]">
+          <p className="text-lg text-muted-foreground">{MOTIVATION.ask}</p>
+          <h1 className="mb-8 text-[clamp(52px,11vw,96px)] leading-none font-semibold tracking-[-0.04em]">
+            {MOTIVATION.tagline}
+          </h1>
+          <Journeys journeys={MOTIVATION.journeys} />
+          <div className="mt-8 flex flex-wrap justify-center gap-3">
+            <Button asChild>
+              <Link href={me?.user ? "/account" : "/signup"}>{me?.user ? "Go to your account" : "Get started free"}</Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/pricing">See pricing</Link>
+            </Button>
+          </div>
+        </div>
+      </section>
+      <Section className="border-y bg-card">
+        <div className="wrap grid items-center gap-10 md:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
           <div>
-            <div className="mb-3 font-mono text-xs text-primary">{MOTIVATION.site}</div>
-            <h1 className="mb-6 text-[clamp(26px,4.4vw,36px)] leading-[1.15] tracking-[-0.02em]">
-              {MOTIVATION.tagline}
-            </h1>
-            {MOTIVATION.stanzas.map((lines) => (
-              <ul key={lines[0]} className="mb-4 text-base text-muted-foreground">
-                {lines.map((l) => (
-                  <li key={l}>{l}</li>
-                ))}
-              </ul>
-            ))}
-            <p className="mb-6 text-base font-semibold">{MOTIVATION.close}</p>
+            <h2 className="mb-4 text-[clamp(22px,3.4vw,28px)] leading-[1.2] tracking-[-0.02em]">{MOTIVATION.close}</h2>
+            <p className="mb-4 max-w-[60ch] text-base text-muted-foreground">{MOTIVATION.body}</p>
+            <p className="mb-4 text-base font-semibold">{MOTIVATION.ship}</p>
             <p className="max-w-[60ch] text-base text-muted-foreground">
-              When your coding agent can run code, it solves problems better and burns fewer tokens doing it, so it
-              has more time left for the interesting stuff. To run code it needs a place to run it: an agent can't
-              work in a void. usecode is that container.
-            </p>
-            <p className="mt-4 max-w-[60ch] text-base font-semibold">
               usecode is open source and freely distributed.{" "}
               <a href={REPO_URL} className="text-primary hover:underline">
                 Have a look on GitHub
               </a>
               .
             </p>
-            <div className="mt-6 flex flex-wrap gap-3">
-              <Button asChild>
-                <Link href={me?.user ? "/account" : "/signup"}>{me?.user ? "Go to your account" : "Get started free"}</Link>
-              </Button>
-              <Button asChild variant="outline">
-                <Link href="/pricing">See pricing</Link>
-              </Button>
-            </div>
           </div>
           <Activity lines={HERO_FEED} />
         </div>
-      </section>
+      </Section>
       <Section>
         <div className="wrap grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {FEATURES.map((f) => (

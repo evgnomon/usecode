@@ -53,5 +53,4 @@ for (const [path, page, file] of pages.filter(([, page]) => page.prerender)) {
     .replace(TITLE, () => `<title>${escape(page.title)}</title>`)
     .replace(ROOT, () => `<div id="root">${html}</div>`);
   await writeFile(join(client, file), out);
-  console.log(`prerendered ${path} -> ${file}`);
 }

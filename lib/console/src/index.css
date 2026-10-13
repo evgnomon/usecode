@@ -124,6 +124,7 @@
   --animate-breathe: breathe 2s ease-in-out infinite;
   --animate-breathe-bg: breathe-bg 2s ease-in-out infinite;
   --animate-feed-in: feed-in 250ms cubic-bezier(0.2, 0, 0, 1) both;
+  --animate-caret: caret 1s steps(1) infinite;
 
   @keyframes ring {
     0%, 100% { box-shadow: 0 0 0 0 var(--agent-glow); }
@@ -139,6 +140,9 @@
   }
   @keyframes feed-in {
     from { opacity: 0; transform: translateY(-2px); }
+  }
+  @keyframes caret {
+    50% { opacity: 0; }
   }
 }
 

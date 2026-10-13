@@ -14,11 +14,11 @@ TEST_DATABASE_URL ?= postgres://postgres:test@127.0.0.1:$(TEST_DB_PORT)/console
 all: build
 
 node_modules: package.json package-lock.json
-	npm ci
+	npm ci --silent --no-audit --no-fund
 	@touch $@
 
 build: node_modules
-	npm run build
+	npm run --silent build
 
 # The signup and billing flow runs too while `make test-db` is up.
 test: node_modules
