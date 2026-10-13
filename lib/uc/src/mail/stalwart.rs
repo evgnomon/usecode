@@ -7,8 +7,10 @@
 //! they work before the mail name resolves or has a certificate.
 
 use crate::kube::cloudflare::{client, send};
-use crate::kube::remote::{Forward, port_forward};
-use anyhow::{Result, anyhow, bail};
+use crate::kube::remote::{Forward, kubectl_json, port_forward};
+use crate::kube::roles::mail::{ADMIN_SECRET, HTTP_PORT, NAME, NAMESPACE};
+use anyhow::{Context, Result, anyhow, bail};
+use base64::Engine;
 use serde_json::{Value, json};
 
 const USING: [&str; 2] = ["urn:ietf:params:jmap:core", "urn:stalwart:jmap"];
@@ -23,6 +25,14 @@ pub struct Stalwart {
 }
 
 impl Stalwart {
+    /// The Stalwart the mail role runs on `context`, as the recovery admin
+    /// in mail/mail-admin, unless `UC_MAIL_USER` and `UC_MAIL_PASSWORD`
+    /// name another.
+    pub async fn admin(context: &str) -> Result<Stalwart> {
+        let (user, password) = credentials(context).await?;
+        Stalwart::connect(context, NAMESPACE, NAME, HTTP_PORT, &user, &password).await
+    }
+
     /// Forwards a local port to `service`'s `port` in `namespace` and logs
     /// in as `user`.
     pub async fn connect(
@@ -127,4 +137,35 @@ impl Stalwart {
             .map(str::to_string)
             .ok_or_else(|| anyhow!("Stalwart {kind}/set: no id in {result}"))
     }
+
+    /// Deletes object `id` of `kind`.
+    pub async fn destroy(&self, kind: &str, id: &str) -> Result<()> {
+        let result = self
+            .call(&format!("{kind}/set"), json!({"destroy": [id]}))
+            .await?;
+        if let Some(err) = result["notDestroyed"].get(id) {
+            bail!("Stalwart didn't delete {kind} {id}: {err}");
+        }
+        Ok(())
+    }
+}
+
+async fn credentials(context: &str) -> Result<(String, String)> {
+    if let (Ok(user), Ok(password)) = (
+        std::env::var("UC_MAIL_USER"),
+        std::env::var("UC_MAIL_PASSWORD"),
+    ) {
+        return Ok((user, password));
+    }
+    let secret = kubectl_json(context, &["-n", NAMESPACE, "get", "secret", ADMIN_SECRET])
+        .await
+        .context(
+            "reading the recovery admin; set UC_MAIL_USER and UC_MAIL_PASSWORD for another admin",
+        )?;
+    let field = |key: &str| -> Result<String> {
+        let raw = secret["data"][key].as_str().unwrap_or_default();
+        let bytes = base64::engine::general_purpose::STANDARD.decode(raw)?;
+        Ok(String::from_utf8(bytes)?)
+    };
+    Ok((field("username")?, field("password")?))
 }

@@ -67,7 +67,18 @@ impl Record {
 
     /// The record as a zone file line, for a DNS host uc doesn't manage.
     pub fn zone_line(&self) -> String {
-        let data = match &self.data {
+        format!(
+            "{}. 3600 IN {} {}",
+            self.name,
+            self.data.kind(),
+            self.zone_data()
+        )
+    }
+
+    /// Its data as a zone file has it, with absolute names: what
+    /// PowerDNS's API wants too.
+    pub fn zone_data(&self) -> String {
+        match &self.data {
             Data::A(ip) => ip.to_string(),
             Data::Mx { preference, host } => format!("{preference} {host}."),
             Data::Txt(text) => quoted(text),
@@ -77,8 +88,7 @@ impl Record {
                 port,
                 target,
             } => format!("{priority} {weight} {port} {target}."),
-        };
-        format!("{}. 3600 IN {} {data}", self.name, self.data.kind())
+        }
     }
 }
 

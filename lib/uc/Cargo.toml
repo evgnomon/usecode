@@ -5,7 +5,7 @@
 name = "uc"
 version = "0.1.0"
 edition.workspace = true
-description = "usecode command line tool, its OpenSSL-compatible file encryption subcommands, the parallel machine configurator and the container registry push/pull, GHCR image management, the secret stores, the mail server's DNS, the name servers' zones, the dev workspaces on a cluster and the command groups over the usecode tools"
+description = "usecode command line tool, its OpenSSL-compatible file encryption subcommands, the parallel machine configurator and the container registry push/pull, GHCR image management, the secret stores, the mail server's DNS, domains and accounts, the name servers' zones, the dev workspaces on a cluster and the command groups over the usecode tools"
 license.workspace = true
 authors.workspace = true
 
@@ -120,6 +120,14 @@ path = "src/bin/uc-mail-configure.rs"
 [[bin]]
 name = "uc-mail-settings"
 path = "src/bin/uc-mail-settings.rs"
+
+[[bin]]
+name = "uc-mail-domain"
+path = "src/bin/uc-mail-domain.rs"
+
+[[bin]]
+name = "uc-mail-account"
+path = "src/bin/uc-mail-account.rs"
 
 [[bin]]
 name = "uc-dns"

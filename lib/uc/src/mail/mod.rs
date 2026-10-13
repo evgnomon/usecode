@@ -5,9 +5,10 @@
 //! `uc kube configure` runs. [`configure`] keeps its DNS, reverse DNS and
 //! Stalwart settings in shape, from the [`records`] mail needs, with
 //! [`stalwart`]'s management API, and [`settings`] is what mail apps need
-//! to use it.
+//! to use it. [`manage`] looks after its domains and accounts.
 
 pub mod configure;
+pub mod manage;
 pub mod records;
 pub mod settings;
 pub mod stalwart;

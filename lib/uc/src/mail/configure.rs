@@ -6,7 +6,8 @@
 //!
 //! * DNS for the mail name and every domain Stalwart has (see
 //!   [`records`]), on Cloudflare when the zone's NS records say it's
-//!   there and `CLOUDFLARE_API_TOKEN` can edit it, as instructions
+//!   there and `CLOUDFLARE_API_TOKEN` can edit it, on the cluster's own
+//!   name servers (`uc dns`) when they have the zone, as instructions
 //!   otherwise. Only the records mail needs are touched: other TXT records,
 //!   the domain's own A records and DKIM selectors someone else made stay.
 //! * Reverse DNS of the workers Stalwart can run on, on Hetzner Cloud, as
@@ -22,19 +23,19 @@
 
 use super::records::{self, Data, DkimKey, Record, Server};
 use super::stalwart::Stalwart;
+use crate::dns::{self, pdns::RRset};
 use crate::kube::Cluster;
 use crate::kube::cloudflare::{self, Cloudflare, client, send};
 use crate::kube::remote::{kubectl, kubectl_json};
 use crate::kube::roles::hcloud_csi::{LOCATION_LABEL, PROVIDER, PROVIDER_KEY, cluster_token};
-use crate::kube::roles::mail::{ADMIN_SECRET, HTTP_PORT, NAME, NAMESPACE, TLS_SECRET};
+use crate::kube::roles::mail::{NAME, NAMESPACE, TLS_SECRET};
 use anyhow::{Context, Result, anyhow, bail};
-use base64::Engine;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufRead, IsTerminal, Write};
-use std::net::Ipv4Addr;
+use std::net::{IpAddr, Ipv4Addr};
 
-/// Marks the Cloudflare records uc made, so it can drop them when they're
+/// Marks the Cloudflare records and PowerDNS RRsets uc made, so it can drop them when they're
 /// no longer needed (a retired DKIM key) without touching anyone else's.
 const COMMENT: &str = "uc mail configure";
 const HETZNER_API: &str = "https://api.hetzner.cloud/v1";
@@ -79,7 +80,10 @@ enum Change {
     },
     Delete {
         zone: String,
+        /// Cloudflare's id, or the content for PowerDNS.
         id: String,
+        name: String,
+        kind: String,
         what: String,
     },
     Ptr {
@@ -107,7 +111,8 @@ impl Change {
 
 /// A record a DNS host already has.
 struct Existing {
-    /// Cloudflare's id; none for one only seen in public DNS.
+    /// Cloudflare's id, or the content as PowerDNS has it; none for one
+    /// only seen in public DNS.
     id: Option<String>,
     name: String,
     kind: String,
@@ -159,9 +164,42 @@ impl Existing {
             33 => "SRV",
             _ => return None,
         };
+        Some(Existing::from_text(
+            a["name"].as_str()?,
+            kind,
+            a["data"].as_str()?,
+        ))
+    }
+
+    /// The records of a PowerDNS RRset.
+    fn from_rrset(r: &Value) -> Vec<Existing> {
+        let (Some(name), Some(kind)) = (r["name"].as_str(), r["type"].as_str()) else {
+            return Vec::new();
+        };
+        let ours = r["comments"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|c| c["content"] == COMMENT);
+        r["records"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|c| c["disabled"] != true)
+            .filter_map(|c| c["content"].as_str())
+            .map(|content| Existing {
+                id: Some(content.to_string()),
+                comment: if ours { COMMENT.into() } else { String::new() },
+                ..Existing::from_text(name, kind, content)
+            })
+            .collect()
+    }
+
+    /// A record from its data in zone file form.
+    fn from_text(name: &str, kind: &str, content: &str) -> Existing {
         let content = match kind {
-            "CNAME" => host_name(a["data"].as_str()?),
-            _ => a["data"].as_str()?.to_string(),
+            "CNAME" => host_name(content),
+            _ => content.to_string(),
         };
         let words: Vec<&str> = content.split_whitespace().collect();
         let num = |i: usize| {
@@ -185,15 +223,25 @@ impl Existing {
             }),
             _ => None,
         };
-        Some(Existing {
+        Existing {
             id: None,
-            name: host_name(a["name"].as_str()?),
+            name: host_name(name),
             kind: kind.into(),
             data,
             content,
             proxied: false,
             comment: String::new(),
-        })
+        }
+    }
+
+    fn delete(&self, zone: &str) -> Change {
+        Change::Delete {
+            zone: zone.to_string(),
+            id: self.id.clone().unwrap_or_default(),
+            name: self.name.clone(),
+            kind: self.kind.clone(),
+            what: self.describe(),
+        }
     }
 
     fn describe(&self) -> String {
@@ -271,11 +319,7 @@ fn diff(
     let deletes = owned
         .iter()
         .filter(|e| !want.iter().any(|r| matches(e, r)))
-        .map(|e| Change::Delete {
-            zone: zone.to_string(),
-            id: e.id.clone().unwrap_or_default(),
-            what: e.describe(),
-        })
+        .map(|e| e.delete(zone))
         .collect();
     (creates, deletes)
 }
@@ -310,30 +354,68 @@ enum Host {
         cf: Cloudflare,
         id: String,
     },
+    /// The cluster's PowerDNS: the zone as one instance has it, which the
+    /// plan is made from.
+    Pdns(Value),
     /// Anywhere else, or Cloudflare without a token that can edit it: why.
     Manual(String),
 }
 
-/// The recovery admin from mail/mail-admin, unless `UC_MAIL_USER` and
-/// `UC_MAIL_PASSWORD` name another.
-async fn credentials(context: &str) -> Result<(String, String)> {
-    if let (Ok(user), Ok(password)) = (
-        std::env::var("UC_MAIL_USER"),
-        std::env::var("UC_MAIL_PASSWORD"),
-    ) {
-        return Ok((user, password));
+/// The cluster's name servers, the zones they have (`example.com.`) and
+/// the addresses they answer on.
+struct PowerDns {
+    fleet: dns::Fleet,
+    zones: BTreeSet<String>,
+    answering: Vec<IpAddr>,
+}
+
+impl PowerDns {
+    /// None when the cluster has no `dns` role, or none of it is up.
+    async fn connect(context: &str) -> Option<PowerDns> {
+        let fleet = dns::Fleet::connect(context).await.ok()?;
+        let mut zones = BTreeSet::new();
+        for p in fleet.up() {
+            zones.extend(p.zones().await.ok()?);
+        }
+        let answering = dns::answering(context).await.unwrap_or_default();
+        Some(PowerDns {
+            fleet,
+            zones,
+            answering,
+        })
     }
-    let secret = kubectl_json(context, &["-n", NAMESPACE, "get", "secret", ADMIN_SECRET])
-        .await
-        .context(
-            "reading the recovery admin; set UC_MAIL_USER and UC_MAIL_PASSWORD for another admin",
-        )?;
-    let field = |key: &str| -> Result<String> {
-        let raw = secret["data"][key].as_str().unwrap_or_default();
-        let bytes = base64::engine::general_purpose::STANDARD.decode(raw)?;
-        Ok(String::from_utf8(bytes)?)
-    };
-    Ok((field("username")?, field("password")?))
+
+    fn has(&self, zone: &str) -> bool {
+        self.zones.contains(&format!("{zone}."))
+    }
+
+    /// The longest zone `name` is in.
+    fn zone_of(&self, name: &str) -> Option<String> {
+        self.zones
+            .iter()
+            .map(|z| z.trim_end_matches('.'))
+            .filter(|z| name == *z || name.ends_with(&format!(".{z}")))
+            .max_by_key(|z| z.len())
+            .map(str::to_string)
+    }
+
+    /// Whether every name server in `ns` points at the cluster.
+    async fn serves(&self, ns: &[String]) -> Result<bool> {
+        for n in ns {
+            let answer = cloudflare::lookup(n, "A").await?;
+            let ips: Vec<IpAddr> = answer["Answer"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|a| a["type"] == 1)
+                .filter_map(|a| a["data"].as_str()?.parse().ok())
+                .collect();
+            if ips.is_empty() || !ips.iter().all(|ip| self.answering.contains(ip)) {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
 }
 
 /// A Hetzner Cloud server: its id, public IPv4 and that address's
@@ -523,15 +605,14 @@ pub async fn run(opts: Options) -> Result<bool> {
 
     // Stalwart: its domains, their DKIM keys and the settings that
     // decide whether it's trusted.
-    let (user, password) = credentials(context).await?;
-    let stalwart = Stalwart::connect(context, NAMESPACE, NAME, HTTP_PORT, &user, &password).await?;
+    let stalwart = Stalwart::admin(context).await?;
     let all_domains = stalwart.get("x:Domain").await?;
     for d in &opts.domains {
         if !all_domains
             .iter()
             .any(|x| x["name"] == host_name(d).as_str())
         {
-            bail!("Stalwart has no domain {d}; add it at https://{host}/admin first");
+            bail!("Stalwart has no domain {d}: uc mail domain add {d}");
         }
     }
     let domains: Vec<&Value> = all_domains
@@ -546,7 +627,7 @@ pub async fn run(opts: Options) -> Result<bool> {
         })
         .collect();
     if domains.is_empty() {
-        bail!("Stalwart has no domain yet; add yours at https://{host}/admin, then run this again");
+        bail!("Stalwart has no domain yet: uc mail domain add example.com, then run this again");
     }
     let keys = stalwart.get("x:DkimSignature").await?;
     let settings = stalwart.singleton("x:SystemSettings").await?;
@@ -660,21 +741,76 @@ pub async fn run(opts: Options) -> Result<bool> {
         .collect();
     let mut by_zone: BTreeMap<String, Vec<(String, Option<String>)>> = BTreeMap::new();
     let mut nameservers: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    // Connected once a zone isn't on Cloudflare: it may be on the cluster.
+    let mut powerdns: Option<Option<PowerDns>> = None;
     for (name, domain_id) in std::iter::once((host.clone(), None)).chain(domains.iter().map(|d| {
         (
             host_name(d["name"].as_str().unwrap_or_default()),
             d["id"].as_str().map(str::to_string),
         )
     })) {
-        let (zone, ns) = zone_of(&name).await?;
+        let (zone, ns) = match zone_of(&name).await {
+            Ok(found) => found,
+            // Not delegated yet, but maybe made with `uc dns zone add`.
+            Err(err) => {
+                if powerdns.is_none() {
+                    powerdns = Some(PowerDns::connect(context).await);
+                }
+                match powerdns
+                    .as_ref()
+                    .and_then(Option::as_ref)
+                    .and_then(|p| p.zone_of(&name))
+                {
+                    Some(zone) => (zone, Vec::new()),
+                    None => return Err(err),
+                }
+            }
+        };
         nameservers.insert(zone.clone(), ns);
         by_zone.entry(zone).or_default().push((name, domain_id));
     }
     let token = Cloudflare::from_env();
     let mut manual: Vec<(String, String, Vec<Record>, Vec<Change>)> = Vec::new();
+    let mut on_powerdns = BTreeSet::new();
     for (zone, names) in &by_zone {
         let ns = &nameservers[zone];
-        let dns_host = if !ns.iter().all(|n| n.ends_with(".ns.cloudflare.com")) {
+        let on_cloudflare = !ns.is_empty() && ns.iter().all(|n| n.ends_with(".ns.cloudflare.com"));
+        if !on_cloudflare && powerdns.is_none() {
+            powerdns = Some(PowerDns::connect(context).await);
+        }
+        let pdns = powerdns
+            .as_ref()
+            .and_then(Option::as_ref)
+            .filter(|p| p.has(zone));
+        let dns_host = if let Some(p) = pdns {
+            if ns.is_empty() {
+                notes.push(format!(
+                    "{zone} is on the cluster's name servers but not delegated to them yet: \
+                     its registrar wants them as its name servers (`uc dns zone ls`)"
+                ));
+            } else if !p.serves(ns).await? {
+                notes.push(format!(
+                    "{zone} is on the cluster's name servers, but its name servers are {}: \
+                     public DNS sees the records once they're the cluster's",
+                    ns.join(", ")
+                ));
+            }
+            // The plan is made from the first instance that has it.
+            let mut found = None;
+            for instance in p.fleet.up() {
+                found = instance.zone(&format!("{zone}.")).await?;
+                if found.is_some() {
+                    break;
+                }
+            }
+            match found {
+                Some(z) => {
+                    on_powerdns.insert(zone.clone());
+                    Host::Pdns(z)
+                }
+                None => Host::Manual("the cluster's name servers lost it".into()),
+            }
+        } else if !on_cloudflare {
             Host::Manual(format!("its name servers are {}", ns.join(", ")))
         } else {
             match &token {
@@ -741,35 +877,43 @@ pub async fn run(opts: Options) -> Result<bool> {
                 existing.extend(fetch(&dns_host, n).await?);
             }
             // DKIM records uc made for keys Stalwart no longer has.
-            if domain_id.is_some()
-                && let Host::Cloudflare { cf, id } = &dns_host
-            {
-                let suffix = format!("._domainkey.{name}");
-                for r in cf
+            let suffix = format!("._domainkey.{name}");
+            let dkim_now: Vec<Existing> = match &dns_host {
+                _ if domain_id.is_none() => Vec::new(),
+                Host::Cloudflare { cf, id } => cf
                     .list(id, &[("type", "TXT"), ("name.endswith", &suffix)])
                     .await?
-                {
-                    let e = Existing::from_cloudflare(&r);
-                    if e.comment == COMMENT && !names_here.contains(&e.name) {
-                        existing.push(e);
-                    }
-                }
-            }
+                    .iter()
+                    .map(Existing::from_cloudflare)
+                    .collect(),
+                Host::Pdns(z) => rrsets(z)
+                    .filter(|r| r["type"] == "TXT")
+                    .flat_map(Existing::from_rrset)
+                    .filter(|e| e.name.ends_with(&suffix))
+                    .collect(),
+                Host::Manual(_) => Vec::new(),
+            };
+            existing.extend(
+                dkim_now
+                    .into_iter()
+                    .filter(|e| e.comment == COMMENT && !names_here.contains(&e.name)),
+            );
             want.extend(records);
         }
         // A stale DKIM record's kind is wanted at no name of its own.
         let stale_dkim: Vec<Change> = existing
             .iter()
             .filter(|e| e.comment == COMMENT && !want.iter().any(|r| r.name == e.name))
-            .map(|e| Change::Delete {
-                zone: zone.clone(),
-                id: e.id.clone().unwrap_or_default(),
-                what: e.describe(),
-            })
+            .map(|e| e.delete(zone))
             .collect();
         let (creates, mut deletes) = diff(zone, &want, &existing, &host, &domain_names);
         deletes.extend(stale_dkim);
         match dns_host {
+            // One PATCH per instance makes them all at once.
+            Host::Pdns(_) => {
+                changes.extend(creates);
+                changes.extend(deletes);
+            }
             Host::Cloudflare { .. } => {
                 // A CNAME goes first: nothing can be added next to it.
                 let (cnames, rest): (Vec<_>, Vec<_>) = deletes.into_iter().partition(
@@ -792,7 +936,7 @@ pub async fn run(opts: Options) -> Result<bool> {
     // The plan.
     println!("Mail server {host} on context {context}, the mail ports on {running_on}");
     if changes.is_empty() {
-        println!("Stalwart, Cloudflare and Hetzner are as they should be.");
+        println!("Stalwart, DNS and Hetzner are as they should be.");
     } else {
         println!("\nChanges:");
         for c in &changes {
@@ -829,8 +973,24 @@ pub async fn run(opts: Options) -> Result<bool> {
     let cf = Cloudflare::from_env().ok();
     let mut zone_ids: BTreeMap<String, String> = BTreeMap::new();
     let mut restart = false;
+    let mut ok = !left;
+    let mut pending: Vec<&Change> = Vec::new();
     for c in &changes {
         println!("{}", c.line(&host));
+        if let Change::Create { zone, .. } | Change::Delete { zone, .. } = c
+            && on_powerdns.contains(zone)
+        {
+            pending.push(c);
+            continue;
+        }
+        // Reverse DNS goes once the name points at the address.
+        if matches!(c, Change::Ptr { .. }) && !pending.is_empty() {
+            let p = powerdns
+                .as_ref()
+                .and_then(Option::as_ref)
+                .expect("a PowerDNS zone has its fleet");
+            ok &= apply_powerdns(&p.fleet, &std::mem::take(&mut pending)).await;
+        }
         match c {
             Change::Stalwart {
                 kind,
@@ -874,6 +1034,13 @@ pub async fn run(opts: Options) -> Result<bool> {
             }
         }
     }
+    if !pending.is_empty() {
+        let p = powerdns
+            .as_ref()
+            .and_then(Option::as_ref)
+            .expect("a PowerDNS zone has its fleet");
+        ok &= apply_powerdns(&p.fleet, &pending).await;
+    }
     drop(stalwart);
     if restart {
         // Stalwart reads its listeners and certificate when it starts.
@@ -903,7 +1070,91 @@ pub async fn run(opts: Options) -> Result<bool> {
         .await?;
     }
     println!("done");
-    Ok(!left)
+    Ok(ok)
+}
+
+/// Makes the record changes of PowerDNS zones on every instance, from what
+/// each has: one PATCH per instance and zone.
+async fn apply_powerdns(fleet: &dns::Fleet, changes: &[&Change]) -> bool {
+    // (name., type) -> (contents to add, contents to take away), by zone.
+    type Edits = BTreeMap<(String, String), (Vec<String>, Vec<String>)>;
+    let mut by_zone: BTreeMap<String, Edits> = BTreeMap::new();
+    for c in changes {
+        match c {
+            Change::Create { zone, record } => by_zone
+                .entry(format!("{zone}."))
+                .or_default()
+                .entry((format!("{}.", record.name), record.data.kind().to_string()))
+                .or_default()
+                .0
+                .push(record.zone_data()),
+            Change::Delete {
+                zone,
+                id,
+                name,
+                kind,
+                ..
+            } => by_zone
+                .entry(format!("{zone}."))
+                .or_default()
+                .entry((format!("{name}."), kind.clone()))
+                .or_default()
+                .1
+                .push(id.clone()),
+            _ => {}
+        }
+    }
+    let mut ok = true;
+    for (zone, edits) in &by_zone {
+        ok &= dns::each(fleet, &format!("the mail records of {zone}"), |p| {
+            let (zone, edits) = (zone.clone(), edits.clone());
+            async move {
+                let records = p
+                    .records(&zone)
+                    .await?
+                    .ok_or_else(|| anyhow!("has no {zone}"))?;
+                let (mut set, mut unset) = (BTreeMap::new(), BTreeMap::new());
+                for (key, (add, remove)) in edits {
+                    let now = records.get(&key);
+                    let after = edited(now, &add, &remove, key.1 == "A");
+                    if after.as_ref() == now {
+                        continue;
+                    }
+                    if add.is_empty() {
+                        unset.insert(key, after);
+                    } else {
+                        set.insert(key, after);
+                    }
+                }
+                let n = set.len() + unset.len();
+                p.patch_commented(&zone, &set, Some(COMMENT)).await?;
+                p.patch(&zone, &unset).await?;
+                Ok(format!("{zone}: {n} RRsets changed"))
+            }
+        })
+        .await;
+    }
+    ok
+}
+
+/// The RRset `now` with `remove` taken away and `add` added; None when
+/// nothing is left. An A RRset gets a short TTL, so a move to another
+/// worker is followed quickly.
+fn edited(now: Option<&RRset>, add: &[String], remove: &[String], short: bool) -> Option<RRset> {
+    let mut after = now.cloned();
+    if !remove.is_empty() {
+        after = dns::updated(after.as_ref(), remove, None, dns::Mode::Remove);
+    }
+    if !add.is_empty() {
+        let ttl = short.then_some(60);
+        after = dns::updated(after.as_ref(), add, ttl, dns::Mode::Add);
+    }
+    after
+}
+
+/// The RRsets of a zone from PowerDNS's API.
+fn rrsets(zone: &Value) -> impl Iterator<Item = &Value> {
+    zone["rrsets"].as_array().into_iter().flatten()
 }
 
 async fn zone_id(
@@ -927,6 +1178,11 @@ async fn fetch(dns_host: &Host, name: &str) -> Result<Vec<Existing>> {
             .await?
             .iter()
             .map(Existing::from_cloudflare)
+            .collect()),
+        Host::Pdns(z) => Ok(rrsets(z)
+            .filter(|r| r["type"] != "SOA")
+            .flat_map(Existing::from_rrset)
+            .filter(|e| e.name == name)
             .collect()),
         Host::Manual(_) => {
             let mut found = Vec::new();
@@ -973,7 +1229,7 @@ fn cloudflare_record(r: &Record) -> Value {
     body
 }
 
-fn confirm(question: &str) -> Result<()> {
+pub(crate) fn confirm(question: &str) -> Result<()> {
     if !std::io::stdin().is_terminal() {
         bail!("not asking without a terminal: pass --yes");
     }
@@ -1091,6 +1347,103 @@ mod tests {
         let (creates, deletes) = diff("example.com", &want, &[a], "mail.example.com", &domains);
         assert_eq!(lines(&creates)[0], "+ A mail.example.com 192.0.2.1");
         assert_eq!(lines(&deletes), ["- A mail.example.com 192.0.2.1"]);
+    }
+
+    #[test]
+    fn reads_powerdns_rrsets_and_whose_they_are() {
+        let mx = Existing::from_rrset(&json!({
+            "name": "example.com.", "type": "MX", "ttl": 3600,
+            "records": [
+                {"content": "10 mail.example.com.", "disabled": false},
+                {"content": "20 old.example.com.", "disabled": true},
+            ],
+            "comments": [],
+        }));
+        assert_eq!(mx.len(), 1);
+        assert_eq!(mx[0].id.as_deref(), Some("10 mail.example.com."));
+        assert_eq!(mx[0].comment, "");
+        assert_eq!(
+            mx[0].data,
+            Some(Data::Mx {
+                preference: 10,
+                host: "mail.example.com".into()
+            })
+        );
+        let dkim = Existing::from_rrset(&json!({
+            "name": "v1._domainkey.example.com.", "type": "TXT", "ttl": 3600,
+            "records": [{"content": "\"v=DKIM1; k=rsa; \" \"p=MIIB\"", "disabled": false}],
+            "comments": [{"content": COMMENT, "account": "uc"}],
+        }));
+        assert_eq!(dkim[0].name, "v1._domainkey.example.com");
+        assert_eq!(dkim[0].comment, COMMENT);
+        assert_eq!(
+            dkim[0].data,
+            Some(Data::Txt("v=DKIM1; k=rsa; p=MIIB".into()))
+        );
+    }
+
+    #[test]
+    fn a_powerdns_zone_gets_the_records_it_lacks() {
+        let domains = BTreeSet::from(["example.com".to_string()]);
+        let want = records::host_records(&server());
+        let existing = Existing::from_rrset(&json!({
+            "name": "mail.example.com.", "type": "A", "ttl": 60,
+            "records": [{"content": "192.0.2.9", "disabled": false}],
+        }));
+        let (creates, deletes) = diff(
+            "example.com",
+            &want,
+            &existing,
+            "mail.example.com",
+            &domains,
+        );
+        assert_eq!(
+            lines(&creates),
+            [
+                "+ A mail.example.com 192.0.2.1",
+                "+ TXT mail.example.com v=spf1 ip4:192.0.2.1 -all"
+            ]
+        );
+        match &deletes[..] {
+            [Change::Delete { id, name, kind, .. }] => {
+                assert_eq!(
+                    (id.as_str(), name.as_str(), kind.as_str()),
+                    ("192.0.2.9", "mail.example.com", "A")
+                );
+            }
+            _ => panic!("one delete, not {}", deletes.len()),
+        }
+    }
+
+    #[test]
+    fn an_rrset_keeps_what_mail_doesnt_own() {
+        let now = RRset {
+            ttl: 300,
+            records: vec!["\"site-verification=abc\"".into(), "\"v=spf1 -all\"".into()],
+        };
+        let after = edited(
+            Some(&now),
+            &["\"v=spf1 ip4:192.0.2.1 -all\"".into()],
+            &["\"v=spf1 -all\"".into()],
+            false,
+        )
+        .unwrap();
+        assert_eq!(after.ttl, 300);
+        assert_eq!(
+            after.records,
+            ["\"site-verification=abc\"", "\"v=spf1 ip4:192.0.2.1 -all\""]
+        );
+        let a = RRset {
+            ttl: 3600,
+            records: vec!["192.0.2.9".into()],
+        };
+        assert_eq!(edited(Some(&a), &[], &["192.0.2.9".into()], true), None);
+        assert_eq!(
+            edited(Some(&a), &["192.0.2.1".into()], &["192.0.2.9".into()], true)
+                .unwrap()
+                .ttl,
+            60
+        );
     }
 
     #[test]

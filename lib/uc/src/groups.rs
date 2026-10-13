@@ -298,6 +298,16 @@ pub static MAIL: Group = Group {
             "IMAP and SMTP settings for mail apps",
             &["uc-mail-settings"],
         ),
+        exec(
+            "domain",
+            "the domains the mail server takes mail for",
+            &["uc-mail-domain"],
+        ),
+        exec(
+            "account",
+            "mail accounts, their passwords and aliases",
+            &["uc-mail-account"],
+        ),
     ],
     fallback: None,
 };

@@ -188,7 +188,7 @@ impl Fleet {
 
 /// Runs `change` on every reachable instance; false when one failed or
 /// was down, which is said with what to do about it.
-async fn each<'a, F, Fut>(fleet: &'a Fleet, what: &str, change: F) -> bool
+pub(crate) async fn each<'a, F, Fut>(fleet: &'a Fleet, what: &str, change: F) -> bool
 where
     F: Fn(&'a Pdns) -> Fut,
     Fut: std::future::Future<Output = Result<String>>,

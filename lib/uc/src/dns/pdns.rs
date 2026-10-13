@@ -90,13 +90,19 @@ impl Pdns {
 
     /// The zone's records, or None when it doesn't have the zone.
     pub async fn records(&self, zone: &str) -> Result<Option<Records>> {
+        Ok(self.zone(zone).await?.as_ref().map(parse_records))
+    }
+
+    /// The zone as the API has it, with its comments, or None when it
+    /// doesn't have the zone.
+    pub async fn zone(&self, zone: &str) -> Result<Option<Value>> {
         if !self.zones().await?.iter().any(|z| z == zone) {
             return Ok(None);
         }
         let z = self
             .call(Method::GET, &format!("/zones/{zone}"), None)
             .await?;
-        Ok(Some(parse_records(&z)))
+        Ok(Some(z))
     }
 
     /// Makes `zone` with `records` (which hold its NS records).
@@ -135,19 +141,36 @@ impl Pdns {
         zone: &str,
         changes: &BTreeMap<(String, String), Option<RRset>>,
     ) -> Result<()> {
+        self.patch_commented(zone, changes, None).await
+    }
+
+    /// [`Pdns::patch`], with `comment` as the comment of the RRsets it
+    /// sets. Without one, their comments stay as they are.
+    pub async fn patch_commented(
+        &self,
+        zone: &str,
+        changes: &BTreeMap<(String, String), Option<RRset>>,
+        comment: Option<&str>,
+    ) -> Result<()> {
         if changes.is_empty() {
             return Ok(());
         }
         let rrsets: Vec<Value> = changes
             .iter()
             .map(|((name, kind), set)| match set {
-                Some(set) => json!({
-                    "name": name,
-                    "type": kind,
-                    "ttl": set.ttl,
-                    "changetype": "REPLACE",
-                    "records": set.records.iter().map(|c| json!({"content": c, "disabled": false})).collect::<Vec<_>>(),
-                }),
+                Some(set) => {
+                    let mut rrset = json!({
+                        "name": name,
+                        "type": kind,
+                        "ttl": set.ttl,
+                        "changetype": "REPLACE",
+                        "records": set.records.iter().map(|c| json!({"content": c, "disabled": false})).collect::<Vec<_>>(),
+                    });
+                    if let Some(c) = comment {
+                        rrset["comments"] = json!([{"content": c, "account": "uc"}]);
+                    }
+                    rrset
+                }
                 None => json!({"name": name, "type": kind, "changetype": "DELETE"}),
             })
             .collect();

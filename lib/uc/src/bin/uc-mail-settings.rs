@@ -42,7 +42,7 @@ Examples:
   uc mail settings ada@example.com    the settings for one account
 
 It reads mail_host from your user config, under kube.<context> like the
-mail role. Accounts are made at https://<mail_host>/admin.";
+mail role. Accounts are made with `uc mail account add`.";
 
 fn main() -> ExitCode {
     if std::env::args().nth(1).as_deref() == Some("--summary") {
