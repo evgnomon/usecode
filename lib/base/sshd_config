@@ -1,0 +1,16 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
+# Keys only, for the one user the entrypoint allows. The host keys live on
+# the workspace's volume so they stay the same from one start to the next.
+HostKey /home/.usecode/ssh/ssh_host_ed25519_key
+HostKey /home/.usecode/ssh/ssh_host_rsa_key
+AuthorizedKeysFile /home/.usecode/ssh/authorized_keys/%u .ssh/authorized_keys
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitRootLogin no
+AllowTcpForwarding yes
+X11Forwarding no
+PrintMotd no
+PrintLastLog no
+AcceptEnv COLORTERM NO_COLOR

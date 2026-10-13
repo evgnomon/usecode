@@ -9,11 +9,19 @@
 //! free, so the links stay the same from one run to the next; ports below
 //! 1024 go to 10000 + the port, which needs no root. A taken one gets any
 //! free port.
+//!
+//! Workspaces (`uc forward ws`) are different: their Service is only
+//! sshd, so what is forwarded is what listens in the workspace, followed
+//! as it comes and goes, like an editor does over SSH.
 
+use crate::kube::remote::kubectl;
+use crate::workspace;
 use anyhow::{Context, Result, bail};
 use serde_json::Value;
+use std::collections::{BTreeMap, BTreeSet};
 use std::net::TcpListener;
 use std::process::Stdio;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
@@ -32,6 +40,8 @@ pub struct Port {
 pub struct Service {
     pub namespace: String,
     pub name: String,
+    /// What kubectl port-forward takes: `svc/vmsingle`, `deploy/ws-dev`.
+    pub target: String,
     pub ports: Vec<Port>,
 }
 
@@ -187,6 +197,7 @@ pub fn services(
             found.push(Service {
                 namespace: namespace.to_string(),
                 name: name.to_string(),
+                target: format!("svc/{name}"),
                 ports,
             });
         }
@@ -224,18 +235,41 @@ pub fn preferred(port: u16) -> u16 {
     if port < 1024 { port + 10_000 } else { port }
 }
 
+/// The local ports this run has handed out, so two forwards never get
+/// the same one before kubectl has bound it.
+#[derive(Default, Clone)]
+pub struct Taken(Arc<Mutex<BTreeSet<u16>>>);
+
+impl Taken {
+    /// A free local port for `port`, `preferred` when it can.
+    pub fn take(&self, port: u16, free: impl Fn(u16) -> bool) -> Result<u16> {
+        let mut taken = self.0.lock().expect("not poisoned");
+        let want = preferred(port);
+        let local = if !taken.contains(&want) && free(want) {
+            want
+        } else {
+            loop {
+                let p = any_free_port()?;
+                if !taken.contains(&p) {
+                    break p;
+                }
+            }
+        };
+        taken.insert(local);
+        Ok(local)
+    }
+
+    /// Gives `local` back once nothing forwards on it.
+    pub fn give_back(&self, local: u16) {
+        self.0.lock().expect("not poisoned").remove(&local);
+    }
+}
+
 /// Gives every port a free local one, `preferred` when it can.
-pub fn assign(services: &mut [Service], free: impl Fn(u16) -> bool) -> Result<()> {
-    let mut taken = Vec::new();
+pub fn assign(services: &mut [Service], taken: &Taken, free: impl Fn(u16) -> bool) -> Result<()> {
     for service in services.iter_mut() {
         for p in &mut service.ports {
-            let want = preferred(p.port);
-            p.local = if !taken.contains(&want) && free(want) {
-                want
-            } else {
-                any_free_port()?
-            };
-            taken.push(p.local);
+            p.local = taken.take(p.port, &free)?;
         }
     }
     Ok(())
@@ -285,7 +319,7 @@ pub async fn keep_forwarding(context: String, service: Service) {
         "-n".into(),
         service.namespace.clone(),
         "port-forward".into(),
-        format!("svc/{}", service.name),
+        service.target.clone(),
     ];
     args.extend(
         service
@@ -345,6 +379,111 @@ async fn forward_once(args: &[String], label: &str, up_before: &mut bool) -> Str
     }
 }
 
+/// Whether `uc forward` is pointed at the workspaces: `ws` or `workspace`.
+pub fn is_workspaces(namespace: &str) -> bool {
+    namespace == "ws" || namespace == workspace::NAMESPACE
+}
+
+/// The forwards to a workspace's pod for `ports`, before they are given
+/// local ones.
+pub fn workspace_service(name: &str, ports: &[u16]) -> Service {
+    Service {
+        namespace: workspace::NAMESPACE.into(),
+        name: name.into(),
+        target: format!("deploy/{}", workspace::object(name)),
+        ports: ports
+            .iter()
+            .map(|&port| Port {
+                port,
+                name: String::new(),
+                local: 0,
+            })
+            .collect(),
+    }
+}
+
+/// The ports listened on in `/proc/net/tcp` and `/proc/net/tcp6`, but
+/// sshd's, which `ssh` is for, and the ephemeral ones (32768 and up) the
+/// editor's server, language servers and debuggers pick at random. Name
+/// one of those to forward it anyway.
+pub fn listening(proc_net: &str) -> BTreeSet<u16> {
+    proc_net
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split_whitespace();
+            let local = fields.nth(1)?;
+            // 0A is LISTEN.
+            if fields.nth(1)? != "0A" {
+                return None;
+            }
+            u16::from_str_radix(local.rsplit_once(':')?.1, 16).ok()
+        })
+        .filter(|&p| p != workspace::SSH_PORT && p < 32_768)
+        .collect()
+}
+
+/// Forwards what listens in workspace `name` until the process ends:
+/// looks every two seconds, forwards a port that opens and lets go of one
+/// that closes.
+pub async fn follow_workspace(context: String, name: String, taken: Taken) {
+    let label = format!("{}/{name}", workspace::NAMESPACE);
+    let target = format!("deploy/{}", workspace::object(&name));
+    let mut forwards: BTreeMap<u16, (u16, tokio::task::JoinHandle<()>)> = BTreeMap::new();
+    let mut failing = false;
+    loop {
+        let out = kubectl(
+            &context,
+            &[
+                "-n",
+                workspace::NAMESPACE,
+                "exec",
+                &target,
+                "--",
+                "cat",
+                "/proc/net/tcp",
+                "/proc/net/tcp6",
+            ],
+        )
+        .await;
+        match out {
+            Ok(out) => {
+                failing = false;
+                let open = listening(&out);
+                forwards.retain(|port, (local, forward)| {
+                    if open.contains(port) {
+                        return true;
+                    }
+                    forward.abort();
+                    taken.give_back(*local);
+                    println!("  {label}:{port} closed");
+                    false
+                });
+                for &port in open.difference(&forwards.keys().copied().collect()) {
+                    let mut service = workspace_service(&name, &[port]);
+                    let local = match taken.take(port, is_free) {
+                        Ok(local) => local,
+                        Err(err) => {
+                            eprintln!("{label}:{port}: {err:#}");
+                            continue;
+                        }
+                    };
+                    service.ports[0].local = local;
+                    let (_, at) = describe(&service, &service.ports[0]);
+                    println!("  {label}:{port}  {at}");
+                    let forward = tokio::spawn(keep_forwarding(context.clone(), service));
+                    forwards.insert(port, (local, forward));
+                }
+            }
+            Err(err) if !failing => {
+                failing = true;
+                eprintln!("{label}: can't see what listens in it, trying again: {err:#}");
+            }
+            Err(_) => {}
+        }
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -387,7 +526,7 @@ mod tests {
     #[test]
     fn keeps_ports_where_it_can() {
         let mut found = services("mail", &list(), &[]).unwrap();
-        assign(&mut found, |p| p != 8428).unwrap();
+        assign(&mut found, &Taken::default(), |p| p != 8428).unwrap();
         let mail = &found[0].ports;
         // Below 1024 needs root, so 10000 is added.
         assert_eq!((mail[0].local, mail[1].local), (10_025, 10_993));
@@ -398,12 +537,38 @@ mod tests {
     #[test]
     fn links_to_the_known_ones() {
         let mut found = services("obs", &list(), &[parse_pick("vmsingle").unwrap()]).unwrap();
-        assign(&mut found, |_| true).unwrap();
+        assign(&mut found, &Taken::default(), |_| true).unwrap();
         let (what, at) = describe(&found[0], &found[0].ports[0]);
         assert_eq!(what, "metrics and dashboards (vmui)");
         assert_eq!(at, "http://localhost:8428/vmui/");
         let mut mail = services("mail", &list(), &[]).unwrap();
-        assign(&mut mail, |_| true).unwrap();
+        assign(&mut mail, &Taken::default(), |_| true).unwrap();
         assert_eq!(describe(&mail[0], &mail[0].ports[0]).1, "localhost:10025");
+    }
+
+    #[test]
+    fn sees_what_listens_in_a_workspace() {
+        let proc_net = "\
+  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode
+   0: 00000000:0016 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 1
+   1: 0100007F:0BB8 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 2
+   2: 0100007F:9C40 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 3
+   3: 0100007F:0BB8 0100007F:D431 01 00000000:00000000 00:00000000 00000000  1000        0 4
+  sl  local_address                         remote_address                        st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode
+   0: 00000000000000000000000000000000:1435 00000000000000000000000000000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 5
+";
+        // sshd, a connection and an ephemeral port are left out.
+        assert_eq!(listening(proc_net), BTreeSet::from([3000, 5173]));
+    }
+
+    #[test]
+    fn hands_out_a_port_once() {
+        let taken = Taken::default();
+        let a = taken.take(3000, |_| true).unwrap();
+        let b = taken.take(3000, |_| true).unwrap();
+        assert_eq!(a, 3000);
+        assert_ne!(b, 3000);
+        taken.give_back(3000);
+        assert_eq!(taken.take(3000, |_| true).unwrap(), 3000);
     }
 }

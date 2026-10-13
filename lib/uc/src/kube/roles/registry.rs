@@ -44,14 +44,14 @@ use anyhow::{Result, bail};
 use serde_json::{Value, json};
 use std::sync::Arc;
 
-pub(crate) const NAMESPACE: &str = "registry";
+pub const NAMESPACE: &str = "registry";
 const NAME: &str = "registry";
 const IMAGE: &str = "registry:3";
 const CLAIM: &str = "registry-data";
 /// The claim the registry `lib/infra/bootstrap.sh` used to install kept its
 /// images on, on one node's disk.
 const OLD_CLAIM: &str = "registry";
-pub(crate) const AUTH_SECRET: &str = "registry-auth";
+pub const AUTH_SECRET: &str = "registry-auth";
 const TLS_SECRET: &str = "registry-tls";
 const ISSUER: &str = "letsencrypt";
 const PORT: u16 = 5000;

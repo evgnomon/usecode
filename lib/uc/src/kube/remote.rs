@@ -31,6 +31,32 @@ pub async fn kubectl(context: &str, args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
+/// kubectl against `context` with `input` on its stdin, returning its
+/// stdout.
+pub async fn kubectl_stdin(context: &str, args: &[&str], input: &str) -> Result<String> {
+    use tokio::io::AsyncWriteExt;
+    let mut child = Command::new("kubectl")
+        .args(["--context", context])
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("running kubectl; is it installed?")?;
+    let mut stdin = child.stdin.take().expect("stdin is piped");
+    stdin.write_all(input.as_bytes()).await?;
+    drop(stdin);
+    let out = child.wait_with_output().await?;
+    if !out.status.success() {
+        bail!(
+            "`kubectl {}` failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
 /// kubectl against `context`, returning its stdout as JSON.
 pub async fn kubectl_json(context: &str, args: &[&str]) -> Result<Value> {
     let mut args = args.to_vec();

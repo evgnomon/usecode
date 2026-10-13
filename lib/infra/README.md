@@ -337,6 +337,35 @@ kept as the `ALERTS` series. More room or time: `obs_metrics_size`,
 `obs_logs_size`, `obs_metrics_retention`, `obs_logs_retention`. Your own
 alerts: `obs_alert_groups`, in the Prometheus rules format.
 
+## Your workspaces
+
+A dev box of your own on the cluster: Debian trixie (`lib/base`), your
+SSH keys, sudo, and a home that stays. Handy for working close to the
+cluster, for heavy builds your laptop would rather skip, or for a coding
+agent that needs a place to run.
+
+```bash
+make -C lib/base push        # once, to your registry; again for a newer image
+uc ws up                     # a workspace called dev, as you, with your ~/.ssh/*.pub
+uc ws ssh                    # a shell in it
+uc ws ssh -- -L 3000:localhost:3000   # with a port brought home
+uc ws settings               # ssh config and VS Code, step by step
+uc ws ls
+uc ws stop                   # frees the cluster; /home stays
+uc ws down dev --purge       # gone, home and all
+```
+
+`uc ws` is short for `uc workspace`. There's nothing to open on the
+firewall: ssh goes through `kubectl port-forward`, so anyone who can reach
+the cluster with kubectl reaches their workspace that way. Add the entry
+`uc ws settings` prints to `~/.ssh/config` and VS Code's Remote - SSH
+connects to it like to any other machine.
+
+Make it bigger with `uc ws up --cpu 4 --memory 8Gi --size 50Gi` (the size
+only counts when the volume is made). `workspace_size`,
+`workspace_storage_class` and `workspace_image` under `kube.<context>` set
+the defaults.
+
 ## Good to know
 
 - DNS lists the workers only. Traefik still answers on every node, control

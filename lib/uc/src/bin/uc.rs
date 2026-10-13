@@ -13,6 +13,9 @@ use uc::dispatch::{self, is_executable, resolve, search_dirs};
 
 const PREFIX: &str = "uc-";
 
+/// Short names for commands: `uc ws` is `uc workspace`.
+const ALIASES: &[(&str, &str)] = &[("ws", "workspace")];
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let subcommand = match args.first().map(String::as_str) {
@@ -29,7 +32,11 @@ fn main() -> ExitCode {
             print_usage();
             return ExitCode::from(2);
         }
-        Some(arg) => arg.to_string(),
+        Some(arg) => ALIASES
+            .iter()
+            .find(|(short, _)| *short == arg)
+            .map_or(arg, |(_, long)| long)
+            .to_string(),
     };
 
     let program = format!("{PREFIX}{subcommand}");
@@ -47,11 +54,21 @@ fn print_usage() {
         println!("No uc commands found on PATH.");
     } else {
         println!("Commands:");
-        let width = commands.iter().map(String::len).max().unwrap_or(0);
-        for command in &commands {
+        // A command with a short name is listed as `workspace, ws`.
+        let labels: Vec<(&String, String)> = commands
+            .iter()
+            .map(
+                |command| match ALIASES.iter().find(|(_, long)| long == command) {
+                    Some((short, _)) => (command, format!("{command}, {short}")),
+                    None => (command, command.clone()),
+                },
+            )
+            .collect();
+        let width = labels.iter().map(|(_, l)| l.len()).max().unwrap_or(0);
+        for (command, label) in &labels {
             match summary(command) {
-                Some(summary) => println!("  {command:width$}  {summary}"),
-                None => println!("  {command}"),
+                Some(summary) => println!("  {label:width$}  {summary}"),
+                None => println!("  {label}"),
             }
         }
         println!("\nRun 'uc <command> -h' for the options of a command.");
