@@ -10,9 +10,12 @@
 //! them. It runs on worker nodes only, never on a control plane. Removing
 //! the deployment leaves the volume; only deleting the claim deletes it.
 //!
-//! It answers on `https://<registry_host>` through k3s's Traefik, with a
-//! Let's Encrypt certificate from the `letsencrypt` ClusterIssuer that
-//! `lib/infra/bootstrap.sh` sets up. With `registry_dns_target` the role
+//! It answers on `https://<registry_host>` with a Let's Encrypt certificate
+//! from the `letsencrypt` ClusterIssuer that `lib/infra/bootstrap.sh` sets
+//! up. k3s's Traefik passes the TLS straight through to the registry, which
+//! serves it itself: Traefik's HTTP entrypoints cut a request off after 60s,
+//! and pushing a big layer is one long request. The registry reads its
+//! certificate once, so it restarts when cert-manager renews it. With `registry_dns_target` the role
 //! keeps the name a CNAME to it on Cloudflare's API; otherwise point it
 //! at the workers yourself (`lib/infra/dns.sh <registry_host>`).
 //!
@@ -55,6 +58,10 @@ pub const AUTH_SECRET: &str = "registry-auth";
 const TLS_SECRET: &str = "registry-tls";
 const ISSUER: &str = "letsencrypt";
 const PORT: u16 = 5000;
+const CERTS: &str = "/certs";
+/// Touched as the registry starts; a certificate newer than it is one the
+/// registry hasn't read yet.
+const STARTED: &str = "/tmp/started";
 
 /// What the user decided, from the variables.
 #[derive(Debug, Clone, Default)]
@@ -144,6 +151,9 @@ impl Settings {
                         "containers": [{
                             "name": NAME,
                             "image": IMAGE,
+                            "command": ["sh", "-c", format!(
+                                "touch {STARTED} && exec /entrypoint.sh /etc/distribution/config.yml"
+                            )],
                             "ports": [{"containerPort": PORT}],
                             "env": [
                                 {"name": "REGISTRY_AUTH", "value": "htpasswd"},
@@ -152,12 +162,19 @@ impl Settings {
                                 {"name": "REGISTRY_STORAGE_DELETE_ENABLED", "value": "true"},
                                 {"name": "REGISTRY_HTTP_RELATIVEURLS", "value": "true"},
                                 {"name": "REGISTRY_HTTP_SECRET", "valueFrom": secret("http-secret")},
+                                {"name": "REGISTRY_HTTP_TLS_CERTIFICATE", "value": format!("{CERTS}/tls.crt")},
+                                {"name": "REGISTRY_HTTP_TLS_KEY", "value": format!("{CERTS}/tls.key")},
                             ],
                             "volumeMounts": [
                                 {"name": "auth", "mountPath": "/auth", "readOnly": true},
+                                {"name": "certs", "mountPath": CERTS, "readOnly": true},
                                 {"name": "data", "mountPath": "/var/lib/registry"},
                             ],
-                            "readinessProbe": {"httpGet": {"path": "/", "port": PORT}},
+                            "readinessProbe": {"httpGet": {"path": "/", "port": PORT, "scheme": "HTTPS"}},
+                            // Restart on a renewed certificate.
+                            "livenessProbe": {"exec": {"command": ["sh", "-c", format!(
+                                "test ! {CERTS}/tls.crt -nt {STARTED}"
+                            )]}},
                             "resources": {
                                 "requests": {"cpu": "50m", "memory": "64Mi"},
                                 "limits": {"memory": "512Mi"},
@@ -165,6 +182,7 @@ impl Settings {
                         }],
                         "volumes": [
                             {"name": "auth", "emptyDir": {"medium": "Memory"}},
+                            {"name": "certs", "secret": {"secretName": TLS_SECRET}},
                             {"name": "data", "persistentVolumeClaim": {"claimName": CLAIM}},
                         ],
                     },
@@ -180,38 +198,33 @@ impl Settings {
                 "ports": [{"port": PORT, "targetPort": PORT}],
             },
         });
-        let redirect = json!({
-            "apiVersion": "traefik.io/v1alpha1",
-            "kind": "Middleware",
-            "metadata": meta("redirect-https"),
-            "spec": {"redirectScheme": {"scheme": "https", "permanent": true}},
-        });
-        let ingress = json!({
-            "apiVersion": "networking.k8s.io/v1",
-            "kind": "Ingress",
-            "metadata": {
-                "name": NAME,
-                "namespace": NAMESPACE,
-                "annotations": {
-                    "cert-manager.io/cluster-issuer": ISSUER,
-                    "traefik.ingress.kubernetes.io/router.middlewares":
-                        format!("{NAMESPACE}-redirect-https@kubernetescrd"),
-                },
-            },
+        let certificate = json!({
+            "apiVersion": "cert-manager.io/v1",
+            "kind": "Certificate",
+            "metadata": meta(TLS_SECRET),
             "spec": {
-                "ingressClassName": "traefik",
-                "tls": [{"hosts": [host], "secretName": TLS_SECRET}],
-                "rules": [{"host": host, "http": {"paths": [{
-                    "path": "/",
-                    "pathType": "Prefix",
-                    "backend": {"service": {"name": NAME, "port": {"number": PORT}}},
-                }]}}],
+                "secretName": TLS_SECRET,
+                "dnsNames": [host],
+                "issuerRef": {"name": ISSUER, "kind": "ClusterIssuer"},
+            },
+        });
+        let route = json!({
+            "apiVersion": "traefik.io/v1alpha1",
+            "kind": "IngressRouteTCP",
+            "metadata": meta(NAME),
+            "spec": {
+                "entryPoints": ["websecure"],
+                "routes": [{
+                    "match": format!("HostSNI(`{host}`)"),
+                    "services": [{"name": NAME, "port": PORT}],
+                }],
+                "tls": {"passthrough": true},
             },
         });
         json!({
             "apiVersion": "v1",
             "kind": "List",
-            "items": [claim, deployment, service, redirect, ingress],
+            "items": [claim, deployment, service, certificate, route],
         })
     }
 }
@@ -435,7 +448,10 @@ async fn install(ctx: &Ctx, cluster: &Cluster, s: &Settings) -> Result<Outcome> 
     } else {
         &s.size
     };
-    let outcome = apply(ctx, cluster, &s.manifest(size).to_string()).await?;
+    let mut outcome = forget_ingress(ctx, cluster).await?;
+    if apply(ctx, cluster, &s.manifest(size).to_string()).await? == Outcome::Changed {
+        outcome = Outcome::Changed;
+    }
     if ctx.check() || outcome == Outcome::Ok {
         return Ok(outcome);
     }
@@ -450,6 +466,36 @@ async fn install(ctx: &Ctx, cluster: &Cluster, s: &Settings) -> Result<Outcome> 
         bail!("{err:#}\n\n{}", logs(ctx, cluster).await);
     }
     Ok(outcome)
+}
+
+/// Delete the Ingress and redirect the registry had before Traefik passed its
+/// TLS through. The Ingress owns the Certificate cert-manager made for it, so
+/// it goes in the foreground: `apply` then makes the Certificate anew, from
+/// the secret that is still there.
+async fn forget_ingress(ctx: &Ctx, cluster: &Cluster) -> Result<Outcome> {
+    let found = kubectl(ctx, cluster)
+        .args(["-n", NAMESPACE, "get", "ingress", NAME, "-o", "name"])
+        .any_code()
+        .read_only()
+        .output()
+        .await?;
+    if !found.success() {
+        return Ok(Outcome::Ok);
+    }
+    if ctx.check() {
+        return Ok(Outcome::Changed);
+    }
+    kubectl(ctx, cluster)
+        .args(["-n", NAMESPACE, "delete", "ingress", NAME])
+        .args(["--cascade=foreground", "--wait"])
+        .output()
+        .await?;
+    kubectl(ctx, cluster)
+        .args(["-n", NAMESPACE, "delete", "middleware.traefik.io", "redirect-https"])
+        .arg("--ignore-not-found")
+        .output()
+        .await?;
+    Ok(Outcome::Changed)
 }
 
 /// The tail of the registry's logs and the claim's events, for a failure
@@ -635,14 +681,17 @@ mod tests {
     }
 
     #[test]
-    fn serves_https_on_the_host() {
+    fn serves_its_own_tls_on_the_host() {
         let m = settings().manifest("10Gi");
-        let ingress = item(&m, "Ingress");
-        assert_eq!(ingress["spec"]["rules"][0]["host"], "registry.example.com");
-        assert_eq!(
-            ingress["spec"]["tls"][0]["hosts"][0],
-            "registry.example.com"
-        );
-        assert_eq!(ingress["spec"]["tls"][0]["secretName"], TLS_SECRET);
+        let route = item(&m, "IngressRouteTCP");
+        assert_eq!(route["spec"]["routes"][0]["match"], "HostSNI(`registry.example.com`)");
+        assert_eq!(route["spec"]["tls"]["passthrough"], true);
+        let cert = item(&m, "Certificate");
+        assert_eq!(cert["spec"]["dnsNames"][0], "registry.example.com");
+        assert_eq!(cert["spec"]["secretName"], TLS_SECRET);
+        let container = &item(&m, "Deployment")["spec"]["template"]["spec"]["containers"][0];
+        assert!(container["env"].as_array().unwrap().contains(&json!(
+            {"name": "REGISTRY_HTTP_TLS_CERTIFICATE", "value": "/certs/tls.crt"}
+        )));
     }
 }
