@@ -25,6 +25,7 @@ pub mod mise;
 pub mod pam_sudo;
 pub mod pkg;
 pub mod rust;
+pub mod sudo_nopasswd;
 pub mod sysctl;
 pub mod udev_hwdb;
 pub mod usecode;
@@ -47,6 +48,7 @@ pub fn plan(v: &Vars) -> Plan {
     dotfiles::tasks(&mut plan, v);
     git::tasks(&mut plan, v);
     pam_sudo::tasks(&mut plan, v);
+    sudo_nopasswd::tasks(&mut plan, v);
     sysctl::tasks(&mut plan, v);
     udev_hwdb::tasks(&mut plan, v);
     gnome::tasks(&mut plan, v);
