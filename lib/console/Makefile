@@ -38,7 +38,7 @@ dev: node_modules
 	API_URL=http://localhost:$(PORT) npx vite
 
 image:
-	podman build -t $(IMAGE):$(TAG) -f Containerfile .
+	podman build --network=host -t $(IMAGE):$(TAG) -f Containerfile .
 
 push: image
 	./scripts/push.sh $(IMAGE) $(TAG) $(REGISTRY)

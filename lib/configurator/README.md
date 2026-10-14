@@ -108,20 +108,3 @@ Add pubkeys to `allowed_signers` for git verification:
 ```bash
 echo "$(git config --get user.email) namespaces=\"git\" $(cat ~/.ssh/yourkey.pub)" >> ~/.ssh/allowed_signers
 ```
-
-## Secret Rotation
-
-Run `uc secret rotate -r --playbook` (was `rotsec`) in your repo. Set
-`repo_secrets` using `uc secret edit -r` (was `rchain`):
-
-```yaml
-repo_secrets:
-  - owner_name: evgnomon
-    repo_name: blueprint
-    secret_name: VAULT_PASS
-    secret_value: yourpass
-  - owner_name: evgnomon
-    repo_name: blueprint
-    secret_name: VAULT_FILE
-    secret_file: ~/src/github.com/<user>/config/secrets/evgnomon_blueprint_github.yaml
-```

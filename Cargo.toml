@@ -4,12 +4,10 @@
 [workspace]
 resolver = "3"
 members = [
-    "lib/ansidist",
     "lib/api",
     "lib/backup_archive",
     "lib/barge",
     "lib/bot",
-    "lib/catalyze",
     "lib/certgen",
     "lib/confmap",
     "lib/csv2pdf",
@@ -26,7 +24,6 @@ members = [
     "lib/jsonc",
     "lib/k8s_ddl",
     "lib/mgo",
-    "lib/mkarole",
     "lib/mkdeb",
     "lib/mkp12",
     "lib/mkpod",
@@ -48,7 +45,6 @@ members = [
     "lib/vi",
     "lib/vm",
     "lib/x",
-    "lib/yacht",
     "lib/ykattach",
     "lib/ysys",
     "lib/ytdump",

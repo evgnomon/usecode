@@ -12,8 +12,6 @@
 
 pub mod apt;
 pub mod bash_history_backup;
-pub mod csharp_ls;
-pub mod digitalocean;
 pub mod docker;
 pub mod dotfiles;
 pub mod extrepo;
@@ -21,17 +19,14 @@ pub mod fonts;
 pub mod git;
 pub mod gnome;
 pub mod goose;
-pub mod llama_cpp;
 pub mod local_bin;
 pub mod mise;
-pub mod packer;
 pub mod pam_sudo;
 pub mod pkg;
 pub mod rust;
 pub mod sysctl;
 pub mod udev_hwdb;
 pub mod usecode;
-pub mod vscode;
 pub mod wslview;
 pub mod zls;
 
@@ -58,10 +53,7 @@ pub fn plan(v: &Vars) -> Plan {
     mise::tasks(&mut plan, v);
     bash_history_backup::tasks(&mut plan, v);
     wslview::tasks(&mut plan, v);
-    vscode::tasks(&mut plan, v);
     docker::tasks(&mut plan, v);
-    packer::tasks(&mut plan, v);
-    llama_cpp::tasks(&mut plan, v);
     zls::tasks(&mut plan, v);
     plan.gate(
         0,
@@ -70,9 +62,7 @@ pub fn plan(v: &Vars) -> Plan {
     );
 
     rust::tasks(&mut plan, v);
-    csharp_ls::tasks(&mut plan, v);
     goose::tasks(&mut plan, v);
-    digitalocean::tasks(&mut plan, v);
     plan
 }
 

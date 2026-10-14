@@ -1,8 +1,0 @@
-# License-Identifier: HGL
-# Copyright (C) The Usecode Authors (see AUTHORS)
-
----
-# defaults file for roles/ensure-podman
-
-ensure_podman_packages:
-  - podman

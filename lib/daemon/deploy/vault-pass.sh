@@ -12,8 +12,8 @@
 #
 # Until a host has the mesh turned on there is no secrets.yml, so there
 # is nothing to decrypt and the real password isn't needed: a
-# placeholder keeps ansible-playbook status.yml working on a machine
-# without the usecode secret (uc daemon install never opens the vault;
+# placeholder keeps ansible-vault working on a machine without the
+# usecode secret (uc daemon install never opens the vault;
 # uc net mesh add and apply do). `uc net mesh add` sets USECODE_VAULT_WRITE=1, since
 # it is about to encrypt with whatever comes out of here, and that has
 # to be the real password.

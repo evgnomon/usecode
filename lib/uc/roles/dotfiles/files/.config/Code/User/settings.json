@@ -51,7 +51,6 @@
     "dev.containers.dockerSocketPath": "",
     "dev.containers.optimisticallyLaunchDocker": false,
     "containers.commands.build": "${containerCommand} build --pull --rm -f \"${dockerfile}\" -t ${tag} \"${context}\"",
-    "dotnet.preferVisualStudioCodeFileSystemWatcher": true,
     "vs-kubernetes": {
         "vscode-kubernetes.helm-path-linux": "${userHome}/.local/state/vs-kubernetes/tools/helm/linux-amd64/helm",
         "vscode-kubernetes.minikube-path-linux": "${userHome}/.local/state/vs-kubernetes/tools/minikube/linux-amd64/minikube"
@@ -80,11 +79,6 @@
     },
     "dev.containers.dockerPath": "podman",
     "dev.containers.dockerComposePath": "podman-compose",
-    "[csharp]": {
-        "editor.maxTokenizationLineLength": 2500,
-        "editor.formatOnType": true,
-        "editor.inlineSuggest.suppressSuggestions": false
-    },
     "makefile.configureOnOpen": true,
     "@azure.argTenant": "",
     "[c]": {

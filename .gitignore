@@ -85,7 +85,6 @@ tags
 .cache
 node_modules
 lib/vm/images/ubuntu-noble/pkg/debian/usr/share/vm/images/ubuntu-noble
-lib/vm/images/zamin/pkg/debian/usr/share/vm/images/zamin
 *.img
 zig-out
 .zig-cache
@@ -104,3 +103,6 @@ dist-ssr
 **/secrets.yml
 
 /target
+/lib/showcase/target
+/lib/showcase/obj
+/lib/showcase/bin

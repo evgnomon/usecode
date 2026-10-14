@@ -291,19 +291,6 @@ down: each host gets a `[[peer]]` for every other member automatically,
 with an `endpoint` only towards the ones that publish one, so the two
 sides of a link cannot drift apart.
 
-To see what the mesh is actually doing afterwards, there is a read-only
-playbook (run it from this directory, where `ansible.cfg` is):
-
-```sh
-ansible-playbook deploy/playbooks/status.yml
-```
-
-It reports, per host, the installed version, the service and config
-state, the tunnel interface, any DNAT rules, and - for every host the
-topology says should be a peer - how long ago it handshaked and whether
-it answers a ping over the tunnel. It changes nothing, and a host that is
-down is reported as down instead of ending the run.
-
 Growing the mesh is `uc net mesh add phone` and another
 `uc net mesh apply`; every existing host picks the new member up as a
 peer. Nothing else has to be edited.
@@ -314,8 +301,7 @@ stdout used, so the password stays in whatever `getsecret` reads and
 never lands on disk here. `uc net mesh add` and `uc daemon install` run
 `ansible-vault` from this directory, so they resolve the password the
 same way. The vault is only opened once a host has the mesh on. Swap the body of
-that script for your own secret store, or comment the setting out and
-uncomment `ask_vault_pass` to be prompted instead.
+that script for your own secret store.
 
 ## By hand: expose one port through a public host
 
@@ -504,4 +490,3 @@ kept as annotated references instead.
 - `src/apply.rs` is `uc net mesh apply`: a bundle to every member, then `join` there.
 - `init/systemd/usecode.service` is the unit `setup` installs (it is compiled into the binary).
 - `~/.config/usecode/inventory` is the topology itself; `uc net mesh apply` hands it to every member.
-- `deploy/playbooks/status.yml` reports the running state of every member back; it only reads.

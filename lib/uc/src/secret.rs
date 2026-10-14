@@ -13,7 +13,6 @@
 
 use crate::password::{self, Charset};
 use anyhow::{Context, Result, bail};
-use std::ffi::OsString;
 use std::fs;
 use std::io::{self, PipeReader, Write};
 use std::os::fd::{AsRawFd, RawFd};
@@ -35,12 +34,6 @@ fn user_repo(repo: &str) -> PathBuf {
 /// `$HOME/src/github.com/$USER/config/secrets`
 pub fn dir() -> PathBuf {
     user_repo("config/secrets")
-}
-
-/// `$HOME/src/github.com/$USER/blueprint`, home of the `rotate.yaml`
-/// playbook.
-pub fn blueprint() -> PathBuf {
-    user_repo("blueprint")
 }
 
 /// The files making up one store.
@@ -174,27 +167,6 @@ impl Store {
         fs::remove_file(&bak).with_context(|| format!("removing {}", bak.display()))
     }
 
-    /// Rotates the secrets themselves: runs the `rotate.yaml` playbook in
-    /// `blueprint` with the store as extra vars and `args` passed on to
-    /// ansible-playbook, creating the store first if needed.
-    pub fn rotate_secrets(&self, blueprint: &Path, args: &[OsString]) -> Result<()> {
-        if !blueprint.is_dir() {
-            bail!("blueprint checkout not found: {}", blueprint.display());
-        }
-        self.ensure()?;
-        let mut extra_vars = OsString::from("@");
-        extra_vars.push(&self.secret_file);
-        let mut cmd = Command::new("ansible-playbook");
-        cmd.env("ANSIBLE_STDOUT_CALLBACK", "yaml")
-            .arg("--extra-vars")
-            .arg(extra_vars)
-            .args(["-i", "inventory.py", "rotate.yaml"])
-            .args(args)
-            .current_dir(blueprint);
-        with_password(&mut cmd, &self.password()?, |cmd| {
-            status(cmd, "ansible-playbook rotate.yaml")
-        })
-    }
 }
 
 /// 64 random letters and digits and a newline, as the vault passwords have

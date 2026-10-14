@@ -491,7 +491,13 @@ async fn forget_ingress(ctx: &Ctx, cluster: &Cluster) -> Result<Outcome> {
         .output()
         .await?;
     kubectl(ctx, cluster)
-        .args(["-n", NAMESPACE, "delete", "middleware.traefik.io", "redirect-https"])
+        .args([
+            "-n",
+            NAMESPACE,
+            "delete",
+            "middleware.traefik.io",
+            "redirect-https",
+        ])
         .arg("--ignore-not-found")
         .output()
         .await?;
@@ -684,7 +690,10 @@ mod tests {
     fn serves_its_own_tls_on_the_host() {
         let m = settings().manifest("10Gi");
         let route = item(&m, "IngressRouteTCP");
-        assert_eq!(route["spec"]["routes"][0]["match"], "HostSNI(`registry.example.com`)");
+        assert_eq!(
+            route["spec"]["routes"][0]["match"],
+            "HostSNI(`registry.example.com`)"
+        );
         assert_eq!(route["spec"]["tls"]["passthrough"], true);
         let cert = item(&m, "Certificate");
         assert_eq!(cert["spec"]["dnsNames"][0], "registry.example.com");

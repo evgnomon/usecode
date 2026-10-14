@@ -9,7 +9,7 @@ TAG ?= $(shell git rev-parse --short HEAD)
 .PHONY: image push
 
 image:
-	podman build -t $(IMAGE):$(TAG) -f Containerfile .
+	podman build --network=host -t $(IMAGE):$(TAG) -f Containerfile .
 
 push: image
 	./scripts/push.sh $(IMAGE) $(TAG) $(REGISTRY)

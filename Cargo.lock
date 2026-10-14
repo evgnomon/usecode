@@ -68,13 +68,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ansidist"
-version = "0.1.0"
-dependencies = [
- "toml",
-]
-
-[[package]]
 name = "anstream"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -423,10 +416,6 @@ name = "bytes"
 version = "1.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
-
-[[package]]
-name = "catalyze"
-version = "0.1.0"
 
 [[package]]
 name = "cbc"
@@ -2266,10 +2255,6 @@ dependencies = [
  "wasi 0.11.1+wasi-snapshot-preview1",
  "windows-sys 0.61.2",
 ]
-
-[[package]]
-name = "mkarole"
-version = "0.1.0"
 
 [[package]]
 name = "mkdeb"
@@ -5139,10 +5124,6 @@ dependencies = [
  "rand_core 0.10.1",
  "zeroize",
 ]
-
-[[package]]
-name = "yacht"
-version = "0.1.0"
 
 [[package]]
 name = "ykattach"

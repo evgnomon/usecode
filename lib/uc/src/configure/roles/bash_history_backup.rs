@@ -13,8 +13,8 @@ const UNITS: &[&str] = &["backup-bash-history.service", "backup-bash-history.tim
 
 pub fn tasks(plan: &mut Plan, v: &Vars) {
     let files = v.role("bash_history_backup").join("files");
-    let wanted = !matches!(v.profile, Profile::DevContainer | Profile::Wsl);
-    let reason = "not on the dev_container and wsl profiles";
+    let wanted = v.profile != Profile::DevContainer;
+    let reason = "not on the dev_container profile";
 
     plan.add(
         Task::new(

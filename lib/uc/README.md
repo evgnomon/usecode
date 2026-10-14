@@ -21,8 +21,7 @@ configurator, `uc push`/`uc pull`, which move container images through
 the registry behind the bastion, `uc ghcr`, which builds, pushes and deletes
 GitHub Container Registry images, and `uc secret`, which generates secrets and
 manages the ansible-vault secret stores.
-The last two replace the former `lib/pylib` Python package (`bp` and the
-`gh_image` Ansible module).
+The last two replace the former `lib/pylib` Python package.
 
 It also ships the command groups — `uc image`, `uc repo`, `uc cert`,
 `uc deb`, `uc db`, `uc net`, `uc daemon`, `uc vm`, `uc new`,
@@ -132,8 +131,7 @@ credentials fresh until it ends.
 ## Moving container images
 
 `uc push` and `uc pull` replace `deploy/push.sh` and `deploy/pull.sh`. The
-registry deployed by `deploy/playbooks/registry.yaml` is only reachable through
-the bastion, so both open an SSH tunnel to it, log the container CLI in, move
+registry is only reachable through the bastion, so both open an SSH tunnel to it, log the container CLI in, move
 the images and close the tunnel again:
 
 ```sh
@@ -143,7 +141,7 @@ uc pull --strip-host myimage:latest # ... and also tag it as myimage:latest
 ```
 
 The password comes from `REGISTRY_PASSWORD`, or else from
-`vault_container_registry_password` in `deploy/playbooks/vault.yaml` of the
+`vault_container_registry_password` in `deploy/vault.yaml` of the
 current git checkout (`--vault-file` to use another), decrypted with
 `ansible-vault`. The registry and bastion addresses, ports and users, and the
 container CLI, are options with the same environment variables the scripts
@@ -163,8 +161,7 @@ and pushes with `--push`; `-f` and `-C` pick the Dockerfile and context.
 `delete` finds the version carrying the tag (or digest) through the GitHub
 packages API, for user and organization owners alike, and deletes it; it
 talks to the API through `curl`, so the crate stays free of a TLS stack.
-Slashes in tags become dashes, so a branch name can be passed as is. The
-`z_container` Ansible role runs both.
+Slashes in tags become dashes, so a branch name can be passed as is.
 
 ## Secrets
 
@@ -176,7 +173,6 @@ uc secret get -r -f github_pat   # one field of this repository's store
 uc secret edit -r                # edit this repository's store in vi
 uc secret ensure -r              # create it if missing, print its path
 uc secret rotate NAME            # re-encrypt under a new vault password
-uc secret rotate -r --playbook   # rotate this repository's secrets themselves
 uc secret encrypt notes.txt      # see Encrypting files
 uc secret server read acme prod db  # the SSH key authenticated secret server
 uc secret serve                  # same as uc secret server serve
@@ -197,10 +193,7 @@ pipe, and stores are always edited with `vi`, the hardened `lib/vi`.
 `get` converts the YAML to JSON itself (merge keys included), so `yj` is no
 longer needed, and `-f a.b` prints one field the way `jq -r .a.b` would.
 `rotate` moves the secret file to `NAME.yaml.bak` until the new password is
-in place, so an interrupted rotation can simply be run again. With
-`--playbook` it leaves the password alone and rotates the secrets themselves:
-it runs `rotate.yaml` in `~/src/github.com/$USER/blueprint` with the store
-as extra vars, passing anything after `--` to ansible-playbook.
+in place, so an interrupted rotation can simply be run again.
 
 `encrypt` and `decrypt` run `uc-secret-encrypt` and `uc-secret-decrypt`; see
 [Encrypting files](#encrypting-files). `server` runs
@@ -220,7 +213,6 @@ for `server serve`.
 | `ensure_secret` | `uc secret ensure -r` |
 | `ensure_vault` | `uc secret ensure -r --print vault` |
 | `rotate_keychain_pass [NAME]` | `uc secret rotate [NAME]` |
-| `rotsec [ARGS]` | `uc secret rotate -r --playbook -- [ARGS]` |
 
 ## Command groups
 
@@ -241,14 +233,13 @@ switching scripts over to the `uc` commands is a good idea.
 |---|---|---|
 | `uc image push`, `pull` | `uc-push`, `uc-pull` | |
 | `uc image ghcr build`, `delete` | `uc-ghcr` | |
-| `uc image run barge`, `yacht` | `uc-image-run-barge`, `uc-image-run-yacht` | `barge`, `yacht` |
+| `uc image run barge` | `uc-image-run-barge` | `barge` |
 | `uc repo fqn` | `uc-repo-fqn` | `repofqn` |
 | `uc repo version` | `uc-repo-version` | `ucversion` |
 | `uc repo open` | `uc-repo-open` | `gotorepo` |
 | `uc repo status [DIR]` | `uc-repo-status` | `git_repos` |
 | `uc repo git-config` | `uc-repo-git-config` | `set_git_conf` |
 | `uc repo extract` | `uc-repo-extract` | `extract-tool` |
-| `uc repo dist` | `uc-repo-dist` | `ansidist` |
 | `uc repo headers check`, `fix` | `uc-repo-headers` | `hgl` |
 | `uc repo authors` | built in | `scripts/authors.sh` (`make authors`) |
 | `uc cert init`, `server`, `client`, ... | `uc-cert-gen`: any command not below | `certgen` |
@@ -266,7 +257,7 @@ switching scripts over to the `uc` commands is a good idea.
 | `uc daemon install`, `reload` | `uc-daemon-ctl install`, `reload` | |
 | `uc vm` | `uc-vm-local`, arguments and all; with `--provider`, built in (see below) | `vm` |
 | `uc nats` | `uc-nats` itself | `natsup` |
-| `uc new role`, `workflow`, `script`, `unit` | `uc-new-role`, `uc-new-workflow`, `uc-new-script`, `uc-new-unit` | `mkarole`, `catalyze`, `shole`, `mkunit` |
+| `uc new script`, `unit` | `uc-new-script`, `uc-new-unit` | `shole`, `mkunit` |
 | `uc secret server` | `uc-secret-server` | `secd` |
 | `uc agent api`, `mcp` | `uc-agent-api`, `uc-agent-mcp` | `usecode-agent-api`, `usecode-mcp` |
 | `uc data pdf`, `tidy`, `jsonc` | `uc-data-pdf`, `uc-data-tidy`, `uc-data-jsonc` | `csv2pdf`, `tidycsv`, `jsonc` |

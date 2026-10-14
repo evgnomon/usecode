@@ -1,9 +1,0 @@
-# License-Identifier: HGL
-# Copyright (C) The Usecode Authors (see AUTHORS)
-
----
-# handlers file for roles/cuda-toolkit
-
-- name: Run ldconfig
-  ansible.builtin.command: ldconfig
-  changed_when: false

@@ -9,8 +9,7 @@ use uc::registry::{Config, Session};
 
 const SUMMARY: &str = "pull container images from the registry behind the bastion";
 
-/// Pull container images from the registry deployed by
-/// deploy/playbooks/registry.yaml.
+/// Pull container images from the registry behind the bastion.
 ///
 /// Opens an SSH tunnel to the registry through the bastion, logs in, then
 /// pulls each image.

@@ -15,7 +15,7 @@ PREFIX ?= /usr/local
 BIN_DIR := $(DESTDIR)$(patsubst /%,%,$(PREFIX))/bin
 INSTALLED := $(addprefix $(BIN_DIR)/,$(BINS))
 # Former standalone tools that uc-secret still answers to by name.
-SECRET_ALIASES := getsecret keychain rchain ghchain ensure_secret ensure_vault rotate_keychain_pass rotsec
+SECRET_ALIASES := getsecret keychain rchain ghchain ensure_secret ensure_vault rotate_keychain_pass
 INSTALLED_ALIASES := $(addprefix $(BIN_DIR)/,$(SECRET_ALIASES))
 
 .PHONY: all build check install uninstall test lint fmt dist publish clean

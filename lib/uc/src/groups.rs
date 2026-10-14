@@ -75,11 +75,6 @@ pub static IMAGE_RUN: Group = Group {
     summary: "run the workflow containers on the current directory",
     commands: &[
         exec("barge", "run the barge container", &["uc-image-run-barge"]),
-        exec(
-            "yacht",
-            "run the yacht container with the repository's secrets",
-            &["uc-image-run-yacht"],
-        ),
     ],
     fallback: None,
 };
@@ -117,11 +112,6 @@ pub static REPO: Group = Group {
             "extract",
             "extract a tool from evgnomon/flow into its own repository",
             &["uc-repo-extract"],
-        ),
-        exec(
-            "dist",
-            "build and install the Poetry project and its Ansible collection",
-            &["uc-repo-dist"],
         ),
         exec(
             "headers",
@@ -338,18 +328,8 @@ pub static VM: Group = alias(
 
 pub static NEW: Group = Group {
     path: "uc new",
-    summary: "scaffold roles, workflows, scripts and units",
+    summary: "scaffold scripts and units",
     commands: &[
-        exec(
-            "role",
-            "an Ansible role and its roles.yaml playbook",
-            &["uc-new-role"],
-        ),
-        exec(
-            "workflow",
-            "a Yacht GitHub workflow and default playbook",
-            &["uc-new-workflow"],
-        ),
         exec(
             "script",
             "an executable script with a shebang",

@@ -1,7 +1,0 @@
-# License-Identifier: HGL
-# Copyright (C) The Usecode Authors (see AUTHORS)
-
-- name: Restart Docker
-  systemd:
-    name: docker
-    state: restarted

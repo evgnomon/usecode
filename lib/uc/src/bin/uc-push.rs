@@ -10,8 +10,7 @@ use uc::registry::{Config, Session};
 
 const SUMMARY: &str = "push container images to the registry behind the bastion";
 
-/// Push local container images to the registry deployed by
-/// deploy/playbooks/registry.yaml.
+/// Push local container images to the registry behind the bastion.
 ///
 /// Opens an SSH tunnel to the registry through the bastion, logs in, then
 /// tags each image under the registry and pushes it.

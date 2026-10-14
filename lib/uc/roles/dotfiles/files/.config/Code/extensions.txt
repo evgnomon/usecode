@@ -26,9 +26,6 @@ ms-azuretools.vscode-azurevirtualmachines
 ms-azuretools.vscode-bicep
 ms-azuretools.vscode-containers
 ms-azuretools.vscode-cosmosdb
-ms-dotnettools.csdevkit
-ms-dotnettools.csharp
-ms-dotnettools.vscode-dotnet-runtime
 ms-kubernetes-tools.vscode-kubernetes-tools
 ms-python.black-formatter
 ms-python.debugpy

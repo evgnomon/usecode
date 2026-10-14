@@ -242,7 +242,6 @@ mod tests {
     fn skipped_files() {
         for p in [
             "COPYING",
-            "lib/roles/COPYING",
             "Cargo.lock",
             "package.json",
             "keys/docker.asc",

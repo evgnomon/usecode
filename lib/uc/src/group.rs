@@ -230,8 +230,8 @@ mod tests {
         use crate::groups::*;
         assert_eq!(exec_of(&IMAGE, &["push", "a:1"]), ["uc-push", "a:1"]);
         assert_eq!(
-            exec_of(&IMAGE, &["run", "yacht", "-v"]),
-            ["uc-image-run-yacht", "-v"]
+            exec_of(&IMAGE, &["run", "barge", "-v"]),
+            ["uc-image-run-barge", "-v"]
         );
         assert_eq!(
             exec_of(&REPO, &["headers", "check"]),

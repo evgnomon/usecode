@@ -37,11 +37,15 @@ const DOTFILES: &[&str] = &[
     "claude/settings.json:.claude/settings.json",
     "copilot/settings.json:.copilot/settings.json",
     "copilot/mcp-config.json:.copilot/mcp-config.json",
-    ".config/Code/extensions.txt",
     ".config/Code/User/keybindings.json",
     ".config/Code/User/settings.json",
     ".config/Code/User/tasks.json",
 ];
+
+/// Dotfiles no longer linked, `src[:dest]` like `DOTFILES`. A link still
+/// pointing at the role's file is replaced by a copy of it, so the home keeps
+/// a real file once the role's file is deleted.
+const RETIRED: &[&str] = &[".config/Code/extensions.txt"];
 
 const ROOT_DOTFILES: &[&str] = &[
     ".bashrc",
@@ -116,6 +120,35 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
                     let step =
                         file::link(&ctx, &user_files.join(src), &home.join(dest), false).await?;
                     outcome = outcome.and(step);
+                }
+                Ok(outcome)
+            }),
+    );
+
+    let retired_files = files.clone();
+    plan.add(
+        Task::new("dotfiles/retired", "Copy retired dotfiles over their links")
+            .tags(&["dotfiles"])
+            .run(move |ctx| async move {
+                let home = &ctx.vars().home;
+                let mut outcome = Outcome::Ok;
+                for entry in RETIRED {
+                    let (src, dest) = entry.split_once(':').unwrap_or((entry, entry));
+                    let (src, dest) = (retired_files.join(src), home.join(dest));
+                    let linked = matches!(
+                        file::stat(&ctx, &dest, false).await?,
+                        Some(file::Stat { kind: file::Kind::Link(target), .. }) if target == src
+                    );
+                    let Some(content) = file::read(&ctx, &src, false).await?.filter(|_| linked)
+                    else {
+                        continue;
+                    };
+                    if ctx.check() {
+                        outcome = outcome.and(Outcome::Changed);
+                        continue;
+                    }
+                    file::absent(&ctx, &dest, false).await?;
+                    outcome = outcome.and(file::write(&ctx, &dest, &content, None, false).await?);
                 }
                 Ok(outcome)
             }),

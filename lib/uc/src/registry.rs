@@ -1,8 +1,8 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! Push and pull container images through the registry deployed by
-//! `deploy/playbooks/registry.yaml` (`lib/roles/container-registry`).
+//! Push and pull container images through the registry on the
+//! protected-servers host.
 //!
 //! The registry host is a "protected-servers" node and is only reachable
 //! through the bastion, so a [`Session`] opens a local SSH tunnel to the
@@ -65,7 +65,7 @@ pub struct Config {
     pub registry_password: Option<String>,
 
     /// Ansible vault holding the registry password
-    /// [default: deploy/playbooks/vault.yaml in this git checkout].
+    /// [default: deploy/vault.yaml in this git checkout].
     #[arg(long, env = "REGISTRY_VAULT_FILE", value_name = "FILE")]
     pub vault_file: Option<PathBuf>,
 }
@@ -103,7 +103,7 @@ impl Config {
             bail!("not inside a git checkout; set --vault-file or REGISTRY_PASSWORD");
         }
         let root = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        Ok(PathBuf::from(root).join("deploy/playbooks/vault.yaml"))
+        Ok(PathBuf::from(root).join("deploy/vault.yaml"))
     }
 
     fn password(&self) -> Result<Zeroizing<String>> {

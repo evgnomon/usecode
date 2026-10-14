@@ -48,8 +48,7 @@ See `lib/bot/README.md` for configuration and the full tool list.
 
 ## Container registry
 
-`uc push` and `uc pull` (from `lib/uc`) push/pull container images to the registry deployed by
-`deploy/playbooks/registry.yaml` (`lib/roles/container-registry`). The registry host is only
+`uc push` and `uc pull` (from `lib/uc`) push/pull container images to the registry. The registry host is only
 reachable through the `shadow` bastion, so both commands open a local SSH tunnel before logging in.
 
 ```sh
@@ -61,8 +60,7 @@ uc pull myimage:latest
 uc pull --strip-host myimage:latest
 ```
 
-Both commands read the registry password from `deploy/playbooks/vault.yaml` of the current git
+Both commands read the registry password from `deploy/vault.yaml` of the current git
 checkout via `ansible-vault` unless `REGISTRY_PASSWORD` is set (or `--vault-file` points
-elsewhere), and require an SSH host entry (or DNS-resolvable name) for the bastion, matching
-`deploy/playbooks/group_vars/main.yml`'s `firewall_bastion_hosts`. Run `uc push -h` for the
+elsewhere), and require an SSH host entry (or DNS-resolvable name) for the bastion. Run `uc push -h` for the
 other settings; each has a matching environment variable.
