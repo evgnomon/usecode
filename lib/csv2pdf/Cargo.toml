@@ -5,7 +5,7 @@
 name = "csv2pdf"
 version = "0.1.0"
 edition.workspace = true
-description = "Render CSV from stdin as a PDF table via weasyprint"
+description = "Render CSV from stdin as a PDF table, in pure Rust"
 license.workspace = true
 authors.workspace = true
 publish = false
@@ -16,3 +16,7 @@ path = "src/main.rs"
 
 [dependencies]
 csv = "1"
+miniz_oxide = "0.9.1"
+pdf-writer = "0.15.0"
+subsetter = "0.2.6"
+ttf-parser = "0.25.1"
