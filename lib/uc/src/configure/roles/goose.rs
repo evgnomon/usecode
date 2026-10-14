@@ -1,10 +1,11 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! `goose`: the Goose CLI configuration and recipes.
+//! `goose`: the Goose CLI configuration and recipes. The CLI itself is a mise tool.
 
 use crate::configure::engine::{Plan, Task};
 use crate::configure::modules::{copy, file};
+use crate::configure::roles::mise;
 use crate::configure::vars::Vars;
 
 pub fn tasks(plan: &mut Plan, v: &Vars) {
@@ -12,6 +13,7 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
     plan.add(
         Task::new("goose/config", "Generate the Goose configuration")
             .tags(&["goose"])
+            .after([mise::TOOLS])
             .run(move |ctx| async move {
                 let home = &ctx.vars().home;
                 let config = copy::template(

@@ -16,7 +16,7 @@ UC_SOURCES := $(shell find $(UC_DIR)/src -type f -name '*.rs') $(shell find $(UC
 	$(UC_DIR)/Cargo.toml $(ROOT_DIR)/Cargo.lock
 
 
-EGET_BINS := eget gh fd delta rg bat hugo rclone hcloud tflint gvproxy goose kompose csvlens yq
+EGET_BINS := eget gh fd delta rg bat hugo rclone hcloud tflint gvproxy kompose csvlens yq
 GO_BINS := gron golangci-lint yj doctl godoc dlv
 CARGO_BINS := drill
 CARGO_ROOT := $(BIN_DIR:/bin=)
@@ -96,9 +96,6 @@ $(BIN_DIR)/tflint: | $(EGET)
 
 $(BIN_DIR)/gvproxy: | $(EGET)
 	$(EGET) --to $(BIN_DIR)/gvproxy containers/gvisor-tap-vsock
-
-$(BIN_DIR)/goose: | $(EGET)
-	$(EGET) --to $(BIN_DIR) -a unknown-linux-gnu.tar.bz2 aaif-goose/goose
 
 $(BIN_DIR)/kompose: | $(EGET)
 	$(EGET) --to $(BIN_DIR)/kompose -a tar.gz kubernetes/kompose

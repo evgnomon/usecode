@@ -14,6 +14,7 @@ uv = "latest"
 zig = "0.16.0"
 mysql-client = "latest"
 "aqua:rust-lang/rustup" = "latest"
+"aqua:aaif-goose/goose" = "latest"
 yazi = "latest"
 
 "npm:prettier" = "latest"
