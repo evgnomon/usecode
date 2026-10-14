@@ -10,6 +10,7 @@
 //! [`Task::after`](crate::configure::engine::Task::after); everything else is
 //! free to run in parallel.
 
+pub mod alacritty;
 pub mod apt;
 pub mod bash_history_backup;
 pub mod docker;
@@ -63,6 +64,7 @@ pub fn plan(v: &Vars) -> Plan {
 
     rust::tasks(&mut plan, v);
     goose::tasks(&mut plan, v);
+    alacritty::tasks(&mut plan, v);
     plan
 }
 

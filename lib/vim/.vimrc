@@ -55,6 +55,31 @@ elseif has('unix')
   set term=xterm-256color                    " Set the terminal type to xterm with 256-color support.
 endif
 
+" Read the clipboard through wl-paste so text copied on Windows (CRLF) pastes without ^M.
+func s:ClipPaste(reg)
+  silent let text = system('wl-paste -n' .. (a:reg ==# '*' ? ' -p' : '') .. ' 2>/dev/null')
+  if v:shell_error
+    return ['v', []]
+  endif
+  let text = substitute(text, '\r\n', '\n', 'g')
+  let type = text =~# '\n$' ? 'V' : 'v'
+  return [type, split(type ==# 'V' ? text[:-2] : text, '\n', 1)]
+endfunc
+
+func s:ClipCopy(reg, type, lines)
+  let job = job_start(['wl-copy'] + (a:reg ==# '*' ? ['-p'] : []), {'in_io': 'pipe', 'out_io': 'null', 'err_io': 'null'})
+  call ch_sendraw(job, join(a:lines, "\n") .. (a:type ==# 'V' ? "\n" : ''))
+  call ch_close_in(job)
+endfunc
+
+if exists('v:clipproviders') && executable('wl-paste') && !empty($WAYLAND_DISPLAY)
+  let v:clipproviders['wlcrlf'] = {
+        \ 'paste': {'+': function('s:ClipPaste'), '*': function('s:ClipPaste')},
+        \ 'copy': {'+': function('s:ClipCopy'), '*': function('s:ClipCopy')},
+        \ }
+  set clipmethod^=wlcrlf
+endif
+
 set guifont=Inconsolata\ Nerd\ Font:h15    " Set the GUI font to Inconsolata Nerd Font with a height of 15.
 set t_Co=256                               " Set the terminal to use 256 colors.
 set fillchars+=stl:\ ,stlnc:\              " Customize statusline fill characters: empty space for both active and inactive status lines.
