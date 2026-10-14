@@ -103,6 +103,3 @@ dist-ssr
 **/secrets.yml
 
 /target
-/lib/showcase/target
-/lib/showcase/obj
-/lib/showcase/bin
