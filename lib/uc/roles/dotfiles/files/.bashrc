@@ -158,7 +158,9 @@ shopt -s histappend               # Append to history, don't overwrite
 shopt -s cmdhist                  # Save multi-line commands as one
 
 function reset_keyboard_protocol() {
-    printf '\e[>0u'
+    # Clear kitty keyboard flags (CSI = 0 u) and xterm modifyOtherKeys (CSI > 4 ; 0 m).
+    # The old CSI > 0 u pushed a new stack entry on every prompt instead of resetting.
+    printf '\e[=0;1u\e[>4;0m'
 }
 PROMPT_COMMAND="reset_keyboard_protocol;history -a"
 
