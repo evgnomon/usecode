@@ -130,10 +130,42 @@ fn group(name: &str) -> &'static [&'static str] {
 /// some networks (e.g. filtering corporate proxies) block these hosts
 /// outright. They are probed first and dropped when they cannot be fetched;
 /// they come back automatically on a network that allows them.
-const OPTIONAL_REPOS: &[(&str, &str)] = &[(
-    "mullvad.list",
+/// Optional repositories: their files, dropped together when the URL does
+/// not answer, so no key is left behind without its source.
+const OPTIONAL_REPOS: &[(&[&str], &str)] = &[(
+    &[
+        "/etc/apt/sources.list.d/mullvad.sources",
+        "/etc/apt/keyrings/mullvad-keyring.gpg",
+    ],
     "https://repository.mullvad.net/deb/stable/dists/stable/InRelease",
 )];
+
+/// Files written by earlier versions that the templates replace. Keys in
+/// `trusted.gpg.d` are trusted for every repository, so each key now lives
+/// in `/etc/apt/keyrings` and only signs the source naming it; one-line
+/// `.list` files became deb822 `.sources`. On Debian, extrepo hands over
+/// docker, dotnet and mullvad itself, so only files no source uses go here.
+fn stale(distro: &str) -> &'static [&'static str] {
+    match distro {
+        "Ubuntu" => &[
+            "/etc/apt/sources.list.d/azure.list",
+            "/etc/apt/sources.list.d/docker.list",
+            "/etc/apt/sources.list.d/ms.list",
+            "/etc/apt/sources.list.d/mullvad.list",
+            "/etc/apt/sources.list.d/dotnetdev.list",
+            "/etc/apt/sources.list.d/packages-microsoft-prod.list",
+            "/etc/apt/sources.list.d/microsoft-ubuntu-resolute-prod.list",
+            "/etc/apt/trusted.gpg.d/evgnomon.asc",
+            "/etc/apt/trusted.gpg.d/microsoft.gpg",
+            "/etc/apt/trusted.gpg.d/mullvad-keyring.gpg",
+        ],
+        "Debian" => &[
+            "/etc/apt/trusted.gpg.d/evgnomon.asc",
+            "/etc/apt/trusted.gpg.d/mysql.gpg",
+        ],
+        _ => &[],
+    }
+}
 
 fn packages(names: &[&str]) -> Vec<String> {
     names.iter().map(|s| s.to_string()).collect()
@@ -141,7 +173,6 @@ fn packages(names: &[&str]) -> Vec<String> {
 
 pub fn tasks(plan: &mut Plan, v: &Vars) {
     let distro = v.facts.distribution.clone();
-    let ubuntu = distro == "Ubuntu";
 
     // apt does not read http_proxy/https_proxy from the environment
     // reliably, so mirror the caller's proxy into apt's own config. Removed
@@ -167,37 +198,6 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
             }),
     );
 
-    plan.add(
-        Task::new("apt/ubuntu-keys", "Install the Microsoft keys and drop stale lists")
-            .tags(&["always"])
-            .sudo()
-            .when(ubuntu, "only on Ubuntu")
-            .run(|ctx| async move {
-                let mut outcome = ctx
-                    .shell("install -d -m 0755 /etc/apt/keyrings && curl -fsSL https://packages.microsoft.com/keys/microsoft-2025.asc -o /etc/apt/keyrings/microsoft-2025.asc")
-                    .sudo()
-                    .creates("/etc/apt/keyrings/microsoft-2025.asc")
-                    .run_step()
-                    .await?;
-                let key = ctx
-                    .shell("curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/microsoft.gpg")
-                    .sudo()
-                    .creates("/etc/apt/trusted.gpg.d/microsoft.gpg")
-                    .run_step()
-                    .await?;
-                outcome = outcome.and(key);
-                for stale in [
-                    "dotnetdev.list",
-                    "packages-microsoft-prod.list",
-                    "microsoft-ubuntu-resolute-prod.list",
-                ] {
-                    let path = Path::new("/etc/apt/sources.list.d").join(stale);
-                    outcome = outcome.and(file::absent(&ctx, &path, true).await?);
-                }
-                Ok(outcome)
-            }),
-    );
-
     let templates = v.role("apt").join("templates").join(&distro).join("etc");
     plan.add(
         Task::new(SOURCES, "Inflate apt sources and keys into /etc")
@@ -205,7 +205,14 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
             .sudo()
             .when(templates.is_dir(), format!("no apt templates for {distro}"))
             .run(move |ctx| async move {
-                inflate(&ctx, &templates, Path::new("/etc"), |_| true).await
+                let mut outcome = inflate(&ctx, &templates, Path::new("/etc"), |_| true).await?;
+                // Drop what the inflated files replace in the same step, so
+                // apt never sees an old and a new file for one repository
+                // with conflicting Signed-By values.
+                for path in stale(&ctx.vars().facts.distribution) {
+                    outcome = outcome.and(file::absent(&ctx, Path::new(path), true).await?);
+                }
+                Ok(outcome)
             }),
     );
 
@@ -216,7 +223,7 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
             .after([SOURCES])
             .run(|ctx| async move {
                 let mut outcome = Outcome::Ok;
-                for (list, url) in OPTIONAL_REPOS {
+                for (files, url) in OPTIONAL_REPOS {
                     // Like Ansible's `failed_when: false`, a probe that cannot
                     // run counts as unreachable instead of failing the task.
                     let answer = match system::http_status(&ctx, url, 10).await {
@@ -224,12 +231,13 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
                         Ok(status) => format!("answered {status}"),
                         Err(err) => format!("could not be probed: {err:#}"),
                     };
-                    let path = Path::new("/etc/apt/sources.list.d").join(list);
-                    let dropped = file::absent(&ctx, &path, true).await?;
-                    if dropped == Outcome::Changed {
-                        ctx.note(&format!("dropped {list}: {url} {answer}"));
+                    for path in *files {
+                        let dropped = file::absent(&ctx, Path::new(path), true).await?;
+                        if dropped == Outcome::Changed {
+                            ctx.note(&format!("dropped {path}: {url} {answer}"));
+                        }
+                        outcome = outcome.and(dropped);
                     }
-                    outcome = outcome.and(dropped);
                 }
                 Ok(outcome)
             }),
@@ -239,7 +247,7 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
         Task::new(UPDATE, "Refresh the apt cache")
             .tags(&["apt"])
             .sudo()
-            .after([PROXY, "apt/ubuntu-keys", SOURCES, PROBE, "extrepo/packages"])
+            .after([PROXY, SOURCES, PROBE, "extrepo/packages"])
             .run(|ctx| async move { apt::update(&ctx, None).await }),
     );
 

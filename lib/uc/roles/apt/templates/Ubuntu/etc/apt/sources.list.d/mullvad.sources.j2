@@ -4,4 +4,9 @@ Copyright (C) The Usecode Authors (see AUTHORS)
 -#}
 
 {% set arch = 'amd64' if ansible_facts['architecture'] == 'x86_64' else ansible_facts['architecture'] %}
-deb [signed-by=/etc/apt/trusted.gpg.d/mullvad-keyring.gpg arch={{ arch }}] https://repository.mullvad.net/deb/stable stable main
+Types: deb
+URIs: https://repository.mullvad.net/deb/stable
+Suites: stable
+Components: main
+Architectures: {{ arch }}
+Signed-By: /etc/apt/keyrings/mullvad-keyring.gpg
