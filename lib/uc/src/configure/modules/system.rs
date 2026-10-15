@@ -88,6 +88,31 @@ pub async fn group(ctx: &Ctx, name: &str) -> Result<Outcome> {
     ctx.cmd("groupadd").arg(name).sudo().run_step().await
 }
 
+/// `user: groups: ..., append: true`: adds `user` to the `groups` it is
+/// not in yet, leaving its other groups alone.
+pub async fn user_groups(ctx: &Ctx, user: &str, groups: &[&str]) -> Result<Outcome> {
+    let out = ctx
+        .cmd("id")
+        .args(["-nG", user])
+        .read_only()
+        .output()
+        .await?;
+    let current: Vec<&str> = out.stdout.split_whitespace().collect();
+    let missing: Vec<&str> = groups
+        .iter()
+        .copied()
+        .filter(|g| !current.contains(g))
+        .collect();
+    if missing.is_empty() {
+        return Ok(Outcome::Ok);
+    }
+    ctx.cmd("usermod")
+        .args(["-aG", &missing.join(","), user])
+        .sudo()
+        .run_step()
+        .await
+}
+
 /// `uri: method: HEAD`: the HTTP status of `url`, 0 when it cannot be
 /// reached at all.
 pub async fn http_status(ctx: &Ctx, url: &str, timeout_secs: u32) -> Result<u16> {

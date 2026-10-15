@@ -1,7 +1,8 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! `docker`: Docker Engine from the docker-ce repository, and the docker group.
+//! `docker`: Docker Engine from the docker-ce repository, and the docker group
+//! with the user in it.
 
 use crate::configure::engine::{Plan, Task};
 use crate::configure::modules::{apt, file, system};
@@ -42,5 +43,15 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
             .sudo()
             .when(wanted, NOT_IN_DEV_CONTAINER)
             .run(|ctx| async move { system::group(&ctx, "docker").await }),
+    );
+
+    let user = v.user.clone();
+    plan.add(
+        Task::new("docker/user", "Add the user to the docker group")
+            .tags(&["docker"])
+            .sudo()
+            .after(["docker/group"])
+            .when(wanted, NOT_IN_DEV_CONTAINER)
+            .run(move |ctx| async move { system::user_groups(&ctx, &user, &["docker"]).await }),
     );
 }

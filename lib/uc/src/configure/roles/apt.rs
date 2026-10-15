@@ -23,8 +23,9 @@ pub const PROBE: &str = "apt/probe";
 /// debian_desktop.
 fn profile_groups(profile: Profile) -> &'static [&'static str] {
     match profile {
-        Profile::Workstation => &["share", "hardware", "desktop"],
-        Profile::Vm | Profile::Wsl | Profile::DevContainer => &["share"],
+        Profile::Workstation => &["share", "hardware", "desktop", "virt"],
+        Profile::Wsl => &["share", "virt"],
+        Profile::Vm | Profile::DevContainer => &["share"],
     }
 }
 
@@ -94,6 +95,13 @@ fn group(name: &str) -> &'static [&'static str] {
             "libglib2.0-bin", // GLib utilities for working with GObject-based libraries and applications
             "scdoc",          // Man page generator used to build the alacritty man pages
         ],
+        // Local KVM/QEMU virtual machines run through libvirt (`uc vm`)
+        "virt" => &[
+            "qemu-system-x86",       // x86/x86_64 system emulator for running virtual machines
+            "qemu-utils",            // qemu-img and friends for creating and converting disk images
+            "libvirt-daemon-system", // libvirtd with its systemd units, default network and pools
+            "virtinst",              // virt-install for creating libvirt virtual machines
+        ],
         // Packages requiring physical hardware (YubiKey, smartcard) — skipped on WSL2
         "hardware" => &[
             "libpam-yubico",   // PAM module for YubiKey OTP authentication at login
@@ -109,7 +117,6 @@ fn group(name: &str) -> &'static [&'static str] {
         // Packages requiring a desktop/GPU — skipped on WSL2
         "desktop" => &[
             "fontconfig",       // Font cache tools (fc-cache) used when installing the Nerd Fonts
-            "qemu-system-x86",  // x86/x86_64 system emulator for running virtual machines
             "brave-browser",    // Privacy-focused web browser with built-in ad blocking
             "yubioath-desktop", // YubiKey OATH desktop application for managing TOTP/HOTP codes
             "heif-gdk-pixbuf",  // HEIF/HEIC image format support for viewing modern image formats
@@ -278,6 +285,24 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
             }
             Ok(outcome)
         }),
+    );
+
+    // libvirtd and /dev/kvm only let these groups in, so `uc vm` works
+    // without sudo from the next login on.
+    let user = v.user.clone();
+    plan.add(
+        Task::new(
+            "apt/virt-groups",
+            "Add the user to the kvm and libvirt groups",
+        )
+        .tags(&["apt"])
+        .sudo()
+        .after([PACKAGES])
+        .when(
+            groups.contains(&"virt"),
+            "no virt package group in this profile",
+        )
+        .run(move |ctx| async move { system::user_groups(&ctx, &user, &["kvm", "libvirt"]).await }),
     );
 
     let user_packages = v.config.user_apt_packages.clone();
