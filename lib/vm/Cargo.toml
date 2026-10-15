@@ -17,5 +17,9 @@ path = "src/lib.rs"
 name = "uc-vm-local"
 path = "src/main.rs"
 
+[dependencies]
+getrandom.workspace = true
+ssh-key = { version = "0.6", features = ["ed25519"] }
+
 [build-dependencies]
 cc = "1"

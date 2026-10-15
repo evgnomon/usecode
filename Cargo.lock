@@ -4855,6 +4855,8 @@ name = "vm"
 version = "0.7.0"
 dependencies = [
  "cc",
+ "getrandom 0.3.4",
+ "ssh-key",
 ]
 
 [[package]]

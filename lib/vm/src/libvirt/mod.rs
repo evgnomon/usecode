@@ -112,15 +112,29 @@ impl Connection {
             return Ok(());
         }
 
-        unsafe {
-            if sys::virNetworkIsActive(net) == 0 {
-                sys::virNetworkCreate(net);
-            }
+        let started = unsafe {
             let mut autostart: c_int = 0;
             if sys::virNetworkGetAutostart(net, &mut autostart) == 0 && autostart == 0 {
                 sys::virNetworkSetAutostart(net, 1);
             }
+            let started = sys::virNetworkIsActive(net) > 0 || sys::virNetworkCreate(net) == 0;
+            let started = if started {
+                Ok(())
+            } else {
+                Err(libvirt_err("failed to start network 'default'"))
+            };
             sys::virNetworkFree(net);
+            started
+        };
+        if let Err(err) = started {
+            if err.to_string().contains("DHCP server socket: Address already in use") {
+                error!(
+                    "UDP port 67 is taken. On WSL with networkingMode=mirrored, add \
+                     'ignoredPorts=67' under [experimental] in %USERPROFILE%\\.wslconfig \
+                     and run 'wsl --shutdown'"
+                );
+            }
+            return Err(err);
         }
 
         info!("Network 'default' is active and set to autostart");

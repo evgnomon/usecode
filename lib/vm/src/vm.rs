@@ -602,7 +602,8 @@ pub fn mount_vm(conn: &Connection, domain_name: &str, mount: &MountSpec) -> Resu
 
 /// Writes a cloud-init user-data template from the configured user and SSH key
 /// when none exists yet. Without `ssh_key` in the config, the public half of
-/// `identity_file` (resolved against the invoking user's home) is used.
+/// `identity_file` (resolved against the invoking user's home) is used, and
+/// that keypair is generated first if it doesn't exist.
 fn ensure_cloud_init_template(cfg: &Config) -> Result<()> {
     let template_path = Path::new(&cfg.cloud_init_template_path).join("cloud-init-user-data.yaml");
     if template_path.exists() {
@@ -610,7 +611,11 @@ fn ensure_cloud_init_template(cfg: &Config) -> Result<()> {
     }
 
     let ssh_key = if cfg.ssh_key.is_empty() {
-        let pub_path = format!("{}.pub", expand_home(&cfg.identity_file));
+        let key_path = expand_home(&cfg.identity_file);
+        let pub_path = format!("{key_path}.pub");
+        if !Path::new(&key_path).exists() {
+            generate_identity(&key_path)?;
+        }
         match std::fs::read_to_string(&pub_path) {
             Ok(key) => key.trim().to_string(),
             Err(err) => {
@@ -640,6 +645,64 @@ fn ensure_cloud_init_template(cfg: &Config) -> Result<()> {
     }
     std::fs::write(&template_path, content)?;
     Ok(())
+}
+
+/// Generates an ed25519 keypair at `key_path` (and `key_path.pub`) for reaching
+/// the VMs, owned by the user who invoked sudo.
+fn generate_identity(key_path: &str) -> Result<()> {
+    let mut seed = [0u8; 32];
+    getrandom::fill(&mut seed).map_err(|err| Error::vm(format!("random: {err}")))?;
+    let keypair = ssh_key::private::Ed25519Keypair::from_seed(&seed);
+    let comment = std::env::var("SUDO_USER")
+        .or_else(|_| std::env::var("USER"))
+        .unwrap_or_default();
+    let key = ssh_key::PrivateKey::new(keypair.into(), comment)
+        .map_err(|err| Error::vm(format!("ssh key: {err}")))?;
+    let private = key
+        .to_openssh(ssh_key::LineEnding::LF)
+        .map_err(|err| Error::vm(format!("ssh key: {err}")))?;
+    let public = key
+        .public_key()
+        .to_openssh()
+        .map_err(|err| Error::vm(format!("ssh key: {err}")))?;
+
+    let key_path = Path::new(key_path);
+    let pub_path = PathBuf::from(format!("{}.pub", key_path.display()));
+    if let Some(dir) = key_path.parent()
+        && !dir.exists()
+    {
+        std::fs::create_dir_all(dir)?;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+        chown_to_sudo_user(dir)?;
+    }
+    std::fs::write(key_path, private.as_bytes())?;
+    std::fs::set_permissions(key_path, std::fs::Permissions::from_mode(0o600))?;
+    std::fs::write(&pub_path, format!("{public}\n"))?;
+    chown_to_sudo_user(key_path)?;
+    chown_to_sudo_user(&pub_path)?;
+    info!("Generated SSH key {}", key_path.display());
+    Ok(())
+}
+
+/// Gives `path` to the user who invoked sudo; a no-op without sudo.
+fn chown_to_sudo_user(path: &Path) -> Result<()> {
+    let Some((uid, gid)) = std::env::var("SUDO_USER").ok().and_then(|u| passwd_ids(&u)) else {
+        return Ok(());
+    };
+    std::os::unix::fs::chown(path, Some(uid), Some(gid))?;
+    Ok(())
+}
+
+/// Looks up a user's uid and gid in /etc/passwd.
+fn passwd_ids(user: &str) -> Option<(u32, u32)> {
+    let passwd = std::fs::read_to_string("/etc/passwd").ok()?;
+    passwd.lines().find_map(|line| {
+        let fields: Vec<&str> = line.split(':').collect();
+        if fields.len() < 6 || fields[0] != user {
+            return None;
+        }
+        Some((fields[2].parse().ok()?, fields[3].parse().ok()?))
+    })
 }
 
 /// Expands a leading `~/` to the home of the user who invoked sudo, or `$HOME`.
@@ -969,5 +1032,20 @@ mod tests {
     fn no_mounts_means_no_filesystem_element() {
         let xml = generate_domain_xml("m", "/d", "/i", "52:54:00:00:00:01", &VmSpecs::default());
         assert!(!xml.contains("<filesystem"));
+    }
+
+    #[test]
+    fn generates_a_matching_ssh_keypair() {
+        let dir = std::env::temp_dir().join(format!("vm-keygen-{}", std::process::id()));
+        let key_path = dir.join(".ssh/id_ed25519");
+        generate_identity(key_path.to_str().unwrap()).unwrap();
+
+        let private = ssh_key::PrivateKey::read_openssh_file(&key_path).unwrap();
+        let public = std::fs::read_to_string(dir.join(".ssh/id_ed25519.pub")).unwrap();
+        assert!(public.starts_with("ssh-ed25519 "));
+        assert_eq!(private.public_key().to_openssh().unwrap(), public.trim());
+        let mode = std::fs::metadata(&key_path).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }
