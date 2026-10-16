@@ -255,10 +255,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "backup_archive"
-version = "0.1.0"
-
-[[package]]
 name = "barge"
 version = "0.1.0"
 
@@ -1924,10 +1920,6 @@ dependencies = [
  "icu_normalizer",
  "icu_properties",
 ]
-
-[[package]]
-name = "imgpress"
-version = "0.1.0"
 
 [[package]]
 name = "indexmap"
@@ -5290,10 +5282,6 @@ dependencies = [
  "serde_json",
  "serde_yaml",
 ]
-
-[[package]]
-name = "ytdump"
-version = "0.1.0"
 
 [[package]]
 name = "zcdump"

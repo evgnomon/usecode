@@ -18,14 +18,13 @@ uc secret gen          # runs uc-secret gen
 This crate ships the dispatcher, the two file encryption subcommands, which
 replace the former `boom` shell script, and `uc configure`, the machine
 configurator, `uc push`/`uc pull`, which move container images through
-the registry behind the bastion, `uc ghcr`, which builds, pushes and deletes
-GitHub Container Registry images, and `uc secret`, which generates secrets and
+the registry behind the bastion, and `uc secret`, which generates secrets and
 manages the ansible-vault secret stores.
 The last two replace the former `lib/pylib` Python package.
 
 It also ships the command groups — `uc image`, `uc repo`, `uc cert`,
 `uc deb`, `uc db`, `uc net`, `uc daemon`, `uc vm`, `uc new`,
-`uc agent`, `uc data`, `uc media`, `uc pick` and `uc sys` — which gather
+`uc agent`, `uc data`, `uc pick` and `uc sys` — which gather
 every tool in `lib/` under one command; see [Command groups](#command-groups).
 
 ## Encrypting files
@@ -148,21 +147,6 @@ container CLI, are options with the same environment variables the scripts
 read (`BASTION_HOST`, `REGISTRY_HOST`, `LOCAL_PORT`, `CONTAINER_CLI`, ...);
 see `uc push -h`.
 
-## GitHub Container Registry
-
-```sh
-uc ghcr build -o evgnomon -i ark -t feature/x --push  # ghcr.io/evgnomon/ark:feature-x
-uc ghcr delete -o evgnomon -i ark -t feature/x        # remove that version
-```
-
-The token comes from `GHCR_TOKEN` (or `--token`). `build` logs the container
-CLI (`CONTAINER_CLI`, default `docker`) in to `ghcr.io`, builds with `--pull`
-and pushes with `--push`; `-f` and `-C` pick the Dockerfile and context.
-`delete` finds the version carrying the tag (or digest) through the GitHub
-packages API, for user and organization owners alike, and deletes it; it
-talks to the API through `curl`, so the crate stays free of a TLS stack.
-Slashes in tags become dashes, so a branch name can be passed as is.
-
 ## Secrets
 
 ```sh
@@ -232,7 +216,6 @@ switching scripts over to the `uc` commands is a good idea.
 | Command | Executable | Was |
 |---|---|---|
 | `uc image push`, `pull` | `uc-push`, `uc-pull` | |
-| `uc image ghcr build`, `delete` | `uc-ghcr` | |
 | `uc image run barge` | `uc-image-run-barge` | `barge` |
 | `uc repo fqn` | `uc-repo-fqn` | `repofqn` |
 | `uc repo version` | `uc-repo-version` | `ucversion` |
@@ -261,7 +244,6 @@ switching scripts over to the `uc` commands is a good idea.
 | `uc secret server` | `uc-secret-server` | `secd` |
 | `uc agent api`, `mcp` | `uc-agent-api`, `uc-agent-mcp` | `usecode-agent-api`, `usecode-mcp` |
 | `uc data pdf`, `tidy`, `jsonc` | `uc-data-pdf`, `uc-data-tidy`, `uc-data-jsonc` | `csv2pdf`, `tidycsv`, `jsonc` |
-| `uc media backup`, `compress`, `yt` | `uc-media-backup`, `uc-media-compress`, `uc-media-yt` | `backup_archive`, `imgpress`, `ytdump` |
 | `uc pick file`, `url` | `uc-pick-file`, `uc-pick-url` | `ff`, `fzurls` |
 | `uc sys yubikey`, `argv` | `uc-sys-yubikey`, `uc-sys-argv` | `ykattach`, `num_argv` |
 | `uc sys vi` | `uc-sys-vi` | `vi` |
@@ -296,7 +278,7 @@ user-data from `/etc/vm/config.yaml`, and gets an ssh_config entry
 reaches the same user either way. `list`, `info`, `inspect`, `ip`, `start`,
 `stop`, `restart` and `remove` work on cloud VMs too; `snapshot`, `fork`,
 `mount` and `config` stay local. The providers are driven through their REST
-APIs (over `curl`, like `uc ghcr`), with the token from `HCLOUD_TOKEN` or
+APIs (over `curl`), with the token from `HCLOUD_TOKEN` or
 `DIGITALOCEAN_ACCESS_TOKEN`, else `hetzner.prod` or `doctl.prod` in the
 current repository's secrets. OVHcloud signs requests
 with application keys instead: `OVH_APPLICATION_KEY`, `OVH_APPLICATION_SECRET`,

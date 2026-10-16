@@ -1,7 +1,7 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! HTTPS requests for the REST API clients (`uc ghcr`, `uc vm`).
+//! HTTPS requests for the REST API clients (`uc vm`).
 //!
 //! Requests go through `curl`, which keeps this crate free of a TLS stack
 //! (and so of C code) and honours the system's CA store and proxy settings.

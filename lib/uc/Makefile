@@ -5,9 +5,9 @@ ROOT_DIR ?= $(abspath ../..)
 SOURCES := $(shell find src tests -type f -name "*.rs") Cargo.toml $(ROOT_DIR)/Cargo.lock
 include $(ROOT_DIR)/lib/profile.mk
 TARGET ?= x86_64-unknown-linux-musl
-BINS := uc uc-secret-encrypt uc-secret-decrypt uc-configure uc-kube-configure uc-push uc-pull uc-ghcr uc-secret \
+BINS := uc uc-secret-encrypt uc-secret-decrypt uc-configure uc-kube-configure uc-push uc-pull uc-secret \
 	uc-image uc-repo uc-cert uc-deb uc-db uc-net uc-daemon uc-vm uc-new \
-	uc-agent uc-data uc-media uc-pick uc-sys uc-terminal uc-mail uc-mail-configure uc-mail-settings uc-mail-domain uc-mail-account uc-dns uc-fs uc-kube-logs uc-forward uc-workspace
+	uc-agent uc-data uc-pick uc-sys uc-terminal uc-mail uc-mail-configure uc-mail-settings uc-mail-domain uc-mail-account uc-dns uc-fs uc-kube-logs uc-forward uc-workspace
 OUT_DIR := $(ROOT_DIR)/target/$(TARGET)/$(PROFILE)
 OUTPUTS := $(addprefix $(OUT_DIR)/,$(BINS))
 DESTDIR ?= /

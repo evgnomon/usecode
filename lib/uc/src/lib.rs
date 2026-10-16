@@ -8,8 +8,7 @@
 //! `uc-secret-decrypt`, [`configure`] the parallel machine configurator behind
 //! `uc-configure`, [`kube`] the same configurator for a Kubernetes cluster
 //! behind `uc-kube-configure`, [`registry`] the tunnelled image transfer behind
-//! `uc-push` and `uc-pull`, [`ghcr`] the GitHub Container Registry
-//! operations behind `uc-ghcr`, and [`password`], [`secret`] and [`repo`] the
+//! `uc-push` and `uc-pull`, and [`password`], [`secret`] and [`repo`] the
 //! generator and ansible-vault secret stores behind `uc-secret`.
 //!
 //! [`group`] and [`groups`] are the command groups (`uc image`, `uc repo`,
@@ -29,7 +28,6 @@ pub mod dispatch;
 pub mod dns;
 pub mod forward;
 pub mod fs;
-pub mod ghcr;
 pub mod group;
 pub mod groups;
 pub mod http;

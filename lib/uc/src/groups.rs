@@ -42,7 +42,7 @@ const fn alias(path: &'static str, summary: &'static str, argv: &'static [&'stat
 }
 
 pub const ALL: &[&Group] = &[
-    &IMAGE, &REPO, &CERT, &DEB, &DB, &NET, &DAEMON, &VM, &NEW, &AGENT, &DATA, &MEDIA, &PICK, &SYS,
+    &IMAGE, &REPO, &CERT, &DEB, &DB, &NET, &DAEMON, &VM, &NEW, &AGENT, &DATA, &PICK, &SYS,
     &TERMINAL, &MAIL,
 ];
 
@@ -59,11 +59,6 @@ pub static IMAGE: Group = Group {
             "pull",
             "pull images through the bastion from the registry",
             &["uc-pull"],
-        ),
-        exec(
-            "ghcr",
-            "build, push and delete GitHub Container Registry images",
-            &["uc-ghcr"],
         ),
         group("run", &IMAGE_RUN),
     ],
@@ -376,29 +371,6 @@ pub static DATA: Group = Group {
             "jsonc",
             "strip comments and trailing commas from JSONC",
             &["uc-data-jsonc"],
-        ),
-    ],
-    fallback: None,
-};
-
-pub static MEDIA: Group = Group {
-    path: "uc media",
-    summary: "back up, compress and download media",
-    commands: &[
-        exec(
-            "backup",
-            "mirror the local media archive to the backup box",
-            &["uc-media-backup"],
-        ),
-        exec(
-            "compress",
-            "compress the JPEG images in a directory",
-            &["uc-media-compress"],
-        ),
-        exec(
-            "yt",
-            "download the best audio as m4a with yt-dlp",
-            &["uc-media-yt"],
         ),
     ],
     fallback: None,
