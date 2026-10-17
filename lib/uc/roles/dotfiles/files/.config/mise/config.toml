@@ -48,7 +48,7 @@ yazi = "latest"
 "pipx:ruff" = "latest"
 "pipx:git-review" = "latest" # needed by Zuul
 "pipx:yamllint" = "latest"
-"pipx:yt-dlp" = "latest"
+"pipx:yt-dlp" = { version = "latest", extras = "default" } # default extras bundle mutagen for --embed-thumbnail
 mutagen = "latest"
 sccache = "latest"
 mold = "latest"
