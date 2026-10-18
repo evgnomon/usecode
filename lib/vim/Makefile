@@ -37,7 +37,7 @@ unlink:
 	done
 
 install:
-	@cp -r --preserve=mode $(LIB_STAGE)/. $(PREFIX)/
+	@cp -r --remove-destination --preserve=mode $(LIB_STAGE)/. $(PREFIX)/
 
 clean:
 	@rm -rf $(LIB_STAGE)/bin/vim $(LIB_STAGE)/bin/vimdiff $(LIB_STAGE)/bin/vimtutor \

@@ -43,11 +43,20 @@ const RELEASE: Duration = Duration::from_millis(250);
 /// Shorter than this was a slip, not something said.
 const MIN_SPOKEN: Duration = Duration::from_millis(300);
 const RATE: u32 = 16_000;
-/// Quieter than this all along, out of 32767, is silence: a muted microphone.
-const SILENT: u16 = 500;
-/// How much of a recording must be loud to count as speech rather than a
-/// knock or a cough.
-const MIN_SPEECH: f32 = 0.1;
+/// What loudness is measured over: 20 ms, about a sound of a word.
+const FRAME: usize = RATE as usize / 50;
+/// A stretch this many times louder than the quiet of the same recording is
+/// a voice. Measured against the recording itself, since a webcam's
+/// microphone hears a voice barely above what a headset hears as silence.
+const ABOVE_QUIET: f64 = 8.0;
+/// Quieter than this, out of 32767, is never a voice: a muted microphone.
+const SILENT: f64 = 100.0;
+/// Louder than this is a voice however loud the rest is, for one who talks
+/// from the first moment to the last.
+const LOUD: f64 = 1_000.0;
+/// How much of a recording must be voice to count as speech rather than a
+/// knock.
+const MIN_VOICE: Duration = Duration::from_millis(150);
 /// Words to expect, at most: engines cap the list, and a long prompt buys
 /// nothing but tokens.
 const MAX_TERMS: usize = 50;
@@ -200,10 +209,14 @@ fn transcribe_blocking(pcm: Vec<u8>) -> Result<String> {
 
 /// What was said in the recording, by OpenRouter's speech to text.
 async fn transcribe(pcm: Vec<u8>) -> Result<String> {
-    // A tap of the microphone, a muted one, or a knock is not something
-    // said; a made-up word or two would come back for any of them.
-    if !said_enough(&pcm) {
+    // A slip of Space is not something said, and a muted microphone or a
+    // knock isn't either; a made-up word or two would come back for any of
+    // them.
+    if spoken(&pcm) < MIN_SPOKEN {
         return Ok(String::new());
+    }
+    if voiced(&pcm) < MIN_VOICE {
+        bail!("no voice in that; is the microphone muted or turned down?");
     }
     let key = env("OPENROUTER_API_KEY").context("set OPENROUTER_API_KEY")?;
     let model = env("UC_VOICE_MODEL").unwrap_or_else(|| DEFAULT_MODEL.to_string());
@@ -312,18 +325,37 @@ fn said_text(text: &str) -> String {
     }
 }
 
-/// Whether enough of the recording is loud enough to be speech worth
-/// sending: a knock or a cough is loud, but only for a moment.
-fn said_enough(pcm: &[u8]) -> bool {
-    let samples = pcm.as_chunks::<2>().0;
-    if Duration::from_secs_f64(samples.len() as f64 / RATE as f64) < MIN_SPOKEN {
-        return false;
-    }
-    let loud = samples
+/// How long the recording is.
+fn spoken(pcm: &[u8]) -> Duration {
+    Duration::from_secs_f64(pcm.len() as f64 / 2.0 / RATE as f64)
+}
+
+/// How much of the recording is a voice: the frames well above its own
+/// quiet, which is the quietest tenth of it.
+fn voiced(pcm: &[u8]) -> Duration {
+    let samples: Vec<f64> = pcm
+        .as_chunks::<2>()
+        .0
         .iter()
-        .filter(|&&s| i16::from_le_bytes(s).unsigned_abs() >= SILENT)
+        .map(|&s| f64::from(i16::from_le_bytes(s)))
+        .collect();
+    let mut loudness: Vec<f64> = samples
+        .as_chunks::<FRAME>()
+        .0
+        .iter()
+        .map(|frame| (frame.iter().map(|s| s * s).sum::<f64>() / FRAME as f64).sqrt())
+        .collect();
+    let voice = loudness.clone();
+    loudness.sort_by(f64::total_cmp);
+    let quiet = loudness
+        .get(loudness.len() / 10)
+        .copied()
+        .unwrap_or_default();
+    let frames = voice
+        .iter()
+        .filter(|&&l| l >= SILENT && (l >= quiet * ABOVE_QUIET || l >= LOUD))
         .count();
-    loud as f32 / samples.len().max(1) as f32 >= MIN_SPEECH
+    Duration::from_secs_f64((frames * FRAME) as f64 / RATE as f64)
 }
 
 /// The language to tell the engine, which guesses poorly from a couple of
@@ -510,19 +542,30 @@ mod tests {
     }
 
     #[test]
-    fn a_knock_is_not_something_said() {
-        assert!(!said_enough(&pcm_of(16_000, 0)));
-        assert!(said_enough(&pcm_of(16_000, 4_000)));
-        // Long enough, and loud throughout.
-        let mut knocked = pcm_of(16_000, 4_000);
+    fn a_voice_is_told_from_the_quiet_around_it() {
+        let enough = |pcm: &[u8]| voiced(pcm) >= MIN_VOICE;
+        // A muted microphone, and a quiet room on a webcam's.
+        assert!(!enough(&pcm_of(16_000, 0)));
+        assert!(!enough(&room(16_000)));
+        // A quiet voice on that microphone, softer than a headset's silence.
+        let mut said = room(8_000);
+        said.extend(pcm_of(8_000, 400));
+        assert!(enough(&said));
+        // Talking all along, with no quiet to go by.
+        assert!(enough(&pcm_of(16_000, 4_000)));
+        // A knock, and a cough at the start of an otherwise quiet second.
+        let mut knocked = room(16_000);
         knocked.extend(pcm_of(30, 30_000));
-        assert!(said_enough(&knocked));
-        // A recording shorter than a word is a slip.
-        assert!(!said_enough(&pcm_of(1_600, 4_000)));
-        // A cough at the start of an otherwise quiet second.
-        let mut cough = pcm_of(200, 30_000);
-        cough.extend(pcm_of(16_000, 0));
-        assert!(!said_enough(&cough));
+        assert!(!enough(&knocked));
+        let mut cough = pcm_of(800, 30_000);
+        cough.extend(room(16_000));
+        assert!(!enough(&cough));
+    }
+
+    #[test]
+    fn a_slip_of_space_is_not_something_said() {
+        assert!(spoken(&pcm_of(1_600, 4_000)) < MIN_SPOKEN);
+        assert!(spoken(&pcm_of(16_000, 4_000)) >= MIN_SPOKEN);
     }
 
     #[test]
@@ -551,6 +594,14 @@ mod tests {
     /// 16-bit PCM of `samples` samples, all at `amplitude`.
     fn pcm_of(samples: usize, amplitude: i16) -> Vec<u8> {
         (0..samples).flat_map(|_| amplitude.to_le_bytes()).collect()
+    }
+
+    /// A quiet room as a webcam's microphone hears it: 30 to 190 out of
+    /// 32767, back and forth.
+    fn room(samples: usize) -> Vec<u8> {
+        (0..samples)
+            .flat_map(|i| [30i16, -80, 150, -190][i / FRAME % 4].to_le_bytes())
+            .collect()
     }
 }
 

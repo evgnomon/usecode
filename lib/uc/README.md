@@ -68,7 +68,7 @@ It transcribes with MAI-Transcribe 2, the best of the engines at a short
 command and a tenth of GPT-4o Transcribe's price, and sends the names of your
 repositories and commands along as words to expect, so `kubectl`, `fzf` and
 `usecode` come out right; word by word rather than as a block, so a word the
-engine is unsure of, or a recording that was only a cough, is dropped instead
+engine is unsure of, or a recording that was only a knock, is dropped instead
 of sent:
 
 ```sh
