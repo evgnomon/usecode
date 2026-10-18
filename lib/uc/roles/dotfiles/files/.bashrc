@@ -126,21 +126,17 @@ if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
   export PATH="$PATH:$HOME/.local/bin"
 fi
 
-if command -v fzf &>/dev/null; then
-    FZF_CTRL_R_COMMAND= FZF_ALT_C_COMMAND= eval "$(fzf --bash)"
-fi
 
-
-fzf-url-widget() {
+sk-url-widget() {
   uc-pick-url < /dev/tty > /dev/tty 2>&1
   READLINE_LINE=""
   READLINE_POINT=0
 }
 
 if (( BASH_VERSINFO[0] >= 4 )); then
-  bind -m emacs-standard -x '"\C-k": fzf-url-widget'
-  bind -m vi-command -x '"\C-k": fzf-url-widget'
-  bind -m vi-insert -x '"\C-k": fzf-url-widget'
+  bind -m emacs-standard -x '"\C-k": sk-url-widget'
+  bind -m vi-command -x '"\C-k": sk-url-widget'
+  bind -m vi-insert -x '"\C-k": sk-url-widget'
 else
   bind -m emacs-standard '"\C-k": " \C-b\C-k \C-u`uc-pick-url < /dev/tty > /dev/tty 2>&1`\e\C-e\er\C-a\C-y\C-h\C-e\e \C-y\ey\C-x\C-x\C-f"'
   bind -m vi-command '"\C-k": "\C-z\C-k\C-z"'
@@ -195,8 +191,12 @@ done
 export PATH="$HOME/.cargo/bin:$PATH"
 export PATH="$HOME/go/bin:$PATH"
 export PATH="$HOME/bin:$PATH"
-export FZF_DEFAULT_COMMAND="fd --type f --strip-cwd-prefix --hidden --exclude .git"
-export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
+export SKIM_DEFAULT_COMMAND="fd --type f --strip-cwd-prefix --hidden --exclude .git"
+export SKIM_CTRL_T_COMMAND="$SKIM_DEFAULT_COMMAND"
+
+if command -v sk &>/dev/null; then
+    eval "$(sk --shell bash --shell-bindings)"
+fi
 
 CDPATH="$CDPATH:/media/$USER"
 export LIBVIRT_DEFAULT_URI="qemu:///system"

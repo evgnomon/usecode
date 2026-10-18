@@ -158,7 +158,7 @@ autocmd FileType python,go,javascript,typescript,
       \javascriptreact,typescriptreact,rust,sh,cs              nnoremap <C-l> <Plug>(coc-format)
 autocmd FileType proto                                      noremap <C-l> :ClangFormat<CR>
 autocmd FileType json,html,yaml                             noremap <C-l> :Prettier<CR>
-autocmd FileType toml                                       noremap <C-l> <Plug>(coc-format)
+autocmd FileType toml                                       noremap <C-l> :silent %!taplo fmt -<CR>:if v:shell_error \| undo \| echoerr "taplo: invalid TOML" \| endif<CR>
 autocmd FileType terraform                                  noremap <C-l> :TerraformFmt<CR>
 
 " Run Command

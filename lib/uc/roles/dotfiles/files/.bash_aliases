@@ -69,9 +69,9 @@ alias gpu='git push --set-upstream origin $(git branch --show-current)'
 alias pr='az repos pr create --target-branch master --title'
 alias fd='fd -I --hidden --exclude .git'
 alias rg='rg --hidden -i --glob "!{.git}/**"'
-alias vr="vim \$(fd . / --type file --type symlink | fzf --preview='bat --color=always --style=numbers {}')"
-alias vd="vim \$(fd . ~ --type file --type symlink | fzf --preview='bat --color=always --style=numbers {}')"
-alias vv="vim \$(fd . . --type file --type symlink | fzf --preview='bat --color=always --style=numbers {}')"
+alias vr="vim \$(fd . / --type file --type symlink | sk --preview='bat --color=always --style=numbers {}')"
+alias vd="vim \$(fd . ~ --type file --type symlink | sk --preview='bat --color=always --style=numbers {}')"
+alias vv="vim \$(fd . . --type file --type symlink | sk --preview='bat --color=always --style=numbers {}')"
 alias v=vim
 alias g=git
 alias gg=goose
@@ -83,7 +83,7 @@ alias c='cd ~ && claude --disallowedTools "Read,Edit,Write,Bash,Glob,Grep"'
 alias mkpass="uc secret gen"
 alias z=uc-pick-url
 alias r='gg run --recipe'
-alias d='cd "$(fd --type d | fzf)"'
+alias d='cd "$(fd --type d | sk)"'
 alias gr="uc-repo-open"
 alias cn='cn --config ~/.continue/config.yaml'
 alias k=kubectl
