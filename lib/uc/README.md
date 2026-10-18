@@ -34,8 +34,11 @@ Run `uc` on its own and you get a prompt: it's a small coding agent. Tell it
 what you want, and it looks around, runs commands and edits files in the
 current directory for you, straight away. If you'd rather okay each command
 or change first, start it with `uc --ask`; answer `a` there and it stops
-asking for the rest of the session. It runs DeepSeek V4.1 Flash with high
-reasoning effort unless you pick something else.
+asking for the rest of the session. Deleting files always asks, whatever
+mode you're in. Slow builds and servers don't freeze it either: a command
+still going after its timeout keeps running as a job the agent checks on
+and stops by itself. It runs DeepSeek V4.1 Flash with high reasoning effort
+unless you pick something else.
 
 ```sh
 export OPENROUTER_API_KEY=sk-or-...           # https://openrouter.ai/keys
