@@ -11,12 +11,13 @@ subcommand is added by dropping a `uc-<name>` executable next to `uc` or
 anywhere on `PATH`.
 
 ```sh
+uc                     # talk to the coding agent
 uc help                # list the uc-* commands found on PATH
 uc secret gen          # runs uc-secret gen
 ```
 
 This crate ships the dispatcher, the two file encryption subcommands, which
-replace the former `boom` shell script, and `uc configure`, the machine
+replace the former `boom` shell script, and `uc sync`, the machine
 configurator, `uc push`/`uc pull`, which move container images through
 the registry behind the bastion, and `uc secret`, which generates secrets and
 manages the ansible-vault secret stores.
@@ -26,6 +27,25 @@ It also ships the command groups — `uc image`, `uc repo`, `uc cert`,
 `uc deb`, `uc db`, `uc net`, `uc daemon`, `uc vm`, `uc new`,
 `uc agent`, `uc data`, `uc pick` and `uc sys` — which gather
 every tool in `lib/` under one command; see [Command groups](#command-groups).
+
+## Talking to uc
+
+Run `uc` on its own and you get a prompt: it's a small coding agent. Tell it
+what you want, and it looks around, runs commands and edits files in the
+current directory for you, straight away. If you'd rather okay each command
+or change first, start it with `uc --ask`; answer `a` there and it stops
+asking for the rest of the session. It runs DeepSeek V4.1 Flash with high
+reasoning effort unless you pick something else.
+
+```sh
+export OPENROUTER_API_KEY=sk-or-...           # https://openrouter.ai/keys
+uc                                            # Ctrl-D or /exit to leave
+uc --ask                                      # confirm each command and change
+UC_MODEL=openai/gpt-5 uc                      # any OpenRouter model
+UC_EFFORT=medium uc                           # low, medium or high reasoning
+```
+
+`uc -h` (or `uc help`) lists the commands.
 
 ## Encrypting files
 
@@ -60,17 +80,17 @@ derivation, and says so when it does; re-encrypting upgrades them.
 
 ## Configuring the machine
 
-`uc configure` configures the local machine — Apt sources and packages,
+`uc sync` configures the local machine — Apt sources and packages,
 extrepo repositories, dotfiles, git checkouts, toolchains, desktop settings —
 without Python or Ansible. Independent tasks run in parallel:
 
 ```sh
-uc configure                    # everything, for the detected profile
-uc configure -C                 # dry run: report what would change
-uc configure -t dotfiles,git    # only these roles
-uc configure -t zls -d          # zls plus everything it runs after
-uc configure -l -t 'git/*'      # list tasks, their tags and dependencies
-uc configure --graph | dot -Tsvg > graph.svg
+uc sync                    # everything, for the detected profile
+uc sync -C                 # dry run: report what would change
+uc sync -t dotfiles,git    # only these roles
+uc sync -t zls -d          # zls plus everything it runs after
+uc sync -l -t 'git/*'      # list tasks, their tags and dependencies
+uc sync --graph | dot -Tsvg > graph.svg
 ```
 
 It keeps the architecture of the Ansible playbook it replaced:
@@ -124,7 +144,7 @@ their id. A task's role and id also work as tags, and tags may contain `*`.
 | `--roles DIR`, `--config FILE` | the role files (`lib/uc/roles`) and the user config, found automatically |
 
 Tasks that need root run through `sudo -n`; when the selection has any,
-`uc configure` asks for the password once, before the run, and keeps the
+`uc sync` asks for the password once, before the run, and keeps the
 credentials fresh until it ends.
 
 ## Moving container images
@@ -251,7 +271,7 @@ switching scripts over to the `uc` commands is a good idea.
 
 `vi` does its job by standing in for the real one on `PATH`, so that name
 stays installed as a symlink for good. `x` keeps its name too:
-it is the shortcut for `uc configure`. For `uc terminal`, the dotfiles
+it is the shortcut for `uc sync`. For `uc terminal`, the dotfiles
 give you the shell alias `t`.
 
 ### Cloud VMs

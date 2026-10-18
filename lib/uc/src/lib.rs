@@ -3,6 +3,7 @@
 
 //! Shared implementation behind the `uc` command family.
 //!
+//! [`chat`] is `uc` itself, run with no command: the coding agent.
 //! [`crypto`] carries the OpenSSL-compatible `aes-256-cbc` container format,
 //! [`cli`] the option parsing and terminal helpers shared by `uc-secret-encrypt` and
 //! `uc-secret-decrypt`, [`configure`] the parallel machine configurator behind
@@ -21,6 +22,7 @@
 //! [`workspace`] is `uc workspace` (`uc ws`), dev containers on the cluster.
 
 pub mod authors;
+pub mod chat;
 pub mod cli;
 pub mod configure;
 pub mod crypto;

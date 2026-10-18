@@ -5,7 +5,8 @@
 //!
 //! Like `git`, it holds no subcommand logic of its own: `uc secret ...` runs
 //! the `uc-secret` executable, so new subcommands are added by dropping a
-//! `uc-<name>` executable next to `uc` or anywhere on `PATH`.
+//! `uc-<name>` executable next to `uc` or anywhere on `PATH`. With no
+//! command at all it is the coding agent, [`uc::chat`].
 
 use std::collections::BTreeSet;
 use std::process::{Command, ExitCode};
@@ -19,7 +20,9 @@ const ALIASES: &[(&str, &str)] = &[("ws", "workspace")];
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let subcommand = match args.first().map(String::as_str) {
-        None | Some("help") | Some("-h") | Some("--help") => {
+        None => return uc::chat::main(false),
+        Some("--ask") if args.len() == 1 => return uc::chat::main(true),
+        Some("help") | Some("-h") | Some("--help") => {
             print_usage();
             return ExitCode::SUCCESS;
         }
@@ -48,7 +51,10 @@ fn main() -> ExitCode {
 }
 
 fn print_usage() {
-    println!("Usage: uc <command> [<args>]\n");
+    println!("Usage: uc [--ask | <command> [<args>]]\n");
+    println!("With no command, uc is a coding agent: talk to it and it runs commands and");
+    println!("edits files for you, through OpenRouter (OPENROUTER_API_KEY, UC_MODEL,");
+    println!("UC_EFFORT). It runs them straight away; `uc --ask` confirms each one first.\n");
     let commands = discover();
     if commands.is_empty() {
         println!("No uc commands found on PATH.");
