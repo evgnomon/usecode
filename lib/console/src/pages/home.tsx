@@ -46,7 +46,6 @@ export function Home() {
     <>
       <section className="pt-14 pb-10 text-center sm:pt-24 sm:pb-16">
         <div className="wrap max-w-[760px]">
-          <p className="text-lg text-muted-foreground">{MOTIVATION.ask}</p>
           <h1 className="mb-8 text-[clamp(52px,11vw,96px)] leading-none font-semibold tracking-[-0.04em]">
             {MOTIVATION.tagline}
           </h1>
