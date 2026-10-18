@@ -68,9 +68,11 @@ pub static IMAGE: Group = Group {
 pub static IMAGE_RUN: Group = Group {
     path: "uc image run",
     summary: "run the workflow containers on the current directory",
-    commands: &[
-        exec("barge", "run the barge container", &["uc-image-run-barge"]),
-    ],
+    commands: &[exec(
+        "barge",
+        "run the barge container",
+        &["uc-image-run-barge"],
+    )],
     fallback: None,
 };
 
