@@ -134,6 +134,10 @@ name = "uc-kube-logs"
 path = "src/bin/uc-kube-logs.rs"
 
 [[bin]]
+name = "uc-kube-usage"
+path = "src/bin/uc-kube-usage.rs"
+
+[[bin]]
 name = "uc-forward"
 path = "src/bin/uc-forward.rs"
 

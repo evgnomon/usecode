@@ -18,7 +18,8 @@
 //! cloud providers to the local machines of `vm`, and [`mail`] is `uc mail`,
 //! which looks after the mail server on a cluster, and [`fs`] is `uc fs`,
 //! buckets and objects on the cluster's S3 object storage, and [`logs`] is
-//! `uc kube logs`, the container logs of the whole cluster, and
+//! `uc kube logs`, the container logs of the whole cluster, [`usage`] is
+//! `uc kube usage`, its CPU, memory, disk and network, and
 //! [`workspace`] is `uc workspace` (`uc ws`), dev containers on the cluster.
 
 pub mod authors;
@@ -40,6 +41,7 @@ pub mod password;
 pub mod registry;
 pub mod repo;
 pub mod secret;
+pub mod usage;
 pub mod vm;
 pub mod workspace;
 

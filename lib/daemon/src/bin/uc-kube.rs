@@ -85,6 +85,10 @@ starts it, and keeps it running.
   logs [OPTIONS] [WORDS...]   the logs of every container on the cluster,
                               by namespace, pod, label, node or words;
                               `uc kube logs -h` for the options
+  usage [OPTIONS]             CPU, memory, disk and network of the
+                              cluster: each node, namespace and the
+                              busiest pods, next to what they request;
+                              `uc kube usage -h`
 
 HOST is an inventory name or any ssh destination ([USER@]HOST or an alias
 from ~/.ssh/config). The daemon has to be on it: `uc daemon install HOST`.";
@@ -126,11 +130,12 @@ fn run(args: &[String]) -> Result<()> {
         "replace" => replace(rest),
         "sync" => hand_over("uc-kube-sync", rest),
         "logs" => hand_over("uc-kube-logs", rest),
+        "usage" => hand_over("uc-kube-usage", rest),
         other => bail!("{USAGE}\n\nunknown command {other:?}"),
     }
 }
 
-/// Hands over to `program` (`uc-kube-sync`, `uc-kube-logs`), found
+/// Hands over to `program` (`uc-kube-sync`, `uc-kube-logs`, `uc-kube-usage`), found
 /// next to this executable or on PATH. It only returns when that cannot be
 /// run.
 fn hand_over(program: &str, args: &[String]) -> Result<()> {

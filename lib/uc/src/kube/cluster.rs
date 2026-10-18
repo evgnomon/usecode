@@ -113,7 +113,7 @@ pub fn current_context() -> Result<String> {
 }
 
 /// Runs kubectl and returns its stdout, failing with its stderr.
-fn kubectl(args: &[&str]) -> Result<String> {
+pub fn kubectl(args: &[&str]) -> Result<String> {
     let out = Command::new("kubectl")
         .args(args)
         .stdin(Stdio::null())

@@ -298,6 +298,16 @@ uc kube logs pods -e --since 24h        # which pods had errors, and how many
 uc kube logs timeout -healthz           # words, or any LogsQL filter
 ```
 
+How busy is the cluster? `uc kube usage` shows CPU, memory, disk and
+network per node, per namespace and for the busiest pods, next to what
+they request. With `-w` the network shows up as bytes a second:
+
+```bash
+uc kube usage                           # the whole cluster
+uc kube usage -n shop -t 20             # one namespace, the top 20 pods
+uc kube usage -w                        # keep watching
+```
+
 To look around in a browser, `uc forward obs` puts vmui (metrics and your
 dashboards), the logs UI and vmalert on localhost until you press Ctrl-C:
 
