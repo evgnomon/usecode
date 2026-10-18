@@ -19,7 +19,7 @@ pub struct Shared {
     /// `--check`: report what would change without changing it.
     pub check: bool,
     pub out: Reporter,
-    /// Whether uc-configure itself runs as root, so sudo is not needed.
+    /// Whether uc-sync itself runs as root, so sudo is not needed.
     pub is_root: bool,
     templates: Environment<'static>,
     locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,

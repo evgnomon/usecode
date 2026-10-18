@@ -1,7 +1,7 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! `uc-kube-configure`: `uc kube configure`, configure the Kubernetes cluster
+//! `uc-kube-sync`: `uc kube sync`, configure the Kubernetes cluster
 //! kubectl points at, as a native, parallel task graph.
 
 use anyhow::{Result, bail};
@@ -17,12 +17,12 @@ use uc::kube::{self, Cluster};
 
 /// Configure the Kubernetes cluster kubectl points at.
 ///
-/// `uc configure` for a cluster: the same tags, check mode, listing and
+/// `uc sync` for a cluster: the same tags, check mode, listing and
 /// parallelism, but every task works on the cluster behind kubectl's
 /// current context (or --context) with kubectl and helm. Nothing is
 /// changed before you confirm which cluster that is.
 #[derive(Parser)]
-#[command(name = "uc kube configure", bin_name = "uc kube configure", version, after_help = EXAMPLES)]
+#[command(name = "uc kube sync", bin_name = "uc kube sync", version, after_help = EXAMPLES)]
 struct Cli {
     /// The kubeconfig context to configure [default: the current one].
     #[arg(long, value_name = "NAME", env = "UC_KUBE_CONTEXT")]
@@ -90,14 +90,14 @@ struct Cli {
 
 const EXAMPLES: &str = "\
 Examples:
-  uc kube configure -C                    show the plan and what would change
-  uc kube configure                       configure the current context
-  uc kube configure --context prod -t hcloud_csi
-  uc kube configure -t forgejo -e forgejo_host=git.example.com
-                                          try a setting once before keeping it
+  uc kube sync -C                    show the plan and what would change
+  uc kube sync                       configure the current context
+  uc kube sync --context prod -t hcloud_csi
+  uc kube sync -t forgejo -e forgejo_host=git.example.com
+                                     try a setting once before keeping it
 
 What a cluster gets comes from your user config, so plain
-`uc kube configure` keeps it all in shape. Settings for every cluster sit
+`uc kube sync` keeps it all in shape. Settings for every cluster sit
 at the top level, settings for one under kube.<context>, and -e wins over
 both:
 
@@ -128,7 +128,7 @@ fn main() -> ExitCode {
     let context = match cli.context.map_or_else(kube::cluster::current_context, Ok) {
         Ok(context) => context,
         Err(err) => {
-            eprintln!("uc kube configure: {err:#}");
+            eprintln!("uc kube sync: {err:#}");
             return ExitCode::FAILURE;
         }
     };
@@ -155,7 +155,7 @@ fn main() -> ExitCode {
             overlay: vec!["kube".into(), context.clone()],
         },
     };
-    let result = configure::run_with(opts, "uc kube configure", |vars| {
+    let result = configure::run_with(opts, "uc kube sync", |vars| {
         let cluster = Arc::new(Cluster::load(Some(&context))?);
         if ask {
             confirm(&cluster)?;
@@ -167,7 +167,7 @@ fn main() -> ExitCode {
         Ok(true) => ExitCode::SUCCESS,
         Ok(false) => ExitCode::FAILURE,
         Err(err) => {
-            eprintln!("uc kube configure: {err:#}");
+            eprintln!("uc kube sync: {err:#}");
             ExitCode::FAILURE
         }
     }

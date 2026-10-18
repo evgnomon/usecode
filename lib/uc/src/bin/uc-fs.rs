@@ -12,7 +12,7 @@ use uc::kube;
 
 /// Buckets and objects on your S3 object storage.
 ///
-/// It talks to the RustFS that `uc kube configure -t rustfs` runs on your
+/// It talks to the RustFS that `uc kube sync -t rustfs` runs on your
 /// cluster, finding its name and keys there, or to any S3 endpoint given
 /// with UC_FS_ENDPOINT, UC_FS_ACCESS_KEY and UC_FS_SECRET_KEY.
 #[derive(Parser)]

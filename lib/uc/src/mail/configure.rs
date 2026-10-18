@@ -498,7 +498,7 @@ pub async fn run(opts: Options) -> Result<bool> {
     // volume keeps it in its node's location.
     let service = kubectl_json(context, &["-n", NAMESPACE, "get", "service", "mail"])
         .await
-        .context("the mail role isn't installed: uc kube configure -t mail")?;
+        .context("the mail role isn't installed: uc kube sync -t mail")?;
     let answers_on: Vec<Ipv4Addr> = service["status"]["loadBalancer"]["ingress"]
         .as_array()
         .into_iter()
@@ -526,7 +526,7 @@ pub async fn run(opts: Options) -> Result<bool> {
     {
         bail!(
             "Stalwart runs on {running_on}, not on {pinned} (mail_node): run \
-             `uc kube configure -t mail` to move it there first"
+             `uc kube sync -t mail` to move it there first"
         );
     }
     // Pinned, it sends from its node only; else from any worker it can

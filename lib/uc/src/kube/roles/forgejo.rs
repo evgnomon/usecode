@@ -205,7 +205,7 @@ pub fn tasks(plan: &mut Plan, cluster: &Arc<Cluster>, vars: &Vars) -> Result<()>
     let start = plan.tasks().len();
     let values_file = files_dir(vars, cluster).join("forgejo-values.yaml");
     let values_yaml = format!(
-        "# Written by `uc kube configure -t forgejo` for context {}.\n\
+        "# Written by `uc kube sync -t forgejo` for context {}.\n\
          # It is rewritten on every run: change the variables, not this file.\n{}",
         cluster.context,
         serde_yaml::to_string(&settings.values())?

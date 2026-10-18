@@ -528,7 +528,7 @@ pub fn tasks(plan: &mut Plan, cluster: &Arc<Cluster>, vars: &Vars) -> Result<Arc
     let values_file = dir.join("hcloud-csi-values.yaml");
     let classes_file = dir.join("hcloud-storageclasses.yaml");
     let header = format!(
-        "# Written by `uc kube configure -t hcloud_csi` for context {}.\n\
+        "# Written by `uc kube sync -t hcloud_csi` for context {}.\n\
          # It is rewritten on every run: change the variables, not this file.\n",
         cluster.context
     );
@@ -745,7 +745,7 @@ async fn token(ctx: &Ctx, cluster: &Cluster) -> Result<Outcome> {
     if token.is_empty() {
         let how = "Create a Read & Write API token in the Hetzner Cloud console (your project, \
                    Security, API tokens) and hand it over in the environment, not in a file:\n  \
-                   read -rs HCLOUD_TOKEN && export HCLOUD_TOKEN && uc kube configure";
+                   read -rs HCLOUD_TOKEN && export HCLOUD_TOKEN && uc kube sync";
         if ctx.check() {
             ctx.note(&format!(
                 "the secret {NAMESPACE}/{SECRET} is missing. {how}"

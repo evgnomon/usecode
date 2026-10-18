@@ -68,7 +68,7 @@ enum Command {
         /// Set a variable, e.g. -e registry_host=registry.example.com.
         #[arg(short = 'e', long = "extra-var", value_name = "KEY=VALUE")]
         extra_vars: Vec<String>,
-        /// The user config, as for `uc kube configure`.
+        /// The user config, as for `uc kube sync`.
         #[arg(long, value_name = "FILE", env = "UC_CONFIGURE_CONFIG")]
         config: Option<PathBuf>,
     },
@@ -353,7 +353,7 @@ async fn pull_secret(context: &str, registry: &str) -> Result<()> {
     let (user, password) = (field("username").await?, field("password").await?);
     if user.is_empty() || password.is_empty() {
         bail!(
-            "{REGISTRY_NAMESPACE}/{AUTH_SECRET} has no login yet: run `uc kube configure -t registry` \
+            "{REGISTRY_NAMESPACE}/{AUTH_SECRET} has no login yet: run `uc kube sync -t registry` \
              first, or pass --image with one the cluster can pull without a login"
         );
     }

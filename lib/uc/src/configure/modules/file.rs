@@ -293,7 +293,7 @@ pub async fn write(
     }
     if elevated(ctx, sudo) {
         let tmp = std::env::temp_dir().join(format!(
-            "uc-configure.{}.{}",
+            "uc-sync.{}.{}",
             std::process::id(),
             COUNTER.fetch_add(1, Ordering::Relaxed)
         ));
@@ -366,7 +366,7 @@ fn sibling_tmp(dest: &Path) -> PathBuf {
 #[cfg(test)]
 pub fn scratch(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
-        "uc-configure-test-{}-{name}-{}",
+        "uc-sync-test-{}-{name}-{}",
         std::process::id(),
         COUNTER.fetch_add(1, Ordering::Relaxed)
     ));

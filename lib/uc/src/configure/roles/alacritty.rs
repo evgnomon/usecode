@@ -141,7 +141,7 @@ fn without_shell(text: &str) -> String {
 }
 
 /// How the Windows `alacritty.toml` this role writes starts.
-const MARKER: &str = "# Written by `uc configure -t alacritty`";
+const MARKER: &str = "# Written by `uc sync -t alacritty`";
 
 /// The Windows `alacritty.toml`: the shared configuration with a shell that
 /// starts tmux in `distro`, or in the default distribution when unknown.

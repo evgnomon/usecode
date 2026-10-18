@@ -1,7 +1,7 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! `uc-configure`: the machine configuration as a native, parallel task
+//! `uc-sync`: the machine configuration as a native, parallel task
 //! graph.
 //!
 //! The layout follows the Ansible tree it replaced:
@@ -35,7 +35,7 @@ use std::io::Write;
 use std::sync::Arc;
 use std::time::Duration;
 
-/// What `uc configure` was asked to do.
+/// What `uc sync` was asked to do.
 pub struct Options {
     pub selection: Selection,
     pub jobs: usize,
@@ -51,7 +51,7 @@ pub struct Options {
 
 /// Plans and runs the configuration. Returns whether every task succeeded.
 pub fn run(opts: Options) -> Result<bool> {
-    run_with(opts, "uc configure", |vars| {
+    run_with(opts, "uc sync", |vars| {
         Ok((
             roles::plan(vars),
             format!("profile {}", vars.profile.name()),
@@ -60,7 +60,7 @@ pub fn run(opts: Options) -> Result<bool> {
 }
 
 /// Runs the plan `build` makes from the run's variables, with everything
-/// `uc configure` offers: tags, `--check`, `--list`, `--graph`, the jobs
+/// `uc sync` offers: tags, `--check`, `--list`, `--graph`, the jobs
 /// limit and the recap. `build` also returns what the run targets, shown
 /// in the opening line after `name`.
 pub fn run_with(
@@ -154,7 +154,7 @@ fn prime_sudo(check: bool) -> Result<()> {
     }
     if !std::io::stdin().is_terminal() {
         if check {
-            eprintln!("uc configure: no cached sudo credentials; root-only checks may fail");
+            eprintln!("uc sync: no cached sudo credentials; root-only checks may fail");
             return Ok(());
         }
         bail!("some tasks need sudo: run from a terminal, or cache credentials with `sudo -v`");

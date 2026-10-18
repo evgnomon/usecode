@@ -2,7 +2,7 @@
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
 //! `uc kube logs`: the container logs of the whole cluster, from the
-//! VictoriaLogs the `obs` role of `uc kube configure` runs.
+//! VictoriaLogs the `obs` role of `uc kube sync` runs.
 //!
 //! What you ask for becomes one LogsQL query, see [`Filter`]. VictoriaLogs
 //! is reached through a `kubectl port-forward` to its Service, so all it
@@ -165,7 +165,7 @@ impl Logs {
         }
         let forward = port_forward(&context()?, NAMESPACE, &format!("svc/{LOGS}"), LOGS_PORT)
             .await
-            .context("reaching VictoriaLogs; is `uc kube configure -t obs` done?")?;
+            .context("reaching VictoriaLogs; is `uc kube sync -t obs` done?")?;
         Ok(Logs {
             url: forward.url.clone(),
             _forward: Some(forward),

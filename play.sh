@@ -37,7 +37,7 @@ cd lib/configurator
 sudo make prepare
 sudo apt autoremove -y
 
-step "Configuring this machine with uc configure"
+step "Configuring this machine with uc sync"
 make play
 
 step "Building shared libraries"

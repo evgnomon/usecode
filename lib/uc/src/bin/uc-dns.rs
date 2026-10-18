@@ -11,7 +11,7 @@ use uc::kube;
 
 /// Look after the name servers on your cluster.
 ///
-/// The `dns` role of `uc kube configure` runs two or more PowerDNS
+/// The `dns` role of `uc kube sync` runs two or more PowerDNS
 /// instances that share nothing, behind port 53 of every node. Every
 /// change here is made on each of them, so they answer the same.
 #[derive(Parser)]

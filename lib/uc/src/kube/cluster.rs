@@ -1,7 +1,7 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! What `uc kube configure` knows about the cluster before any task runs,
+//! What `uc kube sync` knows about the cluster before any task runs,
 //! read with kubectl from the context it targets: the counterpart of the
 //! machine [`Facts`](crate::configure::facts::Facts).
 

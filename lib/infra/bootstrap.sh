@@ -5,7 +5,7 @@
 # Bring the current kube context (a usecode k3s cluster, Traefik as k3s
 # ships it) to the desired state: cert-manager, DNS pointing at the
 # workers and the nginx test site, then its TLS certificate. The container
-# registry is a role of `uc kube configure` (-t registry).
+# registry is a role of `uc kube sync` (-t registry).
 # Idempotent; safe to re-run on a live cluster.
 #
 # Needs: kubectl, helm, cf (Cloudflare CLI), dig; INFRA_DOMAIN and

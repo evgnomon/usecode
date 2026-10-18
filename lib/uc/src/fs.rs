@@ -2,7 +2,7 @@
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
 //! `uc fs`: buckets and objects on the S3 object storage the `rustfs` role
-//! of `uc kube configure` runs, or any S3 endpoint.
+//! of `uc kube sync` runs, or any S3 endpoint.
 //!
 //! Requests are signed here (AWS Signature Version 4, path-style), so no
 //! `aws`, `mc` or `rclone` is needed. The endpoint and the keys come from
@@ -97,7 +97,7 @@ impl Store {
             _ => {
                 let s = kubectl_json(&context, &["-n", NAMESPACE, "get", "secret", ROOT_SECRET])
                     .await
-                    .context("reading the RustFS keys; is `uc kube configure -t rustfs` done?")?;
+                    .context("reading the RustFS keys; is `uc kube sync -t rustfs` done?")?;
                 (
                     secret_field(&s, "access-key")?,
                     secret_field(&s, "secret-key")?,

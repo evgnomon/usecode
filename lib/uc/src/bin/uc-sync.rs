@@ -1,7 +1,7 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! `uc-configure` — configure this machine: packages, repositories, dotfiles,
+//! `uc-sync` — configure this machine: packages, repositories, dotfiles,
 //! toolchains, as a native, parallel task graph.
 
 use clap::Parser;
@@ -22,7 +22,7 @@ const SUMMARY: &str = "configure this machine, running independent tasks in para
 /// name, `never` tasks only when asked for. A task's id and its role
 /// (the part before the `/`) can be used as tags, and tags may contain `*`.
 #[derive(Parser)]
-#[command(name = "uc configure", bin_name = "uc configure", version, after_help = EXAMPLES)]
+#[command(name = "uc sync", bin_name = "uc sync", version, after_help = EXAMPLES)]
 struct Cli {
     /// Only run tasks with one of these tags (comma separated or repeated).
     #[arg(short, long, value_name = "TAGS", value_delimiter = ',')]
@@ -87,14 +87,14 @@ struct Cli {
 
 const EXAMPLES: &str = "\
 Examples:
-  uc configure                       run everything for the detected profile
-  uc configure -C                    show what would change
-  uc configure -t dotfiles,git       only the dotfiles and git roles
-  uc configure -t zls -d             zls and everything it needs
-  uc configure -t upgrade            also run the `never` upgrade tasks
-  uc configure -s apt,extrepo -j 16  skip packages, 16 tasks at a time
-  uc configure -l -t 'git/clone:*'   list the clone tasks
-  uc configure --graph | dot -Tsvg > graph.svg";
+  uc sync                       run everything for the detected profile
+  uc sync -C                    show what would change
+  uc sync -t dotfiles,git       only the dotfiles and git roles
+  uc sync -t zls -d             zls and everything it needs
+  uc sync -t upgrade            also run the `never` upgrade tasks
+  uc sync -s apt,extrepo -j 16  skip packages, 16 tasks at a time
+  uc sync -l -t 'git/clone:*'   list the clone tasks
+  uc sync --graph | dot -Tsvg > graph.svg";
 
 fn default_jobs() -> usize {
     std::thread::available_parallelism().map_or(4, |n| n.get())
@@ -133,7 +133,7 @@ fn main() -> ExitCode {
         Ok(true) => ExitCode::SUCCESS,
         Ok(false) => ExitCode::FAILURE,
         Err(err) => {
-            eprintln!("uc-configure: {err:#}");
+            eprintln!("uc-sync: {err:#}");
             ExitCode::FAILURE
         }
     }

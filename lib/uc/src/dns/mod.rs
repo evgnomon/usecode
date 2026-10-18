@@ -2,7 +2,7 @@
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
 //! `uc dns`: looking after the name servers the `dns` role of
-//! `uc kube configure` runs. The PowerDNS instances share nothing, so every
+//! `uc kube sync` runs. The PowerDNS instances share nothing, so every
 //! change here is made on each of them, through [`pdns`]'s API, and
 //! [`sync`] puts one back in line with another after it missed some.
 //! [`names`] turns what you type into what PowerDNS wants.
@@ -68,7 +68,7 @@ pub async fn servers(context: &str) -> Result<Vec<Server>> {
     };
     let deployments = get("deployments")
         .await
-        .context("the dns role isn't installed: uc kube configure -t dns")?;
+        .context("the dns role isn't installed: uc kube sync -t dns")?;
     let pods = get("pods").await?;
     let mut servers: Vec<Server> = deployments["items"]
         .as_array()
@@ -89,7 +89,7 @@ pub async fn servers(context: &str) -> Result<Vec<Server>> {
         })
         .collect();
     if servers.is_empty() {
-        bail!("there are no name servers: uc kube configure -t dns");
+        bail!("there are no name servers: uc kube sync -t dns");
     }
     // pdns-2 before pdns-10.
     servers.sort_by_key(|s| {
@@ -106,7 +106,7 @@ pub async fn servers(context: &str) -> Result<Vec<Server>> {
 pub async fn answering(context: &str) -> Result<Vec<IpAddr>> {
     let service = kubectl_json(context, &["-n", NAMESPACE, "get", "service", SERVICE])
         .await
-        .context("the dns role isn't installed: uc kube configure -t dns")?;
+        .context("the dns role isn't installed: uc kube sync -t dns")?;
     Ok(addresses(&service))
 }
 

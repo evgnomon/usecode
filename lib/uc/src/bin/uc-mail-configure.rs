@@ -42,7 +42,7 @@ struct Cli {
     #[arg(short = 'e', long = "extra-var", value_name = "KEY=VALUE")]
     extra_vars: Vec<String>,
 
-    /// The user config, as for `uc kube configure`.
+    /// The user config, as for `uc kube sync`.
     #[arg(long, value_name = "FILE", env = "UC_CONFIGURE_CONFIG")]
     config: Option<PathBuf>,
 }

@@ -78,10 +78,10 @@ starts it, and keeps it running.
   disable HOST                stop k3s on HOST (its data is kept)
       --purge                 uninstall k3s and delete its data; a worker
                               stays listed until you kubectl delete node
-  configure [OPTIONS]         set up the cluster kubectl points at, like
-                              `uc configure` does this machine: Hetzner
+  sync [OPTIONS]              set up the cluster kubectl points at, like
+                              `uc sync` does this machine: Hetzner
                               Cloud Volumes for your PVCs, for a start.
-                              `uc kube configure -h` for the options
+                              `uc kube sync -h` for the options
   logs [OPTIONS] [WORDS...]   the logs of every container on the cluster,
                               by namespace, pod, label, node or words;
                               `uc kube logs -h` for the options
@@ -124,13 +124,13 @@ fn run(args: &[String]) -> Result<()> {
         "disable" => disable(rest),
         "remove" => remove(rest),
         "replace" => replace(rest),
-        "configure" => hand_over("uc-kube-configure", rest),
+        "sync" => hand_over("uc-kube-sync", rest),
         "logs" => hand_over("uc-kube-logs", rest),
         other => bail!("{USAGE}\n\nunknown command {other:?}"),
     }
 }
 
-/// Hands over to `program` (`uc-kube-configure`, `uc-kube-logs`), found
+/// Hands over to `program` (`uc-kube-sync`, `uc-kube-logs`), found
 /// next to this executable or on PATH. It only returns when that cannot be
 /// run.
 fn hand_over(program: &str, args: &[String]) -> Result<()> {

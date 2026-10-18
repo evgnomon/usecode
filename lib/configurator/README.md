@@ -5,18 +5,18 @@ Copyright (C) The Usecode Authors (see AUTHORS)
 
 # Getting Started
 
-The machine is configured by `uc configure` (see `lib/uc/README.md`); its role
+The machine is configured by `uc sync` (see `lib/uc/README.md`); its role
 files and templates live in `lib/uc/roles`. This directory holds the bootstrap:
 
 ```bash
 sudo make prepare   # install-root.sh: base apt packages, YubiKey setup
-make play           # install.sh (rustup), then play.sh: build uc, run uc configure
-./play.sh -C        # dry run; any uc configure flag works, e.g. -t dotfiles,git
+make play           # install.sh (rustup), then play.sh: build uc, run uc sync
+./play.sh -C        # dry run; any uc sync flag works, e.g. -t dotfiles,git
 ```
 
 ## Installation profiles
 
-`uc configure` accepts `-p`/`INSTALL_PROFILE` (or `-e install_profile=…`) with these
+`uc sync` accepts `-p`/`INSTALL_PROFILE` (or `-e install_profile=…`) with these
 values:
 
 | Profile | Intended environment | Desktop, fonts, hardware |
@@ -37,9 +37,9 @@ compilers, language servers, CLI tools, and development libraries.
 git clone ssh://git@github.com:YOURUSER/config.git ~/src/github.com/YOURUSER/config
 ```
 
-`config.yaml` in there is read by `uc configure` and `uc kube configure`;
+`config.yaml` in there is read by `uc sync` and `uc kube sync`;
 `include: [more.yaml, conf.d]` pulls in other files (a directory means its
-`*.yaml`), and the including file's own keys win. `uc configure` links
+`*.yaml`), and the including file's own keys win. `uc sync` links
 `~/.config/usecode` to this repository, so the mesh inventory and the
 cluster files it writes are kept there too. Already have a
 `~/.config/usecode` directory? Move what's in it into the repository first.

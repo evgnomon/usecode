@@ -26,12 +26,12 @@ name = "uc-secret-decrypt"
 path = "src/bin/uc-secret-decrypt.rs"
 
 [[bin]]
-name = "uc-configure"
-path = "src/bin/uc-configure.rs"
+name = "uc-sync"
+path = "src/bin/uc-sync.rs"
 
 [[bin]]
-name = "uc-kube-configure"
-path = "src/bin/uc-kube-configure.rs"
+name = "uc-kube-sync"
+path = "src/bin/uc-kube-sync.rs"
 
 [[bin]]
 name = "uc-push"

@@ -5,7 +5,7 @@
 name = "x"
 version = "0.1.0"
 edition.workspace = true
-description = "Shorthand for uc configure"
+description = "Shorthand for uc sync"
 license.workspace = true
 authors.workspace = true
 publish = false

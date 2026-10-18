@@ -516,7 +516,7 @@ pub fn tasks(plan: &mut Plan, cluster: &Arc<Cluster>, vars: &Vars, layout: &Layo
     let settings = Arc::new(Settings::load(vars, layout, &dir)?);
     let start = plan.tasks().len();
     let header = format!(
-        "# Written by `uc kube configure -t obs` for context {}.\n\
+        "# Written by `uc kube sync -t obs` for context {}.\n\
          # It is rewritten on every run: change the variables, not this file.\n",
         cluster.context
     );

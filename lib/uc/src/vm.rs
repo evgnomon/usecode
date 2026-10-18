@@ -669,7 +669,7 @@ fn upcloud_server(server: &Value, ips: &[Value]) -> Server {
     }
 }
 
-/// A Hetzner Cloud server as `uc kube configure` matches it to a node.
+/// A Hetzner Cloud server as `uc kube sync` matches it to a node.
 #[derive(Debug, Clone, Default)]
 pub struct HetznerServer {
     pub name: String,

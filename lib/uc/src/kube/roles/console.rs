@@ -599,7 +599,7 @@ async fn pull_secret(ctx: &Ctx, cluster: &Cluster, s: &Settings) -> Result<Outco
     let field = |key: &'static str| secret_field(cluster, REGISTRY_NAMESPACE, AUTH_SECRET, key);
     let (Some(user), Some(password)) = (field("username").await, field("password").await) else {
         bail!(
-            "{REGISTRY_NAMESPACE}/{AUTH_SECRET} has no login yet: run `uc kube configure -t registry` \
+            "{REGISTRY_NAMESPACE}/{AUTH_SECRET} has no login yet: run `uc kube sync -t registry` \
              first, or set console_image to an image the cluster can pull without one"
         );
     };

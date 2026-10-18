@@ -16,7 +16,7 @@ use uc::logs::{
 
 /// The logs of every container on your cluster, in one place.
 ///
-/// They come from the VictoriaLogs that `uc kube configure -t obs` runs,
+/// They come from the VictoriaLogs that `uc kube sync -t obs` runs,
 /// which keeps them even after a pod is gone, or from UC_LOGS_URL. Narrow
 /// them down with the options; words after them are looked for in the
 /// lines, and can be any LogsQL filter.

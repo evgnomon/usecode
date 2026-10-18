@@ -50,7 +50,7 @@ with `checkout.session.completed` and `customer.subscription.created`,
 ```sh
 make push                          # <registry_host>/usecode-console:<sha> and :latest
 STRIPE_SECRET_KEY=... STRIPE_PRICE_ID=... STRIPE_WEBHOOK_SECRET=... \
-  uc kube configure -t console
+  uc kube sync -t console
 ```
 
 `make push` sends the image to your cluster's own registry (the `registry`

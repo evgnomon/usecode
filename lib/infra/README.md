@@ -9,7 +9,7 @@ What runs on top of a usecode k3s cluster (`uc kube`): cert-manager for
 Let's Encrypt certificates, a small nginx site on your domain so you
 can see the whole path work end to end. Traffic comes in through the
 Traefik that k3s ships with; nothing about k3s is changed. Your private
-container registry is one more step on top: `uc kube configure -t registry`
+container registry is one more step on top: `uc kube sync -t registry`
 (below).
 
 ```
@@ -46,11 +46,11 @@ nothing, so it never validates against stale DNS.
 Running it again changes nothing. Added or replaced a worker? Just
 `lib/infra/dns.sh` to fix the records.
 
-## Settings for `uc kube configure`
+## Settings for `uc kube sync`
 
 Everything below is switched on from your user config
 (`~/src/github.com/<you>/config/config.yaml`, also at `~/.config/usecode`),
-so a plain `uc kube configure` keeps the whole cluster in shape. Settings
+so a plain `uc kube sync` keeps the whole cluster in shape. Settings
 for one cluster go under `kube.<context>`; settings at the top level count
 for every cluster:
 
@@ -81,7 +81,7 @@ kube:
 
 ```bash
 source ~/.bashrc.d/cloudflare.sh
-uc kube configure -t registry
+uc kube sync -t registry
 ```
 
 `registry_dns_target` makes the name a CNAME to your domain, so it follows
@@ -126,7 +126,7 @@ kube:
 
 ```bash
 source ~/.bashrc.d/cloudflare.sh
-uc kube configure -t rustfs
+uc kube sync -t rustfs
 ```
 
 The S3 API is at `https://s3.example.com` (path-style), and inside the
@@ -171,7 +171,7 @@ kube:
 ```
 
 ```bash
-uc kube configure -t mail
+uc kube sync -t mail
 ```
 
 The web admin is at `https://mail.example.com/admin`. The first run makes a
@@ -223,10 +223,10 @@ when you'd like your zones to live on your cluster too. You get two name
 servers that share nothing: each has its own SQLite database on its own
 10Gi Hetzner Cloud Volume, and they never run on the same node, so losing
 one leaves the other answering. They're on for every cluster, so a plain
-`uc kube configure` (or just this part of it) sets them up:
+`uc kube sync` (or just this part of it) sets them up:
 
 ```bash
-uc kube configure -t dns
+uc kube sync -t dns
 ```
 
 Rather not have them? `dns_enabled: false` at the top level of your
@@ -274,7 +274,7 @@ kube:
 ```
 
 ```bash
-uc kube configure -t obs
+uc kube sync -t obs
 ```
 
 You get node-exporter and kube-state-metrics, VictoriaMetrics to scrape
@@ -311,7 +311,7 @@ the same local ports every time, so bookmarks keep working.
 
 With RustFS on the cluster, vmui's Dashboards tab shows dashboards you keep
 in code: drop `.json` files in `~/.config/usecode/kube/<context>/dashboards`
-(or wherever `obs_dashboards_dir` says) and run `uc kube configure -t obs`.
+(or wherever `obs_dashboards_dir` says) and run `uc kube sync -t obs`.
 A `cluster.json` with nodes, workloads and volumes comes built in. Each file
 is checked before it's uploaded, and shows up within a minute. The format is
 [vmui's own](https://github.com/VictoriaMetrics/VictoriaMetrics/tree/master/app/vmui/packages/vmui/public/dashboards):

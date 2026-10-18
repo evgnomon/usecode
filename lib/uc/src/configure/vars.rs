@@ -127,7 +127,7 @@ pub struct LoadOptions {
     pub roles_dir: Option<PathBuf>,
     pub config_file: Option<PathBuf>,
     /// The plan reads files and templates from the roles directory, so it
-    /// must be found; `uc kube configure` reads none.
+    /// must be found; `uc kube sync` reads none.
     pub need_roles: bool,
     /// A section of the user config laid over its top level before `-e`,
     /// e.g. `["kube", "cp-1"]` for what only that cluster gets.
@@ -376,7 +376,7 @@ fn detect_profile(facts: &Facts) -> Profile {
     }
 }
 
-/// The roles next to the checkout uc-configure runs from, found from the
+/// The roles next to the checkout uc-sync runs from, found from the
 /// working directory or the executable, else the standard checkout.
 fn find_roles_dir(home: &Path) -> Result<PathBuf> {
     let from = |p: PathBuf| -> Vec<PathBuf> { p.ancestors().map(Path::to_path_buf).collect() };

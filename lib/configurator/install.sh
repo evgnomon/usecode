@@ -2,7 +2,7 @@
 # License-Identifier: HGL
 # Copyright (C) The Usecode Authors (see AUTHORS)
 
-# Installs the Rust toolchain that builds `uc configure`.
+# Installs the Rust toolchain that builds `uc sync`.
 
 set -e
 

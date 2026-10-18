@@ -1,7 +1,7 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! `uc kube configure`: `uc configure` for a Kubernetes cluster instead of
+//! `uc kube sync`: `uc sync` for a Kubernetes cluster instead of
 //! this machine.
 //!
 //! The same [`engine`](crate::configure::engine) runs it, with the same tags,
