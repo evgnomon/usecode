@@ -24,7 +24,9 @@
 //! and sends what was said instead, see `voice`.
 //! What the model is told about all this is the main skill, `chat/main.md`, always in its system prompt. The key comes from
 //! `OPENROUTER_API_KEY`, the model from `UC_MODEL`, the reasoning effort from
-//! `UC_EFFORT`.
+//! `UC_EFFORT`. Without `UC_MODEL` but with `TYPESAFE_API_KEY`, a TypeSafe
+//! model (`TYPESAFE_MODEL`) reads each line and picks the OpenRouter model
+//! from `MODELS` that suits it best; otherwise it is DeepSeek V4.1 Flash.
 
 use anyhow::{Context, Result, anyhow, bail};
 use rustyline::error::ReadlineError;
@@ -48,6 +50,26 @@ mod voice;
 const API: &str = "https://openrouter.ai/api/v1/chat/completions";
 const DEFAULT_MODEL: &str = "deepseek/deepseek-v4.1-flash";
 const DEFAULT_EFFORT: &str = "high";
+const TYPESAFE: &str = "https://api.typesafe.ai/v1/systemone";
+const DEFAULT_ROUTER: &str = "jev-latest";
+/// What TypeSafe picks from for a line, and when each is the one to use.
+const MODELS: &[(&str, &str)] = &[
+    (
+        DEFAULT_MODEL,
+        "Everyday work: a quick question, running or explaining a command, a small edit, \
+         looking around the code, anything simple or routine",
+    ),
+    (
+        "anthropic/claude-sonnet-5.5",
+        "Real coding: implementing a feature, fixing a bug, writing tests, reviewing or \
+         refactoring a change across a few files",
+    ),
+    (
+        "openai/gpt-5.6-luna",
+        "Reading a lot: summarising long files, logs, documents or web pages, researching \
+         a topic on the web",
+    ),
+];
 const DUCKDUCKGO: &str = "https://html.duckduckgo.com/html/";
 const EXA: &str = "https://api.exa.ai/search";
 const PARALLEL: &str = "https://api.parallel.ai/v1beta/search";
@@ -171,6 +193,9 @@ impl Engine {
 struct Session {
     key: String,
     model: String,
+    /// TypeSafe's key and model, to pick the model for each line.
+    router: Option<(String, String)>,
+    ask: bool,
     /// OpenRouter's reasoning effort: low, medium or high.
     effort: String,
     messages: Vec<Value>,
@@ -292,10 +317,16 @@ async fn run(ask: bool, output: bool, shell: bool, search: Option<Search>) -> Re
     };
     let model = env_or("UC_MODEL", DEFAULT_MODEL);
     let effort = env_or("UC_EFFORT", DEFAULT_EFFORT);
+    // A model asked for is the one used for every line.
+    let router = env("TYPESAFE_API_KEY")
+        .filter(|_| env("UC_MODEL").is_none())
+        .map(|key| (key, env_or("TYPESAFE_MODEL", DEFAULT_ROUTER)));
     let mut session = Session {
         key: key.trim().to_string(),
         messages: vec![json!({"role": "system", "content": system_prompt(&model, ask, output)})],
         model,
+        router,
+        ask,
         effort,
         allow_all: !ask,
         allow_turn: false,
@@ -342,6 +373,7 @@ async fn run(ask: bool, output: bool, shell: bool, search: Option<Search>) -> Re
             match typed_command(line).filter(|_| shell) {
                 Some(command) => session.run_typed(command).await,
                 None => {
+                    session.route(line).await;
                     session
                         .messages
                         .push(json!({"role": "user", "content": line}));
@@ -731,6 +763,26 @@ fn tools() -> Value {
 }
 
 impl Session {
+    /// Switches to the model TypeSafe picks for `line`, if it is routing; the
+    /// one before stays when it can't say.
+    async fn route(&mut self, line: &str) {
+        let Some((key, router)) = &self.router else {
+            return;
+        };
+        let model = match pick_model(key, router, line).await {
+            Ok(model) => model,
+            Err(err) => {
+                eprintln!("· TypeSafe: {err:#}");
+                return;
+            }
+        };
+        if model != self.model {
+            eprintln!("· model {model}");
+            self.messages[0] = json!({"role": "system", "content": system_prompt(&model, self.ask, self.show_output)});
+            self.model = model;
+        }
+    }
+
     /// Asks the model until it answers without calling a tool.
     async fn turn(&mut self) -> Result<()> {
         loop {
@@ -1500,6 +1552,45 @@ fn read_line(prompt: &str) -> Result<Option<String>> {
     }
 }
 
+/// The model in `MODELS` TypeSafe's `router` thinks suits `line` best.
+async fn pick_model(key: &str, router: &str, line: &str) -> Result<String> {
+    let criteria: serde_json::Map<String, Value> = MODELS
+        .iter()
+        .map(|(model, when)| (model.to_string(), json!(when)))
+        .collect();
+    let body = json!({
+        "model": router,
+        "state": line,
+        "questions": {"model": {
+            "type": "choice",
+            "instructions": "This is what a user asked a coding agent on their terminal. \
+                Which model should do it? Pick the cheapest one that does it well.",
+            "criteria": criteria,
+        }},
+    });
+    let response = client()
+        .post(TYPESAFE)
+        .bearer_auth(key)
+        .json(&body)
+        .timeout(Duration::from_secs(20))
+        .send()
+        .await
+        .context("calling TypeSafe")?;
+    let status = response.status();
+    let value: Value = response.json().await.context("reading TypeSafe's reply")?;
+    if !status.is_success() {
+        bail!("{status}: {}", value["detail"]);
+    }
+    let choice = value["answers"]["model"]["choice"]
+        .as_str()
+        .unwrap_or_default();
+    MODELS
+        .iter()
+        .find(|(model, _)| *model == choice)
+        .map(|(model, _)| model.to_string())
+        .ok_or_else(|| anyhow!("picked no model: {value}"))
+}
+
 /// An environment variable, if it is set to something.
 fn env(name: &str) -> Option<String> {
     std::env::var(name)
@@ -2022,6 +2113,8 @@ mod tests {
         Session {
             key: String::new(),
             model: String::new(),
+            router: None,
+            ask: false,
             effort: String::new(),
             messages: Vec::new(),
             allow_all: true,
