@@ -2,8 +2,9 @@
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
 // The console's shortcut keys: one letter per page, pressed anywhere without
-// modifiers (except while typing). Every button that carries one shows it on
-// its bottom face, and the footer at the bottom of the page lists them all.
+// modifiers (except while typing). Every button that carries one shows it in a
+// small thin box after its label, and the footer at the bottom of the page
+// lists them all.
 
 import { useEffect } from "react";
 import { navigate, useLocation } from "@/lib/router";

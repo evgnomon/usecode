@@ -112,7 +112,7 @@ function Footer() {
           </a>
         </span>
       </div>
-      {/* The keys, listed on the bottom face of the page where they'll be looked for. */}
+      {/* The keys, listed on the bottom of the page where they'll be looked for. */}
       <div className="wrap mt-3 flex flex-wrap gap-x-4 gap-y-1">
         {keys.map((k) => (
           <span key={k.key} className="text-muted-foreground">
