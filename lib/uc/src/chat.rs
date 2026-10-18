@@ -245,6 +245,50 @@ async fn run(ask: bool, output: bool) -> Result<()> {
     }
 }
 
+/// Asks on the terminal. Options are numbered, with one more number last for
+/// typing an answer of their own; typing one straight away works too.
+fn ask_user(question: &str, options: &[String]) -> Result<String> {
+    let mut prompt = format!("\x1b[1m?\x1b[0m {}\n", question.trim());
+    for (i, option) in options.iter().enumerate() {
+        prompt.push_str(&format!("  {}. {option}\n", i + 1));
+    }
+    if !options.is_empty() {
+        prompt.push_str(&format!(
+            "  {}. something else (type it)\n",
+            options.len() + 1
+        ));
+    }
+    prompt.push_str("> ");
+    let answer = read_line(&prompt)?.unwrap_or_default();
+    let answer = match pick(&answer, options) {
+        Pick::Option(option) => return Ok(option),
+        Pick::Own => read_line("> ")?.unwrap_or_default(),
+        Pick::Typed => answer,
+    };
+    let answer = answer.trim();
+    Ok(if answer.is_empty() {
+        "(no answer)".into()
+    } else {
+        answer.into()
+    })
+}
+
+#[derive(Debug, PartialEq)]
+enum Pick {
+    Option(String),
+    /// The last number: they'll type their own answer next.
+    Own,
+    Typed,
+}
+
+fn pick(answer: &str, options: &[String]) -> Pick {
+    match answer.trim().parse::<usize>() {
+        Ok(n) if (1..=options.len()).contains(&n) => Pick::Option(options[n - 1].clone()),
+        Ok(n) if !options.is_empty() && n == options.len() + 1 => Pick::Own,
+        _ => Pick::Typed,
+    }
+}
+
 /// `ls -y` is `ls`, approved up front.
 fn split_approval(line: &str) -> (&str, bool) {
     match line.strip_suffix("-y") {
@@ -325,7 +369,15 @@ fn tools() -> Value {
             "ask_user",
             "Ask the user a question and get their answer: the way to get input from them in the \
              middle of a task.",
-            json!({"question": string("the question, one line")}),
+            json!({
+                "question": string("the question, one line"),
+                "options": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "the answers to pick from, when there are a few; they are \
+                                    numbered and the user can still type their own",
+                },
+            }),
             &["question"],
         ),
         tool(
@@ -435,13 +487,16 @@ impl Session {
             }
             "job_output" => self.job_output(job, number("wait").unwrap_or(0)).await,
             "job_kill" => self.job_kill(job).await,
-            "ask_user" => read_line(&format!("\x1b[1m?\x1b[0m {}\n> ", arg("question").trim()))
-                .map(|answer| {
-                    answer
-                        .map(|a| a.trim().to_string())
-                        .filter(|a| !a.is_empty())
-                        .unwrap_or_else(|| "(no answer)".into())
-                }),
+            "ask_user" => {
+                let options: Vec<String> = args["options"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|o| o.as_str().map(|o| o.trim().to_string()))
+                    .filter(|o| !o.is_empty())
+                    .collect();
+                ask_user(&arg("question"), &options)
+            }
             "read_file" => {
                 eprintln!("· read {}", arg("path"));
                 std::fs::read_to_string(arg("path")).context("reading the file")
@@ -835,6 +890,16 @@ mod tests {
         assert_eq!(split_approval("-y"), ("", true));
         assert_eq!(split_approval("ls"), ("ls", false));
         assert_eq!(split_approval("apt-y"), ("apt-y", false));
+    }
+
+    #[test]
+    fn picks_an_option_by_number() {
+        let options = ["push it".to_string(), "commit first".to_string()];
+        assert_eq!(pick(" 2 ", &options), Pick::Option("commit first".into()));
+        assert_eq!(pick("3", &options), Pick::Own);
+        assert_eq!(pick("4", &options), Pick::Typed);
+        assert_eq!(pick("just push", &options), Pick::Typed);
+        assert_eq!(pick("1", &[]), Pick::Typed);
     }
 
     #[test]

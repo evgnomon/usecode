@@ -8,7 +8,7 @@
     "rust-analyzer-lsp@claude-plugins-official": true
   },
   "effortLevel": "medium",
-  "tui": "fullscreen",
+  "tui": "default",
   "theme": "auto",
   "skipAutoPermissionPrompt": true,
   "autoMode": {
@@ -47,5 +47,13 @@
   "voice": {
     "enabled": true,
     "mode": "hold"
+  },
+  "attribution": {
+    "commit": "",
+    "pr": "",
+    "sessionUrl": false
+  },
+  "env": {
+    "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "1"
   }
 }

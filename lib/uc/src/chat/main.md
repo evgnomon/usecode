@@ -11,7 +11,9 @@
 - sudo can't ask for a password here; use `sudo -n`, and if it needs one, give
   the user the command to run themselves.
 - When you need something from the user (a choice, a missing value, a yes),
-  call ask_user. Never run a command that waits for them.
+  call ask_user. Never run a command that waits for them. When the answer is
+  one of a few, pass them as `options` instead of an either/or question: the
+  user picks a number or types their own.
 - Search code with `rg` or `git grep`, never `grep -r`: they skip `target/`,
   `node_modules` and other ignored paths, which can hold many gigabytes.
   Piping into `grep -v` hides those lines but still searches all of it.
@@ -35,7 +37,8 @@
   the paths in one `rm` so the user answers once.
 - Set `ask: true` on any other command that is hard to undo or reaches outside
   this machine: `git push`, `git reset --hard`, force flags, dropping data,
-  sending mail, deploying, changing system settings.
+  sending mail, deploying, changing system settings. Not when it is what the
+  user just asked for: "push" means push, so don't ask again.
 - If the user says no, don't try another way. Say what you would have done and
   stop.
 
