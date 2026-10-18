@@ -10,8 +10,12 @@
 //! in `-y` allows what its answer does). Deleting files is always confirmed.
 //! A command still running after its timeout carries on as a job the model
 //! follows and stops itself. Only the model's replies are printed, not what
-//! the commands print, unless `--output` is given. What the model is told about all this is the main
-//! skill, `chat/main.md`, always in its system prompt. The key comes from
+//! the commands print, unless `--output` is given. A line that is a command
+//! (`ls -al`, `git status`, or anything after `!`) runs on the terminal
+//! straight away, with the same confirmations, and the model is told it ran;
+//! `--no-shell` sends every line to the model. Esc stops the model, and the
+//! command it is waiting on, and goes back to the prompt.
+//! What the model is told about all this is the main skill, `chat/main.md`, always in its system prompt. The key comes from
 //! `OPENROUTER_API_KEY`, the model from `UC_MODEL`, the reasoning effort from
 //! `UC_EFFORT`.
 
@@ -45,6 +49,29 @@ const MAX_KEPT: usize = 1 << 20;
 const DELETES: &[&str] = &["rm", "rmdir", "unlink", "shred", "-delete"];
 /// Always in the system prompt: how commands run, jobs, what needs asking.
 const MAIN_SKILL: &str = include_str!("chat/main.md");
+/// Builtins worth running when typed at the prompt; `cd` changes uc's own
+/// directory. Keywords like `if` and `for` are left out: they start sentences.
+const BUILTINS: &[&str] = &["cd", "echo", "printf", "pwd", "type", "command", "time"];
+/// Programs whose name is usually an English word when typed at the prompt:
+/// `yes` answers the model, it doesn't print y forever. `!yes` still runs it.
+const WORDS: &[&str] = &["yes", "more", "look", "write", "see", "at", "go"];
+/// Words that make a line a sentence for the model, not a command line.
+const PROSE: &[&str] = &[
+    "the", "a", "an", "it", "its", "it's", "this", "that", "these", "those", "is", "are", "was",
+    "be", "to", "for", "of", "and", "but", "with", "at", "on", "why", "how", "what", "when",
+    "where", "me", "my", "i", "you", "your", "we", "our", "please", "can", "could", "should",
+    "would", "not", "ahead",
+];
+
+/// A command runs on the terminal: Ctrl-C stops it, not uc.
+static FOREGROUND: AtomicBool = AtomicBool::new(false);
+
+/// A prompt or a command has the terminal: Esc isn't watched for.
+static LENT: AtomicBool = AtomicBool::new(false);
+
+/// The terminal settings from before the Esc watcher changed them; Some while
+/// they are changed.
+static SAVED: Mutex<Option<libc::termios>> = Mutex::new(None);
 
 /// The process groups of the jobs still running, stopped when uc exits.
 static GROUPS: Mutex<BTreeSet<i32>> = Mutex::new(BTreeSet::new());
@@ -63,15 +90,16 @@ fn client() -> &'static reqwest::Client {
 }
 
 /// `ask` confirms every command and change instead of running it straight away;
-/// `output` shows what the commands print as well as the model's replies.
-pub fn main(ask: bool, output: bool) -> ExitCode {
+/// `output` shows what the commands print as well as the model's replies;
+/// `shell` runs a line that is a command instead of sending it to the model.
+pub fn main(ask: bool, output: bool, shell: bool) -> ExitCode {
     // Worker threads keep reading the jobs' pipes while the prompt waits.
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
         .build()
         .expect("tokio runtime");
-    let result = runtime.block_on(run(ask, output));
+    let result = runtime.block_on(run(ask, output, shell));
     stop_jobs();
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -96,6 +124,8 @@ struct Session {
     show_output: bool,
     jobs: BTreeMap<usize, Job>,
     next_job: usize,
+    /// The job bash is waiting on, stopped if Esc is pressed meanwhile.
+    waiting: Option<usize>,
 }
 
 /// A command started by bash, followed with job_output and stopped with job_kill.
@@ -190,7 +220,7 @@ fn on_terminal(command: &str) -> bool {
     word.rsplit('/').next() == Some("ssh-add")
 }
 
-async fn run(ask: bool, output: bool) -> Result<()> {
+async fn run(ask: bool, output: bool, shell: bool) -> Result<()> {
     let key = std::env::var("OPENROUTER_API_KEY")
         .ok()
         .filter(|k| !k.trim().is_empty())
@@ -213,10 +243,15 @@ async fn run(ask: bool, output: bool) -> Result<()> {
         show_output: output,
         jobs: BTreeMap::new(),
         next_job: 1,
+        waiting: None,
     };
     tokio::spawn(async {
-        if tokio::signal::ctrl_c().await.is_ok() {
+        while tokio::signal::ctrl_c().await.is_ok() {
+            if FOREGROUND.load(Ordering::Relaxed) {
+                continue;
+            }
             stop_jobs();
+            restore_terminal(&mut SAVED.lock().unwrap_or_else(|e| e.into_inner()));
             eprintln!();
             std::process::exit(130);
         }
@@ -227,7 +262,7 @@ async fn run(ask: bool, output: bool) -> Result<()> {
             return Ok(());
         };
         let line = line.trim();
-        if matches!(line, "/exit" | "/quit") {
+        if matches!(line, "/exit" | "/quit" | "exit") {
             return Ok(());
         }
         let (line, approved) = split_approval(line);
@@ -235,13 +270,100 @@ async fn run(ask: bool, output: bool) -> Result<()> {
             continue;
         }
         session.allow_turn = approved;
-        session
-            .messages
-            .push(json!({"role": "user", "content": line}));
-        if let Err(err) = session.turn().await {
+        let work = async {
+            match typed_command(line).filter(|_| shell) {
+                Some(command) => session.run_typed(command).await,
+                None => {
+                    session
+                        .messages
+                        .push(json!({"role": "user", "content": line}));
+                    session.turn().await
+                }
+            }
+        };
+        let (done, stopped) = tokio::select! {
+            done = work => (done, false),
+            () = escape() => (Ok(()), true),
+        };
+        if stopped {
+            eprintln!("\r\x1b[2K· stopped");
+            session.stopped();
+        }
+        if let Err(err) = done {
             eprintln!("uc: {err:#}");
         }
         session.allow_turn = false;
+    }
+}
+
+/// The command line to run when what was typed is one rather than something for
+/// the model: `!` and the rest, or a line starting with a program or builtin
+/// that doesn't read like a sentence. Unsure means it goes to the model.
+fn typed_command(line: &str) -> Option<&str> {
+    if let Some(command) = line.strip_prefix('!') {
+        return Some(command.trim()).filter(|c| !c.is_empty());
+    }
+    if line.ends_with('?') {
+        return None;
+    }
+    let first = line.split_whitespace().next()?;
+    if WORDS.contains(&first) || !(BUILTINS.contains(&first) || runnable(first)) {
+        return None;
+    }
+    let prose = unquoted(line)
+        .split_whitespace()
+        .skip(1)
+        .any(|word| PROSE.contains(&word.to_lowercase().as_str()));
+    (!prose).then_some(line)
+}
+
+/// The line without what is inside quotes: `git commit -m 'fix the bug'` is
+/// still a command.
+fn unquoted(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut quote = None;
+    for c in line.chars() {
+        match (quote, c) {
+            (None, '\'' | '"') => quote = Some(c),
+            (Some(q), c) if c == q => quote = None,
+            (None, c) => out.push(c),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// Whether a program by this name is on PATH, or at this path when it has a /.
+fn runnable(name: &str) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    let executable = |path: &std::path::Path| {
+        std::fs::metadata(path).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+    };
+    if name.contains('/') {
+        return executable(std::path::Path::new(name));
+    }
+    std::env::var_os("PATH")
+        .is_some_and(|path| std::env::split_paths(&path).any(|dir| executable(&dir.join(name))))
+}
+
+/// Where `cd` goes, for a plain `cd`, `cd ~/x` or `cd dir`; None for anything
+/// more, which bash runs.
+fn cd_target(command: &str) -> Option<PathBuf> {
+    let mut words = command.split_whitespace();
+    if words.next() != Some("cd") {
+        return None;
+    }
+    let (arg, rest) = (words.next(), words.next());
+    if rest.is_some() || arg.is_some_and(|a| a.contains(|c: char| "$`;|&<>*?".contains(c))) {
+        return None;
+    }
+    let home = || std::env::var_os("HOME").map(PathBuf::from);
+    match arg {
+        None | Some("~") => home(),
+        Some(arg) => match arg.strip_prefix("~/") {
+            Some(rest) => home().map(|h| h.join(rest)),
+            None => Some(PathBuf::from(arg)),
+        },
     }
 }
 
@@ -526,7 +648,9 @@ impl Session {
             eprintln!("· job {id} started");
             return Ok(format!("started job {id}"));
         }
+        self.waiting = Some(id);
         self.wait(id, timeout).await;
+        self.waiting = None;
         let job = &self.jobs[&id];
         job.echo.store(false, Ordering::Relaxed);
         if job.status.is_none() {
@@ -539,14 +663,35 @@ impl Session {
     /// Runs a command in the foreground with the terminal as its stdin and
     /// output, so the user can type a passphrase into it.
     async fn run_on_terminal(&mut self, command: &str) -> Result<String> {
-        let status = tokio::process::Command::new("bash")
-            .args(["-c", command])
-            .status()
-            .await
-            .context("starting bash")?;
+        let status = on_terminal_status(command).await?;
         Ok(format!(
             "{status}\noutput: (it ran on the user's terminal, not captured)"
         ))
+    }
+
+    /// A command the user typed: it runs on their terminal like in a shell,
+    /// after the same confirmations as the model's, and the model is told.
+    async fn run_typed(&mut self, command: &str) -> Result<()> {
+        self.confirm("run it?", deletes(command))?;
+        let note = match cd_target(command) {
+            Some(dir) => {
+                std::env::set_current_dir(&dir).with_context(|| format!("cd {}", dir.display()))?;
+                let cwd = std::env::current_dir().unwrap_or(dir);
+                format!("I changed the working directory to {}.", cwd.display())
+            }
+            None => {
+                let status = on_terminal_status(command).await?;
+                if !status.success() {
+                    eprintln!("· {status}");
+                }
+                format!(
+                    "I ran `{command}` on my terminal myself: {status}. Its output went to my \
+                     terminal, not to you; run it again if you need it."
+                )
+            }
+        };
+        self.messages.push(json!({"role": "user", "content": note}));
+        Ok(())
     }
 
     fn start(&mut self, command: &str, echo: bool) -> Result<usize> {
@@ -603,13 +748,9 @@ impl Session {
         }
         // Without its output on screen, a long wait would look like uc hung.
         let quiet = !job.echo.load(Ordering::Relaxed) && std::io::stderr().is_terminal();
-        let clock = quiet.then(|| tokio::spawn(elapsed()));
+        let clock = quiet.then(|| Clock(tokio::spawn(elapsed())));
         let waited = tokio::time::timeout(Duration::from_secs(secs), job.child.wait()).await;
-        if let Some(clock) = clock {
-            clock.abort();
-            let _ = clock.await;
-            eprint!("\r\x1b[2K");
-        }
+        drop(clock);
         if let Ok(Ok(status)) = waited {
             job.status = Some(status);
             GROUPS.lock().unwrap().remove(&job.group);
@@ -700,6 +841,34 @@ impl Session {
         Ok(format!("edited {path}"))
     }
 
+    /// After Esc: the command bash was waiting on is stopped, and the model
+    /// is told the tool calls it was left with were stopped.
+    fn stopped(&mut self) {
+        if let Some(job) = self.waiting.take().and_then(|id| self.jobs.remove(&id)) {
+            signal_group(job.group, libc::SIGKILL);
+            GROUPS.lock().unwrap().remove(&job.group);
+        }
+        if let Some(at) = self.messages.iter().rposition(|m| m["role"] == "assistant") {
+            let answered: Vec<Value> = self.messages[at + 1..]
+                .iter()
+                .map(|m| m["tool_call_id"].clone())
+                .collect();
+            let calls = self.messages[at]["tool_calls"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default();
+            for call in calls.iter().filter(|c| !answered.contains(&c["id"])) {
+                self.messages.push(json!({
+                    "role": "tool",
+                    "tool_call_id": call["id"],
+                    "content": "stopped: the user pressed Esc",
+                }));
+            }
+        }
+        self.messages
+            .push(json!({"role": "user", "content": "I pressed Esc and stopped you there."}));
+    }
+
     /// Ok to go ahead; an error tells the model the user said no. `always`
     /// asks even in auto mode or after `-y`.
     fn confirm(&mut self, question: &str, always: bool) -> Result<()> {
@@ -715,6 +884,151 @@ impl Session {
             }
             _ => bail!("the user declined"),
         }
+    }
+}
+
+/// Runs a command with the terminal as its stdin and output; Ctrl-C goes to it.
+async fn on_terminal_status(command: &str) -> Result<ExitStatus> {
+    let _lent = lend_terminal();
+    FOREGROUND.store(true, Ordering::Relaxed);
+    let status = tokio::process::Command::new("bash")
+        .args(["-c", command])
+        .status()
+        .await;
+    FOREGROUND.store(false, Ordering::Relaxed);
+    status.context("starting bash")
+}
+
+/// The running clock of a wait, cleared away when dropped.
+struct Clock(JoinHandle<()>);
+
+impl Drop for Clock {
+    fn drop(&mut self) {
+        self.0.abort();
+        eprint!("\r\x1b[2K");
+    }
+}
+
+/// Resolves when Esc is pressed on the terminal; never without one. Until it
+/// is dropped, keys typed meanwhile aren't echoed and are dropped.
+async fn escape() {
+    if !std::io::stdin().is_terminal() {
+        return std::future::pending().await;
+    }
+    let (pressed, rx) = tokio::sync::oneshot::channel();
+    let stop = Arc::new(AtomicBool::new(false));
+    let thread = {
+        let stop = stop.clone();
+        std::thread::spawn(move || {
+            if watch_escape(&stop) {
+                let _ = pressed.send(());
+            }
+        })
+    };
+    let _watching = Watching(stop, Some(thread));
+    if rx.await.is_err() {
+        std::future::pending::<()>().await;
+    }
+}
+
+/// Stops the Esc watcher and waits for it to put the terminal back, so the
+/// next prompt finds it as it was.
+struct Watching(Arc<AtomicBool>, Option<std::thread::JoinHandle<()>>);
+
+impl Drop for Watching {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Relaxed);
+        if let Some(thread) = self.1.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
+/// Reads the terminal a key at a time, without echo, until Esc or `stop`;
+/// whether it was Esc. It lets go while a prompt or command has the terminal.
+fn watch_escape(stop: &AtomicBool) -> bool {
+    let pressed = loop {
+        if stop.load(Ordering::Relaxed) {
+            break false;
+        }
+        let mut saved = SAVED.lock().unwrap_or_else(|e| e.into_inner());
+        if LENT.load(Ordering::Relaxed) {
+            drop(saved);
+            std::thread::sleep(Duration::from_millis(50));
+            continue;
+        }
+        if saved.is_none() {
+            *saved = cbreak();
+            if saved.is_none() {
+                break false;
+            }
+        }
+        let mut fd = libc::pollfd {
+            fd: 0,
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        // SAFETY: one pollfd, and it is valid for the call.
+        if unsafe { libc::poll(&mut fd, 1, 50) } <= 0 {
+            continue;
+        }
+        let mut buf = [0u8; 64];
+        // SAFETY: reads at most buf.len() bytes into buf.
+        let n = unsafe { libc::read(0, buf.as_mut_ptr().cast(), buf.len()) };
+        // Arrow keys start with Esc too, but come with the rest in one read.
+        if n == 1 && buf[0] == 0x1b {
+            break true;
+        }
+        if n <= 0 {
+            drop(saved);
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    };
+    restore_terminal(&mut SAVED.lock().unwrap_or_else(|e| e.into_inner()));
+    pressed
+}
+
+/// Turns off line buffering and echo on the terminal, keeping Ctrl-C and the
+/// output as they are; the settings from before, None if it isn't one.
+fn cbreak() -> Option<libc::termios> {
+    // SAFETY: termios is plain data, filled in by tcgetattr before it is used.
+    let mut old: libc::termios = unsafe { std::mem::zeroed() };
+    // SAFETY: both calls only read or write the termios passed to them.
+    unsafe {
+        if libc::tcgetattr(0, &mut old) != 0 {
+            return None;
+        }
+        let mut new = old;
+        new.c_lflag &= !(libc::ICANON | libc::ECHO);
+        new.c_cc[libc::VMIN] = 1;
+        new.c_cc[libc::VTIME] = 0;
+        if libc::tcsetattr(0, libc::TCSANOW, &new) != 0 {
+            return None;
+        }
+    }
+    Some(old)
+}
+
+fn restore_terminal(saved: &mut Option<libc::termios>) {
+    if let Some(old) = saved.take() {
+        // SAFETY: only reads the termios passed to it.
+        unsafe { libc::tcsetattr(0, libc::TCSANOW, &old) };
+    }
+}
+
+/// Gives the terminal to a prompt or a command that reads it, as it was before
+/// the Esc watcher, until dropped.
+struct Lent;
+
+fn lend_terminal() -> Lent {
+    LENT.store(true, Ordering::Relaxed);
+    restore_terminal(&mut SAVED.lock().unwrap_or_else(|e| e.into_inner()));
+    Lent
+}
+
+impl Drop for Lent {
+    fn drop(&mut self) {
+        LENT.store(false, Ordering::Relaxed);
     }
 }
 
@@ -829,6 +1143,7 @@ fn history_lines(text: &str) -> Vec<String> {
 
 /// A line from stdin after `prompt`; None at end of input. Ctrl-C quits uc.
 fn read_line(prompt: &str) -> Result<Option<String>> {
+    let _lent = lend_terminal();
     let mut editor = EDITOR.lock().unwrap_or_else(|e| e.into_inner());
     if editor.is_none() {
         let mut new = DefaultEditor::new().context("opening the terminal")?;
@@ -893,6 +1208,44 @@ mod tests {
     }
 
     #[test]
+    fn a_command_line_runs_and_a_sentence_goes_to_the_model() {
+        for line in [
+            "ls -al",
+            "git status",
+            "cd ..",
+            "git commit -m 'fix the bug'",
+            "make all",
+            "!yes | head -1",
+        ] {
+            assert!(typed_command(line).is_some(), "{line}");
+        }
+        assert_eq!(typed_command("! ls"), Some("ls"));
+        for line in [
+            "yes",
+            "go ahead",
+            "find the bug in main.rs",
+            "make it faster",
+            "ls?",
+            "fix the tests",
+            "why is it slow",
+            "!",
+        ] {
+            assert!(typed_command(line).is_none(), "{line}");
+        }
+    }
+
+    #[test]
+    fn cd_goes_where_bash_would() {
+        let home = PathBuf::from(std::env::var_os("HOME").unwrap());
+        assert_eq!(cd_target("cd"), Some(home.clone()));
+        assert_eq!(cd_target("cd ~/src"), Some(home.join("src")));
+        assert_eq!(cd_target("cd lib"), Some(PathBuf::from("lib")));
+        assert_eq!(cd_target("cd lib && make"), None);
+        assert_eq!(cd_target("cd $HOME"), None);
+        assert_eq!(cd_target("ls"), None);
+    }
+
+    #[test]
     fn picks_an_option_by_number() {
         let options = ["push it".to_string(), "commit first".to_string()];
         assert_eq!(pick(" 2 ", &options), Pick::Option("commit first".into()));
@@ -951,7 +1304,37 @@ mod tests {
             show_output: false,
             jobs: BTreeMap::new(),
             next_job: 1,
+            waiting: None,
         }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn esc_stops_the_command_and_answers_the_calls_left() {
+        let mut session = session();
+        let id = session.start("sleep 30", false).unwrap();
+        let group = session.jobs[&id].group;
+        session.waiting = Some(id);
+        session
+            .messages
+            .push(json!({"role": "assistant", "tool_calls": [
+                {"id": "a", "function": {"name": "bash"}},
+                {"id": "b", "function": {"name": "bash"}},
+            ]}));
+        session
+            .messages
+            .push(json!({"role": "tool", "tool_call_id": "a", "content": "ok"}));
+        session.stopped();
+        assert!(session.jobs.is_empty());
+        let answers: Vec<_> = session
+            .messages
+            .iter()
+            .filter(|m| m["role"] == "tool")
+            .collect();
+        assert_eq!(answers.len(), 2);
+        assert_eq!(answers[1]["tool_call_id"], "b");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        // SAFETY: signal 0 only checks whether the group still exists.
+        assert_ne!(unsafe { libc::kill(-group, 0) }, 0);
     }
 
     #[tokio::test(flavor = "multi_thread")]

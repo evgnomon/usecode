@@ -17,6 +17,8 @@
 - Search code with `rg` or `git grep`, never `grep -r`: they skip `target/`,
   `node_modules` and other ignored paths, which can hold many gigabytes.
   Piping into `grep -v` hides those lines but still searches all of it.
+- The user can run commands on their terminal themselves by typing them at
+  the prompt; you are told when they did, but not what it printed.
 - The `uc` command line tool is installed (`uc -h` lists its commands).
 
 # Long-running commands

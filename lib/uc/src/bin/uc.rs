@@ -17,16 +17,16 @@ const PREFIX: &str = "uc-";
 /// Short names for commands: `uc ws` is `uc workspace`.
 const ALIASES: &[(&str, &str)] = &[("ws", "workspace")];
 
-/// The agent's options: `uc --ask --output`.
-const CHAT_FLAGS: &[&str] = &["--ask", "--output"];
+/// The agent's options: `uc --ask --output --no-shell`.
+const CHAT_FLAGS: &[&str] = &["--ask", "--output", "--no-shell"];
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let subcommand = match args.first().map(String::as_str) {
-        None => return uc::chat::main(false, false),
+        None => return uc::chat::main(false, false, true),
         Some(_) if args.iter().all(|a| CHAT_FLAGS.contains(&a.as_str())) => {
             let has = |flag: &str| args.iter().any(|a| a == flag);
-            return uc::chat::main(has("--ask"), has("--output"));
+            return uc::chat::main(has("--ask"), has("--output"), !has("--no-shell"));
         }
         Some("help") | Some("-h") | Some("--help") => {
             print_usage();
@@ -57,11 +57,13 @@ fn main() -> ExitCode {
 }
 
 fn print_usage() {
-    println!("Usage: uc [--ask] [--output] | <command> [<args>]\n");
+    println!("Usage: uc [--ask] [--output] [--no-shell] | <command> [<args>]\n");
     println!("With no command, uc is a coding agent: talk to it and it runs commands and");
     println!("edits files for you, through OpenRouter (OPENROUTER_API_KEY, UC_MODEL,");
     println!("UC_EFFORT). It runs them straight away; `uc --ask` confirms each one first.");
-    println!("You see its answers; `uc --output` also shows what the commands print.\n");
+    println!("You see its answers; `uc --output` also shows what the commands print.");
+    println!("A line that is a command, like `ls -al`, runs on the terminal straight");
+    println!("away; `uc --no-shell` sends every line to the model instead.\n");
     let commands = discover();
     if commands.is_empty() {
         println!("No uc commands found on PATH.");
