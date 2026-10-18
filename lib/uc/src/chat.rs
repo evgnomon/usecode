@@ -4,7 +4,9 @@
 //! `uc` with no command: a coding agent on the terminal.
 //!
 //! Each line typed goes to a model on OpenRouter, which answers or asks to
-//! run a shell command, read, write or edit a file in the current directory.
+//! run a shell command, read, write or edit a file in the current directory,
+//! search the web (DuckDuckGo's HTML page, no key) or read a page (rendered by
+//! Cloudflare when `CLOUDFLARE_ACCOUNT_ID` is set, else fetched as is).
 //! Commands, writes and edits are shown and run straight away; with `--ask`
 //! they are confirmed first (`a` allows the rest of the session, a line ending
 //! in `-y` allows what its answer does). Deleting files is always confirmed.
@@ -14,8 +16,9 @@
 //! (`ls -al`, `git status`, or anything after `!`) runs on the terminal
 //! straight away, with the same confirmations, and the model is told it ran;
 //! the user's bash aliases and functions work there too;
-//! `--no-shell` sends every line to the model. Esc stops the model, and the
-//! command it is waiting on, and goes back to the prompt.
+//! `--no-shell` sends every line to the model. Esc or Ctrl-C stops the model,
+//! and the command it is waiting on, and goes back to the prompt; Ctrl-C at
+//! the prompt quits.
 //! What the model is told about all this is the main skill, `chat/main.md`, always in its system prompt. The key comes from
 //! `OPENROUTER_API_KEY`, the model from `UC_MODEL`, the reasoning effort from
 //! `UC_EFFORT`.
@@ -40,6 +43,9 @@ use tokio::task::JoinHandle;
 const API: &str = "https://openrouter.ai/api/v1/chat/completions";
 const DEFAULT_MODEL: &str = "deepseek/deepseek-v4.1-flash";
 const DEFAULT_EFFORT: &str = "high";
+const DUCKDUCKGO: &str = "https://html.duckduckgo.com/html/";
+/// How long a search or a page may take.
+const WEB_TIMEOUT: Duration = Duration::from_secs(60);
 /// Tool output beyond this is cut, so one noisy command can't fill the context.
 const MAX_OUTPUT: usize = 30_000;
 /// How long bash waits before a command carries on as a job.
@@ -66,6 +72,12 @@ const PROSE: &[&str] = &[
 
 /// A command runs on the terminal: Ctrl-C stops it, not uc.
 static FOREGROUND: AtomicBool = AtomicBool::new(false);
+
+/// The model is working on a line: Ctrl-C stops it, like Esc, not uc.
+static BUSY: AtomicBool = AtomicBool::new(false);
+
+/// Told when Ctrl-C stops the model.
+static STOP: tokio::sync::Notify = tokio::sync::Notify::const_new();
 
 /// A prompt or a command has the terminal: Esc isn't watched for.
 static LENT: AtomicBool = AtomicBool::new(false);
@@ -255,6 +267,10 @@ async fn run(ask: bool, output: bool, shell: bool) -> Result<()> {
             if FOREGROUND.load(Ordering::Relaxed) {
                 continue;
             }
+            if BUSY.load(Ordering::Relaxed) {
+                STOP.notify_waiters();
+                continue;
+            }
             stop_jobs();
             restore_terminal(&mut SAVED.lock().unwrap_or_else(|e| e.into_inner()));
             eprintln!();
@@ -286,10 +302,19 @@ async fn run(ask: bool, output: bool, shell: bool) -> Result<()> {
                 }
             }
         };
+        let ctrl_c = STOP.notified();
+        tokio::pin!(ctrl_c);
+        ctrl_c.as_mut().enable();
+        BUSY.store(true, Ordering::Relaxed);
         let (done, stopped) = tokio::select! {
-            done = work => (done, false),
+            done = work => match done {
+                Err(err) if err.is::<Stopped>() => (Ok(()), true),
+                done => (done, false),
+            },
             () = escape() => (Ok(()), true),
+            () = ctrl_c => (Ok(()), true),
         };
+        BUSY.store(false, Ordering::Relaxed);
         if stopped {
             eprintln!("\r\x1b[2K· stopped");
             session.stopped();
@@ -601,6 +626,22 @@ fn tools() -> Value {
             &["question"],
         ),
         tool(
+            "web_search",
+            "Search the web; returns each result's title, URL and snippet.",
+            json!({
+                "query": string("what to search for"),
+                "count": integer("how many results, up to 10; 10 if left out"),
+            }),
+            &["query"],
+        ),
+        tool(
+            "fetch_url",
+            "Load a web page and return it as text, rendered in a browser so pages built by \
+             JavaScript work too; links are listed at the end.",
+            json!({"url": string("the page's http or https URL")}),
+            &["url"],
+        ),
+        tool(
             "read_file",
             "Read a text file.",
             json!({"path": string("the file's path")}),
@@ -717,6 +758,11 @@ impl Session {
                     .collect();
                 ask_user(&arg("question"), &options)
             }
+            "web_search" => {
+                let count = number("count").unwrap_or(10).clamp(1, 10);
+                web_search(&arg("query"), count).await
+            }
+            "fetch_url" => fetch_url(&arg("url")).await,
             "read_file" => {
                 eprintln!("· read {}", arg("path"));
                 std::fs::read_to_string(arg("path")).context("reading the file")
@@ -1240,7 +1286,20 @@ fn history_lines(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// A line from stdin after `prompt`; None at end of input. Ctrl-C quits uc.
+/// Ctrl-C at a question the model asked: it stops the model, like Esc.
+#[derive(Debug)]
+struct Stopped;
+
+impl std::fmt::Display for Stopped {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("stopped")
+    }
+}
+
+impl std::error::Error for Stopped {}
+
+/// A line from stdin after `prompt`; None at end of input. Ctrl-C quits uc,
+/// or stops the model when it is working on a line.
 fn read_line(prompt: &str) -> Result<Option<String>> {
     let _lent = lend_terminal();
     let mut editor = EDITOR.lock().unwrap_or_else(|e| e.into_inner());
@@ -1258,12 +1317,172 @@ fn read_line(prompt: &str) -> Result<Option<String>> {
     match editor.as_mut().map(|e| e.readline(prompt)) {
         Some(Ok(line)) => Ok(Some(line)),
         Some(Err(ReadlineError::Eof)) => Ok(None),
+        Some(Err(ReadlineError::Interrupted)) if BUSY.load(Ordering::Relaxed) => {
+            Err(Stopped.into())
+        }
         Some(Err(ReadlineError::Interrupted)) => {
             stop_jobs();
             std::process::exit(130);
         }
         Some(Err(err)) => Err(err).context("reading stdin"),
         None => Ok(None),
+    }
+}
+
+/// An environment variable, if it is set to something.
+fn env(name: &str) -> Option<String> {
+    std::env::var(name)
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+}
+
+/// DuckDuckGo's results for `query`, read off its HTML page: no key needed,
+/// up to 10 results, the first page.
+async fn web_search(query: &str, count: u64) -> Result<String> {
+    eprintln!("· search {query}");
+    let response = client()
+        .get(DUCKDUCKGO)
+        .header("User-Agent", "Mozilla/5.0")
+        .query(&[("q", query)])
+        .timeout(WEB_TIMEOUT)
+        .send()
+        .await
+        .context("calling DuckDuckGo")?;
+    let status = response.status();
+    let page = response.text().await.context("reading DuckDuckGo's page")?;
+    // A busy IP gets a challenge page instead of results, with a 202.
+    if page.contains("anomaly-modal") {
+        bail!("DuckDuckGo is limiting this IP for now; try again in a few minutes");
+    }
+    if status != reqwest::StatusCode::OK {
+        bail!("DuckDuckGo: {status}");
+    }
+    Ok(search_results(&page, count as usize))
+}
+
+/// The results on DuckDuckGo's HTML page as text, ads left out.
+fn search_results(page: &str, count: usize) -> String {
+    let results: Vec<String> = page
+        .split(r#"class="result__a""#)
+        .skip(1)
+        .filter_map(|result| {
+            let href = between(result, r#"href=""#, "\"")?;
+            let url = result_url(href)?;
+            let title = between(result, ">", "</a>")?;
+            let snippet = between(result, r#"class="result__snippet""#, "</a>")
+                .and_then(|s| s.split_once('>'))
+                .map_or("", |(_, s)| s);
+            Some(format!("{}\n{url}\n{}", html_text(title), html_text(snippet)))
+        })
+        .take(count)
+        .collect();
+    if results.is_empty() {
+        return "no results".to_string();
+    }
+    results.join("\n\n")
+}
+
+/// The text between the first `start` and the `end` after it.
+fn between<'a>(s: &'a str, start: &str, end: &str) -> Option<&'a str> {
+    let (_, rest) = s.split_once(start)?;
+    rest.split_once(end).map(|(inner, _)| inner)
+}
+
+/// Where a result's link goes: DuckDuckGo sends it through `/l/?uddg=`; ads
+/// go through `y.js` and are left out.
+fn result_url(href: &str) -> Option<String> {
+    let href = href.replace("&amp;", "&");
+    let url = reqwest::Url::parse(&href)
+        .or_else(|_| reqwest::Url::parse(&format!("https:{href}")))
+        .ok()?;
+    if url.path().ends_with("y.js") {
+        return None;
+    }
+    match url.query_pairs().find(|(k, _)| k == "uddg") {
+        Some((_, target)) => Some(target.into_owned()),
+        None => Some(url.to_string()),
+    }
+}
+
+/// An HTML fragment as plain text: tags gone, entities decoded.
+fn html_text(html: &str) -> String {
+    html2text::config::plain_no_decorate()
+        .string_from_read(html.as_bytes(), usize::MAX)
+        .unwrap_or_else(|_| html.to_string())
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// The page as markdown from Cloudflare's headless browser when
+/// `CLOUDFLARE_ACCOUNT_ID` and a token are set, else fetched and turned into
+/// text here, without running its JavaScript.
+async fn fetch_url(url: &str) -> Result<String> {
+    eprintln!("· fetch {url}");
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        bail!("only http and https URLs can be fetched");
+    }
+    let mut note = String::new();
+    if let (Some(account), Some(token)) = (
+        env("CLOUDFLARE_ACCOUNT_ID"),
+        env("CLOUDFLARE_BROWSER_TOKEN").or_else(|| env("CLOUDFLARE_API_TOKEN")),
+    ) {
+        match render(url, &account, &token).await {
+            Ok(markdown) => return Ok(markdown),
+            Err(err) => note = format!("[not rendered, {err:#}; fetched without JavaScript]\n\n"),
+        }
+    }
+    let response = client()
+        .get(url)
+        .header("User-Agent", "Mozilla/5.0 (compatible; uc)")
+        .timeout(WEB_TIMEOUT)
+        .send()
+        .await
+        .context("fetching the page")?;
+    let status = response.status();
+    let html = response
+        .headers()
+        .get("content-type")
+        .and_then(|t| t.to_str().ok())
+        .is_none_or(|t| t.contains("html"));
+    let body = response.bytes().await.context("reading the page")?;
+    if !status.is_success() {
+        note.push_str(&format!("[HTTP {status}]\n\n"));
+    }
+    let text = if html {
+        html2text::from_read(&body[..], 100).context("reading the page's HTML")?
+    } else {
+        String::from_utf8_lossy(&body).into_owned()
+    };
+    Ok(note + &text)
+}
+
+/// Cloudflare Browser Rendering's markdown of the page.
+async fn render(url: &str, account: &str, token: &str) -> Result<String> {
+    let response = client()
+        .post(format!(
+            "https://api.cloudflare.com/client/v4/accounts/{account}/browser-rendering/markdown"
+        ))
+        .bearer_auth(token)
+        .json(&json!({"url": url}))
+        .timeout(WEB_TIMEOUT)
+        .send()
+        .await
+        .context("calling Cloudflare")?;
+    let status = response.status();
+    let value: Value = response
+        .json()
+        .await
+        .context("reading Cloudflare's reply")?;
+    match value["result"].as_str() {
+        Some(markdown) if value["success"] == true => Ok(markdown.to_string()),
+        _ => {
+            let msg = value["errors"][0]["message"]
+                .as_str()
+                .unwrap_or("no message");
+            bail!("Cloudflare: {status}: {msg}")
+        }
     }
 }
 
@@ -1290,6 +1509,30 @@ mod tests {
         assert!(cut.ends_with("[output cut]"));
         assert!(cut.len() <= MAX_OUTPUT + "\n[output cut]".len());
         assert_eq!(truncate("short".into()), "short");
+    }
+
+    #[test]
+    fn lists_search_results_as_text() {
+        let page = r#"<div class="result">
+            <a rel="nofollow" class="result__a" href="//duckduckgo.com/y.js?ad_domain=x.com&amp;u3=1">Ad</a>
+            <a class="result__snippet" href="//duckduckgo.com/y.js">Buy</a>
+          </div><div class="result">
+            <a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.rust%2Dlang.org%2F&amp;rut=e4">Rust</a>
+            <a class="result__url" href="//duckduckgo.com/l/?uddg=x">rust-lang.org</a>
+            <a class="result__snippet" href="//duckduckgo.com/l/?uddg=x">A language empowering <b>everyone</b> &amp; more</a>
+          </div><div class="result">
+            <a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fdoc.rust-lang.org%2Fbook%2F">The Book</a>
+          </div>"#;
+        assert_eq!(
+            search_results(page, 10),
+            "Rust\nhttps://www.rust-lang.org/\nA language empowering everyone & more\n\n\
+             The Book\nhttps://doc.rust-lang.org/book/\n"
+        );
+        assert_eq!(
+            search_results(page, 1),
+            "Rust\nhttps://www.rust-lang.org/\nA language empowering everyone & more"
+        );
+        assert_eq!(search_results("<html></html>", 10), "no results");
     }
 
     #[test]

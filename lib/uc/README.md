@@ -46,7 +46,8 @@ the same confirmations; a line that reads like a sentence goes to the model,
 and `!` in front makes anything a command. `uc --no-shell` turns that off and sends every line to the model.
 Up and Down bring back what you typed before, even in an earlier session,
 and Ctrl-R finds it with fzf, just like in bash. Changed your mind while it
-works? Esc stops it, and whatever it was running, and you're back at the prompt.
+works? Esc or Ctrl-C stops it, and whatever it was running, and you're back at
+the prompt; Ctrl-C at the prompt leaves uc.
 
 ```sh
 export OPENROUTER_API_KEY=sk-or-...           # https://openrouter.ai/keys
@@ -56,6 +57,17 @@ uc --output                                   # also show what the commands prin
 uc --no-shell                                 # every line goes to the model
 UC_MODEL=openai/gpt-5 uc                      # any OpenRouter model
 UC_EFFORT=medium uc                           # low, medium or high reasoning
+```
+
+It can look things up on the web too, so it isn't stuck with what the model
+knew when it was trained. It searches DuckDuckGo, no key needed, and
+reads pages; with a Cloudflare account it reads them rendered in a real
+browser, so pages built by JavaScript come through as clean
+markdown instead of an empty shell:
+
+```sh
+export CLOUDFLARE_ACCOUNT_ID=...               # optional: render pages first
+export CLOUDFLARE_BROWSER_TOKEN=...            # Browser Rendering: Edit; else CLOUDFLARE_API_TOKEN
 ```
 
 `uc -h` (or `uc help`) lists the commands.
