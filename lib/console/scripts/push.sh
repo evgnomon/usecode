@@ -8,12 +8,13 @@
 #
 #   push.sh <local image> <tag> [registry host]
 #
-# Without a registry host it's the one the registry's Ingress answers on.
+# The registry host comes from CONTAINER_REGISTRY (or REGISTRY); without one
+# it's the one the registry's Ingress answers on.
 set -euo pipefail
 
 image=$1
 tag=$2
-registry=${3:-$(kubectl -n registry get ingress registry -o jsonpath='{.spec.rules[0].host}')}
+registry=${3:-${CONTAINER_REGISTRY:-${REGISTRY:-$(kubectl -n registry get ingress registry -o jsonpath='{.spec.rules[0].host}')}}}
 secret() {
   kubectl -n registry get secret registry-auth -o "jsonpath={.data.$1}" | base64 -d
 }

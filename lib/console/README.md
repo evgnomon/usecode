@@ -47,21 +47,21 @@ with `checkout.session.completed` and `customer.subscription.created`,
 
 ## Ship it
 
-Three steps, from a clean checkout to the live site:
+Set `CONTAINER_REGISTRY` once in `~/.bashrc.d/usecode.sh` (see below) and
+your kube context on the cluster; then, from this directory:
 
 ```sh
-make image                       # build localhost/usecode-console:<git sha>
-make push REGISTRY=registry.example.com   # push as :<sha> and :latest
+make image                          # build localhost/usecode-console:<git sha>
+make push                           # push as :<sha> and :latest
 kubectl -n console set image deploy/console \
-  console=registry.example.com/usecode-console:<sha> && \
+  console=$CONTAINER_REGISTRY/usecode-console:$(git rev-parse --short HEAD) && \
   kubectl -n console rollout status deploy/console
 ```
 
-`make push` logs podman in to the registry with the login the cluster keeps
-in the `registry-auth` secret (namespace `registry`) and pushes `<sha>` and
-`latest`. The registry host is normally read from the `registry` Ingress;
-if your registry answers on a name without that Ingress, pass
-`REGISTRY=<host>` as above.
+`make push` reads the registry host from `CONTAINER_REGISTRY` (falling back
+to the `registry` Ingress's host if it's unset), logs podman in with the
+login the cluster keeps in the `registry-auth` secret (namespace `registry`)
+and pushes `<sha>` and `latest`.
 
 `kubectl set image` does the deploy itself: change the image tag to the sha
 you just pushed, and `rollout status` waits until the new replicas are
@@ -71,7 +71,7 @@ is prerendered, so new copy and fonts show straight away) or
 
 Alternatively `uc kube sync -t console` reconciles the whole role — image,
 Postgres, Ingress, certificate — and pins a build with
-`-e console_image=<registry_host>/usecode-console:<sha>`.
+`-e console_image=$CONTAINER_REGISTRY/usecode-console:<sha>`.
 
 The `console` role runs it next to its own Postgres on a Hetzner Volume,
 behind Traefik with a Let's Encrypt certificate, on the name your config

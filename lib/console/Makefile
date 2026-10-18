@@ -3,7 +3,9 @@
 
 IMAGE ?= localhost/usecode-console
 # The cluster's registry, else the one its `registry` Ingress answers on.
-REGISTRY ?=
+# CONTAINER_REGISTRY: where `make push` sends the image. Falls back to the
+# registry Ingress's host, or the legacy REGISTRY variable.
+REGISTRY ?= $(CONTAINER_REGISTRY)
 TAG ?= $(shell git rev-parse --short HEAD)
 PORT ?= 8080
 TEST_DB_PORT ?= 55432
