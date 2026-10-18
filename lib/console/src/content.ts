@@ -60,24 +60,6 @@ export const MOTIVATION = {
   tagline: "Use code!",
   journeys: [
     {
-      from: "From prompt to app,",
-      without: "without rebuilding the stack.",
-      prompt: "build a guestbook and put it online",
-      steps: ["Wrote app/ and its tests, 14 passing", "Built ghcr.io/you/guestbook:1", "Deployed to the cluster, 2 replicas", "Live at guestbook.you.dev"],
-    },
-    {
-      from: "From laptop to cluster,",
-      without: "without rewriting the deploy.",
-      prompt: "move this from my laptop to the cluster",
-      steps: ["Read the compose file, 3 services", "Same images, now as Deployments", "Volumes moved to RustFS", "Running on 3 nodes"],
-    },
-    {
-      from: "From one container to many pods,",
-      without: "without re-solving scale.",
-      prompt: "it's slow at lunch, scale it",
-      steps: ["p95 at 1.8s, CPU-bound", "Autoscaling 2 to 12 pods", "Load spread across 3 nodes", "p95 back to 120ms"],
-    },
-    {
       from: "From one agent to a team,",
       without: "without relearning what’s known.",
       prompt: "give the new agent what we know",
