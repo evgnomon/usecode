@@ -63,11 +63,19 @@ Rather talk than type? Hold Space at an empty prompt and say it: it
 listens while you hold, and when you let go what you said is written out and
 sent, just as if you had typed it. A quick tap still types a space, and any
 other key while it listens cancels. It records from PulseAudio or PipeWire,
-whichever you run, and OpenRouter turns your voice into text with the same key:
+whichever you run, and OpenRouter turns your voice into text with the same key.
+It transcribes with MAI-Transcribe 2, the best of the engines at a short
+command and a tenth of GPT-4o Transcribe's price, and sends the names of your
+repositories and commands along as words to expect, so `kubectl`, `fzf` and
+`usecode` come out right; word by word rather than as a block, so a word the
+engine is unsure of, or a recording that was only a cough, is dropped instead
+of sent:
 
 ```sh
-UC_VOICE_MODEL=openai/whisper-1 uc            # gpt-4o-transcribe unless you pick another
-UC_VOICE_LANGUAGE=de uc                       # guessed from what you say if unset
+UC_VOICE_MODEL=openai/gpt-transcribe uc       # MAI-Transcribe 2 unless you pick another
+UC_VOICE_LANGUAGE=de uc                       # the language your locale is in, if unset
+UC_VOICE_TERMS="idempotent, nexus, syllabub"  # words to expect, on top of the ones it finds
+UC_VOICE_TERMS=0 uc                           # send none of them
 ```
 
 It can look things up on the web too, so it isn't stuck with what the model
