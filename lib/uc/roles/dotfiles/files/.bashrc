@@ -15,7 +15,7 @@ BLUE="\[\e[34m\]"    # Blue for path
 GREEN="\[\e[32m\]"   # Green for Git branch
 RED="\[\e[31m\]"
 RESET="\[\e[0m\]"    # Reset color
-ORANGE='\[\033[38;5;208m\]'
+FG='\[\033[38;2;235;219;178m\]' # Gruvbox fg #ebdbb2
 
 
 # check the window size after each command and, if necessary,
@@ -117,7 +117,7 @@ if [ "$(id -u)" -eq 0 ]; then
 elif [ "$(hostname)" = "shadow" ]; then
   export PS1="${BLUE}₿ ${RESET}"
 else
-  export PS1="${ORANGE}₿ ${RESET}"
+  export PS1="${FG}₿ ${RESET}"
 fi
 
 

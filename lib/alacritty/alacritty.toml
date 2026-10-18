@@ -27,6 +27,10 @@ bold = { family = "CaskaydiaMono NFM", style = "Bold" }
 italic = { family = "CaskaydiaMono NFM", style = "Italic" }
 bold_italic = { family = "CaskaydiaMono NFM", style = "Bold Italic" }
 
+[selection]
+# Selecting with the left mouse button copies to the clipboard too.
+save_to_clipboard = true
+
 [cursor]
 style = { shape = "Block", blinking = "Never" }
 
