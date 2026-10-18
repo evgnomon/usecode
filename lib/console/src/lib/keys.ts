@@ -29,7 +29,6 @@ export const HOTKEYS: Hotkey[] = [
   { key: "l", label: "Log in", href: "/login" },
   { key: "s", label: "Sign up", href: "/signup" },
   { key: "t", label: "Theme" },
-  { key: "d", label: "Design", href: "/design" },
 ];
 
 /** True when a keypress would be typed rather than pressed, so no shortcut takes it. */

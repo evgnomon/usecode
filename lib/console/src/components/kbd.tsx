@@ -15,7 +15,7 @@ export function Kbd({ children, className }: { children: ReactNode; className?: 
     <kbd
       aria-hidden="true"
       className={cn(
-        "inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-[3px] border border-border-strong/70 bg-card px-1 font-sans text-[9px] leading-none font-normal text-muted-foreground",
+        "inline-flex h-3.5 min-w-3.5 items-center justify-center border border-border-strong/70 bg-card px-1 font-sans text-[9px] leading-none font-normal text-muted-foreground",
         className,
       )}
     >
@@ -29,7 +29,7 @@ export function KeyLegend({ k, className }: { k: string; className?: string }) {
   return (
     <Kbd
       className={cn(
-        "-my-1 h-3 min-w-3 rounded-[2px] px-0.5 text-[8px]",
+        "-my-1 h-3 min-w-3 px-0.5 text-[8px]",
         className,
       )}
     >

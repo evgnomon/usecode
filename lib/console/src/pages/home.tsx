@@ -5,20 +5,31 @@ import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { KeyLegend } from "@/components/kbd";
-import { Activity, type Line } from "@/components/console";
 import { Journeys } from "@/components/journeys";
 import { Section } from "@/components/layout";
-import { FAQS, FEATURES, MOTIVATION, REPO_URL, STEPS } from "@/content";
+import { FAQS, FEATURES, MOTIVATION, REPO_URL, STEPS, TOOLS } from "@/content";
 import { useMe } from "@/lib/api";
 import { Link } from "@/lib/router";
 
-// What the agent sounds like while it works, newest first.
-const HERO_FEED: Line[] = [
-  { at: "14:02:31", text: "Joining node-04 to the mesh…", state: "reconciling" },
-  { at: "14:02:09", text: "Ingress enabled, routes applied", state: "settled" },
-  { at: "13:58:44", text: "node-02 drifted, kubelet put back", state: "settled" },
-  { at: "13:41:17", text: "All 3 nodes match what you asked for", state: "settled" },
-];
+/** The uc commands the agent reaches for, in a terminal frame. */
+function Toolbox() {
+  return (
+    <div className="border bg-background font-mono text-xs leading-normal">
+      <div className="flex items-center justify-between border-b px-4 py-2 text-muted-foreground">
+        <span>$ uc help</span>
+        <span>one tool, the whole team</span>
+      </div>
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 px-4 py-3">
+        {TOOLS.map((t) => (
+          <div key={t.cmd} className="contents">
+            <dt className="text-primary">{t.cmd}</dt>
+            <dd className="text-muted-foreground">{t.does}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
 
 export function Faqs() {
   return (
@@ -28,7 +39,7 @@ export function Faqs() {
         {/* <details> rather than an accordion, so the answers are in the page's HTML for anything reading it. */}
         {FAQS.map((f) => (
           <details key={f.q} className="group border-b">
-            <summary className="flex cursor-pointer list-none items-start justify-between gap-4 rounded-md py-4 text-sm font-medium outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 [&::-webkit-details-marker]:hidden">
+            <summary className="flex cursor-pointer list-none items-start justify-between gap-4 py-4 text-sm font-medium outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 [&::-webkit-details-marker]:hidden">
               {f.q}
               <ChevronDown className="pointer-events-none size-4 shrink-0 translate-y-0.5 text-muted-foreground transition-transform duration-200 group-open:rotate-180" />
             </summary>
@@ -71,6 +82,7 @@ export function Home() {
           <div>
             <h2 className="mb-4 text-[clamp(22px,3.4vw,28px)] leading-[1.2] tracking-[-0.02em]">{MOTIVATION.close}</h2>
             <p className="mb-4 max-w-[60ch] text-base text-muted-foreground">{MOTIVATION.body}</p>
+            <p className="mb-4 max-w-[60ch] text-base">{MOTIVATION.team}</p>
             <p className="mb-4 text-base font-semibold">{MOTIVATION.ship}</p>
             <p className="max-w-[60ch] text-base text-muted-foreground">
               usecode is open source and freely distributed.{" "}
@@ -80,19 +92,23 @@ export function Home() {
               .
             </p>
           </div>
-          <Activity lines={HERO_FEED} />
+          <Toolbox />
         </div>
       </Section>
       <Section>
-        <div className="wrap grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {FEATURES.map((f) => (
-            <Card key={f.title} className="gap-2 rounded-lg py-5 shadow-none">
-              <CardContent className="px-5">
-                <h3 className="mb-2">{f.title}</h3>
-                <p className="text-[13px] text-muted-foreground">{f.body}</p>
-              </CardContent>
-            </Card>
-          ))}
+        <div className="wrap">
+          <h2 className="mb-6 text-base">What you get</h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {FEATURES.map((f) => (
+              <Card key={f.title} className="gap-2 py-5 shadow-none">
+                <CardContent className="px-5">
+                  <span className="mb-3 inline-block border px-1.5 font-mono text-[11px] text-muted-foreground">{f.tag}</span>
+                  <h3 className="mb-2">{f.title}</h3>
+                  <p className="text-[13px] text-muted-foreground">{f.body}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         </div>
       </Section>
       <Section className="border-y bg-card">
@@ -101,7 +117,7 @@ export function Home() {
           <ol className="grid gap-6 sm:grid-cols-3">
             {STEPS.map((s, i) => (
               <li key={s.title}>
-                <span className="mb-3 inline-grid size-6 place-items-center rounded-full border border-border-strong font-mono text-xs text-muted-foreground">
+                <span className="mb-3 inline-grid size-6 place-items-center border border-border-strong font-mono text-xs text-muted-foreground">
                   {i + 1}
                 </span>
                 <h3 className="mb-1">{s.title}</h3>

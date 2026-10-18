@@ -6,7 +6,6 @@ import { Layout } from "@/components/layout";
 import { useLocation, useTitle } from "@/lib/router";
 import { Account } from "@/pages/account";
 import { AuthForm } from "@/pages/auth";
-import { Design } from "@/pages/design";
 import { Home } from "@/pages/home";
 import { NotFound } from "@/pages/not-found";
 import { Pricing } from "@/pages/pricing";
@@ -22,8 +21,6 @@ export interface Page {
 export const PAGES: Record<string, Page> = {
   "/": { title: "usecode.dev, container for agents", render: () => <Home />, prerender: true },
   "/pricing": { title: "Pricing · usecode.dev", render: () => <Pricing />, prerender: true },
-  // Radix's switch and progress style themselves inline, which the CSP only lets scripts do.
-  "/design": { title: "Theme · usecode.dev", render: () => <Design /> },
   "/login": { title: "Log in · usecode.dev", render: () => <AuthForm key="login" mode="login" /> },
   "/signup": { title: "Sign up · usecode.dev", render: () => <AuthForm key="signup" mode="signup" /> },
   "/account": { title: "Your account · usecode.dev", render: () => <Account /> },

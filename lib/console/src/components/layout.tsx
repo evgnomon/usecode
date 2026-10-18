@@ -102,15 +102,9 @@ function Footer() {
     <footer className="border-t py-5 text-xs">
       <div className="wrap flex flex-wrap justify-between gap-4">
         <span className="text-muted-foreground">usecode, container for agents</span>
-        <span>
-          <Link href="/design" className="text-primary hover:underline">
-            Theme
-          </Link>
-          <span className="text-muted-foreground"> · </span>
-          <a href={REPO_URL} className="text-primary hover:underline">
-            Source on GitHub
-          </a>
-        </span>
+        <a href={REPO_URL} className="text-primary hover:underline">
+          Source on GitHub
+        </a>
       </div>
       {/* The keys, listed on the bottom of the page where they'll be looked for. */}
       <div className="wrap mt-3 flex flex-wrap gap-x-4 gap-y-1">

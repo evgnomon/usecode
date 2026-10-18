@@ -20,7 +20,7 @@ import type { Sql } from "./db.js";
 type Env = { Variables: { user: auth.User | null } };
 
 /** The pages the app in src/ has; any other path gets it with a 404. */
-export const PAGES = ["/", "/pricing", "/login", "/signup", "/account", "/design"];
+export const PAGES = ["/", "/pricing", "/login", "/signup", "/account"];
 
 /** Failed logins per email, so a password can't be guessed at speed. */
 export class Limiter {

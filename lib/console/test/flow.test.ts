@@ -98,7 +98,7 @@ function webhook(event: unknown, secret = "whsec_test") {
 
 test("the pages and their files are served", { skip: !url }, async () => {
   const get = browser();
-  for (const path of ["/pricing", "/login", "/signup", "/design"]) {
+  for (const path of ["/pricing", "/login", "/signup"]) {
     const res = await get(path);
     assert.equal(res.status, 200, path);
     assert.match(await res.text(), /<title>console<\/title>/, path);

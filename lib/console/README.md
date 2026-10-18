@@ -90,8 +90,7 @@ The account and login pages stay browser-only.
 
 The look is one set of tokens in `src/index.css`, light and dark, mapped
 onto shadcn/ui's variables, so a component from `npx shadcn add <name>`
-picks the theme up as it is. `/design` shows all of it: the tokens, the
-status pills, and example screens of a cluster with a node joining, an
-option being applied and a node that drifted. The console's pieces
+picks the theme up as it is. Corners are square everywhere (`--radius: 0`).
+The console's pieces
 (`NodeRow`, `OptionRow`, `Activity`, ...) are in `src/components/console.tsx`
 and shadcn's own are in `src/components/ui/`.

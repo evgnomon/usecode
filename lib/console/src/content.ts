@@ -142,47 +142,70 @@ export const MOTIVATION = {
     "The agent writes the code, tests it, builds it, deploys it, and patches " +
     "it when something breaks. usecode is where all of it runs, on any node, " +
     "anywhere, configured the way you need it or the way that works best.",
+  team:
+    "Every tool for that job is already in uc, one command line that you, " +
+    "your team and your agents share. What one of you works out, the next " +
+    "one simply runs.",
   ship: "The agent builds. You watch it ship.",
 };
 
+/** A few of uc's commands, shown in the hero's terminal frame. */
+export const TOOLS = [
+  { cmd: "uc vm", does: "machines on your box or in a cloud" },
+  { cmd: "uc net", does: "a private mesh, VPNs and DNS" },
+  { cmd: "uc kube", does: "Kubernetes on your hosts" },
+  { cmd: "uc image", does: "build, move and run images" },
+  { cmd: "uc db", does: "databases, ready to use" },
+  { cmd: "uc mail", does: "your own mail server" },
+  { cmd: "uc secret", does: "secrets, kept encrypted" },
+  { cmd: "uc ws", does: "a dev container for each of you" },
+];
+
 export const FEATURES = [
   {
+    tag: "uc",
+    title: "Every tool, one command",
+    body:
+      "Machines, networks, Kubernetes, images, DNS, mail, storage, databases " +
+      "and secrets, all behind uc. Your agent doesn't have to glue five " +
+      "vendors together; it just runs the next command.",
+  },
+  {
+    tag: "team",
+    title: "Built for a team",
+    body:
+      "You and your agents use the same uc, on the same nodes, each with keys " +
+      "of your own. What one of you sets up is there for everyone else, so " +
+      "nobody works it out twice.",
+  },
+  {
+    tag: "nodes",
     title: "Bring any node",
     body:
-      "A box under your desk, a VPS, a rack in a shop, or the nodes of your " +
-      "Kubernetes cluster. Each one runs one small daemon, usecoded, and " +
-      "that's all it needs.",
+      "A box under your desk, a VPS, a rack in a shop or a cloud VM. Each one " +
+      "runs one small daemon, usecoded, and that's all it needs.",
   },
   {
-    title: "We keep an eye on them",
-    body:
-      "usecode.dev supervises your nodes around the clock. When something " +
-      "drifts, a service stops or a node falls behind, it nudges things back " +
-      "the right way, so you don't have to notice first.",
-  },
-  {
+    tag: "mesh",
     title: "A private network between them",
     body:
       "Your nodes join a WireGuard mesh, so they talk to each other privately " +
       "wherever they are: at home, at the edge or in a cloud.",
   },
   {
-    title: "Your agents get the keys",
+    tag: "watch",
+    title: "Looked after around the clock",
     body:
-      "Hand your AI agent an API key and it can reach your machines, run " +
-      "tools and spin up what it needs, in the sentence you already typed.",
+      "usecode.dev keeps an eye on your nodes. When something drifts or a " +
+      "service stops, it puts things back the right way, so you don't have " +
+      "to notice first.",
   },
   {
-    title: "Open source, freely distributed",
+    tag: "open",
+    title: "Open source, no node meter",
     body:
-      "usecode is open source and freely distributed under the HGL General " +
-      "License, so you can read the code, run it and share it.",
-  },
-  {
-    title: "Free for you, no node meter",
-    body:
-      "Your own account costs nothing, whether you add two nodes or two " +
-      "hundred. Teams pay per person, never per node.",
+      "usecode is open source and freely distributed. Your own account is " +
+      "free with two nodes or two hundred; teams pay per person, never per node.",
   },
 ];
 
