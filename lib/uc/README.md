@@ -44,7 +44,7 @@ Type a command like `ls -al` or `git status` and it just runs on your
 terminal, like in a shell (`cd` and your bash aliases and functions too), with
 the same confirmations; a line that reads like a sentence goes to the model,
 and `!` in front makes anything a command. `uc --no-shell` turns that off and sends every line to the model.
-Up and Down bring back what you typed before, even in an earlier session,
+Up and Down bring back what you typed before, in uc or in bash, even in an earlier session,
 and Ctrl-R finds it with fzf, just like in bash. Changed your mind while it
 works? Esc or Ctrl-C stops it, and whatever it was running, and you're back at
 the prompt; Ctrl-C at the prompt leaves uc.
@@ -59,13 +59,28 @@ UC_MODEL=openai/gpt-5 uc                      # any OpenRouter model
 UC_EFFORT=medium uc                           # low, medium or high reasoning
 ```
 
-It can look things up on the web too, so it isn't stuck with what the model
-knew when it was trained. It searches DuckDuckGo, no key needed, and
-reads pages; with a Cloudflare account it reads them rendered in a real
-browser, so pages built by JavaScript come through as clean
-markdown instead of an empty shell:
+Rather talk than type? Hold Space at an empty prompt and say it: it
+listens while you hold, and when you let go what you said is written out and
+sent, just as if you had typed it. A quick tap still types a space, and any
+other key while it listens cancels. It records from PulseAudio or PipeWire,
+whichever you run, and OpenRouter turns your voice into text with the same key:
 
 ```sh
+UC_VOICE_MODEL=openai/whisper-1 uc            # gpt-4o-transcribe unless you pick another
+UC_VOICE_LANGUAGE=de uc                       # guessed from what you say if unset
+```
+
+It can look things up on the web too, so it isn't stuck with what the model
+knew when it was trained. It searches DuckDuckGo, no key needed, or
+Parallel or Exa if you have a key, which tend to find better pages for a
+model to read (Parallel first when both are there; `uc --exa` or
+`uc --duckduckgo` picks one); and it reads pages; with a Cloudflare account it reads them
+rendered in a real browser, so pages built by JavaScript come through as
+clean markdown instead of an empty shell:
+
+```sh
+export PARALLEL_API_KEY=...                    # optional: search with Parallel (https://parallel.ai)
+export EXA_API_KEY=...                         # optional: search with Exa (https://exa.ai)
 export CLOUDFLARE_ACCOUNT_ID=...               # optional: render pages first
 export CLOUDFLARE_BROWSER_TOKEN=...            # Browser Rendering: Edit; else CLOUDFLARE_API_TOKEN
 ```

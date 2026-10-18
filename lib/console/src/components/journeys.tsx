@@ -2,13 +2,12 @@
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
 // The hero's journeys, rolling like film credits, with the one in the middle
-// played out in a console underneath: the prompt typed, then what the agent
-// does about it, step by step, until it settles and the next one rolls in.
+// played out underneath as `uc chat` would: the line typed after the ₿, then
+// what the agent does about it, step by step, until it answers and the next
+// one rolls in.
 
-import { Check, LoaderCircle } from "lucide-react";
 import { AnimatePresence, LazyMotion, MotionConfig, domAnimation, m as motion, useReducedMotion, type Transition } from "motion/react";
 import { useEffect, useState } from "react";
-import { Dot, Pill } from "@/components/console";
 import type { Journey } from "@/content";
 import { cn } from "@/lib/utils";
 
@@ -138,78 +137,89 @@ function Rows({ journeys, at, live, first }: { journeys: Journey[]; at: number; 
 
 const STEP_IN = { initial: { opacity: 0, x: -8, filter: "blur(3px)" }, animate: { opacity: 1, x: 0, filter: "blur(0px)" } };
 
-/** One journey as the agent's console shows it: your prompt, then its steps. */
+// uc chat's colours: Gruvbox dark, the ₿ prompt in orange, its notes in gray.
+const TERM = "bg-[#282828] text-[#ebdbb2]";
+const NOTE = "text-[#928374]";
+const PROMPT = "text-[#fe8019] select-none";
+
+function Caret() {
+  return <span className="ml-px inline-block h-[1.1em] w-[0.55em] translate-y-[0.2em] animate-caret bg-[#ebdbb2]/80" />;
+}
+
+/**
+ * One journey as `uc chat` shows it: your line after the ₿, a `·` for each
+ * thing the agent did, the ₿ walking the Gruvbox colours on the one it's on,
+ * then its answer and the ₿ back, waiting for the next line.
+ */
 function Console(props: { journey: Journey; play: Play; at: number; of: number; live: boolean; first: boolean }) {
   const { journey: j, play, at, of, live, first } = props;
   const working = !play.settled;
-  const progress = (play.shown - (working && play.shown ? 0.5 : 0)) / j.steps.length;
+  const last = j.steps.length - 1;
   return (
     <div
       aria-hidden="true"
-      className="mx-auto mt-6 max-w-[560px] overflow-hidden rounded-lg border bg-card text-left shadow-[0_1px_0_var(--border),0_12px_32px_-16px_var(--agent-glow)]"
+      className={cn(
+        "mx-auto mt-6 max-w-[560px] overflow-hidden rounded-lg border border-[#3c3836] text-left shadow-[0_12px_32px_-16px_var(--agent-glow)]",
+        TERM,
+      )}
     >
-      <div className="flex items-center justify-between gap-3 border-b px-4 py-2 text-xs text-muted-foreground">
-        <span className="inline-flex items-center gap-2">
-          <Dot state={working ? "reconciling" : "settled"} className="size-1.5" />
-          {working ? "Agent working" : "Agent idle"}
+      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-[#3c3836] bg-[#1d2021] px-4 py-2 text-xs">
+        <span className="flex gap-1.5">
+          <span className="size-2.5 rounded-full bg-[#fb4934]" />
+          <span className="size-2.5 rounded-full bg-[#fabd2f]" />
+          <span className="size-2.5 rounded-full bg-[#b8bb26]" />
         </span>
-        <span className="font-mono tabular-nums">
+        <span className={cn("font-mono", NOTE)}>uc chat</span>
+        <span className={cn("justify-self-end font-mono tabular-nums", NOTE)}>
           {String(at + 1).padStart(2, "0")}/{of}
         </span>
       </div>
-      <div className="h-[9.5rem] px-4 py-3 sm:h-[10rem] font-mono text-xs leading-normal sm:text-[13px]">
-        <p className="mb-2 flex gap-2">
-          <span className="text-primary select-none">›</span>
+      <div className="h-[11rem] px-4 py-3 font-mono text-xs leading-normal sm:h-[11.5rem] sm:text-[13px]">
+        <p className="flex gap-2">
+          <span className={PROMPT}>₿</span>
           <span>
             {j.prompt.slice(0, play.typed)}
-            {play.typed < j.prompt.length || !play.shown ? (
-              <span className="ml-px inline-block h-[1.1em] w-[0.55em] translate-y-[0.2em] animate-caret bg-primary/70" />
-            ) : null}
+            {play.typed < j.prompt.length || !play.shown ? <Caret /> : null}
           </span>
         </p>
         <ol>
           <AnimatePresence initial={false}>
             {j.steps.slice(0, play.shown).map((s, i) => {
               const busy = working && i === play.shown - 1;
-              const Icon = busy ? LoaderCircle : Check;
-              const icon = (
-                <Icon className={cn("mt-0.5 size-3.5 shrink-0", busy ? "animate-spin text-primary" : "text-settled")} />
+              // Once settled, the last step is the agent's answer, said plainly.
+              const answer = !working && i === last;
+              const line = (
+                <>
+                  {answer ? null : busy ? (
+                    <span className="animate-gruvbox select-none">₿</span>
+                  ) : (
+                    <span className={cn(NOTE, "select-none")}>·</span>
+                  )}
+                  <span className={cn(!busy && !answer && NOTE)}>{s}</span>
+                </>
               );
-              const text = <span className={cn(busy ? "text-foreground" : "text-muted-foreground")}>{s}</span>;
+              const cls = cn("flex gap-2", answer ? "mt-2" : "");
               return live ? (
-                <motion.li key={`${at}${s}`} className="flex gap-2 py-[3px]"
+                <motion.li key={`${at}${s}`} className={cls}
                   initial={first ? false : STEP_IN.initial}
                   animate={STEP_IN.animate}
                   transition={{ duration: 0.3, ease: [0.2, 0, 0, 1] }}>
-                  {icon}
-                  {text}
+                  {line}
                 </motion.li>
               ) : (
-                <li key={`${at}${s}`} className="flex gap-2 py-[3px]">
-                  {icon}
-                  {text}
+                <li key={`${at}${s}`} className={cls}>
+                  {line}
                 </li>
               );
             })}
           </AnimatePresence>
         </ol>
-      </div>
-      <div className="flex items-center justify-between gap-3 border-t px-4 py-2">
-        <div className="h-0.5 flex-1 overflow-hidden rounded-full bg-border">
-          {live ? (
-            <motion.div
-              className="h-full origin-left bg-primary"
-              initial={false}
-              animate={{ scaleX: progress }}
-              transition={{ duration: play.shown ? 0.6 : 0.2, ease: [0.2, 0, 0, 1] }}
-            />
-          ) : (
-            <div className="h-full bg-primary" />
-          )}
-        </div>
-        <Pill state={working ? (play.shown ? "reconciling" : "desired") : "settled"}>
-          {working ? (play.shown ? `${play.shown}/${j.steps.length}` : "Asked") : "Settled"}
-        </Pill>
+        {working ? null : (
+          <p className="mt-2 flex gap-2">
+            <span className={PROMPT}>₿</span>
+            <Caret />
+          </p>
+        )}
       </div>
     </div>
   );

@@ -5,7 +5,9 @@
 //!
 //! Each line typed goes to a model on OpenRouter, which answers or asks to
 //! run a shell command, read, write or edit a file in the current directory,
-//! search the web (DuckDuckGo's HTML page, no key) or read a page (rendered by
+//! search the web (Parallel when `PARALLEL_API_KEY` is set, else Exa when
+//! `EXA_API_KEY` is, else DuckDuckGo's HTML page, no key; `--parallel`, `--exa`
+//! or `--duckduckgo` picks one) or read a page (rendered by
 //! Cloudflare when `CLOUDFLARE_ACCOUNT_ID` is set, else fetched as is).
 //! Commands, writes and edits are shown and run straight away; with `--ask`
 //! they are confirmed first (`a` allows the rest of the session, a line ending
@@ -18,7 +20,8 @@
 //! the user's bash aliases and functions work there too;
 //! `--no-shell` sends every line to the model. Esc or Ctrl-C stops the model,
 //! and the command it is waiting on, and goes back to the prompt; Ctrl-C at
-//! the prompt quits.
+//! the prompt quits. Holding Space at an empty prompt records the microphone
+//! and sends what was said instead, see `voice`.
 //! What the model is told about all this is the main skill, `chat/main.md`, always in its system prompt. The key comes from
 //! `OPENROUTER_API_KEY`, the model from `UC_MODEL`, the reasoning effort from
 //! `UC_EFFORT`.
@@ -26,8 +29,8 @@
 use anyhow::{Context, Result, anyhow, bail};
 use rustyline::error::ReadlineError;
 use rustyline::{
-    Cmd, ConditionalEventHandler, DefaultEditor, Event, EventContext, EventHandler, KeyEvent,
-    Movement, RepeatCount,
+    Cmd, ConditionalEventHandler, Config, DefaultEditor, Event, EventContext, EventHandler,
+    KeyEvent, Modifiers, Movement, RepeatCount,
 };
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
@@ -36,14 +39,18 @@ use std::path::PathBuf;
 use std::process::{ExitCode, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::task::JoinHandle;
+
+mod voice;
 
 const API: &str = "https://openrouter.ai/api/v1/chat/completions";
 const DEFAULT_MODEL: &str = "deepseek/deepseek-v4.1-flash";
 const DEFAULT_EFFORT: &str = "high";
 const DUCKDUCKGO: &str = "https://html.duckduckgo.com/html/";
+const EXA: &str = "https://api.exa.ai/search";
+const PARALLEL: &str = "https://api.parallel.ai/v1beta/search";
 /// How long a search or a page may take.
 const WEB_TIMEOUT: Duration = Duration::from_secs(60);
 /// Tool output beyond this is cut, so one noisy command can't fill the context.
@@ -104,15 +111,16 @@ fn client() -> &'static reqwest::Client {
 
 /// `ask` confirms every command and change instead of running it straight away;
 /// `output` shows what the commands print as well as the model's replies;
-/// `shell` runs a line that is a command instead of sending it to the model.
-pub fn main(ask: bool, output: bool, shell: bool) -> ExitCode {
+/// `shell` runs a line that is a command instead of sending it to the model;
+/// `search` is where web_search looks, the first with a key if not given.
+pub fn main(ask: bool, output: bool, shell: bool, search: Option<Search>) -> ExitCode {
     // Worker threads keep reading the jobs' pipes while the prompt waits.
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
         .build()
         .expect("tokio runtime");
-    let result = runtime.block_on(run(ask, output, shell));
+    let result = runtime.block_on(run(ask, output, shell, search));
     stop_jobs();
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -120,6 +128,43 @@ pub fn main(ask: bool, output: bool, shell: bool) -> ExitCode {
             eprintln!("uc: {err:#}");
             ExitCode::FAILURE
         }
+    }
+}
+
+/// A search engine web_search can use.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Search {
+    Parallel,
+    Exa,
+    DuckDuckGo,
+}
+
+/// The engine web_search uses, with its key.
+#[derive(Debug, PartialEq, Eq)]
+enum Engine {
+    Parallel(String),
+    Exa(String),
+    DuckDuckGo,
+}
+
+impl Engine {
+    /// The one asked for, else Parallel, then Exa, whichever has a key, else
+    /// DuckDuckGo.
+    fn pick(search: Option<Search>) -> Result<Engine> {
+        let key = |name: &str, site: &str| {
+            env(name).ok_or_else(|| anyhow!("set {name} ({site}) to search with it"))
+        };
+        Ok(match search {
+            Some(Search::Parallel) => {
+                Engine::Parallel(key("PARALLEL_API_KEY", "https://parallel.ai")?)
+            }
+            Some(Search::Exa) => Engine::Exa(key("EXA_API_KEY", "https://exa.ai")?),
+            Some(Search::DuckDuckGo) => Engine::DuckDuckGo,
+            None => env("PARALLEL_API_KEY")
+                .map(Engine::Parallel)
+                .or_else(|| env("EXA_API_KEY").map(Engine::Exa))
+                .unwrap_or(Engine::DuckDuckGo),
+        })
     }
 }
 
@@ -137,6 +182,7 @@ struct Session {
     show_output: bool,
     jobs: BTreeMap<usize, Job>,
     next_job: usize,
+    search: Engine,
     /// The job bash is waiting on, stopped if Esc is pressed meanwhile.
     waiting: Option<usize>,
 }
@@ -233,7 +279,7 @@ fn on_terminal(command: &str) -> bool {
     word.rsplit('/').next() == Some("ssh-add")
 }
 
-async fn run(ask: bool, output: bool, shell: bool) -> Result<()> {
+async fn run(ask: bool, output: bool, shell: bool, search: Option<Search>) -> Result<()> {
     let key = std::env::var("OPENROUTER_API_KEY")
         .ok()
         .filter(|k| !k.trim().is_empty())
@@ -256,6 +302,7 @@ async fn run(ask: bool, output: bool, shell: bool) -> Result<()> {
         show_output: output,
         jobs: BTreeMap::new(),
         next_job: 1,
+        search: Engine::pick(search)?,
         waiting: None,
     };
     if shell {
@@ -386,6 +433,8 @@ struct UserShell {
     /// Each alias and what it stands for.
     aliases: BTreeMap<String, String>,
     functions: BTreeSet<String>,
+    /// Where bash keeps their history, `$HISTFILE`.
+    history: Option<PathBuf>,
 }
 
 impl UserShell {
@@ -421,7 +470,7 @@ fn user_shell() -> &'static UserShell {
 fn read_user_shell() -> Option<UserShell> {
     use std::os::unix::process::CommandExt;
     const DUMP: &str = "printf '\\0'; shopt -p; printf '\\0'; alias -p; printf '\\0'; \
-                        declare -F; printf '\\0'; declare -f";
+                        declare -F; printf '\\0'; declare -f; printf '\\0%s' \"$HISTFILE\"";
     let mut bash = std::process::Command::new("bash");
     bash.args(["-ic", DUMP])
         .stdin(Stdio::null())
@@ -443,9 +492,14 @@ fn read_user_shell() -> Option<UserShell> {
 }
 
 fn parse_user_shell(dump: &str) -> Option<UserShell> {
-    let mut parts = dump.rsplitn(5, '\0');
-    let (functions, names, aliases, options) =
-        (parts.next()?, parts.next()?, parts.next()?, parts.next()?);
+    let mut parts = dump.rsplitn(6, '\0');
+    let (history, functions, names, aliases, options) = (
+        parts.next()?,
+        parts.next()?,
+        parts.next()?,
+        parts.next()?,
+        parts.next()?,
+    );
     parts.next()?;
     Some(UserShell {
         // The options first: bash-completion's functions need extglob to parse.
@@ -466,6 +520,7 @@ fn parse_user_shell(dump: &str) -> Option<UserShell> {
             .filter_map(|line| line.strip_prefix("declare -f "))
             .map(str::to_string)
             .collect(),
+        history: Some(PathBuf::from(history)).filter(|h| !h.as_os_str().is_empty()),
     })
 }
 
@@ -583,8 +638,9 @@ fn tools() -> Value {
         tool(
             "bash",
             "Run a command with bash in the working directory, without a terminal and with stdin \
-             closed; returns its exit status and output (stdout and stderr together). A command \
-             still running after the timeout carries on as a job. Deleting files always asks the \
+             closed; returns its exit status and output (stdout and stderr together). A plain \
+             `cd <dir>` on its own changes the working directory for the commands and tools \
+             after it. A command still running after the timeout carries on as a job. Deleting files always asks the \
              user first. The exception is ssh-add: it runs on the user's terminal so they can \
              type the key's passphrase.",
             json!({
@@ -640,6 +696,14 @@ fn tools() -> Value {
              JavaScript work too; links are listed at the end.",
             json!({"url": string("the page's http or https URL")}),
             &["url"],
+        ),
+        tool(
+            "src",
+            "List the git repositories under a directory, ~/src if left out, one path relative \
+             to it per line; a repository's own nested ones are not listed. Use it to find the \
+             repository a task is about.",
+            json!({"prefix": string("the directory to look under; ~/src if left out")}),
+            &[],
         ),
         tool(
             "read_file",
@@ -700,6 +764,9 @@ impl Session {
             "tools": tools(),
             "reasoning": {"effort": self.effort},
         });
+        let _clock = std::io::stderr()
+            .is_terminal()
+            .then(|| Clock(tokio::spawn(spin("thinking"))));
         let response = client()
             .post(API)
             .bearer_auth(&self.key)
@@ -760,9 +827,10 @@ impl Session {
             }
             "web_search" => {
                 let count = number("count").unwrap_or(10).clamp(1, 10);
-                web_search(&arg("query"), count).await
+                web_search(&self.search, &arg("query"), count).await
             }
             "fetch_url" => fetch_url(&arg("url")).await,
+            "src" => src(&arg("prefix")),
             "read_file" => {
                 eprintln!("· read {}", arg("path"));
                 std::fs::read_to_string(arg("path")).context("reading the file")
@@ -784,6 +852,11 @@ impl Session {
         // The ₿ in Gruvbox fg (#ebdbb2) is the shell prompt from the dotfiles' .bashrc.
         eprintln!("\x1b[38;2;235;219;178m₿\x1b[0m {command}");
         self.confirm("run it?", ask || deletes(command))?;
+        if let Some(dir) = cd_target(command) {
+            std::env::set_current_dir(&dir).with_context(|| format!("cd {}", dir.display()))?;
+            let cwd = std::env::current_dir().unwrap_or(dir);
+            return Ok(format!("the working directory is now {}", cwd.display()));
+        }
         if on_terminal(command) {
             return self.run_on_terminal(command).await;
         }
@@ -893,7 +966,7 @@ impl Session {
         }
         // Without its output on screen, a long wait would look like uc hung.
         let quiet = !job.echo.load(Ordering::Relaxed) && std::io::stderr().is_terminal();
-        let clock = quiet.then(|| Clock(tokio::spawn(elapsed())));
+        let clock = quiet.then(|| Clock(tokio::spawn(spin("running"))));
         let waited = tokio::time::timeout(Duration::from_secs(secs), job.child.wait()).await;
         drop(clock);
         if let Ok(Ok(status)) = waited {
@@ -1177,20 +1250,30 @@ impl Drop for Lent {
     }
 }
 
-/// Shows how long a wait has taken, once it passes a few seconds, until aborted.
-async fn elapsed() {
-    let start = Instant::now();
-    loop {
-        tokio::time::sleep(Duration::from_secs(1)).await;
-        let secs = start.elapsed().as_secs();
-        if secs >= 3 {
-            eprint!("\r\x1b[2K· running {secs}s");
-        }
+/// The Gruvbox brights the ₿ walks through while uc waits, a step every
+/// 200ms, the same as the console's front page shows it.
+const GRUVBOX: [(u8, u8, u8); 6] = [
+    (0xfe, 0x80, 0x19),
+    (0xfa, 0xbd, 0x2f),
+    (0xb8, 0xbb, 0x26),
+    (0x8e, 0xc0, 0x7c),
+    (0x83, 0xa5, 0x98),
+    (0xd3, 0x86, 0x9b),
+];
+
+/// The ₿ walking the Gruvbox colours next to what uc waits on, until aborted.
+async fn spin(what: &'static str) {
+    for (r, g, b) in GRUVBOX.into_iter().cycle() {
+        eprint!("\r\x1b[2K\x1b[38;2;{r};{g};{b}m₿\x1b[0m {what}");
+        tokio::time::sleep(Duration::from_millis(200)).await;
     }
 }
 
 /// The line editor every prompt reads through, so arrow keys edit the line.
 static EDITOR: Mutex<Option<DefaultEditor>> = Mutex::new(None);
+
+/// How many earlier lines Up and Down go through: all of them, in practice.
+const HISTORY_SIZE: usize = 1_000_000;
 
 /// Where the lines typed at the main prompt are kept between sessions.
 fn history_path() -> Option<PathBuf> {
@@ -1201,17 +1284,91 @@ fn history_path() -> Option<PathBuf> {
     Some(state.join("usecode/chat_history"))
 }
 
+/// Where bash keeps what the user typed in it; `~/.bash_history` if bash
+/// can't tell.
+fn bash_history_path() -> Option<PathBuf> {
+    user_shell().history.clone().or_else(|| {
+        std::env::var_os("HISTFILE")
+            .filter(|f| !f.is_empty())
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".bash_history")))
+    })
+}
+
+/// The entries of a history file kept the way bash keeps it, oldest first,
+/// each with the time on the `#1700000000` line before it. One without a
+/// time has the time of the one before.
+fn timed_lines(text: &str) -> Vec<(u64, String)> {
+    let mut time = 0;
+    let mut lines = Vec::new();
+    for line in text.lines().filter(|l| !l.trim().is_empty()) {
+        match line.strip_prefix('#').and_then(|t| t.parse().ok()) {
+            Some(t) => time = t,
+            None => lines.push((time, line.to_string())),
+        }
+    }
+    lines
+}
+
+/// Bash's lines and uc's in the order they were typed, oldest first, so Up
+/// in uc goes back through what was typed in bash as well.
+fn merged_lines(bash: &str, uc: &str) -> Vec<String> {
+    let mut lines = timed_lines(bash);
+    lines.extend(timed_lines(uc));
+    // Stable: lines typed in the same second keep their order.
+    lines.sort_by_key(|(time, _)| *time);
+    lines.into_iter().map(|(_, line)| line).collect()
+}
+
+/// Every earlier line, bash's and uc's, oldest first.
+fn past_lines() -> Vec<String> {
+    let read = |path: Option<PathBuf>| {
+        let text = path.and_then(|p| std::fs::read(p).ok()).unwrap_or_default();
+        String::from_utf8_lossy(&text).into_owned()
+    };
+    merged_lines(&read(bash_history_path()), &read(history_path()))
+}
+
+/// Keeps a line typed at the main prompt the way bash would, after a `#` line
+/// with the time, so it reads back in order with bash's.
+fn keep_line(line: &str) -> std::io::Result<()> {
+    let path = history_path().ok_or(std::io::ErrorKind::NotFound)?;
+    std::fs::create_dir_all(path.parent().unwrap_or(&path))?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)?;
+    writeln!(file, "#{now}\n{}", line.replace('\n', " "))
+}
+
+/// Rewrites a history file from before uc kept the time, rustyline's `#V2`
+/// one, the way bash keeps it.
+fn upgrade_history() -> std::io::Result<()> {
+    let path = history_path().ok_or(std::io::ErrorKind::NotFound)?;
+    let text = std::fs::read_to_string(&path)?;
+    if !text.starts_with("#V2\n") {
+        return Ok(());
+    }
+    let lines: String = history_lines(&text)
+        .iter()
+        .map(|l| format!("{}\n", l.replace('\n', " ")))
+        .collect();
+    std::fs::write(path, lines)
+}
+
 /// A line typed at the main prompt; Up and Down go through the earlier ones,
 /// this session's and the ones before. None at end of input.
 fn read_prompt(prompt: &str) -> Result<Option<String>> {
     let line = read_line(prompt)?;
     if let Some(line) = line.as_deref().map(str::trim).filter(|l| !l.is_empty()) {
         let mut editor = EDITOR.lock().unwrap_or_else(|e| e.into_inner());
-        if let (Some(editor), Some(path)) = (editor.as_mut(), history_path()) {
+        if let Some(editor) = editor.as_mut() {
             let _ = editor.add_history_entry(line);
-            let _ = std::fs::create_dir_all(path.parent().unwrap_or(&path));
-            let _ = editor.append_history(&path);
         }
+        let _ = keep_line(line);
     }
     Ok(line)
 }
@@ -1222,10 +1379,9 @@ struct FzfHistory;
 
 impl ConditionalEventHandler for FzfHistory {
     fn handle(&self, _: &Event, _: RepeatCount, _: bool, ctx: &EventContext) -> Option<Cmd> {
-        let text = std::fs::read_to_string(history_path()?).unwrap_or_default();
         let mut seen = BTreeSet::new();
         let mut lines = Vec::new();
-        for line in history_lines(&text).into_iter().rev() {
+        for line in past_lines().into_iter().rev() {
             if seen.insert(line.clone()) {
                 lines.push(line);
             }
@@ -1255,7 +1411,8 @@ impl ConditionalEventHandler for FzfHistory {
     }
 }
 
-/// The entries of a rustyline history file, oldest first; `#V2` files escape
+/// The entries of a rustyline history file, the one uc kept before it kept
+/// the time, oldest first; `#V2` files escape
 /// newlines and backslashes.
 fn history_lines(text: &str) -> Vec<String> {
     let mut lines = text.lines();
@@ -1304,18 +1461,32 @@ fn read_line(prompt: &str) -> Result<Option<String>> {
     let _lent = lend_terminal();
     let mut editor = EDITOR.lock().unwrap_or_else(|e| e.into_inner());
     if editor.is_none() {
-        let mut new = DefaultEditor::new().context("opening the terminal")?;
-        if let Some(path) = history_path() {
-            let _ = new.load_history(&path);
+        let config = Config::builder().max_history_size(HISTORY_SIZE)?.build();
+        let mut new = DefaultEditor::with_config(config).context("opening the terminal")?;
+        let _ = upgrade_history();
+        for line in past_lines() {
+            let _ = new.add_history_entry(line);
         }
         new.bind_sequence(
             KeyEvent::ctrl('R'),
             EventHandler::Conditional(Box::new(FzfHistory)),
         );
+        new.bind_sequence(
+            KeyEvent::new(' ', Modifiers::NONE),
+            EventHandler::Conditional(Box::new(voice::HoldToTalk)),
+        );
         *editor = Some(new);
     }
     match editor.as_mut().map(|e| e.readline(prompt)) {
-        Some(Ok(line)) => Ok(Some(line)),
+        Some(Ok(line)) => match voice::SAID.lock().unwrap_or_else(|e| e.into_inner()).take() {
+            // Shown where it would have been typed, the line above.
+            Some(said) => {
+                let prompt = prompt.rsplit('\n').next().unwrap_or(prompt);
+                println!("\x1b[1A\r\x1b[2K{prompt}{said}");
+                Ok(Some(said))
+            }
+            None => Ok(Some(line)),
+        },
         Some(Err(ReadlineError::Eof)) => Ok(None),
         Some(Err(ReadlineError::Interrupted)) if BUSY.load(Ordering::Relaxed) => {
             Err(Stopped.into())
@@ -1337,10 +1508,21 @@ fn env(name: &str) -> Option<String> {
         .filter(|v| !v.is_empty())
 }
 
-/// DuckDuckGo's results for `query`, read off its HTML page: no key needed,
-/// up to 10 results, the first page.
-async fn web_search(query: &str, count: u64) -> Result<String> {
+/// The engine's results for `query`; DuckDuckGo's when it is the engine or
+/// the other fails, read off its HTML page: no key needed, up to 10 results,
+/// the first page.
+async fn web_search(engine: &Engine, query: &str, count: u64) -> Result<String> {
     eprintln!("· search {query}");
+    let searched = match engine {
+        Engine::Parallel(key) => Some(("Parallel", parallel_search(query, count, key).await)),
+        Engine::Exa(key) => Some(("Exa", exa_search(query, count, key).await)),
+        Engine::DuckDuckGo => None,
+    };
+    let note = match searched {
+        Some((_, Ok(results))) => return Ok(results),
+        Some((name, Err(err))) => format!("[{name} failed, {err:#}; searched DuckDuckGo]\n\n"),
+        None => String::new(),
+    };
     let response = client()
         .get(DUCKDUCKGO)
         .header("User-Agent", "Mozilla/5.0")
@@ -1358,7 +1540,85 @@ async fn web_search(query: &str, count: u64) -> Result<String> {
     if status != reqwest::StatusCode::OK {
         bail!("DuckDuckGo: {status}");
     }
-    Ok(search_results(&page, count as usize))
+    Ok(note + &search_results(&page, count as usize))
+}
+
+/// Exa's results for `query`, each with its most relevant sentences.
+async fn exa_search(query: &str, count: u64, key: &str) -> Result<String> {
+    let response = client()
+        .post(EXA)
+        .header("x-api-key", key)
+        .json(&json!({
+            "query": query,
+            "numResults": count,
+            "contents": {"highlights": {"numSentences": 3, "highlightsPerUrl": 1}},
+        }))
+        .timeout(WEB_TIMEOUT)
+        .send()
+        .await
+        .context("calling Exa")?;
+    let status = response.status();
+    let value: Value = response.json().await.context("reading Exa's reply")?;
+    if !status.is_success() {
+        let msg = value["error"].as_str().unwrap_or("no message");
+        bail!("Exa: {status}: {msg}");
+    }
+    Ok(api_results(&value, "highlights"))
+}
+
+/// Parallel's results for `query`, each with excerpts picked for it.
+async fn parallel_search(query: &str, count: u64, key: &str) -> Result<String> {
+    let response = client()
+        .post(PARALLEL)
+        .header("x-api-key", key)
+        .header("parallel-beta", "search-extract-2025-10-10")
+        .json(&json!({
+            "objective": query,
+            "search_queries": [query],
+            "max_results": count,
+            "excerpts": {"max_chars_per_result": 1500},
+        }))
+        .timeout(WEB_TIMEOUT)
+        .send()
+        .await
+        .context("calling Parallel")?;
+    let status = response.status();
+    let value: Value = response.json().await.context("reading Parallel's reply")?;
+    if !status.is_success() {
+        let msg = value["error"]["message"]
+            .as_str()
+            .or_else(|| value["error"].as_str())
+            .unwrap_or("no message");
+        bail!("Parallel: {status}: {msg}");
+    }
+    Ok(api_results(&value, "excerpts"))
+}
+
+/// Exa's or Parallel's results as text, the same shape as DuckDuckGo's: the
+/// snippet is the strings in each result's `snippets` list.
+fn api_results(value: &Value, snippets: &str) -> String {
+    let results: Vec<String> = value["results"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|result| {
+            let url = result["url"].as_str()?;
+            let title = result["title"].as_str().unwrap_or(url);
+            let snippet = result[snippets]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .collect::<Vec<_>>()
+                .join(" ");
+            let snippet = snippet.split_whitespace().collect::<Vec<_>>().join(" ");
+            Some(format!("{title}\n{url}\n{snippet}"))
+        })
+        .collect();
+    if results.is_empty() {
+        return "no results".to_string();
+    }
+    results.join("\n\n")
 }
 
 /// The results on DuckDuckGo's HTML page as text, ads left out.
@@ -1373,7 +1633,11 @@ fn search_results(page: &str, count: usize) -> String {
             let snippet = between(result, r#"class="result__snippet""#, "</a>")
                 .and_then(|s| s.split_once('>'))
                 .map_or("", |(_, s)| s);
-            Some(format!("{}\n{url}\n{}", html_text(title), html_text(snippet)))
+            Some(format!(
+                "{}\n{url}\n{}",
+                html_text(title),
+                html_text(snippet)
+            ))
         })
         .take(count)
         .collect();
@@ -1486,6 +1750,52 @@ async fn render(url: &str, account: &str, token: &str) -> Result<String> {
     }
 }
 
+/// The git repositories under `prefix` (`~/src` when empty), each relative to
+/// it, sorted. A repository is not looked into, so its submodules and vendored
+/// checkouts are not listed apart.
+fn src(prefix: &str) -> Result<String> {
+    let home = || std::env::var_os("HOME").map(PathBuf::from);
+    let prefix = match prefix.trim() {
+        "" => home().context("HOME is not set")?.join("src"),
+        "~" => home().context("HOME is not set")?,
+        p => match p.strip_prefix("~/") {
+            Some(rest) => home().context("HOME is not set")?.join(rest),
+            None => PathBuf::from(p),
+        },
+    };
+    eprintln!("· src {}", prefix.display());
+    let prefix = prefix
+        .canonicalize()
+        .with_context(|| format!("reading {}", prefix.display()))?;
+    let mut repos = Vec::new();
+    let mut dirs = vec![prefix.clone()];
+    while let Some(dir) = dirs.pop() {
+        if dir.join(".git").exists() {
+            repos.push(match dir.strip_prefix(&prefix) {
+                Ok(p) if p.as_os_str().is_empty() => ".".to_string(),
+                Ok(p) => p.display().to_string(),
+                Err(_) => dir.display().to_string(),
+            });
+            continue;
+        }
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        // Symlinks are not followed, so a link back up can't loop.
+        dirs.extend(
+            entries
+                .flatten()
+                .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+                .map(|e| e.path()),
+        );
+    }
+    repos.sort();
+    if repos.is_empty() {
+        return Ok(format!("no git repositories under {}", prefix.display()));
+    }
+    Ok(format!("under {}:\n{}", prefix.display(), repos.join("\n")))
+}
+
 fn truncate(mut output: String) -> String {
     if output.len() > MAX_OUTPUT {
         let mut end = MAX_OUTPUT;
@@ -1501,6 +1811,23 @@ fn truncate(mut output: String) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn src_lists_repositories_but_not_inside_them() {
+        let root = std::env::temp_dir().join(format!("uc-src-{}", std::process::id()));
+        for dir in [
+            "a/one/.git",
+            "a/one/vendor/two/.git",
+            "b/three/.git",
+            "c/empty",
+        ] {
+            std::fs::create_dir_all(root.join(dir)).unwrap();
+        }
+        let listed = src(root.to_str().unwrap()).unwrap();
+        std::fs::remove_dir_all(&root).unwrap();
+        let lines: Vec<&str> = listed.lines().skip(1).collect();
+        assert_eq!(lines, ["a/one", "b/three"]);
+    }
 
     #[test]
     fn truncates_on_a_char_boundary() {
@@ -1533,6 +1860,46 @@ mod tests {
             "Rust\nhttps://www.rust-lang.org/\nA language empowering everyone & more"
         );
         assert_eq!(search_results("<html></html>", 10), "no results");
+    }
+
+    #[test]
+    fn lists_api_results_as_text() {
+        let reply = json!({"results": [
+            {"title": "Rust", "url": "https://rust-lang.org/", "highlights": ["A language\n empowering everyone."]},
+            {"url": "https://example.com/"},
+        ]});
+        assert_eq!(
+            api_results(&reply, "highlights"),
+            "Rust\nhttps://rust-lang.org/\nA language empowering everyone.\n\n\
+             https://example.com/\nhttps://example.com/\n"
+        );
+        assert_eq!(
+            api_results(&json!({"results": []}), "excerpts"),
+            "no results"
+        );
+    }
+
+    #[test]
+    fn reads_the_bash_history() {
+        assert_eq!(
+            timed_lines("ls\n#1700000000\ngit status\n\n# a note\npwd\n"),
+            [
+                (0, "ls".into()),
+                (1700000000, "git status".into()),
+                (1700000000, "# a note".into()),
+                (1700000000, "pwd".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn merges_bash_and_uc_by_time() {
+        let bash = "old\n#100\nls\n#300\ngit push\n";
+        let uc = "#200\nfix the tests\n#300\nmake it faster\n";
+        assert_eq!(
+            merged_lines(bash, uc),
+            ["old", "ls", "fix the tests", "git push", "make it faster"]
+        );
     }
 
     #[test]
@@ -1579,7 +1946,7 @@ mod tests {
     #[test]
     fn aliases_and_functions_come_from_the_users_bash() {
         let dump = "bashrc says hi\0shopt -s extglob\n\0alias ..='cd ..'\n\
-                    alias say='echo '\\''hi'\\'''\n\0declare -f mkcd\n\0mkcd () { :; }\n";
+                    alias say='echo '\\''hi'\\'''\n\0declare -f mkcd\n\0mkcd () { :; }\n\0/home/me/.history";
         let shell = parse_user_shell(dump).unwrap();
         assert!(shell.knows("..") && shell.knows("mkcd") && !shell.knows("hi"));
         assert_eq!(shell.aliases["say"], "echo 'hi'");
@@ -1588,6 +1955,7 @@ mod tests {
         assert_eq!(shell.expand("ls -l"), "ls -l");
         assert!(!shell.script("..").contains("bashrc says hi"));
         assert!(shell.script("..").ends_with("mkcd () { :; }\n\n.."));
+        assert_eq!(shell.history, Some(PathBuf::from("/home/me/.history")));
         assert!(parse_user_shell("no definitions").is_none());
     }
 
@@ -1661,6 +2029,7 @@ mod tests {
             show_output: false,
             jobs: BTreeMap::new(),
             next_job: 1,
+            search: Engine::DuckDuckGo,
             waiting: None,
         }
     }

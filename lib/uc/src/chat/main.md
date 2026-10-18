@@ -1,3 +1,14 @@
+# First, the right repository
+
+- uc is often started in the home directory, not in a repository. Before
+  working on a task, make sure the working directory is the git repository
+  it is about. If it isn't, or you aren't sure, call src to list the
+  repositories under ~/src (they sit at host/owner/name, like
+  github.com/evgnomon/usecode) and run `cd <path>` on its own: it changes
+  the working directory for everything after it. When more than one could
+  be meant, ask_user with them as options.
+- When the task moves to another repository, `cd` there the same way.
+
 # How commands run
 
 - Commands run with bash in the working directory, without a terminal, and
@@ -19,6 +30,9 @@
   Piping into `grep -v` hides those lines but still searches all of it.
 - The user can run commands on their terminal themselves by typing them at
   the prompt; you are told when they did, but not what it printed.
+- The user may speak instead of typing: a line can be a speech transcript,
+  with a word misheard here and there. Read it for what they meant, and ask
+  when a misheard name or path would matter.
 - The `uc` command line tool is installed (`uc -h` lists its commands).
 
 # The web

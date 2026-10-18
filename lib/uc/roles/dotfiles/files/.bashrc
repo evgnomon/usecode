@@ -148,6 +148,7 @@ HISTFILE=~/.history
 HISTSIZE=100000
 HISTFILESIZE=2000000
 HISTCONTROL=ignoreboth:erasedups  # Ignore duplicates
+HISTTIMEFORMAT="%F %T  "          # Keep the time of each command, so uc can merge it with its own
 
 # append to the history file, don't overwrite it
 shopt -s histappend               # Append to history, don't overwrite

@@ -167,3 +167,4 @@ tokio = { workspace = true, features = ["fs", "io-std", "macros", "net", "proces
 zeroize = "1"
 rustyline = { version = "19.0.0", default-features = false, features = ["custom-bindings", "with-file-history"] }
 html2text = "0.17.3"
+pulseaudio = "0.3.2"
