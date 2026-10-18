@@ -26,7 +26,7 @@
 //! `OPENROUTER_API_KEY`, the model from `UC_MODEL`, the reasoning effort from
 //! `UC_EFFORT`. Without `UC_MODEL` but with `TYPESAFE_API_KEY`, a TypeSafe
 //! model (`TYPESAFE_MODEL`) reads each line and picks the OpenRouter model
-//! from `MODELS` that suits it best; otherwise it is DeepSeek V4.1 Flash.
+//! from `MODELS` that suits it best; otherwise it is GLM 5.3 Flash.
 
 use anyhow::{Context, Result, anyhow, bail};
 use rustyline::error::ReadlineError;
@@ -48,7 +48,7 @@ use tokio::task::JoinHandle;
 mod voice;
 
 const API: &str = "https://openrouter.ai/api/v1/chat/completions";
-const DEFAULT_MODEL: &str = "deepseek/deepseek-v4.1-flash";
+const DEFAULT_MODEL: &str = "z-ai/glm-5.3-flash";
 const DEFAULT_EFFORT: &str = "high";
 const TYPESAFE: &str = "https://api.typesafe.ai/v1/systemone";
 const DEFAULT_ROUTER: &str = "jev-latest";
@@ -57,17 +57,27 @@ const MODELS: &[(&str, &str)] = &[
     (
         DEFAULT_MODEL,
         "Everyday work: a quick question, running or explaining a command, a small edit, \
-         looking around the code, anything simple or routine",
+         looking around the code, anything simple or routine. Cheap on output, so the \
+         default for anything short",
     ),
     (
-        "anthropic/claude-sonnet-5.5",
-        "Real coding: implementing a feature, fixing a bug, writing tests, reviewing or \
-         refactoring a change across a few files",
-    ),
-    (
-        "openai/gpt-5.6-luna",
+        "anthropic/claude-haiku-5.5",
         "Reading a lot: summarising long files, logs, documents or web pages, researching \
-         a topic on the web",
+         a topic on the web, checking a big diff or output for what matters. Cheap on \
+         input and reasons well over what it reads",
+    ),
+    (
+        "z-ai/glm-5.3",
+        "Fixing or changing code where the model reads much and writes little: a bug \
+         in a known place, a small patch, a review of a change, tracing how something \
+         works through several files. Strong at code and tools, cheap to read with, \
+         dear to write long answers",
+    ),
+    (
+        "meta/muse-spark-1.3",
+        "The hard part: implementing a feature, a refactor across many files, writing \
+         a lot of new code or tests, a nasty bug nobody has found, design and \
+         architecture, or anything the quick models would likely get wrong",
     ),
 ];
 const DUCKDUCKGO: &str = "https://html.duckduckgo.com/html/";
@@ -1564,7 +1574,11 @@ async fn pick_model(key: &str, router: &str, line: &str) -> Result<String> {
         "questions": {"model": {
             "type": "choice",
             "instructions": "This is what a user asked a coding agent on their terminal. \
-                Which model should do it? Pick the cheapest one that does it well.",
+                Which model should do it? Pick the cheapest one that does it well: \
+                a short answer or a command is for the everyday model; a long text to read \
+                is for the reading model; a change that needs much reading but a small \
+                patch is for the patch model; only a big or hard job needs the strongest \
+                one.",
             "criteria": criteria,
         }},
     });

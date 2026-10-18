@@ -59,11 +59,12 @@ UC_MODEL=openai/gpt-5 uc                      # any OpenRouter model
 UC_EFFORT=medium uc                           # low, medium or high reasoning
 ```
 
-It runs on DeepSeek V4.1 Flash, which is quick, cheap and good at everyday
+It runs on GLM 5.3 Flash, which is quick, cheap and good at everyday
 work. Got a [TypeSafe](https://console.typesafe.ai) key too? Then each line
-you type gets the model that suits it: a quick question stays on DeepSeek, a
-real feature goes to Claude Sonnet, and reading a pile of logs or pages to
-GPT-5.6 Luna. A small TypeSafe model reads the line
+you type gets the model that suits it: a quick question stays on GLM Flash,
+reading a pile of logs or pages goes to Claude Haiku 5.5, a patch that needs
+a lot of reading to GLM 5.3, and a real feature or a hard bug to Muse Spark
+1.3. A small TypeSafe model reads the line
 and picks, so you only pay for the bigger models when the work needs them, and
 `uc` tells you when it switches:
 
