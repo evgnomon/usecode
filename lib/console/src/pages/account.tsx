@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyNodes, Pill } from "@/components/console";
+import { KeyLegend } from "@/components/kbd";
 import { ErrorNote, Notice, Section } from "@/components/layout";
 import { PLANS, TEAM_PRICE } from "@/content";
 import { goTo, useMe, type Me } from "@/lib/api";
@@ -27,8 +28,11 @@ function Subscription({ me }: { me: Me }) {
           usecode.dev supervises all your nodes, edge or Kubernetes, for free. Working with others? Team is{" "}
           {TEAM_PRICE.amount} {TEAM_PRICE.period}.
         </p>
-        <Button asChild variant="outline">
-          <Link href="/pricing">See the plans</Link>
+        <Button asChild variant="outline" aria-keyshortcuts="p">
+          <Link href="/pricing">
+            See the plans
+            <KeyLegend k="p" />
+          </Link>
         </Button>
       </>
     );

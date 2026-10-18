@@ -4,6 +4,7 @@
 import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { KeyLegend } from "@/components/kbd";
 import { Activity, type Line } from "@/components/console";
 import { Journeys } from "@/components/journeys";
 import { Section } from "@/components/layout";
@@ -51,11 +52,17 @@ export function Home() {
           </h1>
           <Journeys journeys={MOTIVATION.journeys} />
           <div className="mt-8 flex flex-wrap justify-center gap-3">
-            <Button asChild>
-              <Link href={me?.user ? "/account" : "/signup"}>{me?.user ? "Go to your account" : "Get started free"}</Link>
+            <Button asChild aria-keyshortcuts={me?.user ? "a" : "s"}>
+              <Link href={me?.user ? "/account" : "/signup"}>
+                {me?.user ? "Go to your account" : "Get started free"}
+                <KeyLegend k={me?.user ? "a" : "s"} />
+              </Link>
             </Button>
-            <Button asChild variant="outline">
-              <Link href="/pricing">See pricing</Link>
+            <Button asChild variant="outline" aria-keyshortcuts="p">
+              <Link href="/pricing">
+                See pricing
+                <KeyLegend k="p" />
+              </Link>
             </Button>
           </div>
         </div>

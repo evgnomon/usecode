@@ -5,6 +5,7 @@ import { useState, type ReactNode } from "react";
 import { Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { KeyLegend } from "@/components/kbd";
 import { ErrorNote, Notice, PageHead, Section } from "@/components/layout";
 import { CONTACT, PLANS, REPO_URL, TEAM_PRICE } from "@/content";
 import { goTo, useMe } from "@/lib/api";
@@ -40,8 +41,18 @@ function PlanCard({ plan, period, children }: { plan: Plan; period?: string; chi
 function IndividualAction() {
   const { me } = useMe();
   return (
-    <Button asChild variant="outline" className="w-full">
-      {me?.user ? <Link href="/account">Go to your account</Link> : <Link href="/signup">Sign up free</Link>}
+    <Button asChild variant="outline" className="w-full" aria-keyshortcuts={me?.user ? "a" : "s"}>
+      {me?.user ? (
+        <Link href="/account">
+          Go to your account
+          <KeyLegend k="a" />
+        </Link>
+      ) : (
+        <Link href="/signup">
+          Sign up free
+          <KeyLegend k="s" />
+        </Link>
+      )}
     </Button>
   );
 }
@@ -64,12 +75,18 @@ function TeamAction() {
     <>
       {error ? <ErrorNote>{error}</ErrorNote> : null}
       {!me ? null : me.subscribed ? (
-        <Button asChild variant="outline" className="w-full">
-          <Link href="/account">You're on Team, see your account</Link>
+        <Button asChild variant="outline" className="w-full" aria-keyshortcuts="a">
+          <Link href="/account">
+            You're on Team, see your account
+            <KeyLegend k="a" />
+          </Link>
         </Button>
       ) : !me.user ? (
-        <Button asChild className="w-full">
-          <Link href="/signup?next=/pricing">Get started</Link>
+        <Button asChild className="w-full" aria-keyshortcuts="s">
+          <Link href="/signup?next=/pricing">
+            Get started
+            <KeyLegend k="s" />
+          </Link>
         </Button>
       ) : me.billing ? (
         <Button className="w-full" disabled={busy} onClick={subscribe}>

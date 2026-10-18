@@ -5,8 +5,10 @@ import type { ReactNode } from "react";
 import { Monitor, Moon, Sun } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Kbd, KeyLegend } from "@/components/kbd";
 import { REPO_URL } from "@/content";
 import { post, useMe } from "@/lib/api";
+import { HOTKEYS, useHotkeys } from "@/lib/keys";
 import { Link, navigate, useLocation } from "@/lib/router";
 import { nextTheme, useTheme, type Theme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
@@ -25,10 +27,12 @@ export function ThemeSwitch() {
       size="xs"
       className="h-7 bg-transparent text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground"
       aria-label={`Theme: ${THEME_LABEL[theme]}. Switch to ${THEME_LABEL[next]}`}
+      aria-keyshortcuts="t"
       onClick={() => setTheme(next)}
     >
       <Icon strokeWidth={1.5} />
       {THEME_LABEL[theme]}
+      <KeyLegend k="t" />
     </Button>
   );
 }
@@ -72,8 +76,11 @@ function Header() {
           ) : me ? (
             <>
               <NavLink href="/login">Log in</NavLink>
-              <Button asChild size="sm" className="h-7 text-xs">
-                <Link href="/signup">Sign up</Link>
+              <Button asChild size="sm" className="h-7 text-xs" aria-keyshortcuts="s">
+                <Link href="/signup">
+                  Sign up
+                  <KeyLegend k="s" />
+                </Link>
               </Button>
             </>
           ) : null}
@@ -85,6 +92,12 @@ function Header() {
 }
 
 function Footer() {
+  const { me } = useMe();
+  const keys = HOTKEYS.filter((k) => {
+    if (k.href === "/account") return Boolean(me?.user);
+    if (k.href === "/login" || k.href === "/signup") return me != null && !me.user;
+    return true;
+  });
   return (
     <footer className="border-t py-5 text-xs">
       <div className="wrap flex flex-wrap justify-between gap-4">
@@ -99,11 +112,20 @@ function Footer() {
           </a>
         </span>
       </div>
+      {/* The keys, listed on the bottom face of the page where they'll be looked for. */}
+      <div className="wrap mt-3 flex flex-wrap gap-x-4 gap-y-1">
+        {keys.map((k) => (
+          <span key={k.key} className="text-muted-foreground">
+            <Kbd>{k.key}</Kbd> {k.label}
+          </span>
+        ))}
+      </div>
     </footer>
   );
 }
 
 export function Layout({ children }: { children: ReactNode }) {
+  useHotkeys();
   return (
     <div className="flex min-h-svh flex-col">
       <Header />
