@@ -12,6 +12,10 @@
   "theme": "auto",
   "skipAutoPermissionPrompt": true,
   "autoMode": {
+    "soft_deny": [
+      "$defaults",
+      "Bash(kubectl delete:*) in this repo's k8s namespaces (build, rust, argocd, bootstrap) — Shared Cluster Mutation / Interfere With Workloads not already carved out"
+    ],
     "environment": [
       "### Org-wide",
       "**Organization**: None configured",
@@ -37,10 +41,11 @@
       "**Primary use of Claude Code**: software development",
       "**Trusted repo**: /home/evgnomon/src/github.com/evgnomon/usecode (remote github.com:evgnomon/usecode.git) — PUBLIC repo: only this repo's own work is OK to commit/push here; secrets and sensitive data are never cleared into it by visibility alone",
       "**Org-specific CLIs**: None configured"
-    ],
-    "soft_deny": [
-      "$defaults",
-      "Bash(kubectl delete:*) in this repo's k8s namespaces (build, rust, argocd, bootstrap) — Shared Cluster Mutation / Interfere With Workloads not already carved out"
     ]
+  },
+  "voiceEnabled": true,
+  "voice": {
+    "enabled": true,
+    "mode": "hold"
   }
 }
