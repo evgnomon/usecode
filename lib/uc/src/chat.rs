@@ -21,12 +21,15 @@
 //! `--no-shell` sends every line to the model. Esc or Ctrl-C stops the model,
 //! and the command it is waiting on, and goes back to the prompt; Ctrl-C at
 //! the prompt quits. Holding Space at an empty prompt records the microphone
-//! and sends what was said instead, see `voice`.
+//! and sends what was said instead, see `voice`. Ctrl-L at the prompt clears
+//! the screen and the model's context with it.
 //! What the model is told about all this is the main skill, `chat/main.md`, always in its system prompt. The key comes from
 //! `OPENROUTER_API_KEY`, the model from `UC_MODEL`, the reasoning effort from
 //! `UC_EFFORT`. Without `UC_MODEL` but with `TYPESAFE_API_KEY`, a TypeSafe
 //! model (`TYPESAFE_MODEL`) reads each line and picks the OpenRouter model
-//! from `MODELS` that suits it best; otherwise it is GLM 5.3 Flash.
+//! from `MODELS` that suits it best; otherwise it is GLM 5.3 Flash. GPT-6
+//! Luna joins the pool for short but hard thinking; a per-line effort is not
+//! picked, so it runs on the session's one.
 
 use anyhow::{Context, Result, anyhow, bail};
 use rustyline::error::ReadlineError;
@@ -79,6 +82,13 @@ const MODELS: &[(&str, &str)] = &[
          a lot of new code or tests, a nasty bug nobody has found, design and \
          architecture, or anything the quick models would likely get wrong",
     ),
+    (
+        "openai/gpt-6-luna",
+        "Thinking work in prose or code where the answer is short but hard: proofs and \
+         tricky reasoning, algorithm design or a puzzle-like bug, migrating code between \
+         languages or frameworks, a plan to review before acting on. Best with effort \
+         turned up; dear per token, so wrong for long output, everyday lines or reading",
+    ),
 ];
 const DUCKDUCKGO: &str = "https://html.duckduckgo.com/html/";
 const EXA: &str = "https://api.exa.ai/search";
@@ -127,6 +137,10 @@ static SAVED: Mutex<Option<libc::termios>> = Mutex::new(None);
 
 /// The process groups of the jobs still running, stopped when uc exits.
 static GROUPS: Mutex<BTreeSet<i32>> = Mutex::new(BTreeSet::new());
+
+/// Set when Ctrl-L cleared the screen: the context goes with it, before the
+/// next line is read.
+static CLEARED: AtomicBool = AtomicBool::new(false);
 
 fn client() -> &'static reqwest::Client {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
@@ -365,7 +379,13 @@ async fn run(ask: bool, output: bool, shell: bool, search: Option<Search>) -> Re
             std::process::exit(130);
         }
     });
+    // The model last printed, so it is shown only when it changes.
+    let mut shown: Option<String> = None;
     loop {
+        if CLEARED.swap(false, Ordering::Relaxed) {
+            session.messages.retain(|m| m["role"] == "system");
+            eprintln!("· context cleared");
+        }
         let Some(line) = read_prompt("\x1b[38;5;208m₿\x1b[0m ")? else {
             eprintln!();
             return Ok(());
@@ -379,11 +399,17 @@ async fn run(ask: bool, output: bool, shell: bool, search: Option<Search>) -> Re
             continue;
         }
         session.allow_turn = approved;
+        // The model the line goes to, printed on its own line when it is new
+        // or routing has changed it; the same model again stays silent.
+        session.route(line).await;
+        if shown.as_deref() != Some(session.model.as_str()) {
+            eprintln!("· model {}", session.model);
+            shown = Some(session.model.clone());
+        }
         let work = async {
             match typed_command(line).filter(|_| shell) {
                 Some(command) => session.run_typed(command).await,
                 None => {
-                    session.route(line).await;
                     session
                         .messages
                         .push(json!({"role": "user", "content": line}));
@@ -787,7 +813,6 @@ impl Session {
             }
         };
         if model != self.model {
-            eprintln!("· model {model}");
             self.messages[0] = json!({"role": "system", "content": system_prompt(&model, self.ask, self.show_output)});
             self.model = model;
         }
@@ -1509,6 +1534,19 @@ fn history_lines(text: &str) -> Vec<String> {
 #[derive(Debug)]
 struct Stopped;
 
+/// Ctrl-L at the prompt: clears the screen, and the model's context with it,
+/// the way a fresh uc would start. The line being typed is kept.
+struct ClearScreen;
+
+impl ConditionalEventHandler for ClearScreen {
+    fn handle(&self, _: &Event, _: RepeatCount, _: bool, _: &EventContext) -> Option<Cmd> {
+        CLEARED.store(true, Ordering::Relaxed);
+        print!("\x1b[H\x1b[2J\x1b[3J");
+        let _ = std::io::stdout().flush();
+        Some(Cmd::Repaint)
+    }
+}
+
 impl std::fmt::Display for Stopped {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         f.write_str("stopped")
@@ -1532,6 +1570,10 @@ fn read_line(prompt: &str) -> Result<Option<String>> {
         new.bind_sequence(
             KeyEvent::ctrl('R'),
             EventHandler::Conditional(Box::new(FzfHistory)),
+        );
+        new.bind_sequence(
+            KeyEvent::ctrl('L'),
+            EventHandler::Conditional(Box::new(ClearScreen)),
         );
         new.bind_sequence(
             KeyEvent::new(' ', Modifiers::NONE),
@@ -1578,7 +1620,8 @@ async fn pick_model(key: &str, router: &str, line: &str) -> Result<String> {
                 a short answer or a command is for the everyday model; a long text to read \
                 is for the reading model; a change that needs much reading but a small \
                 patch is for the patch model; only a big or hard job needs the strongest \
-                one.",
+                one; a hard question with a short or planned answer, like proofs, tricky \
+                reasoning or a migration, goes to the reasoning model.",
             "criteria": criteria,
         }},
     });

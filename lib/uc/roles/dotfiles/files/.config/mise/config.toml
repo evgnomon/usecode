@@ -25,9 +25,13 @@ yazi = "latest"
 "npm:sass" = "latest"
 "npm:wrangler" = "latest"
 "npm:cf" = "latest"
-"npm:@anthropic-ai/claude-code" = { version = "latest", allow_builds = ["@anthropic-ai/claude-code"] } # postinstall links the platform binary
+"npm:@anthropic-ai/claude-code" = { version = "latest", allow_builds = [
+  "@anthropic-ai/claude-code",
+] } # postinstall links the platform binary
 "npm:@github/copilot" = "latest"
-"npm:opencode-ai" = { version = "latest", allow_builds = ["opencode-ai"] } # postinstall links the platform binary
+"npm:opencode-ai" = { version = "latest", allow_builds = [
+  "opencode-ai",
+] } # postinstall links the platform binary
 "npm:@earendil-works/pi-coding-agent" = "latest"
 
 # python tools (isolated venvs)
@@ -46,7 +50,7 @@ yazi = "latest"
 "pipx:llm" = "latest"
 "pipx:djlint" = "latest"
 "pipx:ruff" = "latest"
-"pipx:git-review" = "latest" # needed by Zuul
+"pipx:git-review" = "latest"                               # needed by Zuul
 "pipx:yamllint" = "latest"
 "pipx:yt-dlp" = { version = "latest", extras = "default" } # default extras bundle mutagen for --embed-thumbnail
 mutagen = "latest"
