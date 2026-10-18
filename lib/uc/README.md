@@ -41,9 +41,9 @@ and stops by itself. It runs DeepSeek V4.1 Flash with high reasoning effort
 unless you pick something else. You see the commands it runs and its
 answers, not the commands' raw output; `uc --output` shows that too.
 Type a command like `ls -al` or `git status` and it just runs on your
-terminal, like in a shell (`cd` too), with the same confirmations; a line that
-reads like a sentence goes to the model, and `!` in front makes anything a
-command. `uc --no-shell` turns that off and sends every line to the model.
+terminal, like in a shell (`cd` and your bash aliases and functions too), with
+the same confirmations; a line that reads like a sentence goes to the model,
+and `!` in front makes anything a command. `uc --no-shell` turns that off and sends every line to the model.
 Up and Down bring back what you typed before, even in an earlier session,
 and Ctrl-R finds it with fzf, just like in bash. Changed your mind while it
 works? Esc stops it, and whatever it was running, and you're back at the prompt.

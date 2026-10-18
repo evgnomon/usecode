@@ -13,6 +13,7 @@
 //! the commands print, unless `--output` is given. A line that is a command
 //! (`ls -al`, `git status`, or anything after `!`) runs on the terminal
 //! straight away, with the same confirmations, and the model is told it ran;
+//! the user's bash aliases and functions work there too;
 //! `--no-shell` sends every line to the model. Esc stops the model, and the
 //! command it is waiting on, and goes back to the prompt.
 //! What the model is told about all this is the main skill, `chat/main.md`, always in its system prompt. The key comes from
@@ -245,6 +246,10 @@ async fn run(ask: bool, output: bool, shell: bool) -> Result<()> {
         next_job: 1,
         waiting: None,
     };
+    if shell {
+        // Read the user's aliases while they type, not when the first line comes.
+        std::thread::spawn(user_shell);
+    }
     tokio::spawn(async {
         while tokio::signal::ctrl_c().await.is_ok() {
             if FOREGROUND.load(Ordering::Relaxed) {
@@ -307,7 +312,8 @@ fn typed_command(line: &str) -> Option<&str> {
         return None;
     }
     let first = line.split_whitespace().next()?;
-    if WORDS.contains(&first) || !(BUILTINS.contains(&first) || runnable(first)) {
+    let known = BUILTINS.contains(&first) || runnable(first) || user_shell().knows(first);
+    if WORDS.contains(&first) || !known {
         return None;
     }
     let prose = unquoted(line)
@@ -344,6 +350,98 @@ fn runnable(name: &str) -> bool {
     }
     std::env::var_os("PATH")
         .is_some_and(|path| std::env::split_paths(&path).any(|dir| executable(&dir.join(name))))
+}
+
+/// The user's bash aliases and functions, read once from an interactive bash,
+/// so a typed `ll` or `g status` runs as it would in their own shell.
+#[derive(Default)]
+struct UserShell {
+    /// Their shell options, aliases and functions, run before a typed command.
+    definitions: String,
+    /// Each alias and what it stands for.
+    aliases: BTreeMap<String, String>,
+    functions: BTreeSet<String>,
+}
+
+impl UserShell {
+    fn knows(&self, name: &str) -> bool {
+        self.aliases.contains_key(name) || self.functions.contains(name)
+    }
+
+    /// The command with its first word replaced by what it is an alias for:
+    /// `..` is `cd ..`.
+    fn expand(&self, command: &str) -> String {
+        let command = command.trim_start();
+        let first = command.split_whitespace().next().unwrap_or_default();
+        match self.aliases.get(first) {
+            Some(value) => format!("{value}{}", &command[first.len()..]),
+            None => command.to_string(),
+        }
+    }
+
+    /// A bash script that runs the command with the user's definitions.
+    fn script(&self, command: &str) -> String {
+        format!("{}\n{command}", self.definitions)
+    }
+}
+
+/// The user's shell, read on first use; empty when bash can't tell in time.
+fn user_shell() -> &'static UserShell {
+    static SHELL: OnceLock<UserShell> = OnceLock::new();
+    SHELL.get_or_init(|| read_user_shell().unwrap_or_default())
+}
+
+/// Asks an interactive bash, with no terminal to touch, for its definitions.
+/// What the bashrc prints itself comes before the first NUL and is dropped.
+fn read_user_shell() -> Option<UserShell> {
+    use std::os::unix::process::CommandExt;
+    const DUMP: &str = "printf '\\0'; shopt -p; printf '\\0'; alias -p; printf '\\0'; \
+                        declare -F; printf '\\0'; declare -f";
+    let mut bash = std::process::Command::new("bash");
+    bash.args(["-ic", DUMP])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null());
+    // SAFETY: setsid is async-signal-safe and touches no memory.
+    unsafe {
+        bash.pre_exec(|| {
+            libc::setsid();
+            Ok(())
+        });
+    }
+    // A bashrc that never finishes leaves the thread behind, not uc waiting.
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(bash.output());
+    });
+    let output = rx.recv_timeout(Duration::from_secs(5)).ok()?.ok()?;
+    parse_user_shell(&String::from_utf8_lossy(&output.stdout))
+}
+
+fn parse_user_shell(dump: &str) -> Option<UserShell> {
+    let mut parts = dump.rsplitn(5, '\0');
+    let (functions, names, aliases, options) =
+        (parts.next()?, parts.next()?, parts.next()?, parts.next()?);
+    parts.next()?;
+    Some(UserShell {
+        // The options first: bash-completion's functions need extglob to parse.
+        definitions: format!("{options}shopt -s expand_aliases\n{aliases}{functions}"),
+        aliases: aliases
+            .lines()
+            .filter_map(|line| line.strip_prefix("alias ")?.split_once('='))
+            .map(|(name, quoted)| {
+                let value = quoted.strip_prefix('\'').and_then(|v| v.strip_suffix('\''));
+                (
+                    name.to_string(),
+                    value.unwrap_or(quoted).replace("'\\''", "'"),
+                )
+            })
+            .collect(),
+        functions: names
+            .lines()
+            .filter_map(|line| line.strip_prefix("declare -f "))
+            .map(str::to_string)
+            .collect(),
+    })
 }
 
 /// Where `cd` goes, for a plain `cd`, `cd ~/x` or `cd dir`; None for anything
@@ -672,15 +770,16 @@ impl Session {
     /// A command the user typed: it runs on their terminal like in a shell,
     /// after the same confirmations as the model's, and the model is told.
     async fn run_typed(&mut self, command: &str) -> Result<()> {
-        self.confirm("run it?", deletes(command))?;
-        let note = match cd_target(command) {
+        let shell = user_shell();
+        self.confirm("run it?", deletes(&shell.expand(command)))?;
+        let note = match cd_target(&shell.expand(command)) {
             Some(dir) => {
                 std::env::set_current_dir(&dir).with_context(|| format!("cd {}", dir.display()))?;
                 let cwd = std::env::current_dir().unwrap_or(dir);
                 format!("I changed the working directory to {}.", cwd.display())
             }
             None => {
-                let status = on_terminal_status(command).await?;
+                let status = on_terminal_status(&shell.script(command)).await?;
                 if !status.success() {
                     eprintln!("· {status}");
                 }
@@ -1232,6 +1331,21 @@ mod tests {
         ] {
             assert!(typed_command(line).is_none(), "{line}");
         }
+    }
+
+    #[test]
+    fn aliases_and_functions_come_from_the_users_bash() {
+        let dump = "bashrc says hi\0shopt -s extglob\n\0alias ..='cd ..'\n\
+                    alias say='echo '\\''hi'\\'''\n\0declare -f mkcd\n\0mkcd () { :; }\n";
+        let shell = parse_user_shell(dump).unwrap();
+        assert!(shell.knows("..") && shell.knows("mkcd") && !shell.knows("hi"));
+        assert_eq!(shell.aliases["say"], "echo 'hi'");
+        assert_eq!(shell.expand(".."), "cd ..");
+        assert_eq!(shell.expand("say there"), "echo 'hi' there");
+        assert_eq!(shell.expand("ls -l"), "ls -l");
+        assert!(!shell.script("..").contains("bashrc says hi"));
+        assert!(shell.script("..").ends_with("mkcd () { :; }\n\n.."));
+        assert!(parse_user_shell("no definitions").is_none());
     }
 
     #[test]
