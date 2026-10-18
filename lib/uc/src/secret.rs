@@ -166,7 +166,6 @@ impl Store {
             .with_context(|| format!("replacing {}", old_asc.display()))?;
         fs::remove_file(&bak).with_context(|| format!("removing {}", bak.display()))
     }
-
 }
 
 /// 64 random letters and digits and a newline, as the vault passwords have
