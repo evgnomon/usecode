@@ -38,12 +38,16 @@ asking for the rest of the session. Deleting files always asks, whatever
 mode you're in. Slow builds and servers don't freeze it either: a command
 still going after its timeout keeps running as a job the agent checks on
 and stops by itself. It runs DeepSeek V4.1 Flash with high reasoning effort
-unless you pick something else.
+unless you pick something else. You see the commands it runs and its
+answers, not the commands' raw output; `uc --output` shows that too.
+Up and Down bring back what you typed before, even in an earlier session,
+and Ctrl-R finds it with fzf, just like in bash.
 
 ```sh
 export OPENROUTER_API_KEY=sk-or-...           # https://openrouter.ai/keys
 uc                                            # Ctrl-D or /exit to leave
 uc --ask                                      # confirm each command and change
+uc --output                                   # also show what the commands print
 UC_MODEL=openai/gpt-5 uc                      # any OpenRouter model
 UC_EFFORT=medium uc                           # low, medium or high reasoning
 ```

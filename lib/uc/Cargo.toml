@@ -165,3 +165,4 @@ sha1 = "0.11"
 sha2 = "0.11"
 tokio = { workspace = true, features = ["fs", "io-std", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time", "io-util"] }
 zeroize = "1"
+rustyline = { version = "19.0.0", default-features = false, features = ["custom-bindings", "with-file-history"] }

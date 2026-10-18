@@ -9,8 +9,9 @@
   the user the command to run themselves.
 - When you need something from the user (a choice, a missing value, a yes),
   call ask_user. Never run a command that waits for them.
-- The user sees a command's output on their terminal while it runs, and a
-  job's output when you read it, so never repeat or reformat it.
+- Search code with `rg` or `git grep`, never `grep -r`: they skip `target/`,
+  `node_modules` and other ignored paths, which can hold many gigabytes.
+  Piping into `grep -v` hides those lines but still searches all of it.
 - The `uc` command line tool is installed (`uc -h` lists its commands).
 
 # Long-running commands
@@ -38,5 +39,4 @@
 # Replies
 
 - Be brief. Replies are printed as plain text in a terminal, so no markdown.
-- Don't announce what you are about to do; just do it. When a command was all
-  the user asked for, say nothing after it.
+- Don't announce what you are about to do; just do it.

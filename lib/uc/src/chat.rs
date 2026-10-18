@@ -9,19 +9,26 @@
 //! they are confirmed first (`a` allows the rest of the session, a line ending
 //! in `-y` allows what its answer does). Deleting files is always confirmed.
 //! A command still running after its timeout carries on as a job the model
-//! follows and stops itself. What the model is told about all this is the main
+//! follows and stops itself. Only the model's replies are printed, not what
+//! the commands print, unless `--output` is given. What the model is told about all this is the main
 //! skill, `chat/main.md`, always in its system prompt. The key comes from
 //! `OPENROUTER_API_KEY`, the model from `UC_MODEL`, the reasoning effort from
 //! `UC_EFFORT`.
 
 use anyhow::{Context, Result, anyhow, bail};
+use rustyline::error::ReadlineError;
+use rustyline::{
+    Cmd, ConditionalEventHandler, DefaultEditor, Event, EventContext, EventHandler, KeyEvent,
+    Movement, RepeatCount,
+};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::{BufRead, Write};
+use std::io::{IsTerminal, Write};
+use std::path::PathBuf;
 use std::process::{ExitCode, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::task::JoinHandle;
 
@@ -55,15 +62,16 @@ fn client() -> &'static reqwest::Client {
     })
 }
 
-/// `ask` confirms every command and change instead of running it straight away.
-pub fn main(ask: bool) -> ExitCode {
+/// `ask` confirms every command and change instead of running it straight away;
+/// `output` shows what the commands print as well as the model's replies.
+pub fn main(ask: bool, output: bool) -> ExitCode {
     // Worker threads keep reading the jobs' pipes while the prompt waits.
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
         .build()
         .expect("tokio runtime");
-    let result = runtime.block_on(run(ask));
+    let result = runtime.block_on(run(ask, output));
     stop_jobs();
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -84,6 +92,8 @@ struct Session {
     allow_all: bool,
     /// The line ended in `-y`: run what this turn asks for without asking.
     allow_turn: bool,
+    /// Print what commands and jobs print, not only the model's replies.
+    show_output: bool,
     jobs: BTreeMap<usize, Job>,
     next_job: usize,
 }
@@ -173,7 +183,7 @@ fn deletes(command: &str) -> bool {
         .any(|word| DELETES.contains(&word))
 }
 
-async fn run(ask: bool) -> Result<()> {
+async fn run(ask: bool, output: bool) -> Result<()> {
     let key = std::env::var("OPENROUTER_API_KEY")
         .ok()
         .filter(|k| !k.trim().is_empty())
@@ -188,11 +198,12 @@ async fn run(ask: bool) -> Result<()> {
     let effort = env_or("UC_EFFORT", DEFAULT_EFFORT);
     let mut session = Session {
         key: key.trim().to_string(),
-        messages: vec![json!({"role": "system", "content": system_prompt(&model, ask)})],
+        messages: vec![json!({"role": "system", "content": system_prompt(&model, ask, output)})],
         model,
         effort,
         allow_all: !ask,
         allow_turn: false,
+        show_output: output,
         jobs: BTreeMap::new(),
         next_job: 1,
     };
@@ -204,7 +215,7 @@ async fn run(ask: bool) -> Result<()> {
         }
     });
     loop {
-        let Some(line) = read_line("\x1b[38;5;208m₿\x1b[0m ")? else {
+        let Some(line) = read_prompt("\x1b[38;5;208m₿\x1b[0m ")? else {
             eprintln!();
             return Ok(());
         };
@@ -237,7 +248,7 @@ fn split_approval(line: &str) -> (&str, bool) {
     }
 }
 
-fn system_prompt(model: &str, ask: bool) -> String {
+fn system_prompt(model: &str, ask: bool, output: bool) -> String {
     let cwd = std::env::current_dir()
         .map(|d| d.display().to_string())
         .unwrap_or_default();
@@ -246,10 +257,18 @@ fn system_prompt(model: &str, ask: bool) -> String {
     } else {
         "they run without asking, so be careful with anything destructive"
     };
+    let sees = if output {
+        "The user sees a command's output on their terminal while it runs, and a job's output \
+         when you read it, so never repeat or reformat it; when a command was all they asked \
+         for, say nothing after it."
+    } else {
+        "The user sees the commands you run but not their output, only your replies, so tell \
+         them what they need from it: the answer, not the raw output."
+    };
     format!(
         "You are uc, the usecode coding agent, running in a terminal on the user's machine, \
          on the model {model} via OpenRouter. The working directory is {cwd}. Use the tools to \
-         look around, run commands and change files; {confirms}.\n\n{MAIN_SKILL}"
+         look around, run commands and change files; {confirms}. {sees}\n\n{MAIN_SKILL}"
     )
 }
 
@@ -433,10 +452,10 @@ impl Session {
         background: bool,
         ask: bool,
     ) -> Result<String> {
-        // The gray ₿ is the shell prompt from the dotfiles' .bashrc.
-        eprintln!("\x1b[38;5;245m₿\x1b[0m {command}");
+        // The ₿ in Gruvbox fg (#ebdbb2) is the shell prompt from the dotfiles' .bashrc.
+        eprintln!("\x1b[38;2;235;219;178m₿\x1b[0m {command}");
         self.confirm("run it?", ask || deletes(command))?;
-        let id = self.start(command, !background)?;
+        let id = self.start(command, !background && self.show_output)?;
         if background {
             eprintln!("· job {id} started");
             return Ok(format!("started job {id}"));
@@ -494,7 +513,15 @@ impl Session {
         if job.status.is_some() {
             return;
         }
+        // Without its output on screen, a long wait would look like uc hung.
+        let quiet = !job.echo.load(Ordering::Relaxed) && std::io::stderr().is_terminal();
+        let clock = quiet.then(|| tokio::spawn(elapsed()));
         let waited = tokio::time::timeout(Duration::from_secs(secs), job.child.wait()).await;
+        if let Some(clock) = clock {
+            clock.abort();
+            let _ = clock.await;
+            eprint!("\r\x1b[2K");
+        }
         if let Ok(Ok(status)) = waited {
             job.status = Some(status);
             GROUPS.lock().unwrap().remove(&job.group);
@@ -529,7 +556,9 @@ impl Session {
         }
         self.wait(id, wait).await;
         let (status, text) = self.take(id);
-        eprint!("{text}");
+        if self.show_output {
+            eprint!("{text}");
+        }
         eprintln!("· job {id}: {status}");
         Ok(format!("{status}\noutput:\n{text}"))
     }
@@ -601,16 +630,139 @@ impl Session {
     }
 }
 
-/// A line from stdin after `prompt`; None at end of input.
+/// Shows how long a wait has taken, once it passes a few seconds, until aborted.
+async fn elapsed() {
+    let start = Instant::now();
+    loop {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let secs = start.elapsed().as_secs();
+        if secs >= 3 {
+            eprint!("\r\x1b[2K· running {secs}s");
+        }
+    }
+}
+
+/// The line editor every prompt reads through, so arrow keys edit the line.
+static EDITOR: Mutex<Option<DefaultEditor>> = Mutex::new(None);
+
+/// Where the lines typed at the main prompt are kept between sessions.
+fn history_path() -> Option<PathBuf> {
+    let state = std::env::var_os("XDG_STATE_HOME")
+        .filter(|d| !d.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/state")))?;
+    Some(state.join("usecode/chat_history"))
+}
+
+/// A line typed at the main prompt; Up and Down go through the earlier ones,
+/// this session's and the ones before. None at end of input.
+fn read_prompt(prompt: &str) -> Result<Option<String>> {
+    let line = read_line(prompt)?;
+    if let Some(line) = line.as_deref().map(str::trim).filter(|l| !l.is_empty()) {
+        let mut editor = EDITOR.lock().unwrap_or_else(|e| e.into_inner());
+        if let (Some(editor), Some(path)) = (editor.as_mut(), history_path()) {
+            let _ = editor.add_history_entry(line);
+            let _ = std::fs::create_dir_all(path.parent().unwrap_or(&path));
+            let _ = editor.append_history(&path);
+        }
+    }
+    Ok(line)
+}
+
+/// Ctrl-R picks an earlier line with fzf, newest first, like it does in bash.
+/// Without fzf it is the usual reverse search.
+struct FzfHistory;
+
+impl ConditionalEventHandler for FzfHistory {
+    fn handle(&self, _: &Event, _: RepeatCount, _: bool, ctx: &EventContext) -> Option<Cmd> {
+        let text = std::fs::read_to_string(history_path()?).unwrap_or_default();
+        let mut seen = BTreeSet::new();
+        let mut lines = Vec::new();
+        for line in history_lines(&text).into_iter().rev() {
+            if seen.insert(line.clone()) {
+                lines.push(line);
+            }
+        }
+        let mut fzf = std::process::Command::new("fzf")
+            .args([
+                "--height=40%",
+                "--reverse",
+                "--scheme=history",
+                "--read0",
+                "--print0",
+            ])
+            .args(["--bind=ctrl-r:toggle-sort", "--query", ctx.line()])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .ok()?;
+        if let Some(mut stdin) = fzf.stdin.take() {
+            let _ = stdin.write_all(lines.join("\0").as_bytes());
+        }
+        let picked = fzf.wait_with_output().ok()?;
+        let picked = String::from_utf8_lossy(&picked.stdout);
+        match picked.trim_end_matches('\0') {
+            "" => Some(Cmd::Repaint),
+            line => Some(Cmd::Replace(Movement::WholeBuffer, Some(line.to_string()))),
+        }
+    }
+}
+
+/// The entries of a rustyline history file, oldest first; `#V2` files escape
+/// newlines and backslashes.
+fn history_lines(text: &str) -> Vec<String> {
+    let mut lines = text.lines();
+    let v2 = text.starts_with("#V2\n");
+    if v2 {
+        lines.next();
+    }
+    lines
+        .filter(|l| !l.is_empty())
+        .map(|l| {
+            if !v2 {
+                return l.to_string();
+            }
+            let mut out = String::with_capacity(l.len());
+            let mut chars = l.chars();
+            while let Some(c) = chars.next() {
+                match (c, chars.clone().next()) {
+                    ('\\', Some('n')) => {
+                        chars.next();
+                        out.push('\n');
+                    }
+                    ('\\', Some(_)) => out.extend(chars.next()),
+                    (c, _) => out.push(c),
+                }
+            }
+            out
+        })
+        .collect()
+}
+
+/// A line from stdin after `prompt`; None at end of input. Ctrl-C quits uc.
 fn read_line(prompt: &str) -> Result<Option<String>> {
-    eprint!("{prompt}");
-    std::io::stderr().flush()?;
-    let mut line = String::new();
-    let read = std::io::stdin()
-        .lock()
-        .read_line(&mut line)
-        .context("reading stdin")?;
-    Ok((read > 0).then_some(line))
+    let mut editor = EDITOR.lock().unwrap_or_else(|e| e.into_inner());
+    if editor.is_none() {
+        let mut new = DefaultEditor::new().context("opening the terminal")?;
+        if let Some(path) = history_path() {
+            let _ = new.load_history(&path);
+        }
+        new.bind_sequence(
+            KeyEvent::ctrl('R'),
+            EventHandler::Conditional(Box::new(FzfHistory)),
+        );
+        *editor = Some(new);
+    }
+    match editor.as_mut().map(|e| e.readline(prompt)) {
+        Some(Ok(line)) => Ok(Some(line)),
+        Some(Err(ReadlineError::Eof)) => Ok(None),
+        Some(Err(ReadlineError::Interrupted)) => {
+            stop_jobs();
+            std::process::exit(130);
+        }
+        Some(Err(err)) => Err(err).context("reading stdin"),
+        None => Ok(None),
+    }
 }
 
 fn truncate(mut output: String) -> String {
@@ -636,6 +788,12 @@ mod tests {
         assert!(cut.ends_with("[output cut]"));
         assert!(cut.len() <= MAX_OUTPUT + "\n[output cut]".len());
         assert_eq!(truncate("short".into()), "short");
+    }
+
+    #[test]
+    fn reads_the_history_file() {
+        assert_eq!(history_lines("#V2\nls\n\na\\nb\\\\c\n"), ["ls", "a\nb\\c"]);
+        assert_eq!(history_lines("ls\npwd\n"), ["ls", "pwd"]);
     }
 
     #[test]
@@ -692,6 +850,7 @@ mod tests {
             messages: Vec::new(),
             allow_all: true,
             allow_turn: false,
+            show_output: false,
             jobs: BTreeMap::new(),
             next_job: 1,
         }
