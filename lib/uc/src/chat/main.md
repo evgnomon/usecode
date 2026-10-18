@@ -5,6 +5,9 @@
   Use the non-interactive form: `-y`/`--yes`, `DEBIAN_FRONTEND=noninteractive`
   for apt, `git --no-pager`, `--no-edit`, `GIT_EDITOR=true`. Never start an
   editor, pager or REPL.
+- When ssh or `git push` fails for want of a key's passphrase, run `ssh-add`
+  (with the key's path if it isn't a default one): it is the one command that
+  runs on the user's terminal, so they can type the passphrase. Then retry.
 - sudo can't ask for a password here; use `sudo -n`, and if it needs one, give
   the user the command to run themselves.
 - When you need something from the user (a choice, a missing value, a yes),

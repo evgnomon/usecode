@@ -183,6 +183,13 @@ fn deletes(command: &str) -> bool {
         .any(|word| DELETES.contains(&word))
 }
 
+/// Whether a command gets the terminal: only `ssh-add`, which asks for a key's
+/// passphrase.
+fn on_terminal(command: &str) -> bool {
+    let word = command.split_whitespace().next().unwrap_or("");
+    word.rsplit('/').next() == Some("ssh-add")
+}
+
 async fn run(ask: bool, output: bool) -> Result<()> {
     let key = std::env::var("OPENROUTER_API_KEY")
         .ok()
@@ -289,7 +296,8 @@ fn tools() -> Value {
             "Run a command with bash in the working directory, without a terminal and with stdin \
              closed; returns its exit status and output (stdout and stderr together). A command \
              still running after the timeout carries on as a job. Deleting files always asks the \
-             user first.",
+             user first. The exception is ssh-add: it runs on the user's terminal so they can \
+             type the key's passphrase.",
             json!({
                 "command": string("the command line"),
                 "timeout": integer("seconds to wait before it carries on as a job; 120 if left out"),
@@ -455,6 +463,9 @@ impl Session {
         // The ₿ in Gruvbox fg (#ebdbb2) is the shell prompt from the dotfiles' .bashrc.
         eprintln!("\x1b[38;2;235;219;178m₿\x1b[0m {command}");
         self.confirm("run it?", ask || deletes(command))?;
+        if on_terminal(command) {
+            return self.run_on_terminal(command).await;
+        }
         let id = self.start(command, !background && self.show_output)?;
         if background {
             eprintln!("· job {id} started");
@@ -470,16 +481,38 @@ impl Session {
         Ok(format!("{status}\noutput:\n{text}"))
     }
 
-    fn start(&mut self, command: &str, echo: bool) -> Result<usize> {
-        let mut child = tokio::process::Command::new("bash")
+    /// Runs a command in the foreground with the terminal as its stdin and
+    /// output, so the user can type a passphrase into it.
+    async fn run_on_terminal(&mut self, command: &str) -> Result<String> {
+        let status = tokio::process::Command::new("bash")
             .args(["-c", command])
+            .status()
+            .await
+            .context("starting bash")?;
+        Ok(format!(
+            "{status}\noutput: (it ran on the user's terminal, not captured)"
+        ))
+    }
+
+    fn start(&mut self, command: &str, echo: bool) -> Result<usize> {
+        let mut bash = tokio::process::Command::new("bash");
+        bash.args(["-c", command])
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            // Its own process group, so job_kill stops a whole pipeline.
-            .process_group(0)
-            .spawn()
-            .context("starting bash")?;
+            .stderr(Stdio::piped());
+        // Its own session, so job_kill stops a whole pipeline, and ssh can't
+        // open the terminal to ask for a passphrase: it fails instead of
+        // stopping on SIGTTIN and hanging.
+        // SAFETY: setsid is async-signal-safe and touches no memory.
+        unsafe {
+            bash.pre_exec(|| {
+                if libc::setsid() == -1 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        let mut child = bash.spawn().context("starting bash")?;
         let group = child.id().context("bash has no pid")? as i32;
         GROUPS.lock().unwrap().insert(group);
         let output = Arc::new(Mutex::new(Output::default()));
@@ -881,6 +914,21 @@ mod tests {
         // SAFETY: signal 0 only checks whether the group still exists.
         assert_eq!(unsafe { libc::kill(-group, 0) }, -1);
         assert!(!GROUPS.lock().unwrap().contains(&group));
+    }
+
+    #[test]
+    fn only_ssh_add_gets_the_terminal() {
+        assert!(on_terminal("ssh-add ~/.ssh/id_evgnomon"));
+        assert!(on_terminal("/usr/bin/ssh-add"));
+        assert!(!on_terminal("git push"));
+        assert!(!on_terminal("echo ssh-add"));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn commands_have_no_terminal_to_ask_on() {
+        let mut s = session();
+        let out = s.bash("exec 3</dev/tty", 5, false, false).await.unwrap();
+        assert!(!out.starts_with("exit status: 0"), "{out}");
     }
 
     #[test]
