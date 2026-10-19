@@ -82,7 +82,7 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
             "dotfiles/home-templates",
             "Inflate template configs in the home",
         )
-        .tags(&["dotfiles"])
+        .tags(&["dotfiles", "theme"])
         .run(move |ctx| async move {
             inflate(&ctx, &home_templates, &ctx.vars().home, |_| true).await
         }),

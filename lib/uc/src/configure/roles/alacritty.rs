@@ -5,26 +5,33 @@
 //! workstation it is linked into `~/.config/alacritty`; under WSL it goes to
 //! the Windows Alacritty in `%APPDATA%\alacritty`, with a shell that opens
 //! tmux in this distribution and a maximized window instead of a full screen.
+//! The colors come from `lib/alacritty/themes`, the one `theme` names.
 
 use crate::configure::ctx::Ctx;
 use crate::configure::engine::{Outcome, Plan, Task};
 use crate::configure::modules::{copy, file};
 use crate::configure::roles::WORKSTATION_ONLY;
-use crate::configure::vars::{Profile, Vars};
+use crate::configure::vars::{Profile, Theme, Vars};
 use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
 
 pub fn tasks(plan: &mut Plan, v: &Vars) {
     let shared = v.usecode_dir.join("lib/alacritty/alacritty.toml");
+    let theme = theme_file(&v.usecode_dir, v.config.theme);
 
     let config = shared.clone();
+    let colors = theme.clone();
     plan.add(
         Task::new("alacritty/link", "Link the Alacritty configuration")
-            .tags(&["alacritty"])
+            .tags(&["alacritty", "theme"])
             .when(v.profile == Profile::Workstation, WORKSTATION_ONLY)
             .run(move |ctx| async move {
-                let dest = ctx.vars().home.join(".config/alacritty/alacritty.toml");
-                file::link(&ctx, &config, &dest, false).await
+                let dir = ctx.vars().home.join(".config/alacritty");
+                let main = file::link(&ctx, &config, &dir.join("alacritty.toml"), false).await?;
+                // Alacritty watches its imports, so the open windows switch
+                // colors as soon as the link does.
+                let theme = file::link(&ctx, &colors, &dir.join("theme.toml"), false).await?;
+                Ok(main.and(theme))
             }),
     );
 
@@ -33,7 +40,7 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
             "alacritty/windows",
             "Configure the Windows Alacritty to open WSL",
         )
-        .tags(&["alacritty"])
+        .tags(&["alacritty", "theme"])
         .when(v.profile == Profile::Wsl, "only on the wsl profile")
         .run(move |ctx| async move {
             let appdata = windows_appdata(&ctx).await?;
@@ -57,12 +64,16 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
                 .with_context(|| format!("reading {}", shared.display()))?;
             let shared_copy = copy::content(
                 &ctx,
-                &maximized(&without_shell(&text)),
+                &maximized(&without_import(&without_shell(&text))),
                 &dir.join("usecode.toml"),
                 None,
                 false,
             )
             .await?;
+            let colors = std::fs::read_to_string(&theme)
+                .with_context(|| format!("reading {}", theme.display()))?;
+            let theme_copy =
+                copy::content(&ctx, &colors, &dir.join("theme.toml"), None, false).await?;
             let main = copy::content(
                 &ctx,
                 &windows_config(&appdata, std::env::var("WSL_DISTRO_NAME").ok().as_deref()),
@@ -71,7 +82,11 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
                 false,
             )
             .await?;
-            Ok(local.and(local_shell).and(shared_copy).and(main))
+            Ok(local
+                .and(local_shell)
+                .and(shared_copy)
+                .and(theme_copy)
+                .and(main))
         }),
     );
 }
@@ -124,6 +139,24 @@ async fn wsl_path(ctx: &Ctx, windows: &str) -> Result<PathBuf> {
     Ok(PathBuf::from(out.stdout.trim()))
 }
 
+/// The colors of `theme`.
+fn theme_file(usecode_dir: &Path, theme: Theme) -> PathBuf {
+    let name = match theme {
+        Theme::Dark => "gruvbox-dark",
+        Theme::Light => "gruvbox-light-hard",
+    };
+    usecode_dir.join(format!("lib/alacritty/themes/{name}.toml"))
+}
+
+/// A configuration without its `import = …` line: its paths are the Linux
+/// ones, and the Windows `alacritty.toml` imports the copies itself.
+fn without_import(text: &str) -> String {
+    text.lines()
+        .filter(|line| !line.trim_start().starts_with("import ="))
+        .map(|line| format!("{line}\n"))
+        .collect()
+}
+
 /// A configuration without its shell: a `shell = …` line or a
 /// `[terminal.shell]` table.
 fn without_shell(text: &str) -> String {
@@ -157,8 +190,9 @@ fn maximized(text: &str) -> String {
 /// How the Windows `alacritty.toml` this role writes starts.
 const MARKER: &str = "# Written by `uc sync -t alacritty`";
 
-/// The Windows `alacritty.toml`: the shared configuration with a shell that
-/// starts tmux in `distro`, or in the default distribution when unknown.
+/// The Windows `alacritty.toml`: the shared configuration and its theme with
+/// a shell that starts tmux in `distro`, or in the default distribution when
+/// unknown.
 fn windows_config(appdata: &str, distro: Option<&str>) -> String {
     let mut args = Vec::new();
     if let Some(distro) = distro.filter(|d| !d.is_empty()) {
@@ -185,7 +219,7 @@ fn windows_config(appdata: &str, distro: Option<&str>) -> String {
         "{MARKER}; edit lib/alacritty/alacritty.toml, or local.toml next to this file.\n\
          \n\
          [general]\n\
-         import = ['{appdata}\\alacritty\\usecode.toml', '{appdata}\\alacritty\\local.toml']\n\
+         import = ['{appdata}\\alacritty\\usecode.toml', '{appdata}\\alacritty\\theme.toml', '{appdata}\\alacritty\\local.toml']\n\
          \n\
          [terminal]\n\
          shell = {{ program = \"wsl.exe\", args = [{args}] }}\n"
@@ -200,7 +234,7 @@ mod tests {
     fn windows_config_opens_the_distro() {
         let text = windows_config(r"C:\Users\me\AppData\Roaming", Some("Debian"));
         assert!(text.contains(
-            r"import = ['C:\Users\me\AppData\Roaming\alacritty\usecode.toml', 'C:\Users\me\AppData\Roaming\alacritty\local.toml']"
+            r"import = ['C:\Users\me\AppData\Roaming\alacritty\usecode.toml', 'C:\Users\me\AppData\Roaming\alacritty\theme.toml', 'C:\Users\me\AppData\Roaming\alacritty\local.toml']"
         ));
         assert!(text.contains(
             r#"shell = { program = "wsl.exe", args = ["-d", "Debian", "--cd", "~", "--", "bash", "--login", "-c", "'tmux new-session -A -s main'"] }"#
@@ -222,6 +256,22 @@ mod tests {
             text,
             "[font]\nsize = 12.0\n\n[colors.primary]\nbackground = \"#282828\"\n"
         );
+    }
+
+    #[test]
+    fn without_import_drops_the_linux_imports() {
+        let text = without_import(
+            "[general]\nimport = [\"~/.config/alacritty/theme.toml\"]\n\n[env]\nTERM = \"xterm-256color\"\n",
+        );
+        assert_eq!(text, "[general]\n\n[env]\nTERM = \"xterm-256color\"\n");
+    }
+
+    #[test]
+    fn theme_file_exists_for_every_theme() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        for theme in [Theme::Dark, Theme::Light] {
+            assert!(theme_file(&root, theme).is_file(), "{theme:?}");
+        }
     }
 
     #[test]

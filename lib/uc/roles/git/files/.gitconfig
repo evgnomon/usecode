@@ -18,9 +18,9 @@
 
 [color "diff-highlight"]
   oldNormal = red
-  oldHighlight = red 52
+  oldHighlight = red reverse
   newNormal = green
-  newHighlight = green 22
+  newHighlight = green reverse
 
 [alias]
 	co = checkout

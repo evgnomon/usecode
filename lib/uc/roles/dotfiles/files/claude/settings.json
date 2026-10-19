@@ -1,4 +1,12 @@
 {
+  "env": {
+    "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "1"
+  },
+  "attribution": {
+    "commit": "",
+    "pr": "",
+    "sessionUrl": false
+  },
   "permissions": {
     "defaultMode": "auto"
   },
@@ -9,7 +17,11 @@
   },
   "effortLevel": "medium",
   "tui": "default",
-  "theme": "auto",
+  "voice": {
+    "enabled": true,
+    "mode": "hold"
+  },
+  "theme": "custom:usecode",
   "skipAutoPermissionPrompt": true,
   "autoMode": {
     "soft_deny": [
@@ -43,17 +55,5 @@
       "**Org-specific CLIs**: None configured"
     ]
   },
-  "voiceEnabled": true,
-  "voice": {
-    "enabled": true,
-    "mode": "hold"
-  },
-  "attribution": {
-    "commit": "",
-    "pr": "",
-    "sessionUrl": false
-  },
-  "env": {
-    "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "1"
-  }
+  "voiceEnabled": true
 }

@@ -118,6 +118,33 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
         }),
     );
 
+    // GTK, libadwaita and VS Code follow it, so they match the terminal.
+    let scheme = format!("'prefer-{}'", v.config.theme.name());
+    plan.add(
+        Task::new(
+            "gnome/color-scheme",
+            "Set the GNOME color scheme to the theme",
+        )
+        .tags(&["gnome", "theme"])
+        .when(desktop, DESKTOP_ONLY)
+        .run(move |ctx| async move {
+            let (schema, key) = ("org.gnome.desktop.interface", "color-scheme");
+            let current = ctx
+                .cmd("gsettings")
+                .args(["get", schema, key])
+                .read_only()
+                .output()
+                .await?;
+            if current.stdout.trim() == scheme {
+                return Ok(Outcome::Ok);
+            }
+            ctx.cmd("gsettings")
+                .args(["set", schema, key, scheme.trim_matches('\'')])
+                .run_step()
+                .await
+        }),
+    );
+
     plan.add(
         Task::new("gnome/remove-apps", "Remove GNOME games and applications")
             .tags(&["gnome"])

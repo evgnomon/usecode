@@ -35,7 +35,9 @@
         "editor.defaultFormatter": "vscode.json-language-features"
     },
     "editor.fontSize": 16,
-    "workbench.colorTheme": "Gruvbox Dark Medium",
+    "window.autoDetectColorScheme": true,
+    "workbench.preferredDarkColorTheme": "Gruvbox Dark Medium",
+    "workbench.preferredLightColorTheme": "Gruvbox Light Hard",
     "terminal.external.linuxExec": "alacritty",
     "gopls": {
         "symbolScope": "workspace"

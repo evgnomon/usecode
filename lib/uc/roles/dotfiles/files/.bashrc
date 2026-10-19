@@ -15,7 +15,7 @@ BLUE="\[\e[34m\]"    # Blue for path
 GREEN="\[\e[32m\]"   # Green for Git branch
 RED="\[\e[31m\]"
 RESET="\[\e[0m\]"    # Reset color
-FG='\[\033[38;2;235;219;178m\]' # Gruvbox fg #ebdbb2
+FG="\[\e[39m\]"     # The theme's foreground
 
 
 # check the window size after each command and, if necessary,
@@ -105,7 +105,7 @@ prompt_git_branch() {
 export LESS_TERMCAP_mb=$'\e[1;32m'     # begin bold
 export LESS_TERMCAP_md=$'\e[1;34m'     # begin blink
 export LESS_TERMCAP_me=$'\e[0m'        # reset bold/blink
-export LESS_TERMCAP_so=$'\e[01;47;34m' # begin reverse video
+export LESS_TERMCAP_so=$'\e[30;43m'    # begin reverse video: like tmux's copy mode
 export LESS_TERMCAP_se=$'\e[0m'        # reset reverse video
 export LESS_TERMCAP_us=$'\e[1;32m'     # begin underline
 export LESS_TERMCAP_ue=$'\e[0m'        # reset underline
@@ -194,6 +194,9 @@ export PATH="$HOME/go/bin:$PATH"
 export PATH="$HOME/bin:$PATH"
 export SKIM_DEFAULT_COMMAND="fd --type f --strip-cwd-prefix --hidden --exclude .git"
 export SKIM_CTRL_T_COMMAND="$SKIM_DEFAULT_COMMAND"
+# Terminal colors only, so skim and bat follow the Gruvbox theme Alacritty loads.
+export SKIM_DEFAULT_OPTIONS="--color=16"
+export BAT_THEME="ansi"
 
 if command -v sk &>/dev/null; then
     eval "$(sk --shell bash --shell-bindings)"

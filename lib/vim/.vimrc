@@ -32,7 +32,10 @@ let mapleader=","             " Set the leader key to a comma, allowing custom k
 :set number relativenumber      " Display both absolute line numbers and relative line numbers.
 :let python_highlight_all = 1   " Enable full syntax highlighting for Python, including highlighting of built-in functions and classes.
 :set backspace=indent,eol,start " Allow backspacing over indentation, end of line, and insertion start position in insert mode.
-set background=dark             " Optimize colors for a dark background.
+" Gruvbox dark unless `theme` in config.yaml is light; `uc sync` writes it.
+set background=dark
+silent! source ~/.vim/theme.vim
+let g:gruvbox_contrast_light = 'hard'
 set belloff=all               " Disable all audible and visual bells, preventing distractions from error notifications.
 
 let $PYTHONHOME = '/usr/local'

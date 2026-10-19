@@ -58,6 +58,26 @@ impl Profile {
     }
 }
 
+/// `theme` in the user config: the Gruvbox colors of the terminal, vim and
+/// the desktop.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Theme {
+    #[default]
+    Dark,
+    /// Gruvbox Light Hard.
+    Light,
+}
+
+impl Theme {
+    pub fn name(self) -> &'static str {
+        match self {
+            Theme::Dark => "dark",
+            Theme::Light => "light",
+        }
+    }
+}
+
 /// A git identity from the `profiles` map of the user config.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
@@ -92,6 +112,7 @@ pub struct UserConfig {
     pub default_user_profile: Option<String>,
     pub git_repos: Vec<GitRepo>,
     pub user_apt_packages: Option<BTreeMap<String, Option<Vec<String>>>>,
+    pub theme: Theme,
 }
 
 pub struct Vars {
@@ -235,6 +256,10 @@ impl Vars {
                 }
             }
         }
+        // `-e theme=…` switches the roles as well as the templates.
+        if let Some(theme) = extra.get("theme") {
+            vars.config.theme = serde_yaml::from_value(theme.clone()).context("-e theme")?;
+        }
         for (k, v) in extra {
             context.insert(k, Value::from_serialize(&v));
         }
@@ -301,6 +326,8 @@ impl Vars {
             ),
             ("proxy_env", Value::from_serialize(&proxy)),
             ("usecode_repo_dir", path(&self.usecode_dir)),
+            // The user config's own `theme` replaces it.
+            ("theme", Value::from(Theme::default().name())),
         ];
         entries
             .into_iter()
