@@ -4,7 +4,7 @@
 //! `alacritty`: the terminal configuration from `lib/alacritty`. On a
 //! workstation it is linked into `~/.config/alacritty`; under WSL it goes to
 //! the Windows Alacritty in `%APPDATA%\alacritty`, with a shell that opens
-//! tmux in this distribution.
+//! tmux in this distribution and a maximized window instead of a full screen.
 
 use crate::configure::ctx::Ctx;
 use crate::configure::engine::{Outcome, Plan, Task};
@@ -57,7 +57,7 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
                 .with_context(|| format!("reading {}", shared.display()))?;
             let shared_copy = copy::content(
                 &ctx,
-                &without_shell(&text),
+                &maximized(&without_shell(&text)),
                 &dir.join("usecode.toml"),
                 None,
                 false,
@@ -140,6 +140,20 @@ fn without_shell(text: &str) -> String {
         .collect()
 }
 
+/// A configuration that starts maximized: on Windows a full screen window
+/// hides the taskbar and the other windows.
+fn maximized(text: &str) -> String {
+    text.lines()
+        .map(|line| {
+            if line.trim_start().starts_with("startup_mode =") {
+                "startup_mode = \"Maximized\"\n".to_string()
+            } else {
+                format!("{line}\n")
+            }
+        })
+        .collect()
+}
+
 /// How the Windows `alacritty.toml` this role writes starts.
 const MARKER: &str = "# Written by `uc sync -t alacritty`";
 
@@ -207,6 +221,16 @@ mod tests {
         assert_eq!(
             text,
             "[font]\nsize = 12.0\n\n[colors.primary]\nbackground = \"#282828\"\n"
+        );
+    }
+
+    #[test]
+    fn maximized_replaces_fullscreen() {
+        let text =
+            maximized("[window]\nstartup_mode = \"Fullscreen\"\npadding = { x = 10, y = 0 }\n");
+        assert_eq!(
+            text,
+            "[window]\nstartup_mode = \"Maximized\"\npadding = { x = 10, y = 0 }\n"
         );
     }
 

@@ -1,7 +1,7 @@
 # License-Identifier: HGL
 # Copyright (C) The Usecode Authors (see AUTHORS)
 
-# Fullscreen Gruvbox Dark, CaskaydiaMono and a tmux "main" session as the shell.
+# Fullscreen (maximized on Windows) Gruvbox Dark, CaskaydiaMono and a tmux "main" session as the shell.
 
 [general]
 # Local overrides that should not live in the repo.
