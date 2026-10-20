@@ -205,15 +205,22 @@ fn print_list(
         let tags: Vec<&str> = task.tags.iter().map(String::as_str).collect();
         let after: Vec<&str> = plan.deps(i).iter().map(|&d| tasks[d].id.as_str()).collect();
         let sudo = if task.sudo { "  (sudo)" } else { "" };
+        // Whether a plain `uc sync` picks it without the user's `sync` list.
+        let default = match (Selection::default().includes(task), task.opted_in) {
+            (true, false) => "yes",
+            (true, true) => "no, on through your sync list",
+            (false, _) => "no",
+        };
         writeln!(out, "{:<width$}  {}{sudo}", task.id, task.name)?;
+        writeln!(out, "{:<width$}    default: {default}", "")?;
         if !tags.is_empty() {
-            writeln!(out, "{:<width$}    tags:  {}", "", tags.join(", "))?;
+            writeln!(out, "{:<width$}    tags:    {}", "", tags.join(", "))?;
         }
         if !after.is_empty() {
-            writeln!(out, "{:<width$}    after: {}", "", after.join(", "))?;
+            writeln!(out, "{:<width$}    after:   {}", "", after.join(", "))?;
         }
         if let Some(reason) = &task.disabled {
-            writeln!(out, "{:<width$}    skip:  {reason}", "")?;
+            writeln!(out, "{:<width$}    skip:    {reason}", "")?;
         }
     }
     writeln!(
@@ -315,5 +322,45 @@ mod tests {
         }
         let upgrade = plan.tasks().iter().find(|t| t.id == "apt/upgrade").unwrap();
         assert!(!Selection::default().includes(upgrade));
+    }
+
+    /// Without a `sync` list only what uc itself needs runs; `alacritty`
+    /// brings its font along, and `all` brings back everything.
+    #[test]
+    fn sync_list_opts_in() {
+        let selected = |sync: &[&str], tags: &[&str]| -> BTreeSet<String> {
+            let mut vars = Vars::for_tests();
+            vars.config.sync = sync.iter().map(|s| s.to_string()).collect();
+            let mut plan = roles::plan(&vars);
+            plan.resolve().unwrap();
+            let selection = Selection {
+                tags: tags.iter().map(|s| s.to_string()).collect(),
+                ..Selection::default()
+            };
+            let picked = plan.select(&selection);
+            picked.iter().map(|&i| plan.tasks()[i].id.clone()).collect()
+        };
+        let roles = |ids: &BTreeSet<String>| -> BTreeSet<String> {
+            ids.iter()
+                .map(|id| id.split('/').next().unwrap().to_string())
+                .collect()
+        };
+
+        let none = selected(&[], &[]);
+        assert_eq!(
+            roles(&none),
+            ["dotfiles", "local_bin", "usecode"]
+                .map(String::from)
+                .into()
+        );
+        assert!(none.contains("dotfiles/usecode-config") && !none.contains("dotfiles/links"));
+
+        let alacritty = selected(&["alacritty"], &[]);
+        assert!(alacritty.contains("fonts/install") && alacritty.contains("pkg/cascadia-mono"));
+        assert!(!alacritty.contains("pkg/debian"));
+
+        let all = selected(&["all"], &[]);
+        assert!(all.contains("zls/build") && !all.contains("apt/upgrade"));
+        assert!(selected(&[], &["fonts"]).contains("fonts/install"));
     }
 }

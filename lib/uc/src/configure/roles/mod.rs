@@ -13,6 +13,7 @@
 pub mod alacritty;
 pub mod apt;
 pub mod bash_history_backup;
+pub mod brave_bookmarks;
 pub mod docker;
 pub mod dotfiles;
 pub mod extrepo;
@@ -32,8 +33,37 @@ pub mod usecode;
 pub mod wslview;
 pub mod zls;
 
-use crate::configure::engine::Plan;
+use crate::configure::engine::{Plan, Task};
+use crate::configure::glob_match;
 use crate::configure::vars::Vars;
+
+/// Synced on every machine: what uc needs to find its config, run and
+/// update itself.
+const ESSENTIAL: &[&str] = &["local_bin", "usecode", "dotfiles/usecode-config"];
+
+/// What a part pulls in when it is synced: the Alacritty config names the
+/// CaskaydiaMono Nerd Font.
+const REQUIRES: &[(&str, &[&str])] = &[("alacritty", &["fonts", "pkg/cascadia-mono"])];
+
+/// Whether `pattern`, as in the `sync` list, names the task or its role.
+fn names(pattern: &str, task: &Task) -> bool {
+    pattern == "all" || glob_match(pattern, &task.id) || glob_match(pattern, task.role())
+}
+
+/// Whether the task is essential or the user's `sync` list asks for it,
+/// directly or through what a listed part requires.
+fn wanted(sync: &[String], task: &Task) -> bool {
+    let required = REQUIRES
+        .iter()
+        .filter(|(part, _)| sync.iter().any(|p| p == "all" || glob_match(p, part)))
+        .flat_map(|(_, needs)| needs.iter().copied());
+    ESSENTIAL
+        .iter()
+        .copied()
+        .chain(required)
+        .chain(sync.iter().map(String::as_str))
+        .any(|p| names(p, task))
+}
 
 /// Every task: the Debian-family roles, gated on the OS family, then the
 /// roles for all platforms.
@@ -55,6 +85,7 @@ pub fn plan(v: &Vars) -> Plan {
     fonts::tasks(&mut plan, v);
     mise::tasks(&mut plan, v);
     bash_history_backup::tasks(&mut plan, v);
+    brave_bookmarks::tasks(&mut plan, v);
     wslview::tasks(&mut plan, v);
     docker::tasks(&mut plan, v);
     zls::tasks(&mut plan, v);
@@ -67,6 +98,10 @@ pub fn plan(v: &Vars) -> Plan {
     rust::tasks(&mut plan, v);
     goose::tasks(&mut plan, v);
     alacritty::tasks(&mut plan, v);
+    plan.opt_in(
+        |task| wanted(&[], task),
+        |task| wanted(&v.config.sync, task),
+    );
     plan
 }
 

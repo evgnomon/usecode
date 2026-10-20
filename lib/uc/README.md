@@ -164,12 +164,21 @@ derivation, and says so when it does; re-encrypting upgrades them.
 
 `uc sync` configures the local machine — Apt sources and packages,
 extrepo repositories, dotfiles, git checkouts, toolchains, desktop settings —
-without Python or Ansible. Independent tasks run in parallel:
+without Python or Ansible. Independent tasks run in parallel.
+
+Out of the box it only touches what uc itself needs: `~/.local/bin`, the
+`~/.config/usecode` link and building uc from the checkout. Everything else
+is yours to switch on, by role, task id or glob, in the `sync` list of your
+config (`all` turns on every role):
+
+```yaml
+sync: [apt, extrepo, dotfiles, git, mise, alacritty]  # alacritty brings its font
+```
 
 ```sh
-uc sync                    # everything, for the detected profile
+uc sync                    # what uc needs plus your sync list, for the detected profile
 uc sync -C                 # dry run: report what would change
-uc sync -t dotfiles,git    # only these roles
+uc sync -t dotfiles,git    # only these roles, listed in sync or not
 uc sync -t zls -d          # zls plus everything it runs after
 uc sync -l -t 'git/*'      # list tasks, their tags and dependencies
 uc sync --graph | dot -Tsvg > graph.svg
@@ -209,6 +218,27 @@ them out, `always` tasks run unless skipped by name, and `never` tasks
 (`apt/upgrade`, `git/fetch:*`) run only when asked for by an explicit tag or
 their id. A task's role and id also work as tags, and tags may contain `*`.
 `-d/--with-deps` also pulls in what the selected tasks run after.
+
+### Brave bookmarks
+
+`brave_bookmarks` merges the bookmarks of the Brave profiles into the
+`urls` list of the user config, so the picker sees everything the browser
+has and every machine carries the same links:
+
+```sh
+uc sync -t brave_bookmarks
+```
+
+The merge is by URL: entries the config already has keep their place,
+bookmarks Brave added are appended in Brave's order, and a bookmark's name
+in Brave is written over the config's. Links the config has and Brave does
+not are left alone, so hand-picked ones survive. The roots to read, out of
+`bookmark_bar`, `other` and `synced`, come from the config:
+
+```yaml
+brave_bookmarks:
+  roots: [bookmark_bar, other, synced]
+```
 
 ### Options
 

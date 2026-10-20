@@ -68,6 +68,8 @@ pub struct Task {
     pub ignore_errors: bool,
     /// Set when the task's condition is false, with the reason.
     pub disabled: Option<String>,
+    /// Runs only because the user's `sync` list asks for it, not by default.
+    pub opted_in: bool,
     run: Option<TaskFn>,
 }
 
@@ -81,6 +83,7 @@ impl Task {
             sudo: false,
             ignore_errors: false,
             disabled: None,
+            opted_in: false,
             run: None,
         }
     }
@@ -192,6 +195,19 @@ impl Plan {
         for task in &mut self.tasks[start..] {
             if !cond && task.disabled.is_none() {
                 task.disabled = Some(reason.to_string());
+            }
+        }
+    }
+
+    /// Tags `never` every task `wanted` turns down, so it stays in the graph
+    /// but runs only when asked for by an explicit tag or its id, and marks
+    /// the wanted ones `default` leaves out as opted in.
+    pub fn opt_in(&mut self, default: impl Fn(&Task) -> bool, wanted: impl Fn(&Task) -> bool) {
+        for task in &mut self.tasks {
+            if !wanted(task) {
+                task.tags.insert("never".to_string());
+            } else if !default(task) {
+                task.opted_in = true;
             }
         }
     }

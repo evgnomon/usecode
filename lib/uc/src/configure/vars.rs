@@ -113,6 +113,19 @@ pub struct UserConfig {
     pub git_repos: Vec<GitRepo>,
     pub user_apt_packages: Option<BTreeMap<String, Option<Vec<String>>>>,
     pub theme: Theme,
+    /// What `uc sync` sets up besides what uc itself needs: roles, task ids
+    /// or globs of them, or `all`. Nothing by default.
+    pub sync: Vec<String>,
+    /// The `brave_bookmarks` section: the bookmark roots to sync.
+    pub brave_bookmarks: Option<BraveBookmarks>,
+}
+
+/// The `brave_bookmarks` section of the user config.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct BraveBookmarks {
+    /// The roots of the bookmarks file to read.
+    pub roots: Vec<String>,
 }
 
 pub struct Vars {
