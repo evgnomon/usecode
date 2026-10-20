@@ -15,6 +15,7 @@ const BOLD: &str = "\x1b[1m";
 const RED: &str = "\x1b[31m";
 const GREEN: &str = "\x1b[32m";
 const YELLOW: &str = "\x1b[33m";
+const BLUE: &str = "\x1b[34m";
 const CYAN: &str = "\x1b[36m";
 const MAGENTA: &str = "\x1b[35m";
 
@@ -92,7 +93,7 @@ impl Reporter {
 
     pub fn started(&self, id: &str, name: &str) {
         let pad = " ".repeat(self.total.to_string().len() * 2 + 3);
-        let badge = format!("{pad}{}", self.paint(CYAN, "  start"));
+        let badge = format!("{pad}{}", self.paint(BLUE, "  start"));
         self.line(badge, id, &self.paint(DIM, name));
     }
 
