@@ -348,11 +348,15 @@ mod tests {
         let none = selected(&[], &[]);
         assert_eq!(
             roles(&none),
-            ["dotfiles", "local_bin", "usecode"]
-                .map(String::from)
-                .into()
+            ["dotfiles", "local_bin"].map(String::from).into()
         );
         assert!(none.contains("dotfiles/usecode-config") && !none.contains("dotfiles/links"));
+
+        let usecode = selected(&["usecode"], &[]);
+        for id in ["usecode/build", "apt/build-deps", "rust/musl", "mise/tools"] {
+            assert!(usecode.contains(id), "missing {id}");
+        }
+        assert!(!usecode.contains("apt/packages"));
 
         let alacritty = selected(&["alacritty"], &[]);
         assert!(alacritty.contains("fonts/install") && alacritty.contains("pkg/cascadia-mono"));

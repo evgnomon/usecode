@@ -106,6 +106,13 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
     let cli = Cli::parse();
+    if cli.roles.is_none()
+        && !cli.check
+        && let Err(err) = uc::configure::vars::ensure_checkout()
+    {
+        eprintln!("uc-sync: {err:#}");
+        return ExitCode::FAILURE;
+    }
     let opts = Options {
         selection: Selection {
             tags: cli.tags,

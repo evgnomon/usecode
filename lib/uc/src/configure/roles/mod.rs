@@ -29,19 +29,40 @@ pub mod sudo_nopasswd;
 pub mod sysctl;
 pub mod udev_hwdb;
 pub mod usecode;
+pub mod vim;
+pub mod wsl_sudo;
 pub mod wslview;
+pub mod yubikey;
 
 use crate::configure::engine::{Plan, Task};
 use crate::configure::glob_match;
 use crate::configure::vars::Vars;
 
-/// Synced on every machine: what uc needs to find its config, run and
-/// update itself.
-const ESSENTIAL: &[&str] = &["local_bin", "usecode", "dotfiles/usecode-config"];
+/// Synced on every machine: what uc needs to find its config. uc itself
+/// comes as a binary, so building the checkout is opt-in (`usecode`).
+const ESSENTIAL: &[&str] = &["local_bin", "dotfiles/usecode-config"];
 
 /// What a part pulls in when it is synced: the Alacritty config names the
-/// CaskaydiaMono Nerd Font.
-const REQUIRES: &[(&str, &[&str])] = &[("alacritty", &["fonts", "pkg/cascadia-mono"])];
+/// CaskaydiaMono Nerd Font, and building usecode needs the build packages,
+/// Rust, and the go and node of the mise tools.
+const REQUIRES: &[(&str, &[&str])] = &[
+    ("alacritty", &["fonts", "pkg/cascadia-mono"]),
+    (
+        "usecode",
+        &[
+            "rust/rustup",
+            "rust/musl",
+            "apt/proxy",
+            "apt/update",
+            "apt/build-deps",
+            "extrepo/install",
+            "extrepo/config",
+            "extrepo/enable:mise",
+            "mise",
+            "dotfiles/links",
+        ],
+    ),
+];
 
 /// Whether `pattern`, as in the `sync` list, names the task or its role.
 fn names(pattern: &str, task: &Task) -> bool {
@@ -85,6 +106,8 @@ pub fn plan(v: &Vars) -> Plan {
     bash_history_backup::tasks(&mut plan, v);
     brave_bookmarks::tasks(&mut plan, v);
     wslview::tasks(&mut plan, v);
+    wsl_sudo::tasks(&mut plan, v);
+    yubikey::tasks(&mut plan, v);
     docker::tasks(&mut plan, v);
     plan.gate(
         0,
@@ -94,6 +117,7 @@ pub fn plan(v: &Vars) -> Plan {
 
     rust::tasks(&mut plan, v);
     alacritty::tasks(&mut plan, v);
+    vim::tasks(&mut plan, v);
     plan.opt_in(
         |task| wanted(&[], task),
         |task| wanted(&v.config.sync, task),

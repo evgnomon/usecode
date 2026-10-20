@@ -111,7 +111,7 @@ impl Facts {
         self.os_family == "Debian"
     }
 
-    /// Whether this is WSL, checked as `play.sh` did: a Microsoft kernel.
+    /// Whether this is WSL, checked by a Microsoft kernel.
     /// Unlike a `-WSL2` suffix, this also matches WSL1 (`…-Microsoft`) and
     /// custom WSL kernels (`…-microsoft-standard-WSL2+`).
     pub fn wsl2(&self) -> bool {

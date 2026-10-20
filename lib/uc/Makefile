@@ -25,7 +25,7 @@ all: build
 build: $(OUTPUTS)
 
 $(OUTPUTS) &: $(SOURCES)
-	@scripts/build.sh $(PROFILE) $(TARGET)
+	@$(CARGO) build -p uc --profile $(PROFILE) --target $(TARGET)
 	@touch $(OUTPUTS)
 
 install: $(INSTALLED) $(INSTALLED_ALIASES)

@@ -7,22 +7,14 @@ ENV DEBIAN_FRONTEND=noninteractive \
     HOME=/root \
     USER=root
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        ca-certificates \
-        curl \
-        git \
-        make \
-        procps \
-        sudo \
-    && rm -rf /var/lib/apt/lists/*
-
 ENV DEV_CONTAINER=1
 
-COPY play.sh /tmp/usecode-play.sh
+# uc and uc-sync from a named build context, e.g.
+#   podman build --build-context uc=target/x86_64-unknown-linux-musl/release .
+COPY --from=uc uc uc-sync /usr/local/bin/
 
-RUN bash /tmp/usecode-play.sh \
-    && rm -f /tmp/usecode-play.sh
+# Clones the checkout, then builds and installs it with what it needs.
+RUN uc sync -t usecode -d
 
 WORKDIR /root/src/github.com/evgnomon/usecode
 CMD ["bash"]

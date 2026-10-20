@@ -404,7 +404,7 @@ impl Vars {
     }
 }
 
-/// `install_profile` unset: the environment decides, as in `play.sh`.
+/// `install_profile` unset: the environment decides, from `DEV_CONTAINER` or WSL.
 fn detect_profile(facts: &Facts) -> Profile {
     let dev_container = std::env::var("DEV_CONTAINER").is_ok_and(|v| !v.is_empty());
     if dev_container {
@@ -414,6 +414,67 @@ fn detect_profile(facts: &Facts) -> Profile {
     } else {
         Profile::Workstation
     }
+}
+
+/// Where the standard checkout is cloned from when there is none yet.
+const CHECKOUT_URL: &str = "https://github.com/evgnomon/usecode.git";
+
+/// Clones the standard checkout when no roles directory can be found, so a
+/// fresh machine with just the uc binaries can sync. git comes from apt
+/// first when it is missing. The submodules are left to
+/// `usecode/submodules`.
+pub fn ensure_checkout() -> Result<()> {
+    let home = PathBuf::from(std::env::var("HOME").context("HOME is not set")?);
+    if find_roles_dir(&home).is_ok() {
+        return Ok(());
+    }
+    if !has_git() {
+        install_git()?;
+    }
+    let dest = home.join(CHECKOUT);
+    eprintln!("uc sync: cloning {CHECKOUT_URL} into {}", dest.display());
+    let status = std::process::Command::new("git")
+        .arg("clone")
+        .arg(CHECKOUT_URL)
+        .arg(&dest)
+        .status()
+        .context("running git")?;
+    if !status.success() {
+        bail!("cloning {CHECKOUT_URL} failed");
+    }
+    Ok(())
+}
+
+fn has_git() -> bool {
+    std::process::Command::new("git")
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
+}
+
+/// `apt-get install git`, through sudo unless uc-sync runs as root.
+fn install_git() -> Result<()> {
+    eprintln!("uc sync: installing git");
+    let root = Facts::gather().uid == 0;
+    for args in [&["update"][..], &["install", "-y", "git"]] {
+        let mut cmd = if root {
+            std::process::Command::new("apt-get")
+        } else {
+            let mut sudo = std::process::Command::new("sudo");
+            sudo.arg("apt-get");
+            sudo
+        };
+        let status = cmd
+            .args(args)
+            .env("DEBIAN_FRONTEND", "noninteractive")
+            .status()
+            .context("running apt-get")?;
+        if !status.success() {
+            bail!("apt-get {} failed", args.join(" "));
+        }
+    }
+    Ok(())
 }
 
 /// The roles next to the checkout uc-sync runs from, found from the

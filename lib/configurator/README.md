@@ -6,13 +6,21 @@ Copyright (C) The Usecode Authors (see AUTHORS)
 # Getting Started
 
 The machine is configured by `uc sync` (see `lib/uc/README.md`); its role
-files and templates live in `lib/uc/roles`. This directory holds the bootstrap:
+files and templates live in `lib/uc/roles`. On a fresh machine all
+you need are the `uc` and `uc-sync` binaries:
 
 ```bash
-sudo make prepare   # install-root.sh: base apt packages, YubiKey setup
-make play           # install.sh (rustup), then play.sh: build uc, run uc sync
-./play.sh -C        # dry run; any uc sync flag works, e.g. -t dotfiles,git
+uc sync -t usecode -d   # clones this checkout, builds and installs it
+uc sync                 # everything your config's sync list asks for
+uc sync -C              # dry run; e.g. -t dotfiles,git for just those roles
 ```
+
+`uc sync` clones the checkout when it's missing (installing git first if
+needed). Everything else is opt-in through the `sync` list of your config:
+`usecode` builds the checkout and brings along what that needs (the build
+packages, rustup, mise and its tools), and there's `yubikey` (udev and
+polkit rules, usbip), `wsl_sudo` (sudo.ws under WSL), `vim` (vim-plug) and
+the rest of the roles.
 
 ## Installation profiles
 
@@ -47,16 +55,13 @@ cluster files it writes are kept there too. Already have a
 # Dev Container Setup
 
 ```bash
-DEV_CONTAINER=1 make play
+DEV_CONTAINER=1 uc sync -t usecode -d
 ```
 
 ## WSL
 
-When running under WSL, switch `sudo` to the Windows-aware alternative:
-
-```bash
-sudo update-alternatives --set sudo /usr/bin/sudo.ws
-```
+Add `wsl_sudo` to your `sync` list and `uc sync` switches `sudo` to the
+Windows-aware `sudo.ws`.
 
 ## Vim Plugins
 

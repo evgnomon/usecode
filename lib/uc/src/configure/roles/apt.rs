@@ -14,6 +14,7 @@ use std::time::Duration;
 
 pub const UPDATE: &str = "apt/update";
 pub const PACKAGES: &str = "apt/packages";
+pub const BUILD_DEPS: &str = "apt/build-deps";
 pub const PROXY: &str = "apt/proxy";
 pub const SOURCES: &str = "apt/sources";
 pub const PROBE: &str = "apt/probe";
@@ -23,15 +24,25 @@ pub const PROBE: &str = "apt/probe";
 /// debian_desktop.
 fn profile_groups(profile: Profile) -> &'static [&'static str] {
     match profile {
-        Profile::Workstation => &["share", "hardware", "desktop", "virt"],
-        Profile::Wsl => &["share", "virt"],
-        Profile::Vm | Profile::DevContainer => &["share"],
+        Profile::Workstation => &["build", "share", "hardware", "desktop", "virt"],
+        Profile::Wsl => &["build", "share", "virt"],
+        Profile::Vm | Profile::DevContainer => &["build", "share"],
     }
 }
 
 fn group(name: &str) -> &'static [&'static str] {
     match name {
-        "share" => &[
+        // What building the usecode checkout needs: compilers, and the
+        // headers of Python, vim and alacritty.
+        "build" => &[
+            "g++",                // GNU C++ compiler, for alacritty's native dependencies
+            "libfreetype-dev",    // FreeType development files, for alacritty's font rendering
+            "libfontconfig1-dev", // Fontconfig development files, for alacritty's font lookup
+            "libxcb-xfixes0-dev", // XCB XFixes development files, for alacritty's clipboard
+            "libxkbcommon-dev",   // XKB keymap development files, for alacritty's keyboard input
+            "python3",            // Python interpreter, used by alacritty's build scripts
+            "ncurses-bin",        // tic, which compiles alacritty's terminfo
+            "desktop-file-utils", // update-desktop-database, run by alacritty's install
             "build-essential", // Meta-package for compiling C/C++ programs (gcc, g++, libc-dev, make)
             "make",            // Build automation tool for compiling programs from Makefiles
             "cmake",           // Cross-platform build system generator for modern C/C++ projects
@@ -39,19 +50,14 @@ fn group(name: &str) -> &'static [&'static str] {
             "libssl-dev", // OpenSSL development libraries for building programs with SSL/TLS support
             "libffi-dev", // Foreign Function Interface library for calling C code from high-level languages
             "libncurses5-dev", // Terminal UI library development files for building text-based interfaces
-            "zlib1g",          // Compression library runtime for gzip/deflate operations
             "zlib1g-dev", // Compression library development files for building programs with compression
             "libreadline-dev", // Line-editing library for interactive command-line input with history
             "libbz2-dev", // Bzip2 compression library development files for building compression tools
             "libsqlite3-dev", // SQLite database library development files for embedded database applications
             "tk-dev", // Tk GUI toolkit development files for building graphical applications
             "liblzma-dev", // XZ compression library development files for high-ratio compression
-            "rsync",  // Fast incremental file transfer tool for syncing files and backups
-            "libedit-dev", // Alternative line-editing library with BSD license compatibility
-            "gettext", // Internationalization and localization tools for multi-language support
             "libclang-dev", // Clang compiler libraries for building tools that parse C/C++ code
             "ncurses-dev", // Terminal handling library development files for text UI applications
-            "libpcre2-dev", // Perl-compatible regex library for pattern matching in applications
             "libx11-dev", // X Window System client library for building X11 GUI applications
             "libxtst-dev", // X11 testing extension library for simulating keyboard/mouse input
             "libxt-dev", // X11 Toolkit Intrinsics library for building X11 widget-based GUIs
@@ -60,15 +66,31 @@ fn group(name: &str) -> &'static [&'static str] {
             "jq",     // Command-line JSON processor for parsing and manipulating JSON data
             "ca-certificates", // Common CA certificates for validating SSL/TLS connections
             "curl",   // Command-line HTTP client for downloading files and testing APIs
+            "scdoc",  // Man page generator used to build the alacritty man pages
+            "git",    // Version control, for the usecode checkout and its submodules
+            "pkg-config", // Finds the compile and link flags of installed libraries
+            "xz-utils", // XZ compression tools for .xz archives
+            "libncurses-dev", // Wide-character ncurses development files, for building Python
+            "libgdbm-dev", // GNU dbm development files, for Python's dbm.gnu
+            "libgdbm-compat-dev", // GNU dbm's ndbm compatibility, for Python's dbm.ndbm
+            "uuid-dev", // UUID library development files, for Python's uuid module
+            "libexpat1-dev", // Expat XML parser development files, for Python's pyexpat
+        ],
+        "share" => &[
+            "zlib1g",              // Compression library runtime for gzip/deflate operations
+            "rsync", // Fast incremental file transfer tool for syncing files and backups
+            "libedit-dev", // Alternative line-editing library with BSD license compatibility
+            "gettext", // Internationalization and localization tools for multi-language support
+            "libpcre2-dev", // Perl-compatible regex library for pattern matching in applications
             "gnupg2", // GNU Privacy Guard for encryption, signing, and key management
-            "unzip",  // Archive extraction utility for decompressing ZIP files
+            "unzip", // Archive extraction utility for decompressing ZIP files
             "apt-transport-https", // APT HTTPS support for securely downloading packages over TLS
             "lsb-release", // Linux Standard Base version reporting tool for distribution detection
-            "tree",   // Directory structure visualization tool for recursive file listings
+            "tree",  // Directory structure visualization tool for recursive file listings
             "pinentry-tty", // PIN entry dialog for GPG in terminal environments
-            "zip",    // Archive compression utility for creating ZIP files
-            "flex",   // Lexical analyzer generator for building compilers and interpreters
-            "bison",  // Parser generator for building compilers and interpreters
+            "zip",   // Archive compression utility for creating ZIP files
+            "flex",  // Lexical analyzer generator for building compilers and interpreters
+            "bison", // Parser generator for building compilers and interpreters
             "net-tools", // Legacy networking utilities (ifconfig, netstat, route) for network debugging
             "htop", // Interactive process viewer for monitoring system resources with mouse support
             "dotnet-sdk-10.0", // .NET SDK for building and running .NET applications
@@ -93,7 +115,9 @@ fn group(name: &str) -> &'static [&'static str] {
             "xclip", // Command-line X11 clipboard utility often used by terminal/editor integrations
             "libvirt-dev", // Development files for libvirt virtualization API for managing virtual machines
             "libglib2.0-bin", // GLib utilities for working with GObject-based libraries and applications
-            "scdoc",          // Man page generator used to build the alacritty man pages
+            "libyaml-dev",    // YAML parser library development files
+            "hwdata",         // PCI and USB ID databases used by lspci and lsusb
+            "usbutils",       // lsusb and friends for inspecting USB devices
         ],
         // Local KVM/QEMU virtual machines run through libvirt (`uc vm`)
         "virt" => &[
@@ -110,9 +134,8 @@ fn group(name: &str) -> &'static [&'static str] {
             "pcscd",           // PC/SC smart card daemon for managing smart card readers
             "ykcs11", // YubiKey PKCS#11 module for using YubiKey with cryptographic applications
             "scdaemon", // Smart card daemon for GPG to communicate with hardware tokens
-        ],
-        "ubuntu_hardware" => &[
             "libpam-u2f", // PAM module for FIDO U2F/FIDO2 hardware authentication keys
+            "yubikey-manager", // ykman, for configuring YubiKeys
         ],
         // Packages requiring a desktop/GPU — skipped on WSL2
         "desktop" => &[
@@ -285,6 +308,15 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
             }
             Ok(outcome)
         }),
+    );
+
+    // Also part of `apt/packages`; on its own for what syncs only usecode.
+    plan.add(
+        Task::new(BUILD_DEPS, "Install the build package group")
+            .tags(&["apt"])
+            .sudo()
+            .after([UPDATE])
+            .run(|ctx| async move { apt::install(&ctx, &packages(group("build")), None).await }),
     );
 
     // libvirtd and /dev/kvm only let these groups in, so `uc vm` works

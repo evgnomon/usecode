@@ -32,11 +32,12 @@ Running it yourself
 -------------------
 
 The code is here under the HGL General License (COPYING). On a Debian or
-Ubuntu box:
+Ubuntu box, put the `uc` and `uc-sync` binaries on your PATH, then:
 
-  bash <(curl -fsSL https://raw.githubusercontent.com/evgnomon/usecode/refs/heads/master/play.sh)
+  uc sync -t usecode -d
 
-Then run `uc help`. Self-hosting is on your own time; if you'd like help
+It clones this repository, installs what the build needs, then builds and
+installs the rest of the tools. Then run `uc help`. Self-hosting is on your own time; if you'd like help
 setting it up or running it for your team, that's a paid engagement and
 we're happy to talk: https://usecode.dev
 

@@ -1,7 +1,7 @@
 # License-Identifier: HGL
 # Copyright (C) The Usecode Authors (see AUTHORS)
 
-.PHONY: all build install install-eget bootstrap play uninstall clean prepare update
+.PHONY: all build install install-eget uninstall clean update
 
 EGET_VERSION ?= latest
 ROOT_DIR ?= $(abspath $(CURDIR)/../..)
@@ -10,10 +10,6 @@ BIN_DIR := $(BUILD_DIR)/usr/local/bin
 PREFIX ?= /usr/local
 INSTALL_DIR := $(PREFIX)/bin
 EGET ?= $(BIN_DIR)/eget
-STAMPS_DIR := $(CURDIR)/.stamps
-UC_DIR := $(ROOT_DIR)/lib/uc
-UC_SOURCES := $(shell find $(UC_DIR)/src -type f -name '*.rs') $(shell find $(UC_DIR)/roles -type f) \
-	$(UC_DIR)/Cargo.toml $(ROOT_DIR)/Cargo.lock
 
 
 EGET_BINS := eget gh fd delta rg bat hugo rclone hcloud tflint gvproxy kompose csvlens yq
@@ -29,25 +25,6 @@ all: build
 build: $(BUILD_BINS)
 
 install: $(INSTALL_BINS)
-
-prepare: $(STAMPS_DIR)/install-root.sh
-
-$(STAMPS_DIR)/install-root.sh:
-	$(CURDIR)/install-root.sh
-
-bootstrap: $(STAMPS_DIR)/install.sh
-
-play: bootstrap $(STAMPS_DIR)/play.sh
-
-$(STAMPS_DIR)/install.sh:
-	$(CURDIR)/install.sh
-	@mkdir -p $(STAMPS_DIR)
-	@touch $@
-
-$(STAMPS_DIR)/play.sh: $(CURDIR)/play.sh $(UC_SOURCES)
-	$(CURDIR)/play.sh
-	@mkdir -p $(STAMPS_DIR)
-	@touch $@
 
 $(INSTALL_DIR)/%: $(BIN_DIR)/%
 	@install -d $(INSTALL_DIR)
