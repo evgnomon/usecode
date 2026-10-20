@@ -61,7 +61,9 @@ fn flatten(name: &str, node: &Value, out: &mut Vec<Bookmark>) {
     match map.get(Value::from("url")).and_then(Value::as_str) {
         Some(url) => out.push((full, url.to_string())),
         None => {
-            if let Some(children) = map.get(Value::from("children")).and_then(Value::as_sequence)
+            if let Some(children) = map
+                .get(Value::from("children"))
+                .and_then(Value::as_sequence)
             {
                 for child in children {
                     flatten(&full, child, out);
@@ -106,7 +108,13 @@ fn urls(config: &Value) -> Vec<Bookmark> {
                 .iter()
                 .filter_map(|item| {
                     let url = item.get("url").and_then(Value::as_str)?;
-                    Some((url.to_string(), item.get("name").and_then(Value::as_str).unwrap_or(url).to_string()))
+                    Some((
+                        url.to_string(),
+                        item.get("name")
+                            .and_then(Value::as_str)
+                            .unwrap_or(url)
+                            .to_string(),
+                    ))
                 })
                 .collect()
         })
@@ -142,8 +150,7 @@ fn render(entries: &[Bookmark]) -> String {
     let mut out = String::from("urls:\n");
     for (url, name) in entries {
         let plain = !url.is_empty()
-            && url
-                .starts_with(|c: char| c.is_ascii_alphanumeric() || c == '/' || c == '"');
+            && url.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '/' || c == '"');
         if plain && !url.contains("# ") && !url.ends_with(':') && !url.contains(": ") {
             out.push_str(&format!("  - url: {}\n", url));
         } else {
@@ -224,7 +231,9 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
                 let better = found
                     .get(url.as_str())
                     .filter(|n| !n.is_empty() && **n != *name)
-                    .filter(|n| !(n.split('/').count() > 1 && name.split_whitespace().count() <= 2));
+                    .filter(|n| {
+                        !(n.split('/').count() > 1 && name.split_whitespace().count() <= 2)
+                    });
                 if let Some(brave) = better {
                     *name = brave.clone();
                     renamed += 1;
@@ -357,9 +366,15 @@ mod tests {
     #[test]
     fn rendering_round_trips_through_yaml() {
         let entries = vec![
-            ("outlook.office.com/mail/".to_string(), "Outlook".to_string()),
+            (
+                "outlook.office.com/mail/".to_string(),
+                "Outlook".to_string(),
+            ),
             ("https://x.com/home".to_string(), "X".to_string()),
-            ("https://claude.ai/new?q=%s".to_string(), "Claude".to_string()),
+            (
+                "https://claude.ai/new?q=%s".to_string(),
+                "Claude".to_string(),
+            ),
             ("https://a".to_string(), "A / path name".to_string()),
             ("https://b".to_string(), "Weird: name".to_string()),
         ];

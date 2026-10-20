@@ -18,15 +18,24 @@
 //! shows as a few words on what it does, like `· list the rust files`, unless
 //! `--commands` is given, which shows the command line itself. A line that is a command
 //! (`ls -al`, `git status`, or anything after `!`) runs on the terminal
-//! straight away, with the same confirmations, and the model is told it ran;
+//! straight away, with the same confirmations, without the model hearing
+//! about it (`cd` is the exception: it tells the model the directory changed);
 //! the user's bash aliases and functions work there too;
-//! `--no-shell` sends every line to the model. Esc or Ctrl-C stops the model,
+//! `--no-shell` sends every line to the model. The model can drive the chat
+//! itself with the `chat` tool: `model` switches both models (`auto` lets
+//! TypeSafe pick again, no `model` lists them), `planner` switches only the
+//! planner (`planner` without a model lists them), `clear` clears the screen
+//! and the conversation context like Ctrl-L,
+//! and `exit` leaves uc. Esc or Ctrl-C stops the model,
 //! and the command it is waiting on, and goes back to the prompt; Ctrl-C at
 //! the prompt quits. Holding Space at an empty prompt records the microphone
 //! and sends what was said instead, see `voice`. Ctrl-L at the prompt clears
 //! the screen and the model's context with it. `/model` lists the models,
-//! `/model <number|name>` switches to one for the lines after it, keeping the
-//! context, and `/model auto` goes back to letting TypeSafe pick. `/context`
+//! `/model <number|name>` switches planner and doer to one for the lines after
+//! it, keeping the context, and `/model auto` goes back to letting TypeSafe
+//! pick both. `/planner` lists the models, `/planner <number|name>` switches
+//! just the planner, and the manual choice stays while TypeSafe routes the
+//! doer. `/context`
 //! prints how much of the model's context the conversation has taken: the
 //! message count, an estimate before the first turn, the real token count of
 //! the last one, the model's window, and what the session has spent.
@@ -35,8 +44,18 @@
 //! `UC_EFFORT`. Without `UC_MODEL` but with `TYPESAFE_API_KEY`, a TypeSafe
 //! model (`TYPESAFE_MODEL`) reads each line and picks the OpenRouter model
 //! from `MODELS` that suits it best; otherwise it is GLM 5.3 Flash. GPT-6
-//! Luna joins the pool for short but hard thinking; a per-line effort is not
-//! picked, so it runs on the session's one.
+//! Luna joins the pool for short but hard thinking, cheap and punching above
+//! its weight, and Opus 5.5 as the strongest model for the hardest jobs; a
+//! per-line effort is not picked, so they run on the session's one.
+//!
+//! Every line goes to two models: a planner, then a doer. The planner reads
+//! the line and the code it is about without changing anything, and ends with
+//! a brief: what is asked, where to start and what to watch out for (see
+//! `chat/plan.md`). The doer gets the line with the brief and does it.
+//! TypeSafe also says whether a line is a coding feature: those are planned
+//! by Gemini 4 Argon and done by GLM 5.3; any other line has the model it
+//! picked as both. `/planner` can override only the planner; `/model` pins
+//! both to one model, and `/model auto` hands both back to TypeSafe.
 
 use anyhow::{Context, Result, anyhow, bail};
 use rustyline::error::ReadlineError;
@@ -62,6 +81,10 @@ const DEFAULT_MODEL: &str = "z-ai/glm-5.3-flash";
 const DEFAULT_EFFORT: &str = "high";
 const TYPESAFE: &str = "https://api.typesafe.ai/v1/systemone";
 const DEFAULT_ROUTER: &str = "jev-latest";
+/// Who plans a coding feature: it reads a lot of code well, and cheaply.
+const FEATURE_PLANNER: &str = "google/gemini-4-argon";
+/// Who does a coding feature once it is planned.
+const FEATURE_DOER: &str = "z-ai/glm-5.3";
 /// What TypeSafe picks from for a line, and when each is the one to use.
 const MODELS: &[(&str, &str)] = &[
     (
@@ -86,15 +109,23 @@ const MODELS: &[(&str, &str)] = &[
     (
         "meta/muse-spark-1.3",
         "The hard part: implementing a feature, a refactor across many files, writing \
-         a lot of new code or tests, a nasty bug nobody has found, design and \
-         architecture, or anything the quick models would likely get wrong",
+         a lot of new code or tests, or anything the quick models would likely get \
+         wrong",
     ),
     (
         "openai/gpt-6-luna",
         "Thinking work in prose or code where the answer is short but hard: proofs and \
          tricky reasoning, algorithm design or a puzzle-like bug, migrating code between \
-         languages or frameworks, a plan to review before acting on. Best with effort \
-         turned up; dear per token, so wrong for long output, everyday lines or reading",
+         languages or frameworks, a plan to review before acting on. Cheap per token \
+         and quick, and punches above its weight at high effort; not the strongest \
+         model, and wrong for long output, everyday lines or reading",
+    ),
+    (
+        "anthropic/claude-opus-5.5",
+        "The strongest model: the hardest coding over a large codebase, deep reasoning, \
+         architecture and design, a nasty bug nobody has found, multi-step changes \
+         where being right matters more than the price. Dear per token, so overkill \
+         for anything the others do well",
     ),
 ];
 const DUCKDUCKGO: &str = "https://html.duckduckgo.com/html/";
@@ -112,6 +143,8 @@ const MAX_KEPT: usize = 1 << 20;
 const DELETES: &[&str] = &["rm", "rmdir", "unlink", "shred", "-delete"];
 /// Always in the system prompt: how commands run, jobs, what needs asking.
 const MAIN_SKILL: &str = include_str!("chat/main.md");
+/// Added to the planner's system prompt: understand, don't do, write a brief.
+const PLAN_SKILL: &str = include_str!("chat/plan.md");
 /// Builtins worth running when typed at the prompt; `cd` changes uc's own
 /// directory. Keywords like `if` and `for` are left out: they start sentences.
 const BUILTINS: &[&str] = &["cd", "echo", "printf", "pwd", "type", "command", "time"];
@@ -141,6 +174,14 @@ static LENT: AtomicBool = AtomicBool::new(false);
 /// The terminal settings from before the Esc watcher changed them; Some while
 /// they are changed.
 static SAVED: Mutex<Option<libc::termios>> = Mutex::new(None);
+
+/// Locks `SAVED`, poisoned or not. The watcher holds it only to look at or
+/// change the settings, never across `poll` or `read`: they can block for
+/// seconds, and a thread that hands the terminal back (Ctrl-C, `chat exit`)
+/// would wait on it while the user answers nothing.
+fn saved() -> std::sync::MutexGuard<'static, Option<libc::termios>> {
+    SAVED.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 /// The process groups of the jobs still running, stopped when uc exits.
 static GROUPS: Mutex<BTreeSet<i32>> = Mutex::new(BTreeSet::new());
@@ -230,11 +271,18 @@ impl Engine {
 
 struct Session {
     key: String,
+    /// The doer: the model that does what a line asks.
     model: String,
-    /// TypeSafe's key and model, to pick the model for each line.
+    /// The model that reads a line and the code first and briefs the doer.
+    planner: String,
+    /// The planner's conversation while it works on a line.
+    plan: Vec<Value>,
+    /// TypeSafe's key and model, to pick the models for each line.
     router: Option<(String, String)>,
-    /// A model picked with `/model`: TypeSafe doesn't change it.
+    /// The doer from `/model` is pinned; `/model auto` gives it to TypeSafe.
     pinned: bool,
+    /// A model picked with `/planner`: TypeSafe keeps routing the doer only.
+    planner_pinned: bool,
     ask: bool,
     /// OpenRouter's reasoning effort: low, medium or high.
     effort: String,
@@ -376,9 +424,12 @@ async fn run(
     let mut session = Session {
         key: key.trim().to_string(),
         messages: vec![json!({"role": "system", "content": system_prompt(&model, ask, output)})],
+        planner: model.clone(),
+        plan: Vec::new(),
         model,
         router,
         pinned: false,
+        planner_pinned: false,
         ask,
         effort,
         allow_all: !ask,
@@ -406,12 +457,11 @@ async fn run(
                 continue;
             }
             stop_jobs();
-            restore_terminal(&mut SAVED.lock().unwrap_or_else(|e| e.into_inner()));
+            restore_terminal(&mut saved());
             eprintln!();
             std::process::exit(130);
         }
     });
-    // The model last printed, so it is shown only when it changes.
     let mut shown: Option<String> = None;
     loop {
         let Some(line) = read_prompt("\x1b[38;5;208m₿\x1b[0m ")? else {
@@ -432,7 +482,15 @@ async fn run(
             .filter(|r| r.is_empty() || r.starts_with(' '))
         {
             session.switch(name.trim());
-            shown = Some(session.model.clone());
+            shown = Some(session.models());
+            continue;
+        }
+        if let Some(name) = line
+            .strip_prefix("/planner")
+            .filter(|r| r.is_empty() || r.starts_with(' '))
+        {
+            session.switch_planner(name.trim());
+            shown = Some(session.models());
             continue;
         }
         if line == "/context" {
@@ -444,22 +502,22 @@ async fn run(
             continue;
         }
         session.allow_turn = approved;
-        // The model the line goes to, printed on its own line when it is new
-        // or routing has changed it; the same model again stays silent.
-        session.route(line).await;
-        if shown.as_deref() != Some(session.model.as_str()) {
-            eprintln!("· model {}", session.model);
-            shown = Some(session.model.clone());
+        // A typed command runs straight away, without the model: no routing,
+        // no `· models` print, and nothing about it in the next turn.
+        let command = typed_command(line).filter(|_| shell);
+        if command.is_none() {
+            // The models the line goes to, printed on their own line when
+            // they are new or routing has changed them; the same again stays
+            // silent.
+            session.route(line).await;
+            if shown.as_deref() != Some(session.models().as_str()) {
+                eprintln!("· {}", session.models());
+            }
         }
-        let work = async {
-            match typed_command(line).filter(|_| shell) {
+        let shown_after = async {
+            match command {
                 Some(command) => session.run_typed(command).await,
-                None => {
-                    session
-                        .messages
-                        .push(json!({"role": "user", "content": line}));
-                    session.turn().await
-                }
+                None => session.ask(line).await,
             }
         };
         let ctrl_c = STOP.notified();
@@ -467,7 +525,7 @@ async fn run(
         ctrl_c.as_mut().enable();
         BUSY.store(true, Ordering::Relaxed);
         let (done, stopped) = tokio::select! {
-            done = work => match done {
+            done = shown_after => match done {
                 Err(err) if err.is::<Stopped>() => (Ok(()), true),
                 done => (done, false),
             },
@@ -483,6 +541,14 @@ async fn run(
             eprintln!("uc: {err:#}");
         }
         session.allow_turn = false;
+        // A tool call may have switched the model or cleared the context
+        // without the prompt loop seeing it; what the model last ran on is
+        // what the next line starts from.
+        shown = Some(session.models());
+        if CLEARED.swap(false, Ordering::Relaxed) {
+            session.messages.retain(|m| m["role"] == "system");
+            eprintln!("· context cleared");
+        }
     }
 }
 
@@ -736,7 +802,16 @@ fn system_prompt(model: &str, ask: bool, output: bool) -> String {
     )
 }
 
-fn tools() -> Value {
+/// The planner's system prompt: the doer's, then what planning is.
+fn planner_prompt(model: &str, ask: bool, output: bool) -> String {
+    format!("{}\n\n{PLAN_SKILL}", system_prompt(model, ask, output))
+}
+
+///
+/// The tools the model in a turn has: `refining` gives the planner its own,
+/// without the doer's `write_file`, `edit_file` and `chat`, so it never
+/// calls what it is refused.
+fn tools(refining: bool) -> Value {
     let tool = |name: &str, description: &str, properties: Value, required: &[&str]| {
         json!({"type": "function", "function": {
             "name": name,
@@ -747,7 +822,7 @@ fn tools() -> Value {
     let string = |description: &str| json!({"type": "string", "description": description});
     let integer = |description: &str| json!({"type": "integer", "description": description});
     let boolean = |description: &str| json!({"type": "boolean", "description": description});
-    json!([
+    let tools = json!([
         tool(
             "bash",
             "Run a command with bash in the working directory, without a terminal and with stdin \
@@ -841,7 +916,34 @@ fn tools() -> Value {
             }),
             &["path", "old_text", "new_text"],
         ),
-    ])
+        tool(
+            "chat",
+            "Drive the chat itself, not the machine, when the user asks for it: action model \
+             switches both planner and doer for the lines after it (model: a number from the \
+             list, part of a listed id, any OpenRouter id, or auto to let TypeSafe pick each \
+             line again; without it the models and routing are listed), action planner switches \
+             only the planner (without a model it lists them), action clear clears the screen \
+             and conversation context, action exit leaves uc.",
+            json!({
+                "action": string("what to do: model, planner, clear or exit"),
+                "model": string("which model to switch to, for action model or planner: a number from \
+                                 the list, part of a listed id, or any OpenRouter id; auto is \
+                                 available only for model"),
+            }),
+            &["action"],
+        ),
+    ]);
+    let mut tools = tools;
+    if refining {
+        // The doer's tools: the planner is refused them, and an API rejects
+        // a call to a tool it wasn't given.
+        tools.as_array_mut().unwrap().retain(|t| {
+            t["function"]["name"] != "write_file"
+                && t["function"]["name"] != "edit_file"
+                && t["function"]["name"] != "chat"
+        });
+    }
+    tools
 }
 
 impl Session {
@@ -851,16 +953,34 @@ impl Session {
         let Some((key, router)) = self.router.as_ref().filter(|_| !self.pinned) else {
             return;
         };
-        let model = match pick_model(key, router, line).await {
-            Ok(model) => model,
+        let (planner, doer) = match pick_models(key, router, line).await {
+            Ok(models) => models,
             Err(err) => {
                 eprintln!("· TypeSafe: {err:#}");
                 return;
             }
         };
-        self.set_model(model);
+        self.apply_route(planner, doer);
     }
 
+    /// Applies TypeSafe's choice without overriding a manually selected planner.
+    fn apply_route(&mut self, planner: String, doer: String) {
+        if !self.planner_pinned {
+            self.planner = planner;
+        }
+        self.set_model(doer);
+    }
+
+    /// The one model doing both, or the planner and the doer.
+    fn models(&self) -> String {
+        if self.planner == self.model {
+            format!("model {}", self.model)
+        } else {
+            format!("planner {}, doer {}", self.planner, self.model)
+        }
+    }
+
+    /// Makes `model` the doer.
     fn set_model(&mut self, model: String) {
         if model != self.model {
             self.messages[0] = json!({"role": "system", "content": system_prompt(&model, self.ask, self.show_output)});
@@ -868,14 +988,59 @@ impl Session {
         }
     }
 
-    /// `/model`: lists the models with no `name`, else switches to the one it
-    /// names (a number from the list, part of a listed id, or any OpenRouter
-    /// id), or with `auto` lets TypeSafe pick again.
-    fn switch(&mut self, name: &str) {
+    /// A line for the model: the planner briefs the doer on it, then the
+    /// doer does it. A planner that fails leaves the doer without a brief.
+    async fn ask(&mut self, line: &str) -> Result<()> {
+        self.messages.push(json!({"role": "user", "content": line}));
+        match self.refine().await {
+            Ok(brief) if !brief.trim().is_empty() => {
+                let last = self.messages.len() - 1;
+                self.messages[last]["content"] = json!(format!(
+                    "{line}\n\n<brief from=\"{}\">\n{}\n</brief>",
+                    self.planner,
+                    brief.trim()
+                ));
+            }
+            Ok(_) => {}
+            Err(err) if err.is::<Stopped>() => return Err(err),
+            Err(err) => eprintln!("· planner: {err:#}"),
+        }
+        // A tool call may have cleared the context meanwhile: the turn's
+        // messages go with it, once they have been answered.
+        if CLEARED.swap(false, Ordering::Relaxed) {
+            self.messages.retain(|m| m["role"] == "system");
+        }
+        self.turn(false).await.map(drop)
+    }
+
+    /// The planner's brief on the last line, written with the whole
+    /// conversation in front of it.
+    async fn refine(&mut self) -> Result<String> {
+        self.plan = vec![
+            json!({"role": "system", "content": planner_prompt(&self.planner, self.ask, self.show_output)}),
+        ];
+        self.plan.extend(self.messages.iter().skip(1).cloned());
+        let brief = self.turn(true).await;
+        self.plan.clear();
+        brief
+    }
+
+    /// `/model` and chat `model`: list with no name; otherwise switch planner
+    /// and doer together to the named model, or let TypeSafe pick again with
+    /// `auto`. The same lines go to the terminal and back to whoever asked.
+    fn switch(&mut self, name: &str) -> String {
         if name.is_empty() {
+            let mut lines = String::new();
             for (i, (model, _)) in MODELS.iter().enumerate() {
-                let mark = if *model == self.model { "*" } else { " " };
-                eprintln!("{mark} {} {model}", i + 1);
+                let mark = match (*model == self.model, *model == self.planner) {
+                    (true, true) => "*",
+                    (true, false) => "D",
+                    (false, true) => "P",
+                    (false, false) => " ",
+                };
+                let line = format!("{mark} {} {model}\n", i + 1);
+                eprint!("{line}");
+                lines.push_str(&line);
             }
             let routing = if self.router.is_none() {
                 "off, no TYPESAFE_API_KEY"
@@ -884,26 +1049,95 @@ impl Session {
             } else {
                 "on"
             };
-            eprintln!("· model {}, TypeSafe picking {routing}", self.model);
-            return;
+            let line = "· * planner and doer; P planner only; D doer only\n";
+            eprint!("{line}");
+            lines.push_str(line);
+            let line = format!("· {}, TypeSafe picking {routing}\n", self.models());
+            eprint!("{line}");
+            lines.push_str(&line);
+            return lines;
         }
         if name == "auto" {
             if self.router.is_none() {
-                eprintln!("· set TYPESAFE_API_KEY to have TypeSafe pick the model");
-            } else {
-                self.pinned = false;
-                eprintln!("· TypeSafe picks the model for each line");
+                let line = "· set TYPESAFE_API_KEY to have TypeSafe pick the model\n";
+                eprint!("{line}");
+                return line.to_string();
             }
-            return;
+            self.pinned = false;
+            self.planner_pinned = false;
+            let line = "· TypeSafe picks the model for each line\n";
+            eprint!("{line}");
+            return line.to_string();
         }
         match model_named(name) {
             Some(model) => {
+                self.planner = model.clone();
+                self.planner_pinned = false;
                 self.set_model(model);
                 self.pinned = true;
-                eprintln!("· model {}", self.model);
+                let line = format!("· {}\n", self.models());
+                eprint!("{line}");
+                line
             }
-            None => eprintln!("· no model {name}; /model lists them"),
+            None => {
+                let line = format!("· no model {name}; /model lists them\n");
+                eprint!("{line}");
+                line
+            }
         }
+    }
+
+    /// `/planner` and chat `planner`: lists models, or selects a planner only.
+    /// TypeSafe continues to route the doer, while preserving this selection.
+    fn switch_planner(&mut self, name: &str) -> String {
+        if name.is_empty() {
+            let mut lines = String::new();
+            for (i, (model, _)) in MODELS.iter().enumerate() {
+                let mark = if *model == self.planner { "*" } else { " " };
+                let line = format!("{mark} {} {model}\n", i + 1);
+                eprint!("{line}");
+                lines.push_str(&line);
+            }
+            let line = format!("· planner {}\n", self.planner);
+            eprint!("{line}");
+            lines.push_str(&line);
+            return lines;
+        }
+        match model_named(name) {
+            Some(model) => {
+                self.planner = model.clone();
+                self.planner_pinned = true;
+                let line = format!("· planner {model}\n");
+                eprint!("{line}");
+                line
+            }
+            None => {
+                let line = format!("· no planner model {name}; /planner lists them\n");
+                eprint!("{line}");
+                line
+            }
+        }
+    }
+
+    /// Clears the screen and the conversation's context, like Ctrl-L at the
+    /// prompt: what was said is gone, and the next line starts fresh. Called
+    /// in the middle of a turn, the messages wait until the turn has ended —
+    /// its tool calls have to be answered in the same context — and then the
+    /// prompt loop drops them, as CLEARED says.
+    fn clear(&mut self) -> String {
+        print!("\x1b[H\x1b[2J\x1b[3J");
+        let _ = std::io::stdout().flush();
+        CLEARED.store(true, Ordering::Relaxed);
+        eprintln!("· context cleared");
+        "context cleared".into()
+    }
+
+    /// Leaves uc: stops the jobs, puts the terminal back as it was and exits.
+    fn exit(&mut self) -> ! {
+        stop_jobs();
+        restore_terminal(&mut saved());
+        eprintln!("· leaving uc");
+        std::process::exit(0);
     }
 
     /// `/context`: how much of the model's context the conversation has
@@ -981,24 +1215,38 @@ impl Session {
         }
     }
 
-    /// Asks the model until it answers without calling a tool.
-    async fn turn(&mut self) -> Result<()> {
+    /// Asks the doer, or the planner when `refining`, until it answers
+    /// without calling a tool; returns that answer. The planner's words are
+    /// shown dim: they are its notes, not the reply.
+    async fn turn(&mut self, refining: bool) -> Result<String> {
         loop {
-            let message = self.complete().await?;
-            if let Some(text) = message["content"].as_str().filter(|t| !t.trim().is_empty()) {
-                println!("{}\n", text.trim());
+            let message = self.complete(refining).await?;
+            let text = message["content"]
+                .as_str()
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            if !text.is_empty() && refining {
+                eprintln!("\x1b[2m{text}\x1b[0m\n");
+            } else if !text.is_empty() {
+                println!("{text}\n");
             }
             let calls = message["tool_calls"]
                 .as_array()
                 .cloned()
                 .unwrap_or_default();
-            self.messages.push(message);
+            self.history(refining).push(message);
             if calls.is_empty() {
-                return Ok(());
+                return Ok(text);
             }
             for call in calls {
-                let output = self.call(&call).await;
-                self.messages.push(json!({
+                let name = call["function"]["name"].as_str().unwrap_or_default();
+                let output = if refining && matches!(name, "write_file" | "edit_file" | "chat") {
+                    "error: you are the planner; leave the changes to the doer".to_string()
+                } else {
+                    self.call(&call).await
+                };
+                self.history(refining).push(json!({
                     "role": "tool",
                     "tool_call_id": call["id"],
                     "content": truncate(output),
@@ -1007,16 +1255,31 @@ impl Session {
         }
     }
 
-    async fn complete(&mut self) -> Result<Value> {
+    /// The planner's conversation when `refining`, else the doer's.
+    fn history(&mut self, refining: bool) -> &mut Vec<Value> {
+        if refining {
+            &mut self.plan
+        } else {
+            &mut self.messages
+        }
+    }
+
+    async fn complete(&mut self, refining: bool) -> Result<Value> {
+        let (model, messages) = if refining {
+            (&self.planner, &self.plan)
+        } else {
+            (&self.model, &self.messages)
+        };
         let body = json!({
-            "model": self.model,
-            "messages": self.messages,
-            "tools": tools(),
+            "model": model,
+            "messages": messages,
+            "tools": tools(refining),
             "reasoning": {"effort": self.effort},
         });
+        let what = if refining { "planning" } else { "thinking" };
         let _clock = std::io::stderr()
             .is_terminal()
-            .then(|| Clock(tokio::spawn(spin("thinking"))));
+            .then(|| Clock(tokio::spawn(spin(what))));
         let response = client()
             .post(API)
             .bearer_auth(&self.key)
@@ -1039,9 +1302,12 @@ impl Session {
             bail!("OpenRouter sent no message");
         }
         // What the last turn took: `cost` is what OpenRouter charged, the
-        // token counts what it says the messages came to.
+        // token counts what it says the messages came to. The counts are the
+        // doer's, whose context /context is about; both cost.
         if let Some(usage) = value.get("usage").filter(|u| !u.is_null()) {
-            self.last_usage = Some(usage.clone());
+            if !refining {
+                self.last_usage = Some(usage.clone());
+            }
             if let Some(cost) = usage["cost"].as_f64() {
                 self.spent += cost;
             }
@@ -1096,6 +1362,16 @@ impl Session {
             }
             "write_file" => self.write_file(&arg("path"), &arg("content")),
             "edit_file" => self.edit_file(&arg("path"), &arg("old_text"), &arg("new_text")),
+            "chat" => match arg("action").trim() {
+                "model" => Ok(self.switch(&arg("model"))),
+                "planner" => Ok(self.switch_planner(&arg("model"))),
+                "clear" => Ok(self.clear()),
+                "exit" => self.exit(),
+                other => Err(anyhow!(
+                    "there is no chat action '{other}'; \
+                                     model, planner, clear or exit"
+                )),
+            },
             other => Err(anyhow!("there is no tool called '{other}'")),
         };
         result.unwrap_or_else(|err| format!("error: {err:#}"))
@@ -1153,28 +1429,29 @@ impl Session {
     }
 
     /// A command the user typed: it runs on their terminal like in a shell,
-    /// after the same confirmations as the model's, and the model is told.
+    /// after the same confirmations as the model's. The model hears nothing
+    /// about it, except for `cd`, which changes the working directory
+    /// everything the model does afterwards happens in.
     async fn run_typed(&mut self, command: &str) -> Result<()> {
         let shell = user_shell();
         self.confirm("run it?", deletes(&shell.expand(command)))?;
-        let note = match cd_target(&shell.expand(command)) {
+        match cd_target(&shell.expand(command)) {
             Some(dir) => {
                 std::env::set_current_dir(&dir).with_context(|| format!("cd {}", dir.display()))?;
                 let cwd = std::env::current_dir().unwrap_or(dir);
-                format!("I changed the working directory to {}.", cwd.display())
+                self.messages.push(
+                    json!({"role": "user",
+                           "content": format!(
+                               "I changed the working directory to {}.", cwd.display())}),
+                );
             }
             None => {
                 let status = on_terminal_status(&shell.script(command)).await?;
                 if !status.success() {
                     eprintln!("· {status}");
                 }
-                format!(
-                    "I ran `{command}` on my terminal myself: {status}. Its output went to my \
-                     terminal, not to you; run it again if you need it."
-                )
             }
         };
-        self.messages.push(json!({"role": "user", "content": note}));
         Ok(())
     }
 
@@ -1435,17 +1712,19 @@ fn watch_escape(stop: &AtomicBool) -> bool {
         if stop.load(Ordering::Relaxed) {
             break false;
         }
-        let mut saved = SAVED.lock().unwrap_or_else(|e| e.into_inner());
         if LENT.load(Ordering::Relaxed) {
-            drop(saved);
             std::thread::sleep(Duration::from_millis(50));
             continue;
         }
-        if saved.is_none() {
-            *saved = cbreak();
-            if saved.is_none() {
+        // Put the terminal in cbreak with `SAVED` locked only that long:
+        // after this the lock is left free for whoever hands the terminal
+        // back (Ctrl-C, `chat exit`), while `LENT` says whether it was.
+        if saved().is_none() {
+            let old = cbreak();
+            if old.is_none() {
                 break false;
             }
+            *saved() = old;
         }
         let mut fd = libc::pollfd {
             fd: 0,
@@ -1453,7 +1732,12 @@ fn watch_escape(stop: &AtomicBool) -> bool {
             revents: 0,
         };
         // SAFETY: one pollfd, and it is valid for the call.
-        if unsafe { libc::poll(&mut fd, 1, 50) } <= 0 {
+        let ready = unsafe { libc::poll(&mut fd, 1, 50) };
+        if ready < 0 {
+            continue;
+        }
+        if ready == 0 {
+            std::thread::sleep(Duration::from_millis(50));
             continue;
         }
         let mut buf = [0u8; 64];
@@ -1464,11 +1748,10 @@ fn watch_escape(stop: &AtomicBool) -> bool {
             break true;
         }
         if n <= 0 {
-            drop(saved);
             std::thread::sleep(Duration::from_millis(50));
         }
     };
-    restore_terminal(&mut SAVED.lock().unwrap_or_else(|e| e.into_inner()));
+    restore_terminal(&mut saved());
     pressed
 }
 
@@ -1506,7 +1789,7 @@ struct Lent;
 
 fn lend_terminal() -> Lent {
     LENT.store(true, Ordering::Relaxed);
-    restore_terminal(&mut SAVED.lock().unwrap_or_else(|e| e.into_inner()));
+    restore_terminal(&mut saved());
     Lent
 }
 
@@ -1859,8 +2142,10 @@ async fn model_info(model: &str) -> Result<Option<(Option<u64>, Option<(f64, f64
     Ok(Some((window, price)))
 }
 
-/// The model in `MODELS` TypeSafe's `router` thinks suits `line` best.
-async fn pick_model(key: &str, router: &str, line: &str) -> Result<String> {
+/// The planner and the doer TypeSafe's `router` thinks suit `line` best: a
+/// coding feature is planned by `FEATURE_PLANNER` and done by `FEATURE_DOER`,
+/// anything else has the model in `MODELS` it picks as both.
+async fn pick_models(key: &str, router: &str, line: &str) -> Result<(String, String)> {
     let criteria: serde_json::Map<String, Value> = MODELS
         .iter()
         .map(|(model, when)| (model.to_string(), json!(when)))
@@ -1868,17 +2153,32 @@ async fn pick_model(key: &str, router: &str, line: &str) -> Result<String> {
     let body = json!({
         "model": router,
         "state": line,
-        "questions": {"model": {
-            "type": "choice",
-            "instructions": "This is what a user asked a coding agent on their terminal. \
-                Which model should do it? Pick the cheapest one that does it well: \
-                a short answer or a command is for the everyday model; a long text to read \
-                is for the reading model; a change that needs much reading but a small \
-                patch is for the patch model; only a big or hard job needs the strongest \
-                one; a hard question with a short or planned answer, like proofs, tricky \
-                reasoning or a migration, goes to the reasoning model.",
-            "criteria": criteria,
-        }},
+        "questions": {
+            "model": {
+                "type": "choice",
+                "instructions": "This is what a user asked a coding agent on their terminal. \
+                    Which model should do it? Pick the cheapest one that does it well: \
+                    a short answer or a command is for the everyday model; a long text to read \
+                    is for the reading model; a change that needs much reading but a small \
+                    patch is for the patch model; the strongest model, the dearest, is for \
+                    only the biggest or hardest jobs; a hard question with a short or \
+                    planned answer, like proofs, tricky reasoning or a migration, goes to \
+                    the cheap reasoning model, which is not the strongest but fits those.",
+                "criteria": criteria,
+            },
+            "kind": {
+                "type": "choice",
+                "instructions": "This is what a user asked a coding agent on their terminal. \
+                    Is it a coding feature: new or changed behaviour that means writing code \
+                    in a codebase?",
+                "criteria": {
+                    "feature": "Implementing, adding, changing or refactoring code: a new \
+                        feature, a fix that needs code written, a change across files",
+                    "other": "Everything else: a question, explaining, running or looking \
+                        something up, a command, writing prose, a review without changes",
+                },
+            },
+        },
     });
     let response = client()
         .post(TYPESAFE)
@@ -1893,13 +2193,16 @@ async fn pick_model(key: &str, router: &str, line: &str) -> Result<String> {
     if !status.is_success() {
         bail!("{status}: {}", value["detail"]);
     }
+    if value["answers"]["kind"]["choice"] == "feature" {
+        return Ok((FEATURE_PLANNER.to_string(), FEATURE_DOER.to_string()));
+    }
     let choice = value["answers"]["model"]["choice"]
         .as_str()
         .unwrap_or_default();
     MODELS
         .iter()
         .find(|(model, _)| *model == choice)
-        .map(|(model, _)| model.to_string())
+        .map(|(model, _)| (model.to_string(), model.to_string()))
         .ok_or_else(|| anyhow!("picked no model: {value}"))
 }
 
@@ -2387,6 +2690,11 @@ mod tests {
         );
         assert_eq!(model_named("glm-5.3").as_deref(), Some("z-ai/glm-5.3"));
         assert_eq!(model_named("glm"), None);
+        assert_eq!(
+            model_named("opus").as_deref(),
+            Some("anthropic/claude-opus-5.5")
+        );
+        assert_eq!(model_named("luna").as_deref(), Some("openai/gpt-6-luna"));
         assert_eq!(model_named("openai/gpt-5").as_deref(), Some("openai/gpt-5"));
         assert_eq!(model_named("nope"), None);
     }
@@ -2443,8 +2751,11 @@ mod tests {
         Session {
             key: String::new(),
             model: String::new(),
+            planner: String::new(),
+            plan: Vec::new(),
             router: None,
             pinned: false,
+            planner_pinned: false,
             ask: false,
             effort: String::new(),
             messages: Vec::new(),
@@ -2537,9 +2848,203 @@ mod tests {
 
     #[test]
     fn every_tool_has_a_name_and_parameters() {
-        for tool in tools().as_array().unwrap() {
+        for tool in tools(false).as_array().unwrap() {
             assert!(tool["function"]["name"].is_string());
             assert_eq!(tool["function"]["parameters"]["type"], "object");
         }
+    }
+
+    #[test]
+    fn chat_is_a_tool() {
+        let tools = tools(false);
+        let tool = tools
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["function"]["name"] == "chat")
+            .unwrap();
+        assert_eq!(tool["function"]["parameters"]["required"][0], "action");
+        assert!(tool["function"]["parameters"]["properties"]["model"].is_object());
+    }
+
+    #[test]
+    fn the_planner_is_not_offered_the_doer_tools() {
+        let read = |refining: bool| {
+            tools(refining)
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|t| {
+                    t["function"]["name"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .to_string()
+                })
+                .collect::<Vec<String>>()
+        };
+        assert!(
+            read(true)
+                .iter()
+                .all(|name| !matches!(name.as_str(), "write_file" | "edit_file" | "chat"))
+        );
+        for name in ["write_file", "edit_file", "chat"] {
+            assert!(
+                read(false).contains(&name.to_string()),
+                "the doer keeps {name}"
+            );
+        }
+        assert_eq!(read(true).len() + 3, read(false).len());
+    }
+
+    #[test]
+    fn chat_model_lists_switches_and_fails() {
+        let mut s = session();
+        s.model = "z-ai/glm-5.3-flash".into();
+        s.planner = s.model.clone();
+        s.messages = vec![json!({"role": "system", "content": "you are uc"})];
+        let listed = s.switch("");
+        assert!(listed.contains("1 z-ai/glm-5.3-flash"), "{listed}");
+        assert!(listed.contains("TypeSafe picking"), "{listed}");
+        let switched = s.switch("haiku");
+        assert_eq!(switched, "· model anthropic/claude-haiku-5.5\n");
+        assert_eq!(s.model, "anthropic/claude-haiku-5.5");
+        assert_eq!(s.planner, s.model);
+        assert!(!s.planner_pinned);
+        assert!(s.pinned);
+        let auto = s.switch("auto");
+        assert_eq!(
+            auto,
+            "· set TYPESAFE_API_KEY to have TypeSafe pick the model\n"
+        );
+        assert!(s.pinned, "no TypeSafe to hand it back to");
+        let named = s.switch("2");
+        assert_eq!(named, "· model anthropic/claude-haiku-5.5\n");
+        let missing = s.switch("nope");
+        assert!(missing.starts_with("· no model nope"), "{missing}");
+
+        s.planner = s.model.clone();
+        s.pinned = false;
+        let planner_listing = s.switch_planner("");
+        assert!(planner_listing.contains("* 2 anthropic/claude-haiku-5.5"));
+        let planner = s.switch_planner("5");
+        assert_eq!(planner, "· planner openai/gpt-6-luna\n");
+        assert_eq!(s.model, "anthropic/claude-haiku-5.5", "planner-only switch");
+        assert!(s.planner_pinned);
+        s.apply_route("google/gemini-4-argon".into(), "z-ai/glm-5.3".into());
+        assert_eq!(
+            s.planner, "openai/gpt-6-luna",
+            "manual planner survives route"
+        );
+        assert_eq!(s.model, "z-ai/glm-5.3", "doer still routes");
+        let reset = s.switch("haiku");
+        assert_eq!(reset, "· model anthropic/claude-haiku-5.5\n");
+        assert_eq!(s.planner, s.model, "/model resets both to same model");
+        assert!(!s.planner_pinned, "/model clears planner pin");
+        assert!(s.pinned, "/model pins both against routing");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn chat_clears_the_context_and_keeps_a_turn() {
+        let mut s = session();
+        s.messages = vec![
+            json!({"role": "system", "content": "you are uc"}),
+            json!({"role": "user", "content": "hello"}),
+        ];
+        let cleared = s.clear();
+        assert_eq!(cleared, "context cleared");
+        assert!(CLEARED.swap(false, Ordering::Relaxed), "the clear is said");
+        // The prompt loop drops what was said, once the turn has ended.
+        s.messages.retain(|m| m["role"] == "system");
+        assert_eq!(s.messages.len(), 1);
+        assert_eq!(s.messages[0]["role"], "system");
+
+        // A clear inside a turn waits for the turn to end: the tool messages
+        // keep their assistant with its calls, so the next request is well
+        // formed, and CLEARED says to drop the rest.
+        let mut s = session();
+        s.messages = vec![
+            json!({"role": "system", "content": "you are uc"}),
+            json!({"role": "user", "content": "clear the chat"}),
+            json!({"role": "assistant", "content": "", "tool_calls": [
+                {"id": "a", "function": {"name": "chat"}},
+            ]}),
+        ];
+        let cleared = s.clear();
+        assert_eq!(cleared, "context cleared");
+        assert!(CLEARED.swap(false, Ordering::Relaxed), "the clear waits");
+        assert_eq!(s.messages.len(), 3, "the turn's messages stay");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn chat_is_dispatched_like_a_tool_call() {
+        let mut s = session();
+        s.model = "z-ai/glm-5.3-flash".into();
+        s.planner = s.model.clone();
+        s.messages = vec![json!({"role": "system", "content": "you are uc"})];
+        let model = json!({"id": "a", "function": {"name": "chat", "arguments":
+            r#"{"action": "model", "model": "haiku"}"#}});
+        let out = s.call(&model).await;
+        assert_eq!(out, "· model anthropic/claude-haiku-5.5\n");
+        assert_eq!(s.model, "anthropic/claude-haiku-5.5");
+        let planner = json!({"id": "p", "function": {"name": "chat", "arguments":
+            r#"{"action": "planner", "model": "5"}"#}});
+        let out = s.call(&planner).await;
+        assert_eq!(out, "· planner openai/gpt-6-luna\n");
+        assert_eq!(s.model, "anthropic/claude-haiku-5.5");
+        assert_eq!(s.planner, "openai/gpt-6-luna");
+        let listed = json!({"id": "b", "function": {"name": "chat", "arguments":
+            r#"{"action": "model"}"#}});
+        let out = s.call(&listed).await;
+        assert!(out.contains("TypeSafe picking"), "{out}");
+        let unknown = json!({"id": "c", "function": {"name": "chat", "arguments":
+            r#"{"action": "nope"}"#}});
+        let out = s.call(&unknown).await;
+        assert!(out.starts_with("error: "), "{out}");
+        assert!(out.contains("no chat action"), "{out}");
+    }
+
+    #[test]
+    fn watch_escape_leaves_the_saved_lock_free_while_it_waits() {
+        // Not a terminal, like under `cargo test` from a pipe: no keys to
+        // watch for, and the watcher gives up at once.
+        if !std::io::stdin().is_terminal() {
+            eprintln!("· no terminal: watch_escape never runs");
+            return;
+        }
+        let stop = Arc::new(AtomicBool::new(false));
+        let ready = Arc::new(AtomicBool::new(false));
+        let watcher = {
+            let stop = stop.clone();
+            let ready = ready.clone();
+            std::thread::spawn(move || {
+                ready.store(true, Ordering::Relaxed);
+                assert!(!watch_escape(&stop));
+            })
+        };
+        while !ready.load(Ordering::Relaxed) {}
+        // A hold of `SAVED` (Ctrl-C, `chat exit`) must get the lock while the
+        // watcher waits, not after its `poll` or `read`; a watchdog fails the
+        // test rather than let it hang on the lock held across them.
+        let (disarm, hung) = std::sync::mpsc::channel::<()>();
+        let watchdog = std::thread::spawn(move || {
+            use std::sync::mpsc::RecvTimeoutError;
+            // A timeout is the watcher holding the lock; a disconnect is the
+            // test done before the 30s.
+            if matches!(
+                hung.recv_timeout(Duration::from_secs(30)),
+                Err(RecvTimeoutError::Timeout)
+            ) {
+                eprintln!("· watch_escape held the lock while it waited");
+                std::process::abort();
+            }
+        });
+        for _ in 0..40 {
+            restore_terminal(&mut saved());
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        stop.store(true, Ordering::Relaxed);
+        watcher.join().expect("the watcher stopped");
+        drop(disarm);
+        let _ = watchdog.join();
     }
 }
