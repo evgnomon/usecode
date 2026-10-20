@@ -144,7 +144,7 @@ static SAVED: Mutex<Option<libc::termios>> = Mutex::new(None);
 static GROUPS: Mutex<BTreeSet<i32>> = Mutex::new(BTreeSet::new());
 
 /// Set when Ctrl-L cleared the screen: the context goes with it, before the
-/// next line is read.
+/// line being typed is sent.
 static CLEARED: AtomicBool = AtomicBool::new(false);
 
 fn client() -> &'static reqwest::Client {
@@ -396,14 +396,15 @@ async fn run(ask: bool, output: bool, shell: bool, search: Option<Search>) -> Re
     // The model last printed, so it is shown only when it changes.
     let mut shown: Option<String> = None;
     loop {
-        if CLEARED.swap(false, Ordering::Relaxed) {
-            session.messages.retain(|m| m["role"] == "system");
-            eprintln!("· context cleared");
-        }
         let Some(line) = read_prompt("\x1b[38;5;208m₿\x1b[0m ")? else {
             eprintln!();
             return Ok(());
         };
+        // Ctrl-L comes while the line is typed, so the line goes fresh.
+        if CLEARED.swap(false, Ordering::Relaxed) {
+            session.messages.retain(|m| m["role"] == "system");
+            eprintln!("· context cleared");
+        }
         let line = line.trim();
         if matches!(line, "/exit" | "/quit" | "exit") {
             return Ok(());
