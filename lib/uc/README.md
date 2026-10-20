@@ -75,6 +75,12 @@ TYPESAFE_MODEL=jev-preview uc                 # the model that picks, jev-latest
 
 `UC_MODEL` still wins: set it and every line goes to that model.
 
+Not happy with the model it picked? `uc` prints `· model ...` before it starts,
+so you can press Esc right away, type `/model haiku` (or a number from `/model`,
+or any OpenRouter id), then `continue`. The new model gets the whole
+conversation and carries on from there. It stays on that model until you type
+`/model auto`, which hands the choice back to TypeSafe.
+
 Rather talk than type? Hold Space at an empty prompt and say it: it
 listens while you hold, and when you let go what you said is written out and
 sent, just as if you had typed it. A quick tap still types a space, and any

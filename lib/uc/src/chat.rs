@@ -22,7 +22,9 @@
 //! and the command it is waiting on, and goes back to the prompt; Ctrl-C at
 //! the prompt quits. Holding Space at an empty prompt records the microphone
 //! and sends what was said instead, see `voice`. Ctrl-L at the prompt clears
-//! the screen and the model's context with it.
+//! the screen and the model's context with it. `/model` lists the models,
+//! `/model <number|name>` switches to one for the lines after it, keeping the
+//! context, and `/model auto` goes back to letting TypeSafe pick.
 //! What the model is told about all this is the main skill, `chat/main.md`, always in its system prompt. The key comes from
 //! `OPENROUTER_API_KEY`, the model from `UC_MODEL`, the reasoning effort from
 //! `UC_EFFORT`. Without `UC_MODEL` but with `TYPESAFE_API_KEY`, a TypeSafe
@@ -219,6 +221,8 @@ struct Session {
     model: String,
     /// TypeSafe's key and model, to pick the model for each line.
     router: Option<(String, String)>,
+    /// A model picked with `/model`: TypeSafe doesn't change it.
+    pinned: bool,
     ask: bool,
     /// OpenRouter's reasoning effort: low, medium or high.
     effort: String,
@@ -350,6 +354,7 @@ async fn run(ask: bool, output: bool, shell: bool, search: Option<Search>) -> Re
         messages: vec![json!({"role": "system", "content": system_prompt(&model, ask, output)})],
         model,
         router,
+        pinned: false,
         ask,
         effort,
         allow_all: !ask,
@@ -393,6 +398,14 @@ async fn run(ask: bool, output: bool, shell: bool, search: Option<Search>) -> Re
         let line = line.trim();
         if matches!(line, "/exit" | "/quit" | "exit") {
             return Ok(());
+        }
+        if let Some(name) = line
+            .strip_prefix("/model")
+            .filter(|r| r.is_empty() || r.starts_with(' '))
+        {
+            session.switch(name.trim());
+            shown = Some(session.model.clone());
+            continue;
         }
         let (line, approved) = split_approval(line);
         if line.is_empty() {
@@ -802,7 +815,7 @@ impl Session {
     /// Switches to the model TypeSafe picks for `line`, if it is routing; the
     /// one before stays when it can't say.
     async fn route(&mut self, line: &str) {
-        let Some((key, router)) = &self.router else {
+        let Some((key, router)) = self.router.as_ref().filter(|_| !self.pinned) else {
             return;
         };
         let model = match pick_model(key, router, line).await {
@@ -812,9 +825,51 @@ impl Session {
                 return;
             }
         };
+        self.set_model(model);
+    }
+
+    fn set_model(&mut self, model: String) {
         if model != self.model {
             self.messages[0] = json!({"role": "system", "content": system_prompt(&model, self.ask, self.show_output)});
             self.model = model;
+        }
+    }
+
+    /// `/model`: lists the models with no `name`, else switches to the one it
+    /// names (a number from the list, part of a listed id, or any OpenRouter
+    /// id), or with `auto` lets TypeSafe pick again.
+    fn switch(&mut self, name: &str) {
+        if name.is_empty() {
+            for (i, (model, _)) in MODELS.iter().enumerate() {
+                let mark = if *model == self.model { "*" } else { " " };
+                eprintln!("{mark} {} {model}", i + 1);
+            }
+            let routing = if self.router.is_none() {
+                "off, no TYPESAFE_API_KEY"
+            } else if self.pinned {
+                "off, /model auto turns it on"
+            } else {
+                "on"
+            };
+            eprintln!("· model {}, TypeSafe picking {routing}", self.model);
+            return;
+        }
+        if name == "auto" {
+            if self.router.is_none() {
+                eprintln!("· set TYPESAFE_API_KEY to have TypeSafe pick the model");
+            } else {
+                self.pinned = false;
+                eprintln!("· TypeSafe picks the model for each line");
+            }
+            return;
+        }
+        match model_named(name) {
+            Some(model) => {
+                self.set_model(model);
+                self.pinned = true;
+                eprintln!("· model {}", self.model);
+            }
+            None => eprintln!("· no model {name}; /model lists them"),
         }
     }
 
@@ -1604,6 +1659,29 @@ fn read_line(prompt: &str) -> Result<Option<String>> {
     }
 }
 
+/// The model `/model <name>` means: its number in `MODELS`, the one listed
+/// there whose id has `name` in it, or `name` itself when it is an id.
+fn model_named(name: &str) -> Option<String> {
+    if let Ok(n) = name.parse::<usize>() {
+        return MODELS.get(n.checked_sub(1)?).map(|(m, _)| m.to_string());
+    }
+    let lower = name.to_lowercase();
+    let found: Vec<&str> = MODELS
+        .iter()
+        .map(|(m, _)| *m)
+        .filter(|m| m.contains(&lower))
+        .collect();
+    match found[..] {
+        [one] => Some(one.to_string()),
+        _ if name.contains('/') => Some(name.to_string()),
+        // `glm` is GLM Flash and GLM 5.3: the exact name after the vendor wins.
+        _ => found
+            .into_iter()
+            .find(|m| m.rsplit('/').next() == Some(lower.as_str()))
+            .map(str::to_string),
+    }
+}
+
 /// The model in `MODELS` TypeSafe's `router` thinks suits `line` best.
 async fn pick_model(key: &str, router: &str, line: &str) -> Result<String> {
     let criteria: serde_json::Map<String, Value> = MODELS
@@ -2119,6 +2197,24 @@ mod tests {
     }
 
     #[test]
+    fn model_named_takes_a_number_part_of_an_id_or_an_id() {
+        assert_eq!(
+            model_named("2").as_deref(),
+            Some("anthropic/claude-haiku-5.5")
+        );
+        assert_eq!(model_named("0"), None);
+        assert_eq!(model_named("9"), None);
+        assert_eq!(
+            model_named("haiku").as_deref(),
+            Some("anthropic/claude-haiku-5.5")
+        );
+        assert_eq!(model_named("glm-5.3").as_deref(), Some("z-ai/glm-5.3"));
+        assert_eq!(model_named("glm"), None);
+        assert_eq!(model_named("openai/gpt-5").as_deref(), Some("openai/gpt-5"));
+        assert_eq!(model_named("nope"), None);
+    }
+
+    #[test]
     fn picks_an_option_by_number() {
         let options = ["push it".to_string(), "commit first".to_string()];
         assert_eq!(pick(" 2 ", &options), Pick::Option("commit first".into()));
@@ -2171,6 +2267,7 @@ mod tests {
             key: String::new(),
             model: String::new(),
             router: None,
+            pinned: false,
             ask: false,
             effort: String::new(),
             messages: Vec::new(),
