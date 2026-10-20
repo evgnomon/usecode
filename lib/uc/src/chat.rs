@@ -24,7 +24,10 @@
 //! and sends what was said instead, see `voice`. Ctrl-L at the prompt clears
 //! the screen and the model's context with it. `/model` lists the models,
 //! `/model <number|name>` switches to one for the lines after it, keeping the
-//! context, and `/model auto` goes back to letting TypeSafe pick.
+//! context, and `/model auto` goes back to letting TypeSafe pick. `/context`
+//! prints how much of the model's context the conversation has taken: the
+//! message count, an estimate before the first turn, the real token count of
+//! the last one, the model's window, and what the session has spent.
 //! What the model is told about all this is the main skill, `chat/main.md`, always in its system prompt. The key comes from
 //! `OPENROUTER_API_KEY`, the model from `UC_MODEL`, the reasoning effort from
 //! `UC_EFFORT`. Without `UC_MODEL` but with `TYPESAFE_API_KEY`, a TypeSafe
@@ -238,6 +241,10 @@ struct Session {
     search: Engine,
     /// The job bash is waiting on, stopped if Esc is pressed meanwhile.
     waiting: Option<usize>,
+    /// What OpenRouter's last reply said the turn took in tokens and cost.
+    last_usage: Option<Value>,
+    /// What every turn has cost so far, from `usage.cost`.
+    spent: f64,
 }
 
 /// A command started by bash, followed with job_output and stopped with job_kill.
@@ -364,6 +371,8 @@ async fn run(ask: bool, output: bool, shell: bool, search: Option<Search>) -> Re
         next_job: 1,
         search: Engine::pick(search)?,
         waiting: None,
+        last_usage: None,
+        spent: 0.0,
     };
     if shell {
         // Read the user's aliases while they type, not when the first line comes.
@@ -405,6 +414,10 @@ async fn run(ask: bool, output: bool, shell: bool, search: Option<Search>) -> Re
         {
             session.switch(name.trim());
             shown = Some(session.model.clone());
+            continue;
+        }
+        if line == "/context" {
+            session.context().await;
             continue;
         }
         let (line, approved) = split_approval(line);
@@ -873,6 +886,72 @@ impl Session {
         }
     }
 
+    /// `/context`: how much of the model's context the conversation has
+    /// taken. The real count is from the last reply's `usage`, an estimate
+    /// from the bytes before that, and the window is the model's
+    /// `context_length` on OpenRouter.
+    async fn context(&self) {
+        // About 4 characters a token: a rough count until the model has
+        // said what the last turn took.
+        let bytes: usize = self
+            .messages
+            .iter()
+            .map(|m| content(m).map(str::len).unwrap_or_default())
+            .sum();
+        eprintln!("· {} messages, about {} tokens", self.messages.len(), bytes / 4);
+        let tokens = self
+            .last_usage
+            .as_ref()
+            .and_then(|u| u["total_tokens"].as_u64());
+        if let Some(total) = tokens {
+            eprint!("· last turn {total} tokens");
+            if let Some(prompt) = self.last_usage.as_ref().and_then(|u| u["prompt_tokens"].as_u64()) {
+                eprint!(" ({prompt} in");
+                if let Some(cached) = self
+                    .last_usage
+                    .as_ref()
+                    .and_then(|u| u["prompt_tokens_details"]["cached_tokens"].as_u64())
+                    .filter(|c| *c > 0)
+                {
+                    eprint!(", {cached} cached");
+                }
+                eprint!(")");
+            }
+            match self
+                .last_usage
+                .as_ref()
+                .and_then(|u| u["completion_tokens"].as_u64())
+            {
+                Some(completion) => eprintln!(", {completion} out"),
+                None => eprintln!(),
+            }
+        } else {
+            eprintln!("· no turn yet, so no token count; that comes with the first reply");
+        }
+        match model_info(&self.model).await {
+            Ok(Some((window, per_million))) => {
+                if let (Some(window), Some(total)) = (window, tokens) {
+                    let pct = 100.0 * total as f64 / window as f64;
+                    eprintln!(
+                        "· model {}'s window is {} tokens, {:.1}% of it used",
+                        self.model, window, pct
+                    );
+                }
+                if self.spent > 0.0 {
+                    let per_million = per_million.unwrap_or_default();
+                    eprintln!(
+                        "· spent about ${:.4} this session, input ${:.2} and output ${:.2} per million tokens",
+                        self.spent,
+                        per_million.0,
+                        per_million.1
+                    );
+                }
+            }
+            Ok(None) => eprintln!("· model {}'s window and price aren't on OpenRouter's list", self.model),
+            Err(err) => eprintln!("· OpenRouter's model list: {err:#}"),
+        }
+    }
+
     /// Asks the model until it answers without calling a tool.
     async fn turn(&mut self) -> Result<()> {
         loop {
@@ -899,7 +978,7 @@ impl Session {
         }
     }
 
-    async fn complete(&self) -> Result<Value> {
+    async fn complete(&mut self) -> Result<Value> {
         let body = json!({
             "model": self.model,
             "messages": self.messages,
@@ -929,6 +1008,14 @@ impl Session {
         let mut message = value["choices"][0]["message"].clone();
         if !message.is_object() {
             bail!("OpenRouter sent no message");
+        }
+        // What the last turn took: `cost` is what OpenRouter charged, the
+        // token counts what it says the messages came to.
+        if let Some(usage) = value.get("usage").filter(|u| !u.is_null()) {
+            self.last_usage = Some(usage.clone());
+            if let Some(cost) = usage["cost"].as_f64() {
+                self.spent += cost;
+            }
         }
         // Only what the next request needs goes back into the history.
         let keep = ["role", "content", "tool_calls"];
@@ -1682,6 +1769,66 @@ fn model_named(name: &str) -> Option<String> {
     }
 }
 
+/// The text of a message, be it a plain string or what OpenRouter sends as
+/// parts.
+fn content(message: &Value) -> Option<&str> {
+    match &message["content"] {
+        Value::String(text) => Some(text),
+        Value::Array(parts) => parts
+            .iter()
+            .find_map(|p| p["text"].as_str())
+            .or_else(|| parts.first().and_then(|p| p["content"].as_str())),
+        _ => None,
+    }
+}
+
+/// The models' context window and prices, read off OpenRouter's list once
+/// and kept for the session. `model_info` takes the field of the `model`
+/// whose `id` or `canonical_slug` matches, if it is in the list.
+async fn models() -> Result<&'static Vec<Value>> {
+    static MODELS: tokio::sync::OnceCell<Vec<Value>> = tokio::sync::OnceCell::const_new();
+    MODELS
+        .get_or_try_init(|| async {
+            let list: Value = client()
+                .get("https://openrouter.ai/api/v1/models")
+                .send()
+                .await?
+                .error_for_status()?
+                .json()
+                .await
+                .context("reading OpenRouter's model list")?;
+            let models = list["data"]
+                .as_array()
+                .cloned()
+                .ok_or_else(|| anyhow!("OpenRouter's model list came without models"))?;
+            Ok::<_, anyhow::Error>(models)
+        })
+        .await
+}
+
+/// The `model`'s context window and price per million tokens, off the list
+/// OpenRouter serves; None when the model isn't there.
+async fn model_info(model: &str) -> Result<Option<(Option<u64>, Option<(f64, f64)>)>> {
+    let Some(entry) = models()
+        .await?
+        .iter()
+        .find(|m| m["id"] == model || m["canonical_slug"] == model)
+    else {
+        return Ok(None);
+    };
+    let window = entry["context_length"].as_u64();
+    let price = entry["pricing"]["prompt"]
+        .as_str()
+        .and_then(|p| p.parse::<f64>().ok())
+        .zip(
+            entry["pricing"]["completion"]
+                .as_str()
+                .and_then(|p| p.parse::<f64>().ok()),
+        )
+        .map(|(in_per, out_per)| (in_per * 1e6, out_per * 1e6));
+    Ok(Some((window, price)))
+}
+
 /// The model in `MODELS` TypeSafe's `router` thinks suits `line` best.
 async fn pick_model(key: &str, router: &str, line: &str) -> Result<String> {
     let criteria: serde_json::Map<String, Value> = MODELS
@@ -2278,6 +2425,8 @@ mod tests {
             next_job: 1,
             search: Engine::DuckDuckGo,
             waiting: None,
+            last_usage: None,
+            spent: 0.0,
         }
     }
 

@@ -81,6 +81,13 @@ or any OpenRouter id), then `continue`. The new model gets the whole
 conversation and carries on from there. It stays on that model until you type
 `/model auto`, which hands the choice back to TypeSafe.
 
+Wondering how much of the model's context the conversation has taken? Type
+`/context` and it says how many messages there are, about how many tokens
+they make (an estimate until the model has counted them), what the last
+turn took in tokens — how many went in, how many were cached, how many
+came out — how full the model's context window is, and what the session
+has spent so far, at the model's price per million tokens.
+
 Rather talk than type? Hold Space at an empty prompt and say it: it
 listens while you hold, and when you let go what you said is written out and
 sent, just as if you had typed it. A quick tap still types a space, and any
