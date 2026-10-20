@@ -71,14 +71,29 @@ const TERM = "bg-[#282828] text-[#ebdbb2]";
 const NOTE = "text-[#928374]";
 const PROMPT = "text-[#fe8019] select-none";
 
+// The braille dots uc chat's spinner turns through while it waits, a step
+// every 100ms; one dot per step, stepping at the same pace.
+const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const SPINNER_MS = 100;
+
+/** The braille spinner uc chat waits with, the dot turning every 100ms. */
+function Spinner() {
+  const [at, setAt] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setAt((a) => (a + 1) % SPINNER.length), SPINNER_MS);
+    return () => clearInterval(id);
+  }, []);
+  return <span className="select-none text-[#ebdbb2]">{SPINNER[at]}</span>;
+}
+
 function Caret() {
   return <span className="ml-px inline-block h-[1.1em] w-[0.55em] translate-y-[0.2em] animate-caret bg-[#ebdbb2]/80" />;
 }
 
 /**
  * One journey as `uc chat` shows it: your line after the ₿, a `·` for each
- * thing the agent did, the ₿ walking the Gruvbox colours on the one it's on,
- * then its answer and the ₿ back, waiting for the next line.
+ * thing the agent did, the braille spinner turning on the one it's on, then
+ * its answer and the ₿ back, waiting for the next line.
  */
 function Console(props: { journey: Journey; play: Play; at: number; of: number; live: boolean; first: boolean }) {
   const { journey: j, play, at, of, live, first } = props;
@@ -120,7 +135,7 @@ function Console(props: { journey: Journey; play: Play; at: number; of: number; 
               const line = (
                 <>
                   {answer ? null : busy ? (
-                    <span className="animate-gruvbox select-none">₿</span>
+                    <Spinner />
                   ) : (
                     <span className={cn(NOTE, "select-none")}>·</span>
                   )}

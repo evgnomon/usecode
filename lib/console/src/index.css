@@ -128,7 +128,6 @@
   --animate-breathe-bg: breathe-bg 2s ease-in-out infinite;
   --animate-feed-in: feed-in 250ms cubic-bezier(0.2, 0, 0, 1) both;
   --animate-caret: caret 1s steps(1) infinite;
-  --animate-gruvbox: gruvbox 1.2s steps(1) infinite;
 
   @keyframes ring {
     0%, 100% { box-shadow: 0 0 0 0 var(--agent-glow); }
@@ -147,15 +146,6 @@
   }
   @keyframes caret {
     50% { opacity: 0; }
-  }
-  /* The ₿ uc chat prompts with, walking the Gruvbox brights while the agent works. */
-  @keyframes gruvbox {
-    0%, 100% { color: #fe8019; }
-    17% { color: #fabd2f; }
-    33% { color: #b8bb26; }
-    50% { color: #8ec07c; }
-    67% { color: #83a598; }
-    83% { color: #d3869b; }
   }
 }
 

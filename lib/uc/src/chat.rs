@@ -1516,22 +1516,15 @@ impl Drop for Lent {
     }
 }
 
-/// The Gruvbox brights the ₿ walks through while uc waits, a step every
-/// 200ms, the same as the console's front page shows it.
-const GRUVBOX: [(u8, u8, u8); 6] = [
-    (0xfe, 0x80, 0x19),
-    (0xfa, 0xbd, 0x2f),
-    (0xb8, 0xbb, 0x26),
-    (0x8e, 0xc0, 0x7c),
-    (0x83, 0xa5, 0x98),
-    (0xd3, 0x86, 0x9b),
-];
+/// The braille dots the ₿ turns through while uc waits, a step every 100ms.
+const SPINNER: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
-/// The ₿ walking the Gruvbox colours next to what uc waits on, until aborted.
+/// The braille spinner turning in the default text color next to what uc
+/// waits on, until aborted.
 async fn spin(what: &'static str) {
-    for (r, g, b) in GRUVBOX.into_iter().cycle() {
-        eprint!("\r\x1b[2K\x1b[38;2;{r};{g};{b}m₿\x1b[0m {what}");
-        tokio::time::sleep(Duration::from_millis(200)).await;
+    for dot in SPINNER.into_iter().cycle() {
+        eprint!("\r\x1b[2K{dot} {what}");
+        tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }
 
