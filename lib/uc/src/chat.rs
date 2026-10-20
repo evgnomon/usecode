@@ -59,9 +59,10 @@
 
 use anyhow::{Context, Result, anyhow, bail};
 use rustyline::error::ReadlineError;
+use rustyline::history::DefaultHistory;
 use rustyline::{
-    Cmd, ConditionalEventHandler, Config, DefaultEditor, Event, EventContext, EventHandler,
-    KeyEvent, Modifiers, Movement, RepeatCount,
+    Cmd, CompletionType, ConditionalEventHandler, Config, Editor, Event, EventContext,
+    EventHandler, KeyEvent, Modifiers, Movement, RepeatCount,
 };
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
@@ -609,6 +610,8 @@ fn runnable(name: &str) -> bool {
 struct UserShell {
     /// Their shell options, aliases and functions, run before a typed command.
     definitions: String,
+    /// What their bash completes each command with, `complete -p`.
+    completions: String,
     /// Each alias and what it stands for.
     aliases: BTreeMap<String, String>,
     functions: BTreeSet<String>,
@@ -636,7 +639,141 @@ impl UserShell {
     fn script(&self, command: &str) -> String {
         format!("{}\n{command}", self.definitions)
     }
+
+    /// What Tab offers for the last word of a command line in their bash, or
+    /// only file names for a word in a line for the model; nothing when bash
+    /// takes too long.
+    fn complete(&self, line: &str, files: bool) -> Vec<String> {
+        use std::os::unix::process::CommandExt;
+        let script = format!("{}\n{}\n{COMPLETE}", self.definitions, self.completions);
+        let (line, mode) = match files {
+            true => (line.to_string(), "files"),
+            false => (self.expand(line), ""),
+        };
+        let mut bash = std::process::Command::new("bash");
+        bash.args(["-c", &script, "uc", &line, mode])
+            .stdin(Stdio::null())
+            .stderr(Stdio::null());
+        // SAFETY: setsid is async-signal-safe and touches no memory.
+        unsafe {
+            bash.pre_exec(|| {
+                libc::setsid();
+                Ok(())
+            });
+        }
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(bash.output());
+        });
+        let Ok(Ok(output)) = rx.recv_timeout(Duration::from_secs(2)) else {
+            return Vec::new();
+        };
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(|word| word.trim_end().to_string())
+            .filter(|word| !word.is_empty())
+            .collect()
+    }
 }
+
+/// Completes the last word of the command line in `$1` the way the user's
+/// bash does on Tab: the command's own completion, loaded by bash-completion
+/// when it has one, file names when it hasn't, command names for the first
+/// word.
+const COMPLETE: &str = r#"
+_uc_line=$1
+if [[ $2 == files ]]; then compgen -f -- "$_uc_line"; exit; fi
+read -ra COMP_WORDS <<< "$_uc_line"
+[[ -z $_uc_line || $_uc_line == *[[:space:]] ]] && COMP_WORDS+=("")
+COMP_CWORD=$(( ${#COMP_WORDS[@]} - 1 ))
+COMP_LINE=$_uc_line COMP_POINT=${#_uc_line} COMP_TYPE=9 COMP_KEY=9
+_uc_cur=${COMP_WORDS[COMP_CWORD]}
+if (( COMP_CWORD == 0 )); then compgen -c -- "$_uc_cur"; exit; fi
+_uc_cmd=${COMP_WORDS[0]}
+# bash-completion's loader answers 124 once it has loaded the real one.
+for _uc_try in 1 2; do
+  _uc_spec=$(complete -p -- "$_uc_cmd" 2>/dev/null || complete -p -D 2>/dev/null)
+  [[ $_uc_spec =~ -F\ ([^ ]+) ]] || break
+  COMPREPLY=()
+  "${BASH_REMATCH[1]}" "$_uc_cmd" "$_uc_cur" "${COMP_WORDS[COMP_CWORD-1]}"
+  (( $? == 124 )) || break
+done
+if (( ${#COMPREPLY[@]} )); then printf '%s\n' "${COMPREPLY[@]}"; else compgen -f -- "$_uc_cur"; fi
+"#;
+
+/// The commands the prompt itself takes.
+const SLASH_COMMANDS: &[&str] = &["/context", "/exit", "/model", "/planner", "/quit"];
+
+/// Tab at the prompt: `/` commands, a command line the way the user's bash
+/// completes it, with or without `!`, and file names in a line for the model.
+struct Completion;
+
+impl Completion {
+    /// Where the word Tab replaces starts in `before`, and what it offers.
+    fn candidates(before: &str) -> (usize, Vec<String>) {
+        let word_start = before.rfind(char::is_whitespace).map_or(0, |i| {
+            i + before[i..].chars().next().map_or(1, char::len_utf8)
+        });
+        if word_start == 0 && before.starts_with('/') {
+            let words = SLASH_COMMANDS.iter().filter(|c| c.starts_with(before));
+            return (0, words.map(|c| format!("{c} ")).collect());
+        }
+        let (offset, command) = match before.strip_prefix('!') {
+            Some(command) => (1, Some(command)),
+            None if word_start == 0 => (0, Some(before)),
+            None => (0, typed_command(before)),
+        };
+        let word_start = word_start.max(offset);
+        let word = &before[word_start..];
+        let words = match command {
+            Some(command) => user_shell().complete(command, false),
+            None => user_shell().complete(word, true),
+        };
+        // `--opt=` and `host:` complete after the = or :, like bash does.
+        let start = match words.iter().all(|w| w.starts_with(word)) {
+            true => word_start,
+            false => word
+                .rfind(['=', ':'])
+                .map_or(word_start, |i| word_start + i + 1),
+        };
+        let mut words: Vec<String> = words
+            .into_iter()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        // bash's `cd` completion already ends a `$CDPATH` directory with `/`.
+        if let [only] = words.as_mut_slice()
+            && !only.ends_with('/')
+        {
+            let dir = std::path::Path::new(only.as_str()).is_dir();
+            only.push(if dir { '/' } else { ' ' });
+        }
+        (start, words)
+    }
+}
+
+impl rustyline::completion::Completer for Completion {
+    type Candidate = String;
+
+    fn complete(
+        &self,
+        line: &str,
+        pos: usize,
+        _: &rustyline::Context<'_>,
+    ) -> rustyline::Result<(usize, Vec<String>)> {
+        Ok(Self::candidates(&line[..pos]))
+    }
+}
+
+impl rustyline::hint::Hinter for Completion {
+    type Hint = String;
+}
+
+impl rustyline::highlight::Highlighter for Completion {}
+
+impl rustyline::validate::Validator for Completion {}
+
+impl rustyline::Helper for Completion {}
 
 /// The user's shell, read on first use; empty when bash can't tell in time.
 fn user_shell() -> &'static UserShell {
@@ -649,7 +786,8 @@ fn user_shell() -> &'static UserShell {
 fn read_user_shell() -> Option<UserShell> {
     use std::os::unix::process::CommandExt;
     const DUMP: &str = "printf '\\0'; shopt -p; printf '\\0'; alias -p; printf '\\0'; \
-                        declare -F; printf '\\0'; declare -f; printf '\\0%s' \"$HISTFILE\"";
+                        complete -p; printf '\\0'; declare -F; printf '\\0'; declare -f; \
+                        printf '\\0%s' \"$HISTFILE\"";
     let mut bash = std::process::Command::new("bash");
     bash.args(["-ic", DUMP])
         .stdin(Stdio::null())
@@ -671,8 +809,9 @@ fn read_user_shell() -> Option<UserShell> {
 }
 
 fn parse_user_shell(dump: &str) -> Option<UserShell> {
-    let mut parts = dump.rsplitn(6, '\0');
-    let (history, functions, names, aliases, options) = (
+    let mut parts = dump.rsplitn(7, '\0');
+    let (history, functions, names, completions, aliases, options) = (
+        parts.next()?,
         parts.next()?,
         parts.next()?,
         parts.next()?,
@@ -683,6 +822,7 @@ fn parse_user_shell(dump: &str) -> Option<UserShell> {
     Some(UserShell {
         // The options first: bash-completion's functions need extglob to parse.
         definitions: format!("{options}shopt -s expand_aliases\n{aliases}{functions}"),
+        completions: completions.to_string(),
         aliases: aliases
             .lines()
             .filter_map(|line| line.strip_prefix("alias ")?.split_once('='))
@@ -719,9 +859,29 @@ fn cd_target(command: &str) -> Option<PathBuf> {
         None | Some("~") => home(),
         Some(arg) => match arg.strip_prefix("~/") {
             Some(rest) => home().map(|h| h.join(rest)),
-            None => Some(PathBuf::from(arg)),
+            None => Some(in_cdpath(arg).unwrap_or_else(|| PathBuf::from(arg))),
         },
     }
+}
+
+/// The directory a relative `cd dir` finds through `$CDPATH`, like bash: not
+/// for `/x`, `./x` or `../x`, and an empty entry is the working directory.
+fn in_cdpath(dir: &str) -> Option<PathBuf> {
+    if dir.starts_with('/')
+        || dir == "."
+        || dir == ".."
+        || dir.starts_with("./")
+        || dir.starts_with("../")
+    {
+        return None;
+    }
+    let cdpath = std::env::var_os("CDPATH")?;
+    std::env::split_paths(&cdpath)
+        .map(|base| match base.as_os_str().is_empty() {
+            true => PathBuf::from(dir),
+            false => base.join(dir),
+        })
+        .find(|path| path.is_dir())
 }
 
 /// Asks on the terminal. Options are numbered, with one more number last for
@@ -1439,11 +1599,9 @@ impl Session {
             Some(dir) => {
                 std::env::set_current_dir(&dir).with_context(|| format!("cd {}", dir.display()))?;
                 let cwd = std::env::current_dir().unwrap_or(dir);
-                self.messages.push(
-                    json!({"role": "user",
+                self.messages.push(json!({"role": "user",
                            "content": format!(
-                               "I changed the working directory to {}.", cwd.display())}),
-                );
+                               "I changed the working directory to {}.", cwd.display())}));
             }
             None => {
                 let status = on_terminal_status(&shell.script(command)).await?;
@@ -1812,7 +1970,7 @@ async fn spin(what: &'static str) {
 }
 
 /// The line editor every prompt reads through, so arrow keys edit the line.
-static EDITOR: Mutex<Option<DefaultEditor>> = Mutex::new(None);
+static EDITOR: Mutex<Option<Editor<Completion, DefaultHistory>>> = Mutex::new(None);
 
 /// How many earlier lines Up and Down go through: all of them, in practice.
 const HISTORY_SIZE: usize = 1_000_000;
@@ -2016,8 +2174,12 @@ fn read_line(prompt: &str) -> Result<Option<String>> {
     let _lent = lend_terminal();
     let mut editor = EDITOR.lock().unwrap_or_else(|e| e.into_inner());
     if editor.is_none() {
-        let config = Config::builder().max_history_size(HISTORY_SIZE)?.build();
-        let mut new = DefaultEditor::with_config(config).context("opening the terminal")?;
+        let config = Config::builder()
+            .max_history_size(HISTORY_SIZE)?
+            .completion_type(CompletionType::List)
+            .build();
+        let mut new = Editor::with_config(config).context("opening the terminal")?;
+        new.set_helper(Some(Completion));
         let _ = upgrade_history();
         for line in past_lines() {
             let _ = new.add_history_entry(line);
@@ -2652,7 +2814,7 @@ mod tests {
     #[test]
     fn aliases_and_functions_come_from_the_users_bash() {
         let dump = "bashrc says hi\0shopt -s extglob\n\0alias ..='cd ..'\n\
-                    alias say='echo '\\''hi'\\'''\n\0declare -f mkcd\n\0mkcd () { :; }\n\0/home/me/.history";
+                    alias say='echo '\\''hi'\\'''\n\0complete -F _git git\n\0declare -f mkcd\n\0mkcd () { :; }\n\0/home/me/.history";
         let shell = parse_user_shell(dump).unwrap();
         assert!(shell.knows("..") && shell.knows("mkcd") && !shell.knows("hi"));
         assert_eq!(shell.aliases["say"], "echo 'hi'");
@@ -2663,6 +2825,20 @@ mod tests {
         assert!(shell.script("..").ends_with("mkcd () { :; }\n\n.."));
         assert_eq!(shell.history, Some(PathBuf::from("/home/me/.history")));
         assert!(parse_user_shell("no definitions").is_none());
+    }
+
+    #[test]
+    fn tab_completes_like_bash() {
+        let (start, words) = Completion::candidates("/mo");
+        assert_eq!((start, words), (0, vec!["/model ".to_string()]));
+        assert_eq!(Completion::candidates("/").1.len(), SLASH_COMMANDS.len());
+        let (start, words) = Completion::candidates("!ech");
+        assert_eq!(start, 1);
+        assert!(words.iter().any(|w| w.trim_end() == "echo"), "{words:?}");
+        let (start, words) = Completion::candidates("ls Carg");
+        assert_eq!((start, words), (3, vec!["Cargo.toml ".to_string()]));
+        let (start, words) = Completion::candidates("look at sr");
+        assert_eq!((start, words), (8, vec!["src/".to_string()]));
     }
 
     #[test]

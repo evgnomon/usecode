@@ -74,7 +74,6 @@ alias vd="vim \$(fd . ~ --type file --type symlink | sk --preview='bat --color=a
 alias vv="vim \$(fd . . --type file --type symlink | sk --preview='bat --color=always --style=numbers {}')"
 alias v=vim
 alias g=git
-alias gg=goose
 alias cc=claude
 alias oc=opencode
 alias co=copilot
@@ -82,7 +81,6 @@ alias i=invoke
 alias c='cd ~ && claude --disallowedTools "Read,Edit,Write,Bash,Glob,Grep"'
 alias mkpass="uc secret gen"
 alias z=uc-pick-url
-alias r='gg run --recipe'
 alias d='cd "$(fd --type d | sk)"'
 alias gr="uc-repo-open"
 alias cn='cn --config ~/.continue/config.yaml'

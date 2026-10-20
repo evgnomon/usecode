@@ -80,6 +80,7 @@ export function Home() {
       <Section className="border-y bg-card">
         <div className="wrap grid items-center gap-10 md:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
           <div>
+            <p className="mb-2 text-sm font-medium text-primary">{MOTIVATION.kicker}</p>
             <h2 className="mb-4 text-[clamp(22px,3.4vw,28px)] leading-[1.2] tracking-[-0.02em]">{MOTIVATION.close}</h2>
             <p className="mb-4 max-w-[60ch] text-base text-muted-foreground">{MOTIVATION.body}</p>
             <p className="mb-4 max-w-[60ch] text-base">{MOTIVATION.team}</p>

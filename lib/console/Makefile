@@ -6,12 +6,13 @@ IMAGE ?= localhost/usecode-console
 # CONTAINER_REGISTRY: where `make push` sends the image. Falls back to the
 # registry Ingress's host, or the legacy REGISTRY variable.
 REGISTRY ?= $(CONTAINER_REGISTRY)
-TAG ?= $(shell git rev-parse --short HEAD)
+# The latest push: the commit origin/master is at.
+TAG ?= $(shell ./scripts/k8s.sh tag)
 PORT ?= 8080
 TEST_DB_PORT ?= 55432
 TEST_DATABASE_URL ?= postgres://postgres:test@127.0.0.1:$(TEST_DB_PORT)/console
 
-.PHONY: all build test test-db test-db-stop serve dev image push clean
+.PHONY: all build test test-db test-db-stop serve dev image push deploy clean
 
 all: build
 
@@ -39,11 +40,16 @@ serve: build
 dev: node_modules
 	API_URL=http://localhost:$(PORT) npx vite
 
+# Builds the latest push, not the working tree.
 image:
-	podman build --network=host -t $(IMAGE):$(TAG) -f Containerfile .
+	./scripts/k8s.sh image $(IMAGE)
 
 push: image
 	./scripts/push.sh $(IMAGE) $(TAG) $(REGISTRY)
+
+# Rolls the console out at the latest push; `make push` it first.
+deploy:
+	./scripts/k8s.sh deploy $(REGISTRY)
 
 clean:
 	rm -rf dist node_modules

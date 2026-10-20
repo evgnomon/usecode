@@ -138,15 +138,21 @@ export const MOTIVATION = {
     },
   ] as Journey[],
   close: "From burning tokens to compounding them.",
+  kicker: "Not just another coding agent.",
   body:
     "The agent writes the code, tests it, builds it, deploys it, and patches " +
-    "it when something breaks. usecode is where all of it runs, on any node, " +
-    "anywhere, configured the way you need it or the way that works best.",
+    "it when something breaks. But code is the easy half: it also needs " +
+    "machines, networks, databases, DNS, mail and secrets, and no coding " +
+    "agent comes with those. usecode does. It isn't another coding agent; " +
+    "it's everything you need a coding agent for, and the toolbox to run it " +
+    "on any node, anywhere, configured the way you need it or the way that " +
+    "works best.",
   team:
     "Every tool for that job is already in uc, one command line that you, " +
     "your team and your agents share. What one of you works out, the next " +
-    "one simply runs.",
-  ship: "The agent builds. You watch it ship.",
+    "one simply runs. And when a tool is missing, the agent adds it, so the " +
+    "next job starts further ahead.",
+  ship: "Not just another coding agent. The whole toolbox, and the agent to add even more.",
 };
 
 /** A few of uc's commands, shown in the hero's terminal frame. */
