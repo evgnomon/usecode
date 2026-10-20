@@ -14,7 +14,9 @@
 //! in `-y` allows what its answer does). Deleting files is always confirmed.
 //! A command still running after its timeout carries on as a job the model
 //! follows and stops itself. Only the model's replies are printed, not what
-//! the commands print, unless `--output` is given. A line that is a command
+//! the commands print, unless `--output` is given. A command the model runs
+//! shows as a few words on what it does, like `· list the rust files`, unless
+//! `--commands` is given, which shows the command line itself. A line that is a command
 //! (`ls -al`, `git status`, or anything after `!`) runs on the terminal
 //! straight away, with the same confirmations, and the model is told it ran;
 //! the user's bash aliases and functions work there too;
@@ -162,16 +164,23 @@ fn client() -> &'static reqwest::Client {
 
 /// `ask` confirms every command and change instead of running it straight away;
 /// `output` shows what the commands print as well as the model's replies;
+/// `commands` shows the model's command lines instead of their titles;
 /// `shell` runs a line that is a command instead of sending it to the model;
 /// `search` is where web_search looks, the first with a key if not given.
-pub fn main(ask: bool, output: bool, shell: bool, search: Option<Search>) -> ExitCode {
+pub fn main(
+    ask: bool,
+    output: bool,
+    commands: bool,
+    shell: bool,
+    search: Option<Search>,
+) -> ExitCode {
     // Worker threads keep reading the jobs' pipes while the prompt waits.
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
         .build()
         .expect("tokio runtime");
-    let result = runtime.block_on(run(ask, output, shell, search));
+    let result = runtime.block_on(run(ask, output, commands, shell, search));
     stop_jobs();
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -236,6 +245,8 @@ struct Session {
     allow_turn: bool,
     /// Print what commands and jobs print, not only the model's replies.
     show_output: bool,
+    /// Print the model's command lines, not the few words on what they do.
+    show_commands: bool,
     jobs: BTreeMap<usize, Job>,
     next_job: usize,
     search: Engine,
@@ -339,7 +350,13 @@ fn on_terminal(command: &str) -> bool {
     word.rsplit('/').next() == Some("ssh-add")
 }
 
-async fn run(ask: bool, output: bool, shell: bool, search: Option<Search>) -> Result<()> {
+async fn run(
+    ask: bool,
+    output: bool,
+    commands: bool,
+    shell: bool,
+    search: Option<Search>,
+) -> Result<()> {
     let key = std::env::var("OPENROUTER_API_KEY")
         .ok()
         .filter(|k| !k.trim().is_empty())
@@ -367,6 +384,7 @@ async fn run(ask: bool, output: bool, shell: bool, search: Option<Search>) -> Re
         allow_all: !ask,
         allow_turn: false,
         show_output: output,
+        show_commands: commands,
         jobs: BTreeMap::new(),
         next_job: 1,
         search: Engine::pick(search)?,
@@ -708,7 +726,7 @@ fn system_prompt(model: &str, ask: bool, output: bool) -> String {
          when you read it, so never repeat or reformat it; when a command was all they asked \
          for, say nothing after it."
     } else {
-        "The user sees the commands you run but not their output, only your replies, so tell \
+        "The user sees what you run but not its output, only your replies, so tell \
          them what they need from it: the answer, not the raw output."
     };
     format!(
@@ -740,11 +758,12 @@ fn tools() -> Value {
              type the key's passphrase.",
             json!({
                 "command": string("the command line"),
+                "title": string("what it does in a few lowercase words, shown to the user instead of the command, like 'list the rust files' or 'build the release binary'"),
                 "timeout": integer("seconds to wait before it carries on as a job; 120 if left out"),
                 "background": boolean("start it as a job and return straight away, for servers and watchers"),
                 "ask": boolean("ask the user first, for anything hard to undo or reaching outside this machine"),
             }),
-            &["command"],
+            &["command", "title"],
         ),
         tool(
             "job_output",
@@ -899,14 +918,22 @@ impl Session {
             .iter()
             .map(|m| content(m).map(str::len).unwrap_or_default())
             .sum();
-        eprintln!("· {} messages, about {} tokens", self.messages.len(), bytes / 4);
+        eprintln!(
+            "· {} messages, about {} tokens",
+            self.messages.len(),
+            bytes / 4
+        );
         let tokens = self
             .last_usage
             .as_ref()
             .and_then(|u| u["total_tokens"].as_u64());
         if let Some(total) = tokens {
             eprint!("· last turn {total} tokens");
-            if let Some(prompt) = self.last_usage.as_ref().and_then(|u| u["prompt_tokens"].as_u64()) {
+            if let Some(prompt) = self
+                .last_usage
+                .as_ref()
+                .and_then(|u| u["prompt_tokens"].as_u64())
+            {
                 eprint!(" ({prompt} in");
                 if let Some(cached) = self
                     .last_usage
@@ -942,13 +969,14 @@ impl Session {
                     let per_million = per_million.unwrap_or_default();
                     eprintln!(
                         "· spent about ${:.4} this session, input ${:.2} and output ${:.2} per million tokens",
-                        self.spent,
-                        per_million.0,
-                        per_million.1
+                        self.spent, per_million.0, per_million.1
                     );
                 }
             }
-            Ok(None) => eprintln!("· model {}'s window and price aren't on OpenRouter's list", self.model),
+            Ok(None) => eprintln!(
+                "· model {}'s window and price aren't on OpenRouter's list",
+                self.model
+            ),
             Err(err) => eprintln!("· OpenRouter's model list: {err:#}"),
         }
     }
@@ -1040,7 +1068,8 @@ impl Session {
         let result = match name {
             "bash" => {
                 let timeout = number("timeout").unwrap_or(DEFAULT_TIMEOUT);
-                self.bash(&arg("command"), timeout, flag("background"), flag("ask"))
+                let (command, title) = (arg("command"), arg("title"));
+                self.bash(&command, &title, timeout, flag("background"), flag("ask"))
                     .await
             }
             "job_output" => self.job_output(job, number("wait").unwrap_or(0)).await,
@@ -1075,12 +1104,19 @@ impl Session {
     async fn bash(
         &mut self,
         command: &str,
+        title: &str,
         timeout: u64,
         background: bool,
         ask: bool,
     ) -> Result<String> {
-        // The ₿ in Gruvbox fg (#ebdbb2) is the shell prompt from the dotfiles' .bashrc.
-        eprintln!("\x1b[38;2;235;219;178m₿\x1b[0m {command}");
+        let asks = ask || deletes(command) || !(self.allow_all || self.allow_turn);
+        let title = title.trim();
+        if self.show_commands || title.is_empty() || asks {
+            // The ₿ in Gruvbox fg (#ebdbb2) is the shell prompt from the dotfiles' .bashrc.
+            eprintln!("\x1b[38;2;235;219;178m₿\x1b[0m {command}");
+        } else {
+            eprintln!("· {title}");
+        }
         self.confirm("run it?", ask || deletes(command))?;
         if let Some(dir) = cd_target(command) {
             std::env::set_current_dir(&dir).with_context(|| format!("cd {}", dir.display()))?;
@@ -2422,6 +2458,7 @@ mod tests {
             allow_all: true,
             allow_turn: false,
             show_output: false,
+            show_commands: false,
             jobs: BTreeMap::new(),
             next_job: 1,
             search: Engine::DuckDuckGo,
@@ -2464,7 +2501,7 @@ mod tests {
     async fn a_slow_command_carries_on_as_a_job() {
         let mut s = session();
         let first = s
-            .bash("echo a; sleep 2; echo b", 1, false, false)
+            .bash("echo a; sleep 2; echo b", "", 1, false, false)
             .await
             .unwrap();
         assert!(first.starts_with("still running as job 1"), "{first}");
@@ -2478,7 +2515,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn job_kill_stops_the_whole_pipeline() {
         let mut s = session();
-        s.bash("sleep 100 | cat", 0, true, false).await.unwrap();
+        s.bash("sleep 100 | cat", "", 0, true, false).await.unwrap();
         let group = s.jobs[&1].group;
         let killed = s.job_kill(1).await.unwrap();
         assert!(killed.contains("signal"), "{killed}");
@@ -2498,7 +2535,10 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn commands_have_no_terminal_to_ask_on() {
         let mut s = session();
-        let out = s.bash("exec 3</dev/tty", 5, false, false).await.unwrap();
+        let out = s
+            .bash("exec 3</dev/tty", "", 5, false, false)
+            .await
+            .unwrap();
         assert!(!out.starts_with("exit status: 0"), "{out}");
     }
 

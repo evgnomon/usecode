@@ -18,10 +18,11 @@ const PREFIX: &str = "uc-";
 /// Short names for commands: `uc ws` is `uc workspace`.
 const ALIASES: &[(&str, &str)] = &[("ws", "workspace")];
 
-/// The agent's options: `uc --ask --output --no-shell`, and the search engine.
+/// The agent's options: `uc --ask --output --commands --no-shell`, and the search engine.
 const CHAT_FLAGS: &[&str] = &[
     "--ask",
     "--output",
+    "--commands",
     "--no-shell",
     "--parallel",
     "--exa",
@@ -38,11 +39,17 @@ const SEARCH_FLAGS: &[(&str, Search)] = &[
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let subcommand = match args.first().map(String::as_str) {
-        None => return uc::chat::main(false, false, true, None),
+        None => return uc::chat::main(false, false, false, true, None),
         Some(_) if args.iter().all(|a| CHAT_FLAGS.contains(&a.as_str())) => {
             let has = |flag: &str| args.iter().any(|a| a == flag);
             let search = SEARCH_FLAGS.iter().find(|(f, _)| has(f)).map(|(_, s)| *s);
-            return uc::chat::main(has("--ask"), has("--output"), !has("--no-shell"), search);
+            return uc::chat::main(
+                has("--ask"),
+                has("--output"),
+                has("--commands"),
+                !has("--no-shell"),
+                search,
+            );
         }
         Some("help") | Some("-h") | Some("--help") => {
             print_usage();
@@ -74,12 +81,14 @@ fn main() -> ExitCode {
 
 fn print_usage() {
     println!(
-        "Usage: uc [--ask] [--output] [--no-shell] [--parallel|--exa|--duckduckgo] | <command> [<args>]\n"
+        "Usage: uc [--ask] [--output] [--commands] [--no-shell] [--parallel|--exa|--duckduckgo] | <command> [<args>]\n"
     );
     println!("With no command, uc is a coding agent: talk to it and it runs commands and");
     println!("edits files for you, through OpenRouter (OPENROUTER_API_KEY, UC_MODEL,");
     println!("UC_EFFORT). It runs them straight away; `uc --ask` confirms each one first.");
     println!("You see its answers; `uc --output` also shows what the commands print.");
+    println!("Each command it runs shows as a few words on what it does, like");
+    println!("`· list the rust files`; `uc --commands` shows the command line instead.");
     println!("A line that is a command, like `ls -al`, runs on the terminal straight");
     println!("away; `uc --no-shell` sends every line to the model instead.");
     println!("It searches the web with Parallel (PARALLEL_API_KEY), else Exa (EXA_API_KEY),");
