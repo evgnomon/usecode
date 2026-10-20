@@ -66,4 +66,3 @@ svelte.svelte-vscode
 tamasfe.even-better-toml
 vscodevim.vim
 xaver.clang-format
-ziglang.vscode-zig

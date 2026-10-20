@@ -197,7 +197,7 @@ sync: [apt, extrepo, dotfiles, git, mise, alacritty]  # alacritty brings its fon
 uc sync                    # what uc needs plus your sync list, for the detected profile
 uc sync -C                 # dry run: report what would change
 uc sync -t dotfiles,git    # only these roles, listed in sync or not
-uc sync -t zls -d          # zls plus everything it runs after
+uc sync -t docker -d       # docker plus everything it runs after
 uc sync -l -t 'git/*'      # list tasks, their tags and dependencies
 uc sync --graph | dot -Tsvg > graph.svg
 ```

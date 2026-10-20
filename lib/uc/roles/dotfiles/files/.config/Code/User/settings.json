@@ -71,7 +71,6 @@
     "[github-actions-workflow]": {
         "editor.defaultFormatter": "redhat.vscode-yaml"
     },
-    "zig.zls.enabled": "on",
     "[json]": {
         "editor.defaultFormatter": "esbenp.prettier-vscode"
     },

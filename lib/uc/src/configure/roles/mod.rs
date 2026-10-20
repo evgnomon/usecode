@@ -3,7 +3,7 @@
 
 //! The configuration itself: one module per former Ansible role, each
 //! adding its tasks to the plan. Task ids are `<role>/<step>`, and the role
-//! part matches the tag the Ansible role used, so `-t zls` or `-t dotfiles`
+//! part matches the tag the Ansible role used, so `-t dotfiles` or `-t git`
 //! select what they did before.
 //!
 //! Where Ansible relied on play order, a task names what it needs with
@@ -20,7 +20,6 @@ pub mod extrepo;
 pub mod fonts;
 pub mod git;
 pub mod gnome;
-pub mod goose;
 pub mod local_bin;
 pub mod mise;
 pub mod pam_sudo;
@@ -31,7 +30,6 @@ pub mod sysctl;
 pub mod udev_hwdb;
 pub mod usecode;
 pub mod wslview;
-pub mod zls;
 
 use crate::configure::engine::{Plan, Task};
 use crate::configure::glob_match;
@@ -88,7 +86,6 @@ pub fn plan(v: &Vars) -> Plan {
     brave_bookmarks::tasks(&mut plan, v);
     wslview::tasks(&mut plan, v);
     docker::tasks(&mut plan, v);
-    zls::tasks(&mut plan, v);
     plan.gate(
         0,
         v.facts.is_debian_family(),
@@ -96,7 +93,6 @@ pub fn plan(v: &Vars) -> Plan {
     );
 
     rust::tasks(&mut plan, v);
-    goose::tasks(&mut plan, v);
     alacritty::tasks(&mut plan, v);
     plan.opt_in(
         |task| wanted(&[], task),

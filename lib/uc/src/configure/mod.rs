@@ -316,7 +316,6 @@ mod tests {
             "dotfiles/links",
             "mise/tools",
             "extrepo/enable:mise",
-            "zls/build",
         ] {
             assert!(ids.contains(id), "missing {id}");
         }
@@ -360,7 +359,7 @@ mod tests {
         assert!(!alacritty.contains("pkg/debian"));
 
         let all = selected(&["all"], &[]);
-        assert!(all.contains("zls/build") && !all.contains("apt/upgrade"));
+        assert!(all.contains("docker/group") && !all.contains("apt/upgrade"));
         assert!(selected(&[], &["fonts"]).contains("fonts/install"));
     }
 }
