@@ -1713,7 +1713,8 @@ impl Session {
         }
         // Without its output on screen, a long wait would look like uc hung.
         let quiet = !job.echo.load(Ordering::Relaxed) && std::io::stderr().is_terminal();
-        let clock = quiet.then(|| Clock(tokio::spawn(spin("running".to_string()))));
+        let what = format!("\x1b[38;2;198;120;221m{}\x1b[0m", any(&RUNNING));
+        let clock = quiet.then(|| Clock(tokio::spawn(spin(what))));
         let waited = tokio::time::timeout(Duration::from_secs(secs), job.child.wait()).await;
         drop(clock);
         if let Ok(Ok(status)) = waited {
@@ -2058,6 +2059,17 @@ const DOING: [&str; 7] = [
     "tinkering",
     "conjuring",
     "assembling",
+];
+
+/// What the spinner says while a command runs quietly, one picked per run.
+const RUNNING: [&str; 7] = [
+    "churning",
+    "grinding",
+    "humming",
+    "chugging",
+    "whirring",
+    "crunching",
+    "toiling",
 ];
 
 /// One of `words`, picked by the clock.
