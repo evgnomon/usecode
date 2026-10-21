@@ -26,8 +26,12 @@ LINK_BINS := $(addprefix $(dir $(LINK_BIN)),$(BINS))
 ALIASES ?=
 INSTALL_ALIASES := $(addprefix $(dir $(INSTALL_BIN)),$(ALIASES))
 LINK_ALIASES := $(addprefix $(dir $(LINK_BIN)),$(ALIASES))
+# lib/uc's deb target stages every uc-* binary here for the one uc package.
+# The old ALIASES names stay out of it.
+DEB_ROOT ?= $(ROOT_DIR)/lib/uc/pkg/debian
+DEB_BINS := $(filter uc-%,$(BINS))
 
-.PHONY: all build check install uninstall link unlink test lint fmt clean
+.PHONY: all build check install uninstall link unlink deb-stage test lint fmt clean
 
 all: build
 
@@ -53,6 +57,11 @@ link: $(OUTPUTS)
 
 unlink:
 	@rm -f $(LINK_BINS) $(LINK_ALIASES)
+
+# Double-colon so a crate can add its own files (see lib/mkdeb).
+deb-stage:: $(OUTPUTS)
+	@install -d $(DEB_ROOT)/usr/bin
+	@$(foreach bin,$(DEB_BINS),install -m 0755 $(ROOT_DIR)/target/$(PROFILE)/$(bin) $(DEB_ROOT)/usr/bin;)
 
 check:
 	@cargo fmt -p $(NAME) --check

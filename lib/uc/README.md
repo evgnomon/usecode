@@ -400,8 +400,7 @@ switching scripts over to the `uc` commands is a good idea.
 | `uc terminal` | `uc-terminal-tm`, arguments and all | |
 
 `vi` does its job by standing in for the real one on `PATH`, so that name
-stays installed as a symlink for good. `x` keeps its name too:
-it is the shortcut for `uc sync`. For `uc terminal`, the dotfiles
+stays installed as a symlink for good. For `uc terminal`, the dotfiles
 give you the shell alias `t`.
 
 ### Cloud VMs

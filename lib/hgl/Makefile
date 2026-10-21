@@ -7,11 +7,3 @@ BIN := uc-repo-headers
 ALIASES := hgl
 
 include ../rust.mk
-
-.PHONY: dist publish
-
-dist: build
-	@uc-deb-build
-
-publish: dist
-	@uc-deb-publish

@@ -42,7 +42,6 @@ members = [
     "lib/ucversion",
     "lib/vi",
     "lib/vm",
-    "lib/x",
     "lib/ykattach",
     "lib/ysys",
     "lib/zcdump",

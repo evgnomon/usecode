@@ -111,8 +111,8 @@ $(STAMP_DIR)/link.$(PYTHON_VERSION): $(STAMP_DIR)/install.$(PYTHON_VERSION) $(DS
 
 build: $(STAMP_DIR)/link.$(PYTHON_VERSION) ## Build CPython from source and link into build prefix
 
-dist: 
-	@uc-deb-build
+dist: build
+	@uc deb build -o $(ROOT_DIR)/dist
 
 install: ## Copy Python files into DESTDIR/INSTALL_PREFIX
 	@mkdir -p $(DESTDIR)$(patsubst /%,%,$(INSTALL_PREFIX))

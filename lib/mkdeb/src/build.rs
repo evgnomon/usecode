@@ -66,13 +66,16 @@ pub fn build_dir(tmp_dir: Option<&str>) -> String {
     dir.to_string()
 }
 
-/// `rm $OUTPUT_DIR/*.deb 2>/dev/null || true; mkdir -p "$OUTPUT_DIR"`
-pub fn prepare_output(output: &str) {
+/// `rm $OUTPUT_DIR/$NAME_*.deb 2>/dev/null || true; mkdir -p "$OUTPUT_DIR"`
+/// Only this package's old builds go, so packages can share one output
+/// directory (the top-level dist/).
+pub fn prepare_output(output: &str, package: &str) {
+    let prefix = format!("{package}_");
     if let Ok(entries) = fs::read_dir(output) {
         for e in entries.flatten() {
             let name = e.file_name();
             let name = name.to_string_lossy();
-            if name.ends_with(".deb") && !name.starts_with('.') {
+            if name.ends_with(".deb") && name.starts_with(&prefix) {
                 let _ = fs::remove_file(e.path());
             }
         }
@@ -283,6 +286,20 @@ mod tests {
         assert_eq!(format_license(b"a\n\nb\n\n\n"), b" a\n  .\n b".to_vec());
         assert_eq!(format_license(b"\n\n"), Vec::<u8>::new());
         assert_eq!(format_license(b"\nx"), b"  .\n x".to_vec());
+    }
+
+    #[test]
+    fn prepare_output_keeps_other_packages() {
+        let dir = std::env::temp_dir().join(format!("mkdeb-out-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        for f in ["uc_1_amd64.deb", "uc-vim_1_amd64.deb", "notes.txt"] {
+            fs::write(dir.join(f), "").unwrap();
+        }
+        prepare_output(&dir.to_string_lossy(), "uc");
+        assert!(!dir.join("uc_1_amd64.deb").exists());
+        assert!(dir.join("uc-vim_1_amd64.deb").exists());
+        assert!(dir.join("notes.txt").exists());
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

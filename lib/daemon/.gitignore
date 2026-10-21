@@ -4,3 +4,4 @@
 /uc-net-mesh
 *.retry
 /target
+/pkg

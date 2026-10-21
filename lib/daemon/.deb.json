@@ -1,0 +1,11 @@
+{
+  "name": "usecoded",
+  "description": "The usecode daemon: usecoded and usecode.service, the one service on every host",
+  "maintainer": "hg@evgnomon.org",
+  "depends": "",
+  "section": "admin",
+  "priority": "optional",
+  "homepage": "https://github.com/evgnomon/usecode",
+  "license": "HGL",
+  "root": "pkg/debian"
+}

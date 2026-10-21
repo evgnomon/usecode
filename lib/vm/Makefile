@@ -10,10 +10,8 @@ PREFIX ?= /usr
 
 include ../rust.mk
 
-.PHONY: dist publish
+.PHONY: dist
 
-dist: build
-	@uc-deb-build
-
-publish: dist
-	@uc-deb-publish
+# The base images uc-vm-local starts VMs from, one deb each.
+dist:
+	@$(MAKE) -C images dist

@@ -1,0 +1,11 @@
+{
+  "name": "uc-alacritty",
+  "description": "Alacritty terminal built from source into /usr/local, with its terminfo, desktop entry, man pages and completions",
+  "maintainer": "hg@evgnomon.org",
+  "depends": "libc6, libgcc-s1, libfontconfig1, libfreetype6, libxkbcommon0, libegl1",
+  "section": "x11",
+  "priority": "optional",
+  "homepage": "https://github.com/evgnomon/usecode",
+  "license": "HGL",
+  "root": "build"
+}

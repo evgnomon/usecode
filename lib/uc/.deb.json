@@ -1,12 +1,11 @@
 {
-  "name": "mkdeb",
-  "version": "0.4.0",
-  "description": "Make Debian packages with ease",
+  "name": "uc",
+  "description": "Use code! uc and all its commands",
   "maintainer": "hg@evgnomon.org",
   "depends": "",
   "section": "utils",
   "priority": "optional",
-  "homepage": "https://github.com/evgnomon/flow",
+  "homepage": "https://github.com/evgnomon/usecode",
   "license": "HGL",
   "root": "pkg/debian"
 }

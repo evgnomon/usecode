@@ -1,0 +1,13 @@
+#!/bin/sh
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
+# Stop the service on removal; an upgrade restarts it in postinst instead.
+
+set -e
+
+if [ "$1" = remove ] && [ -d /run/systemd/system ]; then
+    systemctl disable --now --quiet usecode || true
+fi
+
+exit 0

@@ -1,0 +1,11 @@
+{
+  "name": "uc-vim",
+  "description": "Vim with huge features and Python 3, built from source into /usr/local",
+  "maintainer": "hg@evgnomon.org",
+  "depends": "cpython, libc6, libtinfo6, libselinux1, libx11-6, libxt6t64, libsm6, libice6, libwayland-client0",
+  "section": "editors",
+  "priority": "optional",
+  "homepage": "https://github.com/evgnomon/usecode",
+  "license": "HGL",
+  "root": "build"
+}

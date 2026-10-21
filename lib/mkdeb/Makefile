@@ -8,9 +8,6 @@ ALIASES := mkdeb
 
 include ../rust.mk
 
-.PHONY: dist
-
-dist: build
-	@install -d pkg/debian/usr/bin
-	@install -m 0755 $(OUTPUT) pkg/debian/usr/bin/$(BIN)
-	@$(OUTPUT)
+# The man page goes into the uc deb next to the binary.
+deb-stage::
+	@cp -r pkg/debian/usr/share $(DEB_ROOT)/usr/

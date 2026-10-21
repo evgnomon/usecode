@@ -107,7 +107,7 @@ fn main() {
     }
 
     let build_dir = build::build_dir(tmp_dir.as_deref());
-    build::prepare_output(&output);
+    build::prepare_output(&output, &m.name);
     if let Some(root) = &root {
         build::install_root(&source, root, &build_dir);
     }

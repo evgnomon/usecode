@@ -1,12 +1,14 @@
 # License-Identifier: HGL
 # Copyright (C) The Usecode Authors (see AUTHORS)
 
-.PHONY: build build-deps clean install update link unlink
+.PHONY: build build-deps dist clean install update link unlink
 
 BUILD_DIR      := $(CURDIR)/build
 LIB_STAGE      := $(BUILD_DIR)/usr/local
 PREFIX         ?= /usr/local
 ALACRITTY_SRC  := $(CURDIR)/../../third_party/alacritty/alacritty
+ROOT_DIR       ?= $(abspath $(CURDIR)/../..)
+ALACRITTY_VER  := $(shell git -C $(ALACRITTY_SRC) describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')
 CONFIG_LINK    := $(HOME)/.config/alacritty/alacritty.toml
 
 APT_BUILD_DEPS := cmake g++ pkg-config libfreetype-dev libfontconfig1-dev \
@@ -33,6 +35,13 @@ link:
 
 unlink:
 	@rm -f $(CONFIG_LINK)
+
+# The uc-alacritty package: what build staged under build/usr/local, with
+# install.sh as its postinst so apt registers the terminfo, desktop entry
+# and icon the same way make install does.
+dist: build
+	@install -Dm755 install.sh $(BUILD_DIR)/DEBIAN/postinst
+	@uc deb build -v "$(ALACRITTY_VER)" -o $(ROOT_DIR)/dist
 
 install:
 	@cp -r --preserve=mode $(LIB_STAGE)/. $(PREFIX)/

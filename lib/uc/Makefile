@@ -17,8 +17,10 @@ INSTALLED := $(addprefix $(BIN_DIR)/,$(BINS))
 # Former standalone tools that uc-secret still answers to by name.
 SECRET_ALIASES := getsecret keychain rchain ghchain ensure_secret ensure_vault rotate_keychain_pass
 INSTALLED_ALIASES := $(addprefix $(BIN_DIR)/,$(SECRET_ALIASES))
+VERSION ?= $(shell git describe --tags --match 'v*' --abbrev=0 2>/dev/null | sed 's/^v//')
+DEB_ROOT := $(CURDIR)/pkg/debian
 
-.PHONY: all build check install uninstall test lint fmt dist publish clean
+.PHONY: all build check install uninstall test lint fmt deb dist publish clean
 
 all: build
 
@@ -51,11 +53,20 @@ lint:
 fmt:
 	@cargo fmt -p uc
 
-dist: build
-	@uc-deb-build
+# One package for uc and all its commands: the uc-* binaries built here and
+# by every lib/* crate (deb-stage in lib/rust.mk), packed by the uc just
+# built, so uc deb runs the uc-deb-build next to it.
+deb: build
+	@rm -rf $(DEB_ROOT)
+	@install -d $(DEB_ROOT)/usr/bin
+	@install -m 0755 $(OUTPUTS) $(DEB_ROOT)/usr/bin
+	@cd $(ROOT_DIR) && DEB_ROOT=$(DEB_ROOT) MAKE=$(MAKE) ./scripts/each_lib.sh deb-stage
+	@$(DEB_ROOT)/usr/bin/uc deb build -v "$(VERSION)" -o $(ROOT_DIR)/dist
+
+dist: deb
 
 publish: dist
-	@uc-deb-publish
+	@cd $(ROOT_DIR) && $(DEB_ROOT)/usr/bin/uc deb publish
 
 uninstall:
 	@rm -f $(INSTALLED) $(INSTALLED_ALIASES)

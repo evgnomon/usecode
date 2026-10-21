@@ -1,7 +1,7 @@
 # License-Identifier: HGL
 # Copyright (C) The Usecode Authors (see AUTHORS)
 
-.PHONY: all ci deploy publish build version install link clean submodules check typecheck test lint fmt-html fmt headers headers-check authors up reload down logs
+.PHONY: all ci deploy publish build dist version install link clean submodules check typecheck test lint fmt-html fmt headers headers-check authors up reload down logs
 
 $(eval $(shell ./scripts/ci_wrapper.sh --env 2>/dev/null))
 
@@ -67,6 +67,11 @@ up reload down logs:
 # artifact, so the next make would rebuild them all again.
 # Builds the quick fast profile; RELEASE=1 builds release instead.
 build:
+	@MAKE=$(MAKE) ./scripts/each_lib.sh $@
+
+# Debian packages into dist/, each lib making its own with uc deb: lib/uc
+# makes one uc package holding uc and every uc-* command.
+dist:
 	@MAKE=$(MAKE) ./scripts/each_lib.sh $@
 
 # install only copies what build staged, so it runs under sudo without cargo.
