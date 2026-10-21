@@ -36,7 +36,10 @@ const DOTFILES: &[(&str, &[&str])] = &[
         ],
     ),
     ("tmux", &[".tmux.conf"]),
-    ("mise", &[".config/mise/config.toml", ".default-python-packages"]),
+    (
+        "mise",
+        &[".config/mise/config.toml", ".default-python-packages"],
+    ),
     ("gnupg", &[".gnupg/gpg.conf", ".gnupg/scdaemon.conf"]),
     ("ctags", &[".ctags", ".ctags.d/javascript.ctags"]),
     ("fd", &[".fdignore"]),
@@ -132,10 +135,14 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
 
     for &(group, entries) in DOTFILES {
         let files = files.clone();
-        let dirs = if group == "claude" { dotdirs(v) } else { Vec::new() };
+        let dirs = if group == "claude" {
+            dotdirs(v)
+        } else {
+            Vec::new()
+        };
         plan.add(
-            Task::new(dot(group), format!("Link the {group} dotfiles"))
-                .run(move |ctx| async move {
+            Task::new(dot(group), format!("Link the {group} dotfiles")).run(
+                move |ctx| async move {
                     let home = &ctx.vars().home;
                     let mut outcome = Outcome::Ok;
                     for entry in entries {
@@ -150,7 +157,8 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
                         outcome = outcome.and(step);
                     }
                     Ok(outcome)
-                }),
+                },
+            ),
         );
     }
 
