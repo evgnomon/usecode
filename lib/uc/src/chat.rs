@@ -1438,11 +1438,8 @@ impl Session {
             "tools": tools(refining),
             "reasoning": {"effort": self.effort},
         });
-        let what = if refining {
-            format!("\x1b[38;2;97;175;239m{}\x1b[0m", pondering())
-        } else {
-            "thinking".to_string()
-        };
+        let words = if refining { &PONDERING } else { &DOING };
+        let what = format!("\x1b[38;2;97;175;239m{}\x1b[0m", any(words));
         let _clock = std::io::stderr()
             .is_terminal()
             .then(|| Clock(tokio::spawn(spin(what))));
@@ -2009,12 +2006,23 @@ const PONDERING: [&str; 7] = [
     "ratiocinating",
 ];
 
-/// One of the words in PONDERING, picked by the clock.
-fn pondering() -> &'static str {
+/// What the spinner says while the doer works, one picked per request.
+const DOING: [&str; 7] = [
+    "crafting",
+    "forging",
+    "orchestrating",
+    "wrangling",
+    "tinkering",
+    "conjuring",
+    "assembling",
+];
+
+/// One of `words`, picked by the clock.
+fn any(words: &[&'static str]) -> &'static str {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.subsec_nanos() as usize);
-    PONDERING[nanos % PONDERING.len()]
+    words[nanos % words.len()]
 }
 
 /// The braille spinner turning in the default text color next to what uc
