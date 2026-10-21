@@ -1,9 +1,11 @@
 # License-Identifier: HGL
 # Copyright (C) The Usecode Authors (see AUTHORS)
 
-# Builds and tests every push with make. The vendored builds (CPython, vim,
-# alacritty) take long and only change with their submodules, so they're
-# left to the release workflow.
+# Builds, tests and packs every push with make, set up the same way as the
+# release workflow (scripts/ci_dist_setup.sh), so what would break a release
+# breaks here first. The vendored builds (CPython, vim, alacritty) take long
+# and only change with their submodules, so they're left to the release
+# workflow.
 name: Build
 on:
   workflow_dispatch:
@@ -23,12 +25,13 @@ jobs:
         with:
           fetch-depth: 0
       - uses: astral-sh/setup-uv@v10.3.0
-      - name: Install build deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends musl-tools jq \
-            libvirt-dev libisoburn-dev libisofs-dev libburn-dev
+      - name: Set up the dist tools
+        run: ./scripts/ci_dist_setup.sh
       - name: Build
         run: make build
       - name: Test
         run: make test
+      - name: Dist
+        run: make dist
+      - name: Checksums
+        run: cd dist && sha256sum *.deb > SHA256SUMS
