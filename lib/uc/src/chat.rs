@@ -1713,7 +1713,7 @@ impl Session {
         }
         // Without its output on screen, a long wait would look like uc hung.
         let quiet = !job.echo.load(Ordering::Relaxed) && std::io::stderr().is_terminal();
-        let what = format!("\x1b[38;2;198;120;221m{}\x1b[0m", any(&RUNNING));
+        let what = format!("\x1b[38;2;97;175;239m{}\x1b[0m", any(&RUNNING));
         let clock = quiet.then(|| Clock(tokio::spawn(spin(what))));
         let waited = tokio::time::timeout(Duration::from_secs(secs), job.child.wait()).await;
         drop(clock);
