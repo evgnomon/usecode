@@ -110,6 +110,7 @@ fn group(name: &str) -> &'static [&'static str] {
             "libnss3-tools", // Tools for managing NSS databases and certificates for secure communication
             "skopeo", // Tool for inspecting and copying container images between registries and local storage
             "tmux",   // Terminal multiplexer for managing multiple terminal sessions in one window
+            "vim-nox", // Vim with Python, Lua and Ruby support, the default editor
             "ffmpeg", // Command-line multimedia framework for converting and streaming audio/video files
             "wl-clipboard", // Command-line copy/paste utilities (wl-copy, wl-paste) for clipboard integration
             "xclip", // Command-line X11 clipboard utility often used by terminal/editor integrations
