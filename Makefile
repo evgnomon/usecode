@@ -76,9 +76,10 @@ dist:
 
 # install only copies what build staged, so it runs under sudo without cargo.
 # alacritty is left out: its binary is busy while the terminal runs, so it
-# installs on its own with make -C lib/alacritty install.
+# installs on its own with make -C lib/alacritty install. vim is left out too,
+# install it by hand with make -C lib/vim install.
 install:
-	@MAKE=$(MAKE) SKIP=alacritty ./scripts/each_lib.sh $@
+	@MAKE=$(MAKE) SKIP="alacritty vim" ./scripts/each_lib.sh $@
 
 link:
 	@MAKE=$(MAKE) ./scripts/each_lib.sh $@

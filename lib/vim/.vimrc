@@ -37,10 +37,10 @@ set background=dark
 silent! source ~/.vim/theme.vim
 let g:gruvbox_contrast_light = 'hard'
 set belloff=all               " Disable all audible and visual bells, preventing distractions from error notifications.
-
-let $PYTHONHOME = '/usr/local'
+if v:progpath =~# '^/usr/bin/'
+  set pythonthreehome=/usr
+endif
 au BufNewFile,BufRead *.html.jinja2 setf htmldjango
-set pythonthreehome=/usr/local
 
 :augroup numbertoggle
   :  autocmd!
