@@ -99,8 +99,11 @@ fn random_salt() -> Result<[u8; SALT_LEN]> {
 
 /// Encrypts `plaintext` into the raw (not yet base64) `Salted__` container.
 pub fn encrypt_raw(plaintext: &[u8], password: &[u8]) -> Result<Vec<u8>> {
-    let salt = random_salt()?;
-    let material = derive_pbkdf2(password, &salt);
+    Ok(encrypt_with_salt(plaintext, password, &random_salt()?))
+}
+
+fn encrypt_with_salt(plaintext: &[u8], password: &[u8], salt: &[u8; SALT_LEN]) -> Vec<u8> {
+    let material = derive_pbkdf2(password, salt);
 
     let mut buf = vec![0u8; plaintext.len() + BLOCK_LEN];
     buf[..plaintext.len()].copy_from_slice(plaintext);
@@ -112,9 +115,9 @@ pub fn encrypt_raw(plaintext: &[u8], password: &[u8]) -> Result<Vec<u8>> {
 
     let mut out = Vec::with_capacity(MAGIC.len() + SALT_LEN + ciphertext_len);
     out.extend_from_slice(MAGIC);
-    out.extend_from_slice(&salt);
+    out.extend_from_slice(salt);
     out.append(&mut buf);
-    Ok(out)
+    out
 }
 
 /// Decrypts a raw `Salted__` container, trying the current key derivation and
@@ -204,11 +207,11 @@ mod tests {
 
     #[test]
     fn rejects_the_wrong_password() {
-        let raw = encrypt_raw(b"attack at dawn\n", b"hunter2").unwrap();
-        assert!(matches!(
-            decrypt_raw(&raw, b"hunter3"),
-            Err(Error::Decrypt) | Err(Error::Format(_))
-        ));
+        // A wrong key still yields valid PKCS#7 padding about 1 time in 256
+        // per key derivation, so a random salt makes this flaky. This salt is
+        // one where "hunter3" fails both.
+        let raw = encrypt_with_salt(b"attack at dawn\n", b"hunter2", b"usecode!");
+        assert!(matches!(decrypt_raw(&raw, b"hunter3"), Err(Error::Decrypt)));
     }
 
     #[test]
