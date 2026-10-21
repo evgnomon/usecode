@@ -23,7 +23,7 @@ pub fn tasks(plan: &mut Plan, _v: &Vars) {
     plan.add(
         Task::new(TOOLS, "Install the mise tools")
             .tags(&["mise"])
-            .after(["mise/install", dotfiles::LINKS])
+            .after(["mise/install".to_string(), dotfiles::dot("mise")])
             .run(|ctx| async move {
                 let out = ctx.cmd("mise").args(["install", "--yes"]).output().await?;
                 Ok(Outcome::changed(out.stderr.contains("installed")))

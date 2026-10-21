@@ -313,7 +313,7 @@ mod tests {
         let ids: BTreeSet<&str> = plan.tasks().iter().map(|t| t.id.as_str()).collect();
         for id in [
             "apt/update",
-            "dotfiles/links",
+            "dot/mise",
             "mise/tools",
             "extrepo/enable:mise",
         ] {
@@ -350,7 +350,7 @@ mod tests {
             roles(&none),
             ["dotfiles", "local_bin"].map(String::from).into()
         );
-        assert!(none.contains("dotfiles/usecode-config") && !none.contains("dotfiles/links"));
+        assert!(none.contains("dotfiles/usecode-config") && !none.contains("dot/bash"));
 
         let usecode = selected(&["usecode"], &[]);
         for id in ["usecode/build", "apt/build-deps", "rust/musl", "mise/tools"] {
@@ -361,6 +361,12 @@ mod tests {
         let alacritty = selected(&["alacritty"], &[]);
         assert!(alacritty.contains("fonts/install") && alacritty.contains("pkg/cascadia-mono"));
         assert!(!alacritty.contains("pkg/debian"));
+
+        let dotfiles = selected(&["dotfiles"], &[]);
+        assert!(dotfiles.contains("dotfiles/home-templates") && !dotfiles.contains("dot/bash"));
+        let tmux = selected(&["dotfiles", "dot/tmux"], &["dot"]);
+        assert!(tmux.contains("dot/tmux") && !tmux.contains("dot/bash"));
+        assert!(selected(&["dot"], &[]).contains("dot/vscode"));
 
         let all = selected(&["all"], &[]);
         assert!(all.contains("docker/group") && !all.contains("apt/upgrade"));

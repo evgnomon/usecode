@@ -1,8 +1,9 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! `dotfiles`: render the home templates and link the tracked dotfiles from
-//! `roles/dotfiles/files` into the home directories.
+//! `dotfiles`: render the home templates, and `dot`: link the tracked
+//! dotfiles from `roles/dotfiles/files` into the home directories, one task
+//! per group so the `sync` list picks which ones.
 
 use crate::configure::engine::{Outcome, Plan, Task};
 use crate::configure::modules::file;
@@ -11,42 +12,63 @@ use crate::configure::vars::Vars;
 use anyhow::Context;
 use std::path::{Path, PathBuf};
 
-pub const LINKS: &str = "dotfiles/links";
+/// The role of the dotfile groups: `dot/<group>` in the `sync` list links
+/// one group, `dot` all of them. None is linked unless listed, and they are
+/// left untagged so `-t dot` runs only the listed ones.
+pub const DOT: &str = "dot";
 
-/// `src[:dest]`, both relative to the role's files and the home directory.
-const DOTFILES: &[&str] = &[
-    ".config/containers/registries.conf",
-    ".config/hcloud/cli.sh",
-    ".config/opencode/opencode.jsonc",
-    ".config/yt-dlp/config",
-    ".ctags",
-    ".gnupg/gpg.conf",
-    ".gnupg/scdaemon.conf",
-    ".eget.toml",
-    ".fdignore",
-    ".ctags.d/javascript.ctags",
-    ".bashrc",
-    ".bashrc.d/mise-activate.sh",
-    ".inputrc",
-    ".local/bin/bazel",
-    ".config/mise/config.toml",
-    ".default-python-packages",
-    ".profile",
-    ".bash_aliases",
-    ".tmux.conf",
-    "claude/settings.json:.claude/settings.json",
-    "copilot/settings.json:.copilot/settings.json",
-    "copilot/mcp-config.json:.copilot/mcp-config.json",
-    ".config/Code/User/keybindings.json",
-    ".config/Code/User/settings.json",
-    ".config/Code/User/tasks.json",
+/// The task linking a group of [`DOTFILES`].
+pub fn dot(group: &str) -> String {
+    format!("{DOT}/{group}")
+}
+
+/// The dotfiles by group, `src[:dest]`, both relative to the role's files
+/// and the home directory.
+const DOTFILES: &[(&str, &[&str])] = &[
+    (
+        "bash",
+        &[
+            ".bashrc",
+            ".bashrc.d/mise-activate.sh",
+            ".bash_aliases",
+            ".inputrc",
+            ".profile",
+        ],
+    ),
+    ("tmux", &[".tmux.conf"]),
+    ("mise", &[".config/mise/config.toml", ".default-python-packages"]),
+    ("gnupg", &[".gnupg/gpg.conf", ".gnupg/scdaemon.conf"]),
+    ("ctags", &[".ctags", ".ctags.d/javascript.ctags"]),
+    ("fd", &[".fdignore"]),
+    ("eget", &[".eget.toml"]),
+    ("containers", &[".config/containers/registries.conf"]),
+    ("hcloud", &[".config/hcloud/cli.sh"]),
+    ("yt-dlp", &[".config/yt-dlp/config"]),
+    ("opencode", &[".config/opencode/opencode.jsonc"]),
+    ("claude", &["claude/settings.json:.claude/settings.json"]),
+    (
+        "copilot",
+        &[
+            "copilot/settings.json:.copilot/settings.json",
+            "copilot/mcp-config.json:.copilot/mcp-config.json",
+        ],
+    ),
+    (
+        "vscode",
+        &[
+            ".config/Code/User/keybindings.json",
+            ".config/Code/User/settings.json",
+            ".config/Code/User/tasks.json",
+        ],
+    ),
 ];
 
-/// Dotfiles no longer linked, `src[:dest]` like `DOTFILES`. A link still
+/// Dotfiles no longer linked, `src[:dest]` like those of `DOTFILES`. A link still
 /// pointing at the role's file is replaced by a copy of it, so the home keeps
 /// a real file once the role's file is deleted.
 const RETIRED: &[&str] = &[".config/Code/extensions.txt"];
 
+/// The `bash` group for root, linked by `dot/root`.
 const ROOT_DOTFILES: &[&str] = &[
     ".bashrc",
     ".bashrc.d/mise-activate.sh",
@@ -55,7 +77,8 @@ const ROOT_DOTFILES: &[&str] = &[
     ".bash_aliases",
 ];
 
-/// Directories linked into the home, (dest, src), relative to it.
+/// Directories of the `claude` group linked into the home, (dest, src),
+/// relative to it.
 fn dotdirs(v: &Vars) -> Vec<(String, String)> {
     let agents = format!("src/github.com/{}/agents/claude", v.user);
     vec![
@@ -107,23 +130,29 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
         }),
     );
 
-    let user_files = files.clone();
-    plan.add(
-        Task::new(LINKS, "Link dotfiles")
-            .tags(&["dotfiles"])
-            .run(move |ctx| async move {
-                let home = &ctx.vars().home;
-                let mut outcome =
-                    file::directory(&ctx, &home.join(".bashrc.d"), Some(0o755), false).await?;
-                for entry in DOTFILES {
-                    let (src, dest) = entry.split_once(':').unwrap_or((entry, entry));
-                    let step =
-                        file::link(&ctx, &user_files.join(src), &home.join(dest), false).await?;
-                    outcome = outcome.and(step);
-                }
-                Ok(outcome)
-            }),
-    );
+    for &(group, entries) in DOTFILES {
+        let files = files.clone();
+        let dirs = if group == "claude" { dotdirs(v) } else { Vec::new() };
+        plan.add(
+            Task::new(dot(group), format!("Link the {group} dotfiles"))
+                .run(move |ctx| async move {
+                    let home = &ctx.vars().home;
+                    let mut outcome = Outcome::Ok;
+                    for entry in entries {
+                        let (src, dest) = entry.split_once(':').unwrap_or((entry, entry));
+                        let step =
+                            file::link(&ctx, &files.join(src), &home.join(dest), false).await?;
+                        outcome = outcome.and(step);
+                    }
+                    for (dest, src) in &dirs {
+                        let step =
+                            file::link(&ctx, &under(home, src), &under(home, dest), false).await?;
+                        outcome = outcome.and(step);
+                    }
+                    Ok(outcome)
+                }),
+        );
+    }
 
     let retired_files = files.clone();
     plan.add(
@@ -155,8 +184,7 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
     );
 
     plan.add(
-        Task::new("dotfiles/root-links", "Link dotfiles for root")
-            .tags(&["dotfiles"])
+        Task::new(dot("root"), "Link the bash dotfiles for root")
             .sudo()
             .after(["dotfiles/root-templates"])
             .run(move |ctx| async move {
@@ -164,22 +192,6 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
                 for entry in ROOT_DOTFILES {
                     let dest = Path::new("/root").join(entry);
                     outcome = outcome.and(file::link(&ctx, &files.join(entry), &dest, true).await?);
-                }
-                Ok(outcome)
-            }),
-    );
-
-    let dirs = dotdirs(v);
-    plan.add(
-        Task::new("dotfiles/dotdirs", "Link dotdirs")
-            .tags(&["dotfiles"])
-            .run(move |ctx| async move {
-                let home = &ctx.vars().home;
-                let mut outcome = Outcome::Ok;
-                for (dest, src) in &dirs {
-                    let step =
-                        file::link(&ctx, &under(home, src), &under(home, dest), false).await?;
-                    outcome = outcome.and(step);
                 }
                 Ok(outcome)
             }),
@@ -213,7 +225,7 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
     plan.add(
         Task::new("dotfiles/gnupg", "Restrict gnupg directory permissions")
             .tags(&["dotfiles"])
-            .after([LINKS, "dotfiles/home-templates"])
+            .after([dot("gnupg"), "dotfiles/home-templates".to_string()])
             .run(|ctx| async move {
                 file::chmod(&ctx, &ctx.vars().home.join(".gnupg"), 0o700, false).await
             }),

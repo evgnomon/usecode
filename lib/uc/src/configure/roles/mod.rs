@@ -59,7 +59,7 @@ const REQUIRES: &[(&str, &[&str])] = &[
             "extrepo/config",
             "extrepo/enable:mise",
             "mise",
-            "dotfiles/links",
+            "dot/mise",
         ],
     ),
 ];

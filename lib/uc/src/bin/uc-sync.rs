@@ -90,6 +90,7 @@ Examples:
   uc sync                       run everything for the detected profile
   uc sync -C                    show what would change
   uc sync -t dotfiles,git       only the dotfiles and git roles
+  uc sync -t dot/tmux           link only the tmux dotfiles
   uc sync -t docker -d          docker and everything it needs
   uc sync -t upgrade            also run the `never` upgrade tasks
   uc sync -s apt,extrepo -j 16  skip packages, 16 tasks at a time

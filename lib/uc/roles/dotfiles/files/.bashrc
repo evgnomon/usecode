@@ -195,7 +195,7 @@ export PATH="$HOME/bin:$PATH"
 export SKIM_DEFAULT_COMMAND="fd --type f --strip-cwd-prefix --hidden --exclude .git"
 export SKIM_CTRL_T_COMMAND="$SKIM_DEFAULT_COMMAND"
 # Terminal colors only, so skim and bat follow the Gruvbox theme Alacritty loads.
-export SKIM_DEFAULT_OPTIONS="--color=16"
+export SKIM_DEFAULT_OPTIONS="--color=16 --layout=reverse"
 export BAT_THEME="ansi"
 
 if command -v sk &>/dev/null; then
