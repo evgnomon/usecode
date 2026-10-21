@@ -1438,7 +1438,11 @@ impl Session {
             "tools": tools(refining),
             "reasoning": {"effort": self.effort},
         });
-        let what = if refining { "planning" } else { "thinking" };
+        let what = if refining {
+            format!("\x1b[38;2;97;175;239m{}\x1b[0m", pondering())
+        } else {
+            "thinking".to_string()
+        };
         let _clock = std::io::stderr()
             .is_terminal()
             .then(|| Clock(tokio::spawn(spin(what))));
@@ -1669,7 +1673,7 @@ impl Session {
         }
         // Without its output on screen, a long wait would look like uc hung.
         let quiet = !job.echo.load(Ordering::Relaxed) && std::io::stderr().is_terminal();
-        let clock = quiet.then(|| Clock(tokio::spawn(spin("running"))));
+        let clock = quiet.then(|| Clock(tokio::spawn(spin("running".to_string()))));
         let waited = tokio::time::timeout(Duration::from_secs(secs), job.child.wait()).await;
         drop(clock);
         if let Ok(Ok(status)) = waited {
@@ -1994,9 +1998,28 @@ impl Drop for Lent {
 /// The braille dots the ₿ turns through while uc waits, a step every 100ms.
 const SPINNER: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
+/// What the spinner says while the planner works, one picked per request.
+const PONDERING: [&str; 7] = [
+    "fathoming",
+    "comprehending",
+    "deliberating",
+    "discerning",
+    "cogitating",
+    "grokking",
+    "ratiocinating",
+];
+
+/// One of the words in PONDERING, picked by the clock.
+fn pondering() -> &'static str {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.subsec_nanos() as usize);
+    PONDERING[nanos % PONDERING.len()]
+}
+
 /// The braille spinner turning in the default text color next to what uc
 /// waits on, until aborted.
-async fn spin(what: &'static str) {
+async fn spin(what: String) {
     for dot in SPINNER.into_iter().cycle() {
         eprint!("\r\x1b[2K{dot} {what}");
         tokio::time::sleep(Duration::from_millis(100)).await;
