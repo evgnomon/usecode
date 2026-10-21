@@ -4,8 +4,9 @@
 
 # Gets a fresh CI runner ready for make dist: the apt build deps, uc,
 # uc-deb-build and jsonc on PATH (the lib dists pack with uc deb build, which
-# runs uc-deb-build, and lib/python reads its version with jsonc), and CPython
-# in /usr/local for vim to link against.
+# runs uc-deb-build, and lib/python reads its version with jsonc), jsonc in
+# /usr/local/bin too (uc-deb-build runs it from there for .deb.jsonc), and
+# CPython in /usr/local for vim to link against.
 # Run from the repo root.
 
 set -euo pipefail
@@ -24,6 +25,7 @@ sudo apt-get install -y --no-install-recommends musl-tools jq \
 
 make -s -C lib/uc build
 make -s -C lib/jsonc link
+sudo env PATH="$PATH" make -s -C lib/jsonc install
 make -s -C lib/mkdeb link
 
 make -s -C lib/python build
