@@ -1,0 +1,38 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
+# Builds the Debian packages with make dist on a v* tag and attaches them,
+# with their SHA256SUMS, to the tag's GitHub release.
+name: Release
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  dist:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      RELEASE: 1
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          submodules: recursive
+      - uses: astral-sh/setup-uv@v6
+      - name: Set up the dist tools
+        run: ./scripts/ci_dist_setup.sh
+      - name: Dist
+        run: make dist
+      - name: Checksums
+        run: cd dist && sha256sum *.deb > SHA256SUMS
+      - name: Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --verify-tag --generate-notes
+          gh release upload "$TAG" dist/*.deb dist/SHA256SUMS --clobber

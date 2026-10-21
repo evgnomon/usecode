@@ -1,0 +1,31 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
+# Builds and tests every push with make. The vendored builds (CPython, vim,
+# alacritty) take long and only change with their submodules, so they're
+# left to the release workflow.
+name: Build
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - '**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      SKIP: alacritty python vim
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+      - name: Install build deps
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends musl-tools jq
+      - name: Build
+        run: make build
+      - name: Test
+        run: make test
