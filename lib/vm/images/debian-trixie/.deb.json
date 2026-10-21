@@ -1,0 +1,12 @@
+{
+  "name": "debian-trixie",
+  "version": "13",
+  "description": "Debian Trixie",
+  "maintainer": "hg@evgnomon.org",
+  "depends": "",
+  "section": "utils",
+  "priority": "optional",
+  "homepage": "https://cloud.debian.org/images/cloud/",
+  "license": "HGL",
+  "root": "pkg/debian"
+}

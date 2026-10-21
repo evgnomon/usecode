@@ -84,7 +84,7 @@ coverage.xml
 tags
 .cache
 node_modules
-lib/vm/images/ubuntu-noble/pkg/debian/usr/share/vm/images/ubuntu-noble
+lib/vm/images/debian-trixie/pkg/debian/usr/share/vm/images/debian-trixie
 *.img
 zig-out
 .zig-cache

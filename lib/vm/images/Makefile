@@ -1,13 +1,13 @@
 # License-Identifier: HGL
 # Copyright (C) The Usecode Authors (see AUTHORS)
 
-.PHONY: ubuntu-noble dist
+.PHONY: debian-trixie dist
 
 
-all: ubuntu-noble
+all: debian-trixie
 
-ubuntu-noble:
-	$(MAKE) -C ubuntu-noble
+debian-trixie:
+	$(MAKE) -C debian-trixie
 
 dist:
-	@$(MAKE) -C ubuntu-noble dist
+	@$(MAKE) -C debian-trixie dist
