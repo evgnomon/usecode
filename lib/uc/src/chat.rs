@@ -530,7 +530,9 @@ async fn run(
                 Err(err) if err.is::<Stopped>() => (Ok(()), true),
                 done => (done, false),
             },
-            () = escape() => (Ok(()), true),
+            // A typed command has the terminal and Ctrl-C to stop it: no Esc
+            // watcher to take keys from it or leave it in cbreak.
+            () = escape(), if command.is_none() => (Ok(()), true),
             () = ctrl_c => (Ok(()), true),
         };
         BUSY.store(false, Ordering::Relaxed);
@@ -1809,13 +1811,32 @@ impl Session {
 /// Runs a command with the terminal as its stdin and output; Ctrl-C goes to it.
 async fn on_terminal_status(command: &str) -> Result<ExitStatus> {
     let _lent = lend_terminal();
-    FOREGROUND.store(true, Ordering::Relaxed);
-    let status = tokio::process::Command::new("bash")
+    let _foreground = Foreground::take();
+    // Stopped with Esc, the command goes too rather than staying on the
+    // terminal next to the prompt.
+    tokio::process::Command::new("bash")
         .args(["-c", command])
+        .kill_on_drop(true)
         .status()
-        .await;
-    FOREGROUND.store(false, Ordering::Relaxed);
-    status.context("starting bash")
+        .await
+        .context("starting bash")
+}
+
+/// Ctrl-C goes to the command on the terminal until dropped, even when the
+/// wait for it is.
+struct Foreground;
+
+impl Foreground {
+    fn take() -> Self {
+        FOREGROUND.store(true, Ordering::Relaxed);
+        Foreground
+    }
+}
+
+impl Drop for Foreground {
+    fn drop(&mut self) {
+        FOREGROUND.store(false, Ordering::Relaxed);
+    }
 }
 
 /// The running clock of a wait, cleared away when dropped.
@@ -1877,12 +1898,20 @@ fn watch_escape(stop: &AtomicBool) -> bool {
         // Put the terminal in cbreak with `SAVED` locked only that long:
         // after this the lock is left free for whoever hands the terminal
         // back (Ctrl-C, `chat exit`), while `LENT` says whether it was.
-        if saved().is_none() {
-            let old = cbreak();
-            if old.is_none() {
-                break false;
+        // `LENT` is looked at again under the lock `lend_terminal` sets it
+        // under, so the terminal isn't put in cbreak just after it was lent.
+        {
+            let mut saved = saved();
+            if LENT.load(Ordering::Relaxed) {
+                continue;
             }
-            *saved() = old;
+            if saved.is_none() {
+                let old = cbreak();
+                if old.is_none() {
+                    break false;
+                }
+                *saved = old;
+            }
         }
         let mut fd = libc::pollfd {
             fd: 0,
@@ -1896,6 +1925,10 @@ fn watch_escape(stop: &AtomicBool) -> bool {
         }
         if ready == 0 {
             std::thread::sleep(Duration::from_millis(50));
+            continue;
+        }
+        // Lent while it polled: the keys are the prompt's or the command's.
+        if LENT.load(Ordering::Relaxed) {
             continue;
         }
         let mut buf = [0u8; 64];
@@ -1946,8 +1979,9 @@ fn restore_terminal(saved: &mut Option<libc::termios>) {
 struct Lent;
 
 fn lend_terminal() -> Lent {
+    let mut saved = saved();
     LENT.store(true, Ordering::Relaxed);
-    restore_terminal(&mut saved());
+    restore_terminal(&mut saved);
     Lent
 }
 
