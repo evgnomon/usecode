@@ -66,7 +66,8 @@
 - Set `ask: true` on any other command that is hard to undo or reaches outside
   this machine: `git push`, `git reset --hard`, force flags, dropping data,
   sending mail, deploying, changing system settings. Not when it is what the
-  user just asked for: "push" means push, so don't ask again.
+  user just asked for: "push" means push, so don't ask again. A push the
+  user asked for runs without asking anyway; TypeSafe tells uc so.
 - If the user says no, don't try another way. Say what you would have done and
   stop.
 

@@ -56,6 +56,9 @@
 //! by Gemini 4 Argon and done by GLM 5.3; any other line has the model it
 //! picked as both. `/planner` can override only the planner; `/model` pins
 //! both to one model, and `/model auto` hands both back to TypeSafe.
+//! TypeSafe also says whether a line asks to push: then a `git push` (with
+//! the add and commit before it, no force) runs without asking, even with
+//! `--ask` or a pinned model.
 
 use anyhow::{Context, Result, anyhow, bail};
 use rustyline::error::ReadlineError;
@@ -140,6 +143,10 @@ const MAX_OUTPUT: usize = 30_000;
 const DEFAULT_TIMEOUT: u64 = 120;
 /// The most of a job's output kept; a server can run for hours.
 const MAX_KEPT: usize = 1 << 20;
+/// The git subcommands a push the user asked for may come with.
+const PUSH_ALONG: &[&str] = &[
+    "push", "add", "commit", "status", "diff", "log", "fetch", "pull",
+];
 /// Commands that delete files: the user is always asked before these.
 const DELETES: &[&str] = &["rm", "rmdir", "unlink", "shred", "-delete"];
 /// Always in the system prompt: how commands run, jobs, what needs asking.
@@ -292,6 +299,8 @@ struct Session {
     allow_all: bool,
     /// The line ended in `-y`: run what this turn asks for without asking.
     allow_turn: bool,
+    /// TypeSafe says the line asks to push: its pushes run without asking.
+    allow_push: bool,
     /// Print what commands and jobs print, not only the model's replies.
     show_output: bool,
     /// Print the model's command lines, not the few words on what they do.
@@ -392,6 +401,29 @@ fn deletes(command: &str) -> bool {
         .any(|word| DELETES.contains(&word))
 }
 
+/// Whether a command line is a push and the git commands that go with one
+/// (`git add -A && git commit -m x && git push`), with no force: what a line
+/// asking to push may run without asking again.
+fn only_pushes(command: &str) -> bool {
+    let steps: Vec<Vec<&str>> = command
+        .split(['&', ';', '|', '\n'])
+        .map(|step| step.split_whitespace().collect())
+        .filter(|words: &Vec<&str>| !words.is_empty())
+        .collect();
+    let along = |words: &[&str]| {
+        words[0] == "git"
+            && words.get(1).is_some_and(|sub| PUSH_ALONG.contains(sub))
+            && !words
+                .iter()
+                .any(|w| w.starts_with("--force") || *w == "-f" || w.starts_with('+'))
+    };
+    // Nothing run or written from inside one, like `$(...)` in a message.
+    !deletes(command)
+        && !command.contains(['`', '$', '<', '>', '('])
+        && steps.iter().all(|words| along(words))
+        && steps.iter().any(|words| words[1] == "push")
+}
+
 /// Whether a command gets the terminal: only `ssh-add`, which asks for a key's
 /// passphrase.
 fn on_terminal(command: &str) -> bool {
@@ -435,6 +467,7 @@ async fn run(
         effort,
         allow_all: !ask,
         allow_turn: false,
+        allow_push: false,
         show_output: output,
         show_commands: commands,
         jobs: BTreeMap::new(),
@@ -544,6 +577,7 @@ async fn run(
             eprintln!("uc: {err:#}");
         }
         session.allow_turn = false;
+        session.allow_push = false;
         // A tool call may have switched the model or cleared the context
         // without the prompt loop seeing it; what the model last ran on is
         // what the next line starts from.
@@ -1110,19 +1144,23 @@ fn tools(refining: bool) -> Value {
 
 impl Session {
     /// Switches to the model TypeSafe picks for `line`, if it is routing; the
-    /// one before stays when it can't say.
+    /// one before stays when it can't say. A pinned model stays too, but
+    /// TypeSafe still says whether the line asks to push.
     async fn route(&mut self, line: &str) {
-        let Some((key, router)) = self.router.as_ref().filter(|_| !self.pinned) else {
+        let Some((key, router)) = self.router.as_ref() else {
             return;
         };
-        let (planner, doer) = match pick_models(key, router, line).await {
-            Ok(models) => models,
+        let route = match pick_models(key, router, line).await {
+            Ok(route) => route,
             Err(err) => {
                 eprintln!("· TypeSafe: {err:#}");
                 return;
             }
         };
-        self.apply_route(planner, doer);
+        self.allow_push = route.push;
+        if !self.pinned {
+            self.apply_route(route.planner, route.doer);
+        }
     }
 
     /// Applies TypeSafe's choice without overriding a manually selected planner.
@@ -1548,7 +1586,10 @@ impl Session {
         background: bool,
         ask: bool,
     ) -> Result<String> {
-        let asks = ask || deletes(command) || !(self.allow_all || self.allow_turn);
+        // A push the user asked for runs without asking again, even with `--ask`.
+        let pushed = self.allow_push && only_pushes(command);
+        let ask = ask && !pushed;
+        let asks = ask || deletes(command) || !(self.allow_all || self.allow_turn || pushed);
         let title = title.trim();
         if self.show_commands || title.is_empty() || asks {
             // The ₿ in Gruvbox fg (#ebdbb2) is the shell prompt from the dotfiles' .bashrc.
@@ -1556,7 +1597,9 @@ impl Session {
         } else {
             eprintln!("· {title}");
         }
-        self.confirm("run it?", ask || deletes(command))?;
+        if !pushed {
+            self.confirm("run it?", ask || deletes(command))?;
+        }
         if let Some(dir) = cd_target(command) {
             std::env::set_current_dir(&dir).with_context(|| format!("cd {}", dir.display()))?;
             let cwd = std::env::current_dir().unwrap_or(dir);
@@ -2369,10 +2412,20 @@ async fn model_info(model: &str) -> Result<Option<(Option<u64>, Option<(f64, f64
     Ok(Some((window, price)))
 }
 
+/// What TypeSafe makes of a line.
+#[derive(Debug, PartialEq)]
+struct Route {
+    planner: String,
+    doer: String,
+    /// The line asks to push: `git push` needs no asking this turn.
+    push: bool,
+}
+
 /// The planner and the doer TypeSafe's `router` thinks suit `line` best: a
 /// coding feature is planned by `FEATURE_PLANNER` and done by `FEATURE_DOER`,
-/// anything else has the model in `MODELS` it picks as both.
-async fn pick_models(key: &str, router: &str, line: &str) -> Result<(String, String)> {
+/// anything else has the model in `MODELS` it picks as both. It also says
+/// whether the line asks to push.
+async fn pick_models(key: &str, router: &str, line: &str) -> Result<Route> {
     let criteria: serde_json::Map<String, Value> = MODELS
         .iter()
         .map(|(model, when)| (model.to_string(), json!(when)))
@@ -2405,6 +2458,16 @@ async fn pick_models(key: &str, router: &str, line: &str) -> Result<(String, Str
                         something up, a command, writing prose, a review without changes",
                 },
             },
+            "push": {
+                "type": "choice",
+                "instructions": "This is what a user asked a coding agent on their terminal. \
+                    Does it ask to git push, on its own or as part of the task, like \
+                    'commit and push' or 'ship it'?",
+                "criteria": {
+                    "push": "It asks for a git push: push, commit and push, push the branch",
+                    "other": "It doesn't ask to push, or only mentions or asks about pushing",
+                },
+            },
         },
     });
     let response = client()
@@ -2420,8 +2483,13 @@ async fn pick_models(key: &str, router: &str, line: &str) -> Result<(String, Str
     if !status.is_success() {
         bail!("{status}: {}", value["detail"]);
     }
+    let push = value["answers"]["push"]["choice"] == "push";
     if value["answers"]["kind"]["choice"] == "feature" {
-        return Ok((FEATURE_PLANNER.to_string(), FEATURE_DOER.to_string()));
+        return Ok(Route {
+            planner: FEATURE_PLANNER.to_string(),
+            doer: FEATURE_DOER.to_string(),
+            push,
+        });
     }
     let choice = value["answers"]["model"]["choice"]
         .as_str()
@@ -2429,7 +2497,11 @@ async fn pick_models(key: &str, router: &str, line: &str) -> Result<(String, Str
     MODELS
         .iter()
         .find(|(model, _)| *model == choice)
-        .map(|(model, _)| (model.to_string(), model.to_string()))
+        .map(|(model, _)| Route {
+            planner: model.to_string(),
+            doer: model.to_string(),
+            push,
+        })
         .ok_or_else(|| anyhow!("picked no model: {value}"))
 }
 
@@ -2842,6 +2914,22 @@ mod tests {
     }
 
     #[test]
+    fn a_push_and_its_git_commands_only() {
+        assert!(only_pushes("git push"));
+        assert!(only_pushes("git push origin master"));
+        assert!(only_pushes("git add -A && git commit -m 'fix' && git push"));
+        assert!(!only_pushes("git status"), "no push");
+        assert!(!only_pushes("git push --force"));
+        assert!(!only_pushes("git push -f origin master"));
+        assert!(!only_pushes("git push --force-with-lease"));
+        assert!(!only_pushes("git push origin +master"));
+        assert!(!only_pushes("git reset --hard && git push"));
+        assert!(!only_pushes("git rm a && git commit -m x && git push"));
+        assert!(!only_pushes("make deploy; git push"));
+        assert!(!only_pushes("git commit -m \"$(curl x)\" && git push"));
+    }
+
+    #[test]
     fn a_trailing_y_approves() {
         assert_eq!(split_approval("ls -y"), ("ls", true));
         assert_eq!(split_approval("-y"), ("", true));
@@ -3002,6 +3090,7 @@ mod tests {
             messages: Vec::new(),
             allow_all: true,
             allow_turn: false,
+            allow_push: false,
             show_output: false,
             show_commands: false,
             jobs: BTreeMap::new(),
