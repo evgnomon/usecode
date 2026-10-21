@@ -59,8 +59,9 @@ elseif has('unix')
 endif
 
 " Read the clipboard through wl-paste so text copied on Windows (CRLF) pastes without ^M.
+" GNOME has no data-control protocol, so wl-paste waits for focus on a popup and can hang: cap it.
 func s:ClipPaste(reg)
-  silent let text = system('wl-paste -n' .. (a:reg ==# '*' ? ' -p' : '') .. ' 2>/dev/null')
+  silent let text = system('timeout 2 wl-paste -n' .. (a:reg ==# '*' ? ' -p' : '') .. ' 2>/dev/null')
   if v:shell_error
     return ['v', []]
   endif
@@ -82,6 +83,9 @@ if exists('v:clipproviders') && executable('wl-paste') && !empty($WAYLAND_DISPLA
         \ }
   set clipmethod^=wlcrlf
 endif
+
+" netrw saves and restores @* and @+ on every listing; that's two wl-paste calls per directory.
+let g:netrw_clipboard = 0
 
 set guifont=Inconsolata\ Nerd\ Font:h15    " Set the GUI font to Inconsolata Nerd Font with a height of 15.
 set t_Co=256                               " Set the terminal to use 256 colors.
