@@ -163,8 +163,8 @@ PROMPT_COMMAND="reset_keyboard_protocol;history -a"
 
 # Source drop-in bashrc files from ~/.bashrc.d/ in sorted order
 if [ -d "$HOME/.bashrc.d" ]; then
-  for f in $(ls -1 "$HOME/.bashrc.d/"*.sh 2>/dev/null | sort); do
-    . "$f"
+  for f in "$HOME/.bashrc.d/"*.sh; do
+    [ -r "$f" ] && . "$f"
   done
   unset f
 fi

@@ -59,30 +59,25 @@ function j {
 # colored GCC warnings and errors
 export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01'
 
-alias ..='cd ..'
-alias ls='ls --color=auto --group-directories-first -a'
-alias ll='ls -lAh --color=auto'
-alias ports='netstat -tulanp'
-alias myip='curl -s ifconfig.me; echo'
-alias meminfo='free -m -l -t'
+alias ls='eza --group-directories-first -a'
+alias ll='eza -lAha -g --group-directories-first'
+alias la='eza -lha -g --group-directories-first'
+alias lt='eza -lha -g --sort=newest'      # ≈ ls -lt
+alias lS='eza -lah -g -s size -r'         # ≈ ls -lS
+alias tree='eza --tree'
 alias gpu='git push --set-upstream origin $(git branch --show-current)'
-alias pr='az repos pr create --target-branch master --title'
 alias fd='fd -I --hidden --exclude .git'
 alias rg='rg --hidden -i --glob "!{.git}/**"'
 alias vr="vim \$(fd . / --type file --type symlink | sk --preview='bat --color=always --style=numbers {}')"
-alias vd="vim \$(fd . ~ --type file --type symlink | sk --preview='bat --color=always --style=numbers {}')"
+alias vh="vim \$(fd . ~ --type file --type symlink | sk --preview='bat --color=always --style=numbers {}')"
 alias vv="vim \$(fd . . --type file --type symlink | sk --preview='bat --color=always --style=numbers {}')"
 alias v=vim
 alias g=git
 alias cc=claude
 alias oc=opencode
 alias co=copilot
-alias i=invoke
-alias c='cd ~ && claude --disallowedTools "Read,Edit,Write,Bash,Glob,Grep"'
-alias mkpass="uc secret gen"
-alias z=uc-pick-url
 alias d='cd "$(fd --type d | sk)"'
 alias gr="uc-repo-open"
-alias cn='cn --config ~/.continue/config.yaml'
 alias k=kubectl
 alias t='uc terminal'
+alias j="jcode"

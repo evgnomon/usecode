@@ -29,7 +29,6 @@ const DOTFILES: &[(&str, &[&str])] = &[
         "bash",
         &[
             ".bashrc",
-            ".bashrc.d/mise-activate.sh",
             ".bash_aliases",
             ".inputrc",
             ".profile",
@@ -38,8 +37,13 @@ const DOTFILES: &[(&str, &[&str])] = &[
     ("tmux", &[".tmux.conf"]),
     (
         "mise",
-        &[".config/mise/config.toml", ".default-python-packages"],
+        &[
+            ".config/mise/config.toml",
+            ".default-python-packages",
+            ".bashrc.d/mise-activate.sh",
+        ],
     ),
+    ("zoxide", &[".bashrc.d/zoxide-init.sh"]),
     ("gnupg", &[".gnupg/gpg.conf", ".gnupg/scdaemon.conf"]),
     ("ctags", &[".ctags", ".ctags.d/javascript.ctags"]),
     ("fd", &[".fdignore"]),
