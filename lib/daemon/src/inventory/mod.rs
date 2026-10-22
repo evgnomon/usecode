@@ -35,7 +35,7 @@ mod render;
 mod vault;
 mod yamledit;
 
-pub use vault::{Vault, check_available};
+pub use vault::Vault;
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -405,7 +405,7 @@ impl Inventory {
         };
 
         // The private key goes in first: a vault write that fails (wrong
-        // password, no ansible-vault) leaves the inventory untouched
+        // password, no password to be had) leaves the inventory untouched
         // rather than leaving a host with no key behind.
         vault.put(&host.name, &private_key)?;
         if self.host(&host.name).is_some() {

@@ -812,8 +812,8 @@ impl Credentials {
         }
         if self.secrets.is_none() {
             let repo = crate::repo::fqn();
-            let secrets = crate::secret::Store::new(&crate::secret::dir(), &repo)
-                .get()
+            let secrets = crate::secret::Store::open(&repo)
+                .and_then(|store| store.get())
                 .with_context(|| format!("reading the {repo} secrets (or set {env})"))?;
             self.secrets = Some(secrets);
         }

@@ -27,12 +27,7 @@ pub fn dot(group: &str) -> String {
 const DOTFILES: &[(&str, &[&str])] = &[
     (
         "bash",
-        &[
-            ".bashrc",
-            ".bash_aliases",
-            ".inputrc",
-            ".profile",
-        ],
+        &[".bashrc", ".bash_aliases", ".inputrc", ".profile"],
     ),
     ("tmux", &[".tmux.conf"]),
     (

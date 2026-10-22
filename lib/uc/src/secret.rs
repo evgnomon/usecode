@@ -4,25 +4,29 @@
 //! The ansible-vault secret store behind `uc secret`.
 //!
 //! A store named `<name>` is two files in [`dir`]: `<name>.yaml`, encrypted
-//! with ansible-vault, and `<name>.vault.asc`, that file's vault password as
-//! encrypted by the `vault` command (`vault -e`/`vault -d`). The unnamed
-//! store is `secrets.yaml` with `vault.asc`.
+//! in the ansible-vault format, and `<name>.vault.asc`, that file's vault
+//! password as encrypted by the `vault` command (`vault -e`/`vault -d`). The
+//! unnamed store is `secrets.yaml` with `vault.asc`.
 //!
-//! Vault passwords only ever travel through pipes: ansible-vault reads them
-//! from an inherited `/dev/fd/N`, never from a file or the command line.
+//! With a [`Profile`] active - for a machine that can't open those because
+//! the GPG key is somewhere else - the stores are its own, in `<profile>/`
+//! and encrypted to its key. Without one they are the shared ones above.
+//!
+//! The stores are read and written here, without ansible, and stay
+//! openable with `ansible-vault`. Vault passwords only live in memory; the
+//! plaintext only touches a file while `$EDITOR` has it open.
 
 use crate::password::{self, Charset};
+use crate::profile::Profile;
 use anyhow::{Context, Result, bail};
 use std::fs;
-use std::io::{self, PipeReader, Write};
-use std::os::fd::{AsRawFd, RawFd};
-use std::os::unix::process::CommandExt;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use zeroize::Zeroizing;
 
 /// `$HOME/src/github.com/$USER/<repo>`
-fn user_repo(repo: &str) -> PathBuf {
+pub(crate) fn user_repo(repo: &str) -> PathBuf {
     let var = |name| std::env::var(name).unwrap_or_default();
     PathBuf::from(format!(
         "{}/src/github.com/{}/{repo}",
@@ -44,19 +48,39 @@ pub struct Store {
     /// The name `vault -e`/`vault -d` know the password by.
     pub vault_name: String,
     dir: PathBuf,
+    /// Who `vault -e` encrypts to; `vault`'s own key when unset.
+    gpg_key: Option<String>,
+    /// Whether this is a profile's own store.
+    profiled: bool,
 }
 
 impl Store {
     /// The store called `name` in `dir`; the empty name is the default store.
     pub fn new(dir: &Path, name: &str) -> Self {
+        Store::on(&Profile::default(), dir, name)
+    }
+
+    /// The store called `name` as the active profile sees it: in [`dir`],
+    /// or in the profile's own `<profile>/`.
+    pub fn open(name: &str) -> Result<Self> {
+        Ok(Store::on(&Profile::load()?, &dir(), name))
+    }
+
+    fn on(profile: &Profile, dir: &Path, name: &str) -> Self {
         let (file, vault_name) = match name {
             "" => ("secrets.yaml".to_string(), "vault".to_string()),
             name => (format!("{name}.yaml"), format!("{name}.vault")),
         };
+        let prefix = profile
+            .name
+            .as_ref()
+            .map_or(String::new(), |m| format!("{m}/"));
         Store {
-            secret_file: dir.join(file),
-            vault_name,
+            secret_file: dir.join(format!("{prefix}{file}")),
+            vault_name: format!("{prefix}{vault_name}"),
             dir: dir.to_path_buf(),
+            gpg_key: profile.name.as_ref().and(profile.gpg_key.clone()),
+            profiled: profile.name.is_some(),
         }
     }
 
@@ -82,51 +106,104 @@ impl Store {
     }
 
     fn password(&self) -> Result<Zeroizing<Vec<u8>>> {
-        vault_decrypt(&self.vault_name)
+        let password = vault_decrypt(&self.vault_name);
+        if self.profiled {
+            return password;
+        }
+        password.context(
+            "if this machine doesn't have the GPG key, `uc profile NAME` gives it stores of its own",
+        )
+    }
+
+    /// `vault -e <name> [key]` with the password on stdin.
+    fn vault_encrypt(&self, name: &str, password: &[u8]) -> Result<()> {
+        if let Some(parent) = self.vault_asc(name).parent() {
+            fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
+        }
+        let mut cmd = Command::new("vault");
+        cmd.args(["-e", name]).args(&self.gpg_key);
+        feed(&mut cmd, password, "vault -e")
+    }
+
+    fn decrypt(&self, file: &Path) -> Result<Zeroizing<Vec<u8>>> {
+        let password = self.password()?;
+        Ok(Zeroizing::new(ansible_vault::decrypt_file(
+            file,
+            key(&password),
+        )?))
     }
 
     /// The decrypted secrets as JSON, in file order.
     pub fn get(&self) -> Result<serde_json::Value> {
         self.require()?;
-        let mut view = Command::new("ansible-vault");
-        view.arg("view").arg(&self.secret_file);
-        let plain = with_password(&mut view, &self.password()?, |cmd| {
-            output(cmd, "ansible-vault view")
-        })?;
+        let plain = self.decrypt(&self.secret_file)?;
         yaml_to_json(&String::from_utf8_lossy(&plain))
     }
 
     /// Opens the secrets in `$EDITOR`, creating the store first if needed.
     pub fn edit(&self) -> Result<()> {
         self.ensure_password()?;
-        let action = if self.secret_file.is_file() {
-            "edit"
-        } else {
-            "create"
-        };
-        let mut cmd = Command::new("ansible-vault");
-        cmd.arg(action).arg(&self.secret_file);
-        with_password(&mut cmd, &self.password()?, |cmd| {
-            status(cmd, &format!("ansible-vault {action}"))
-        })
+        self.open_in_editor()
     }
 
     /// Creates whatever of the password and the secret file is missing.
     pub fn ensure(&self) -> Result<()> {
         self.ensure_password()?;
         if !self.secret_file.is_file() {
-            let mut cmd = Command::new("ansible-vault");
-            cmd.arg("create").arg(&self.secret_file);
-            with_password(&mut cmd, &self.password()?, |cmd| {
-                status(cmd, "ansible-vault create")
-            })?;
+            self.open_in_editor()?;
         }
+        Ok(())
+    }
+
+    /// `ansible-vault edit`, or `create` when there is no secret file yet:
+    /// the plaintext goes to a private temporary file - in memory where
+    /// /dev/shm exists - for `$EDITOR`, and is encrypted back if it changed.
+    fn open_in_editor(&self) -> Result<()> {
+        let existing = self.secret_file.is_file();
+        let plain = if existing {
+            self.decrypt(&self.secret_file)?
+        } else {
+            Zeroizing::new(Vec::new())
+        };
+
+        let mut builder = tempfile::Builder::new();
+        builder.prefix("uc-secret-").suffix(".yaml");
+        let shm = Path::new("/dev/shm");
+        let mut tmp = if shm.is_dir() {
+            builder.tempfile_in(shm)
+        } else {
+            builder.tempfile()
+        }
+        .context("creating a temporary file for the editor")?;
+        tmp.write_all(&plain)
+            .and_then(|_| tmp.flush())
+            .context("writing the temporary file")?;
+
+        let editor = std::env::var("EDITOR")
+            .ok()
+            .filter(|e| !e.trim().is_empty())
+            .unwrap_or_else(|| "vi".to_string());
+        // Through sh, so an EDITOR with arguments (`code -w`) works.
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", "$UC_EDITOR \"$1\"", "sh"])
+            .arg(tmp.path())
+            .env("UC_EDITOR", &editor);
+        status(&mut cmd, &editor)?;
+
+        let edited =
+            Zeroizing::new(fs::read(tmp.path()).context("reading back the temporary file")?);
+        drop(tmp);
+        if existing && *edited == *plain {
+            return Ok(());
+        }
+        let password = self.password()?;
+        ansible_vault::encrypt_file(&self.secret_file, &edited, key(&password))?;
         Ok(())
     }
 
     fn ensure_password(&self) -> Result<()> {
         if !self.has_password() {
-            vault_encrypt(&self.vault_name, &new_password()?)?;
+            self.vault_encrypt(&self.vault_name, &new_password()?)?;
         }
         Ok(())
     }
@@ -148,18 +225,10 @@ impl Store {
 
         let new_name = format!("{}_new", self.vault_name);
         let new = new_password()?;
-        vault_encrypt(&new_name, &new)?;
+        self.vault_encrypt(&new_name, &new)?;
 
-        let mut decrypt = Command::new("ansible-vault");
-        decrypt.args(["decrypt", "--output", "-"]).arg(&bak);
-        let plain = with_password(&mut decrypt, &self.password()?, |cmd| {
-            output(cmd, "ansible-vault decrypt")
-        })?;
-        let mut encrypt = Command::new("ansible-vault");
-        encrypt.args(["encrypt", "--output"]).arg(&self.secret_file);
-        with_password(&mut encrypt, &new, |cmd| {
-            feed(cmd, &plain, "ansible-vault encrypt")
-        })?;
+        let plain = self.decrypt(&bak)?;
+        ansible_vault::encrypt_file(&self.secret_file, &plain, key(&new))?;
 
         let (old_asc, new_asc) = (self.vault_asc(&self.vault_name), self.vault_asc(&new_name));
         fs::rename(&new_asc, &old_asc)
@@ -181,6 +250,12 @@ fn new_password() -> Result<Zeroizing<Vec<u8>>> {
     Ok(Zeroizing::new(password.into_bytes()))
 }
 
+/// The vault key a stored password stands for: like ansible-vault reading
+/// a password file, without the trailing newline.
+fn key(password: &[u8]) -> &[u8] {
+    password.trim_ascii()
+}
+
 /// `vault -d <name>`: the stored password.
 fn vault_decrypt(name: &str) -> Result<Zeroizing<Vec<u8>>> {
     let mut cmd = Command::new("vault");
@@ -188,53 +263,7 @@ fn vault_decrypt(name: &str) -> Result<Zeroizing<Vec<u8>>> {
     output(&mut cmd, "vault -d").map(Zeroizing::new)
 }
 
-/// `vault -e <name>` with the password on stdin.
-fn vault_encrypt(name: &str, password: &[u8]) -> Result<()> {
-    let mut cmd = Command::new("vault");
-    cmd.args(["-e", name]);
-    feed(&mut cmd, password, "vault -e")
-}
-
-/// Runs `run(cmd)` with `ANSIBLE_VAULT_PASSWORD_FILE` pointing at a pipe
-/// that holds `password`.
-fn with_password<T>(
-    cmd: &mut Command,
-    password: &[u8],
-    run: impl FnOnce(&mut Command) -> Result<T>,
-) -> Result<T> {
-    let reader = password_pipe(password).context("creating the password pipe")?;
-    cmd.env(
-        "ANSIBLE_VAULT_PASSWORD_FILE",
-        format!("/dev/fd/{}", reader.as_raw_fd()),
-    );
-    inherit(cmd, reader.as_raw_fd());
-    let result = run(cmd);
-    drop(reader);
-    result
-}
-
-/// A pipe whose read end yields `password` and then end of file. A password
-/// is far smaller than a pipe's buffer, so writing it up front never blocks.
-fn password_pipe(password: &[u8]) -> io::Result<PipeReader> {
-    let (reader, mut writer) = io::pipe()?;
-    writer.write_all(password)?;
-    Ok(reader)
-}
-
-/// Lets the child inherit `fd`, which Rust opens close-on-exec.
-fn inherit(cmd: &mut Command, fd: RawFd) {
-    // SAFETY: the closure only calls the async-signal-safe fcntl(2).
-    unsafe {
-        cmd.pre_exec(move || {
-            if libc::fcntl(fd, libc::F_SETFD, 0) == -1 {
-                return Err(io::Error::last_os_error());
-            }
-            Ok(())
-        });
-    }
-}
-
-fn status(cmd: &mut Command, what: &str) -> Result<()> {
+pub(crate) fn status(cmd: &mut Command, what: &str) -> Result<()> {
     let status = cmd.status().with_context(|| format!("running {what}"))?;
     if !status.success() {
         bail!("{what} failed ({status})");
@@ -311,6 +340,21 @@ mod tests {
         let n = Store::new(Path::new("/s"), "evgnomon_usecode");
         assert_eq!(n.secret_file, PathBuf::from("/s/evgnomon_usecode.yaml"));
         assert_eq!(n.vault_name, "evgnomon_usecode.vault");
+
+        let profile = Profile {
+            name: Some("wsl".into()),
+            gpg_key: Some("ABCD".into()),
+        };
+        let m = Store::on(&profile, Path::new("/s"), "");
+        assert_eq!(m.secret_file, PathBuf::from("/s/wsl/secrets.yaml"));
+        assert_eq!(m.vault_name, "wsl/vault");
+        assert_eq!(
+            m.vault_asc(&m.vault_name),
+            PathBuf::from("/s/wsl/vault.asc")
+        );
+        assert_eq!(m.gpg_key.as_deref(), Some("ABCD"));
+        let shared = Store::new(Path::new("/s"), "");
+        assert_eq!(shared.gpg_key, None);
     }
 
     #[test]
@@ -331,14 +375,6 @@ mod tests {
         assert_eq!(raw(field(&v, "n").unwrap()), "3");
         assert_eq!(field(&v, "hetzner.dev"), None);
         assert_eq!(field(&v, ".").unwrap(), &v);
-    }
-
-    #[test]
-    fn a_password_pipe_reaches_a_child_through_dev_fd() {
-        let mut cat = Command::new("sh");
-        cat.args(["-c", "cat \"$ANSIBLE_VAULT_PASSWORD_FILE\""]);
-        let out = with_password(&mut cat, b"hunter2\n", |cmd| output(cmd, "cat")).unwrap();
-        assert_eq!(out, b"hunter2\n");
     }
 
     #[test]

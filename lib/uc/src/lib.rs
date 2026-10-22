@@ -40,6 +40,7 @@ pub mod logs;
 pub mod mail;
 pub mod openrouter;
 pub mod password;
+pub mod profile;
 pub mod registry;
 pub mod repo;
 pub mod secret;

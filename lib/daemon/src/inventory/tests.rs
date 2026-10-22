@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use tempfile::TempDir;
 
@@ -55,11 +55,8 @@ fn hosts_of(pairs: &[(&'static str, &str)]) -> BTreeMap<&'static str, String> {
 
 fn scratch_vault() -> (TempDir, Vault) {
     let tmp = tempfile::tempdir().unwrap();
-    let vault = Vault {
-        path: tmp.path().join("secrets.yml"),
-        dir: PathBuf::new(),
-        password_file: String::new(),
-    };
+    let mut vault = Vault::default();
+    vault.path = tmp.path().join("secrets.yml");
     (tmp, vault)
 }
 

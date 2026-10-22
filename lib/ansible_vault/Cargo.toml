@@ -1,0 +1,22 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
+[package]
+name = "ansible_vault"
+version = "0.1.0"
+edition.workspace = true
+description = "Read and write ansible-vault files, and find their password the way ansible does, without ansible installed"
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+aes = "0.9"
+ctr = "0.10"
+getrandom.workspace = true
+hex = "0.4"
+hmac = "0.13"
+pbkdf2 = { version = "0.13", default-features = false, features = ["hmac"] }
+rpassword.workspace = true
+sha2 = "0.11"
+tempfile.workspace = true

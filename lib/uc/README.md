@@ -291,8 +291,10 @@ uc pull --strip-host myimage:latest # ... and also tag it as myimage:latest
 
 The password comes from `REGISTRY_PASSWORD`, or else from
 `vault_container_registry_password` in `deploy/vault.yaml` of the
-current git checkout (`--vault-file` to use another), decrypted with
-`ansible-vault`. The registry and bastion addresses, ports and users, and the
+current git checkout (`--vault-file` to use another). uc decrypts it
+itself, no ansible needed, finding the vault password just like
+`ansible-vault` would (`ANSIBLE_VAULT_PASSWORD_FILE`, `ansible.cfg`, or a
+prompt). The registry and bastion addresses, ports and users, and the
 container CLI, are options with the same environment variables the scripts
 read (`BASTION_HOST`, `REGISTRY_HOST`, `LOCAL_PORT`, `CONTAINER_CLI`, ...);
 see `uc push -h`.
@@ -307,6 +309,7 @@ uc secret get -r -f github_pat   # one field of this repository's store
 uc secret edit -r                # edit this repository's store in vi
 uc secret ensure -r              # create it if missing, print its path
 uc secret rotate NAME            # re-encrypt under a new vault password
+uc profile laptop-wsl            # stores of this machine's own, see below
 uc secret encrypt notes.txt      # see Encrypting files
 uc secret server read acme prod db  # the SSH key authenticated secret server
 uc secret serve                  # same as uc secret server serve
@@ -319,10 +322,80 @@ The other subcommands work on the ansible-vault secret stores in
 `~/src/github.com/$USER/config/secrets`. A store `NAME` is `NAME.yaml`,
 encrypted with ansible-vault, and `NAME.vault.asc`, its vault password as kept
 by the `vault` command; without a name it is `secrets.yaml` and `vault.asc`.
+uc reads and writes the stores itself, so ansible doesn't need to be
+installed, and they still open with `ansible-vault` if you ever want to.
 `-r` picks the current repository's store, `<org>_<repo>` from the working
 directory, and a name given with it is appended (`-r github` is
-`<org>_<repo>_github`). Vault passwords reach ansible-vault only through a
-pipe, and stores are always edited with `vi`, the hardened `lib/vi`.
+`<org>_<repo>_github`). Vault passwords stay in memory, and stores are
+always edited with `vi`, the hardened `lib/vi`, on a private temporary copy
+kept in `/dev/shm` when there is one.
+
+### Profiles
+
+A profile is a set of config you switch on and off, like a machine's own
+settings, a theme or a client's work, and profiles nest:
+
+```sh
+uc profile cochroack-wsl         # switch to it, creating it if needed
+uc profile cochroack-wsl/dark    # dark, inside cochroack-wsl
+uc profile main/contract/client-1
+uc profile                       # list profiles, * marks the active one
+uc profile --off                 # back to the main config
+```
+
+Profiles live in `~/.config/usecode/profiles/`, and the active one is
+linked from `profile.yaml`, laid over `config.yaml` so it can override any
+key. A profile is a file, `NAME.yaml`, or a directory, `NAME/`, shaped just
+like the config root: its own `config.yaml`, a `profile.yaml` link over it
+once something nests in it, and `profiles/`:
+
+```
+~/.config/usecode/
+  .gitignore                    # profile.yaml, profiles/**/profile.yaml
+  config.yaml
+  profile.yaml -> profiles/cochroack-wsl
+  profiles/
+    cochroack-wsl/
+      config.yaml               # cochroack-wsl's own settings
+      profile.yaml -> profiles/dark.yaml
+      profiles/
+        dark.yaml
+        light.yaml
+    main.yaml
+```
+
+Switching creates whatever of the path is missing, turns a file profile
+that gets a nested one into a directory (`main.yaml` becomes
+`main/config.yaml`), and points each level's link at the next. Includes are
+read from where a file really lives, so a profile can include files of its
+own.
+
+What gets checked in is up to you. The links say which profile this machine
+uses, so ignore them:
+
+```
+profile.yaml
+profiles/**/profile.yaml
+```
+
+#### A machine without your GPG key
+
+The secret stores are encrypted to `gpg.key`. If, after a switch, this
+machine doesn't have that key (say, a new laptop while your YubiKey is at
+home), `uc profile` offers to generate one for the default git profile's
+`fullname` and `useremail`, and gives the outermost new profile secret
+stores of its own:
+
+```yaml
+# profiles/cochroack-wsl/config.yaml
+profile: cochroack-wsl
+gpg:
+  key: 0123456789ABCDEF0123456789ABCDEF01234567
+```
+
+With that, every store lives in `secrets/cochroack-wsl/` and its passwords
+are encrypted to the new key; `dark` and `light` share it. The shared
+stores are left alone, and on a machine with the key nothing changes.
 
 `get` converts the YAML to JSON itself (merge keys included), so `yj` is no
 longer needed, and `-f a.b` prints one field the way `jq -r .a.b` would.

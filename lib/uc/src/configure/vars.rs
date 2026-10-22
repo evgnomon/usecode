@@ -254,7 +254,7 @@ impl Vars {
 
         let mut context = vars.base_context();
         if has_config {
-            let mut yaml = read_config(&config_file, &mut Vec::new())?;
+            let mut yaml = read_user_config(&config_file)?;
             apply_overlay(&mut yaml, &opts.overlay)
                 .with_context(|| format!("reading {}", config_file.display()))?;
             let rendered = render_strings(yaml, &Value::from(context.clone()))
@@ -515,11 +515,37 @@ fn parse_extra(items: &[String]) -> Result<BTreeMap<String, serde_yaml::Value>> 
 /// The key listing the files a config file pulls in.
 const INCLUDE: &str = "include";
 
+/// The active profile next to a config file: `profile.yaml`, a link to one
+/// of `profiles/`, a file or a directory of them. A directory profile has the
+/// same shape: `config.yaml`, then `profile.yaml` over it, then `profiles/`.
+pub fn active_profile(config_file: &Path) -> PathBuf {
+    config_file
+        .parent()
+        .unwrap_or(Path::new("."))
+        .join("profile.yaml")
+}
+
+/// The user config file with everything it includes, before any rendering,
+/// and the active profile laid over it - as in a directory profile, where
+/// `profile.yaml` comes after `config.yaml`.
+pub fn read_user_config(path: &Path) -> Result<serde_yaml::Value> {
+    let mut seen = Vec::new();
+    let mut config = read_config(path, &mut seen)?;
+    let profile = active_profile(path);
+    if profile.exists() {
+        for file in include_files(&profile, &mut seen)? {
+            merge(&mut config, read_config(&file, &mut seen)?);
+        }
+    }
+    Ok(config)
+}
+
 /// Reads a config file with everything it includes: `include:` names files
 /// or directories (their `*.yaml` and `*.yml`, in name order), relative to
-/// the including file. Included files are merged in order, and the file's
-/// own keys win over all of them. `seen` holds the files being read, to
-/// catch an include loop.
+/// the including file - where it really is, so a linked-in file brings its
+/// includes along. Included files are merged in order, and the file's own
+/// keys win over all of them. `seen`
+/// holds the files and directories being read, to catch an include loop.
 fn read_config(path: &Path, seen: &mut Vec<PathBuf>) -> Result<serde_yaml::Value> {
     use serde_yaml::Value as Y;
     let canonical =
@@ -543,11 +569,11 @@ fn read_config(path: &Path, seen: &mut Vec<PathBuf>) -> Result<serde_yaml::Value
         Some(many) => serde_yaml::from_value(many)
             .with_context(|| format!("{}: include is not a list of paths", path.display()))?,
     };
-    let base = path.parent().unwrap_or(Path::new("."));
+    let base = canonical.parent().unwrap_or(Path::new(".")).to_path_buf();
     seen.push(canonical);
     let mut merged = Y::Mapping(Default::default());
     for include in includes {
-        for file in include_files(&base.join(&include))
+        for file in include_files(&base.join(&include), seen)
             .with_context(|| format!("{}: include {include}", path.display()))?
         {
             merge(&mut merged, read_config(&file, seen)?);
@@ -558,16 +584,32 @@ fn read_config(path: &Path, seen: &mut Vec<PathBuf>) -> Result<serde_yaml::Value
     Ok(merged)
 }
 
-/// A file as itself, a directory as its YAML files in name order.
-fn include_files(path: &Path) -> Result<Vec<PathBuf>> {
+/// A file as itself, a directory as its YAML files in name order. An entry
+/// named like a YAML file that is a directory - `profile.yaml` linked to a
+/// directory profile - stands for that directory's files.
+fn include_files(path: &Path, seen: &mut Vec<PathBuf>) -> Result<Vec<PathBuf>> {
     if !path.is_dir() {
         return Ok(vec![path.to_path_buf()]);
     }
-    let mut files = std::fs::read_dir(path)?
+    let canonical = std::fs::canonicalize(path)?;
+    if seen.contains(&canonical) {
+        bail!("{} includes itself", path.display());
+    }
+    let mut entries = std::fs::read_dir(path)?
         .map(|e| e.map(|e| e.path()))
         .collect::<std::io::Result<Vec<_>>>()?;
-    files.retain(|f| f.is_file() && f.extension().is_some_and(|e| e == "yaml" || e == "yml"));
-    files.sort();
+    entries.retain(|f| f.extension().is_some_and(|e| e == "yaml" || e == "yml"));
+    entries.sort();
+    seen.push(canonical);
+    let mut files = Vec::new();
+    for entry in entries {
+        if entry.is_dir() {
+            files.extend(include_files(&entry, seen)?);
+        } else if entry.is_file() {
+            files.push(entry);
+        }
+    }
+    seen.pop();
     Ok(files)
 }
 
@@ -680,6 +722,59 @@ mod tests {
 
         write("base.yaml", "include: config.yaml\n");
         let err = read_config(&dir.join("config.yaml"), &mut Vec::new()).unwrap_err();
+        assert!(format!("{err:#}").contains("includes itself"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_active_profile_is_laid_over_the_config() {
+        let dir = std::env::temp_dir().join(format!("uc-profile-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mkdir = |name: &str| std::fs::create_dir_all(dir.join(name)).unwrap();
+        let write = |name: &str, body: &str| std::fs::write(dir.join(name), body).unwrap();
+        let link = |target: &str, name: &str| {
+            let name = dir.join(name);
+            let _ = std::fs::remove_file(&name);
+            std::os::unix::fs::symlink(target, name).unwrap();
+        };
+        mkdir("profiles/box");
+        mkdir("profiles/lab/profiles");
+        write("config.yaml", "gpg:\n  key: SHARED\na: main\n");
+        write(
+            "profiles/box.yaml",
+            "include: box/\nprofile: box\ngpg:\n  key: BOX\n",
+        );
+        write("profiles/box/extra.yaml", "b: box-extra\n");
+        write(
+            "profiles/lab/config.yaml",
+            "profile: lab\ngpg:\n  key: LAB\n",
+        );
+        write("profiles/lab/profiles/gpu.yaml", "gpg:\n  key: GPU\n");
+
+        let config = dir.join("config.yaml");
+        let out = read_user_config(&config).unwrap();
+        assert_eq!(out["gpg"]["key"].as_str(), Some("SHARED"));
+        assert!(out.get("profile").is_none());
+
+        // A file profile, its includes next to it, over config.yaml's keys.
+        link("profiles/box.yaml", "profile.yaml");
+        let out = read_user_config(&config).unwrap();
+        assert_eq!(out["gpg"]["key"].as_str(), Some("BOX"));
+        assert_eq!(out["profile"].as_str(), Some("box"));
+        assert_eq!(out["b"].as_str(), Some("box-extra"));
+        assert_eq!(out["a"].as_str(), Some("main"));
+
+        // A directory profile, the same shape, with a profile of its own.
+        link("profiles/lab", "profile.yaml");
+        let out = read_user_config(&config).unwrap();
+        assert_eq!(out["gpg"]["key"].as_str(), Some("LAB"));
+        link("profiles/gpu.yaml", "profiles/lab/profile.yaml");
+        let out = read_user_config(&config).unwrap();
+        assert_eq!(out["profile"].as_str(), Some("lab"));
+        assert_eq!(out["gpg"]["key"].as_str(), Some("GPU"));
+
+        link(".", "profiles/lab/profile.yaml");
+        let err = read_user_config(&config).unwrap_err();
         assert!(format!("{err:#}").contains("includes itself"));
         std::fs::remove_dir_all(&dir).unwrap();
     }

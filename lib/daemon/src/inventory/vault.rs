@@ -3,12 +3,13 @@
 
 //! The ansible-vault encrypted secrets file.
 
+use std::cell::OnceCell;
 use std::collections::BTreeMap;
+use std::fmt;
 use std::fs;
-use std::io::Write;
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+
+use ansible_vault::password;
 
 use crate::error::{Context, Result};
 use crate::inventory::Inventory;
@@ -19,20 +20,33 @@ use crate::inventory::Inventory;
 /// host's key by name.
 pub const PRIVATE_KEYS_VAR: &str = "usecode_private_keys";
 
-/// uc net mesh shells out to ansible-vault rather than implementing the
-/// format, so the file is exactly what `ansible-vault edit` expects, and
-/// the password comes from wherever ansible normally finds it (a prompt,
-/// --vault-password-file, ANSIBLE_VAULT_PASSWORD_FILE, or ansible.cfg in
-/// the inventory's repo root).
+/// uc net mesh reads and writes the ansible-vault format itself, so
+/// ansible doesn't have to be installed, but the file is still exactly
+/// what `ansible-vault edit` expects, and the password comes from
+/// wherever ansible would find it (--vault-password-file,
+/// ANSIBLE_VAULT_PASSWORD_FILE, vault_password_file in ansible.cfg, or a
+/// prompt).
 #[derive(Debug, Default)]
 pub struct Vault {
     /// The secrets file, encrypted in place.
     pub path: PathBuf,
-    /// The working directory ansible-vault runs in, so that an
-    /// ansible.cfg there (with e.g. vault_password_file) applies.
+    /// The directory whose ansible.cfg (with e.g. vault_password_file)
+    /// applies, as if ansible-vault were run there.
     pub dir: PathBuf,
-    /// When set, passed as --vault-password-file.
+    /// When set, used in place of any configured password file.
     pub password_file: String,
+    password: Password,
+}
+
+/// The vault password, resolved at most once per run so a put (decrypt,
+/// then encrypt) asks for it once. Never printed.
+#[derive(Default)]
+struct Password(OnceCell<String>);
+
+impl fmt::Debug for Password {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Password(..)")
+    }
 }
 
 impl Vault {
@@ -42,6 +56,7 @@ impl Vault {
             path: inv.secrets_path(),
             dir: inv.root.clone(),
             password_file: password_file.to_string(),
+            ..Vault::default()
         }
     }
 
@@ -77,12 +92,11 @@ impl Vault {
         // A file that isn't encrypted yet is still readable - it gets
         // encrypted on the way back out, so a hand-created plaintext
         // secrets file converges to a vaulted one rather than erroring.
-        let plaintext = if raw.starts_with(b"$ANSIBLE_VAULT")
-            || String::from_utf8_lossy(&raw)
-                .trim_start()
-                .starts_with("$ANSIBLE_VAULT")
-        {
-            self.decrypt()?
+        let plaintext = if ansible_vault::is_encrypted(&raw) {
+            let text = String::from_utf8_lossy(&raw);
+            let plain = ansible_vault::decrypt(&text, self.password(false)?.as_bytes())
+                .with_ctx(|| format!("decrypt {}", self.path.display()))?;
+            String::from_utf8_lossy(&plain).into_owned()
         } else {
             String::from_utf8_lossy(&raw).into_owned()
         };
@@ -92,25 +106,8 @@ impl Vault {
         Ok(doc.get(PRIVATE_KEYS_VAR).cloned().unwrap_or_default())
     }
 
-    fn decrypt(&self) -> Result<String> {
-        let out = self
-            .command(&["decrypt", "--output=-", &self.path.to_string_lossy()])
-            .output()
-            .with_ctx(|| format!("decrypt {}", self.path.display()))?;
-        if !out.status.success() {
-            bail!(
-                "decrypt {}: ansible-vault exited with {}",
-                self.path.display(),
-                out.status
-            );
-        }
-        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
-    }
-
-    /// Write `secrets` back, encrypted. The plaintext is staged in a
-    /// sibling directory of the vault created mode 0700 rather than
-    /// piped through stdin, because ansible-vault needs stdin free to
-    /// prompt for the vault password.
+    /// Write `secrets` back, encrypted. The plaintext never touches the
+    /// disk, and the file is replaced in one rename.
     fn save(&self, secrets: &BTreeMap<String, String>) -> Result<()> {
         let body = serde_yaml::to_string(&BTreeMap::from([(PRIVATE_KEYS_VAR, secrets)]))
             .ctx("encode secrets")?;
@@ -127,64 +124,33 @@ impl Vault {
             base_name(&self.path)
         );
 
-        let dir = self.path.parent().unwrap_or(Path::new("."));
-        fs::create_dir_all(dir).with_ctx(|| format!("create {}", dir.display()))?;
-
-        let staging = tempfile::Builder::new()
-            .prefix(".uc-net-mesh-vault-")
-            .tempdir_in(dir)
-            .ctx("create staging directory")?;
-        let tmp = staging.path().join("secrets.yml");
-
-        let mut f = fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(&tmp)
-            .with_ctx(|| format!("write {}", tmp.display()))?;
-        f.write_all(header.as_bytes())
-            .and_then(|_| f.write_all(body.as_bytes()))
-            .and_then(|_| f.sync_all())
-            .with_ctx(|| format!("write {}", tmp.display()))?;
-        drop(f);
-
-        let status = self
-            .command(&[
-                "encrypt",
-                &format!("--output={}", self.path.display()),
-                &tmp.to_string_lossy(),
-            ])
-            // Progress messages, not data.
-            .stdout(std::process::Stdio::inherit())
-            .status()
-            .with_ctx(|| format!("encrypt {}", self.path.display()))?;
-        if !status.success() {
-            bail!(
-                "encrypt {}: ansible-vault exited with {status}",
-                self.path.display()
-            );
-        }
-        Ok(())
+        let new = !fs::read(&self.path).is_ok_and(|raw| ansible_vault::is_encrypted(&raw));
+        let password = self.password(new)?;
+        ansible_vault::encrypt_file(&self.path, (header + &body).as_bytes(), password.as_bytes())
+            .ctx("save the vault")
     }
 
-    /// Build an ansible-vault invocation with stdin and stderr attached
-    /// so a password prompt reaches the terminal.
-    fn command(&self, args: &[&str]) -> Command {
-        let mut cmd = Command::new("ansible-vault");
-        cmd.args(args);
+    /// The vault password. `new` is for encrypting a file that has no
+    /// password yet: a prompt then asks twice.
+    fn password(&self, new: bool) -> Result<&str> {
+        if let Some(pw) = self.password.0.get() {
+            return Ok(pw);
+        }
+        let dir = if self.dir.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            &self.dir
+        };
         // deploy/vault-pass.sh hands out a placeholder while there is no
         // secrets file; this makes it produce the real password.
-        cmd.env("USECODE_VAULT_WRITE", "1");
-        if !self.password_file.is_empty() {
-            cmd.args(["--vault-password-file", &self.password_file]);
-        }
-        if self.dir.as_os_str().is_empty() {
-            cmd.current_dir(".");
+        let env = [("USECODE_VAULT_WRITE", "1")];
+        let pw = if self.password_file.is_empty() {
+            password::resolve(dir, &env, new)
         } else {
-            cmd.current_dir(&self.dir);
+            password::read_file(Path::new(&self.password_file), dir, &env)
         }
-        cmd
+        .ctx("vault password")?;
+        Ok(self.password.0.get_or_init(|| pw))
     }
 }
 
@@ -194,17 +160,37 @@ fn base_name(path: &Path) -> String {
         .unwrap_or_default()
 }
 
-/// Report a friendly error if ansible-vault isn't installed, before
-/// anything has been written.
-pub fn check_available() -> Result<()> {
-    let found = std::env::var_os("PATH")
-        .map(|paths| std::env::split_paths(&paths).any(|dir| dir.join("ansible-vault").is_file()))
-        .unwrap_or(false);
-    if !found {
-        bail!(
-            "ansible-vault not found in PATH; install ansible on this machine (the private key \
-             for a new host has to be stored in the vault)"
-        );
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // A put writes a file `load` reads back with the same password, and
+    // the password is asked for once.
+    #[test]
+    fn put_round_trips_through_a_password_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let pw = tmp.path().join("pw");
+        fs::write(&pw, "s3cret\n").unwrap();
+        let vault = Vault {
+            path: tmp.path().join("secrets.yml"),
+            password_file: pw.to_string_lossy().into_owned(),
+            ..Vault::default()
+        };
+
+        vault.put("edge", "key-a").unwrap();
+        vault.put("phone", "key-b").unwrap();
+
+        let raw = fs::read_to_string(&vault.path).unwrap();
+        assert!(raw.starts_with(ansible_vault::HEADER), "{raw}");
+
+        let fresh = Vault {
+            path: vault.path.clone(),
+            password_file: vault.password_file.clone(),
+            ..Vault::default()
+        };
+        let keys = fresh.private_keys().unwrap();
+        assert_eq!(keys["edge"], "key-a");
+        assert_eq!(keys["phone"], "key-b");
+        assert!(vault.put("edge", "again").is_err());
     }
-    Ok(())
 }

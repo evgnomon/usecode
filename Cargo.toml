@@ -4,6 +4,7 @@
 [workspace]
 resolver = "3"
 members = [
+    "lib/ansible_vault",
     "lib/api",
     "lib/barge",
     "lib/bot",

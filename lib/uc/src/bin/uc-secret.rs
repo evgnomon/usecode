@@ -26,6 +26,9 @@ const SUMMARY: &str = "generate secrets and manage the ansible-vault secret stor
 /// ~/src/github.com/$USER/config/secrets. Without a name the default store
 /// (`secrets.yaml`) is used; with --repo the current repository's
 /// (`<org>_<repo>`), or `<org>_<repo>_<name>` when a name is given too.
+///
+/// With a profile active (see `uc profile`), the stores are the profile's
+/// own, in secrets/<profile>, encrypted to its own GPG key.
 #[derive(Parser)]
 #[command(name = "uc secret", bin_name = "uc secret", version)]
 struct Cli {
@@ -132,8 +135,8 @@ impl Name {
         }
     }
 
-    fn store(&self) -> Store {
-        Store::new(&secret::dir(), &self.resolve())
+    fn store(&self) -> anyhow::Result<Store> {
+        Store::open(&self.resolve())
     }
 }
 
@@ -193,7 +196,7 @@ fn run(cmd: Cmd) -> anyhow::Result<ExitCode> {
             println!("{}", password::generate(length, charset)?);
         }
         Cmd::Get { name, field } => {
-            let secrets = name.store().get()?;
+            let secrets = name.store()?.get()?;
             match field {
                 None => println!("{secrets}"),
                 Some(path) => match secret::field(&secrets, &path) {
@@ -202,16 +205,16 @@ fn run(cmd: Cmd) -> anyhow::Result<ExitCode> {
                 },
             }
         }
-        Cmd::Edit { name } => name.store().edit()?,
+        Cmd::Edit { name } => name.store()?.edit()?,
         Cmd::Ensure { name, print } => {
-            let store = name.store();
+            let store = name.store()?;
             store.ensure()?;
             match print {
                 Print::File => println!("{}", store.secret_file.display()),
                 Print::Vault => println!("{}", store.vault_name),
             }
         }
-        Cmd::Rotate { name } => name.store().rotate()?,
+        Cmd::Rotate { name } => name.store()?.rotate()?,
         Cmd::Encrypt { args } => return Ok(dispatch::exec("uc-secret-encrypt", args)),
         Cmd::Decrypt { args } => return Ok(dispatch::exec("uc-secret-decrypt", args)),
         Cmd::Server { args } => return Ok(dispatch::exec("uc-secret-server", args)),

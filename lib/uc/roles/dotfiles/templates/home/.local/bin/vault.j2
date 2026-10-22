@@ -16,7 +16,7 @@ encrypt_file() {
      if [ -n "$2" ]; then
        GPG_KEY="$2"
      fi
-     mkdir -p $SECRETS_DIR
+     mkdir -p "$(dirname "$SECRETS_DIR/$1")"
      cat - | gpg -e -r "$GPG_KEY" --armor > "$SECRETS_DIR/$1.asc"
 }
 

@@ -216,8 +216,6 @@ fn add(args: &[String]) -> Result<()> {
         bail!("usage: uc net mesh add NAME [flags]");
     }
 
-    inventory::check_available()?;
-
     let dir = match fs.get_str("inventory") {
         s if s.is_empty() => inventory::find()?,
         s => PathBuf::from(s),

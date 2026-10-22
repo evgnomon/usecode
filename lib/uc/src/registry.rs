@@ -12,7 +12,7 @@ use anyhow::{Context, Result, bail};
 use clap::Args;
 use std::io::Write;
 use std::net::TcpStream;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::thread::sleep;
 use std::time::Duration;
@@ -64,7 +64,7 @@ pub struct Config {
     #[arg(long, env = "REGISTRY_PASSWORD", hide_env_values = true)]
     pub registry_password: Option<String>,
 
-    /// Ansible vault holding the registry password
+    /// Ansible-vault file holding the registry password
     /// [default: deploy/vault.yaml in this git checkout].
     #[arg(long, env = "REGISTRY_VAULT_FILE", value_name = "FILE")]
     pub vault_file: Option<PathBuf>,
@@ -111,16 +111,20 @@ impl Config {
             return Ok(Zeroizing::new(password.to_string()));
         }
         let file = self.vault_file()?;
-        let output = Command::new("ansible-vault")
-            .arg("view")
-            .arg(&file)
-            .stderr(Stdio::inherit())
-            .output()
-            .context("running ansible-vault")?;
-        if !output.status.success() {
-            bail!("ansible-vault could not open {}", file.display());
-        }
-        let plain = Zeroizing::new(String::from_utf8_lossy(&output.stdout).into_owned());
+        // The password from wherever `ansible-vault view` run here would
+        // take it: ANSIBLE_VAULT_PASSWORD_FILE, ansible.cfg or a prompt.
+        let vault_password = Zeroizing::new(ansible_vault::password::resolve(
+            Path::new("."),
+            &[],
+            false,
+        )?);
+        let plain = Zeroizing::new(
+            String::from_utf8_lossy(&ansible_vault::decrypt_file(
+                &file,
+                vault_password.as_bytes(),
+            )?)
+            .into_owned(),
+        );
         parse_password(&plain).with_context(|| {
             format!(
                 "could not determine registry password; set REGISTRY_PASSWORD or check {}",

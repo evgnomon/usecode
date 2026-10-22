@@ -255,8 +255,8 @@ impl Secrets {
         if let Some(path) = &account.password_secret {
             let store = &account.secret_store;
             if !self.0.contains_key(store) {
-                let secrets = crate::secret::Store::new(&crate::secret::dir(), store)
-                    .get()
+                let secrets = crate::secret::Store::open(store)
+                    .and_then(|store| store.get())
                     .context("reading the secrets")?;
                 self.0.insert(store.clone(), secrets);
             }

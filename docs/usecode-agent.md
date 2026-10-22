@@ -61,6 +61,7 @@ uc pull --strip-host myimage:latest
 ```
 
 Both commands read the registry password from `deploy/vault.yaml` of the current git
-checkout via `ansible-vault` unless `REGISTRY_PASSWORD` is set (or `--vault-file` points
+checkout (decrypted by uc itself, no ansible needed; the vault password is found the way
+`ansible-vault` would find it) unless `REGISTRY_PASSWORD` is set (or `--vault-file` points
 elsewhere), and require an SSH host entry (or DNS-resolvable name) for the bastion. Run `uc push -h` for the
 other settings; each has a matching environment variable.

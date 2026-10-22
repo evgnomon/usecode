@@ -34,6 +34,7 @@ name = "uc-daemon-ctl"
 path = "src/bin/uc-daemon-ctl.rs"
 
 [dependencies]
+ansible_vault = { path = "../ansible_vault" }
 base64 = "0.23"
 libc.workspace = true
 serde = { workspace = true, features = ["derive"] }

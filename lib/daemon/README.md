@@ -298,9 +298,10 @@ peer. Nothing else has to be edited.
 The vault password comes from `deploy/vault-pass.sh`, which `ansible.cfg`
 names as the `vault_password_file`; being executable, it is run and its
 stdout used, so the password stays in whatever `getsecret` reads and
-never lands on disk here. `uc net mesh add` and `uc daemon install` run
-`ansible-vault` from this directory, so they resolve the password the
-same way. The vault is only opened once a host has the mesh on. Swap the body of
+never lands on disk here. `uc net mesh add` and `apply` read and write
+the vault themselves - no ansible needed on your machine - but find the
+password just like `ansible-vault` run from this directory would, and
+the file stays one you can open with `ansible-vault edit`. The vault is only opened once a host has the mesh on. Swap the body of
 that script for your own secret store.
 
 ## By hand: expose one port through a public host
