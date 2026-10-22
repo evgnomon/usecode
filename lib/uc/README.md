@@ -393,6 +393,7 @@ switching scripts over to the `uc` commands is a good idea.
 | `uc new script`, `unit` | `uc-new-script`, `uc-new-unit` | `shole`, `mkunit` |
 | `uc secret server` | `uc-secret-server` | `secd` |
 | `uc agent api`, `mcp` | `uc-agent-api`, `uc-agent-mcp` | `usecode-agent-api`, `usecode-mcp` |
+| `uc agent usage` | built in | |
 | `uc data pdf`, `tidy`, `jsonc` | `uc-data-pdf`, `uc-data-tidy`, `uc-data-jsonc` | `csv2pdf`, `tidycsv`, `jsonc` |
 | `uc pick file`, `url` | `uc-pick-file`, `uc-pick-url` | `ff`, `fzurls` |
 | `uc sys yubikey`, `argv` | `uc-sys-yubikey`, `uc-sys-argv` | `ykattach`, `num_argv` |

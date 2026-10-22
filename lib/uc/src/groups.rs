@@ -351,9 +351,60 @@ pub static AGENT: Group = Group {
             "MCP server for operating the usecode agent",
             &["uc-agent-mcp"],
         ),
+        Sub {
+            name: "usage",
+            summary: "the OpenRouter usage and credits of the agent's own key",
+            run: Run::Builtin(agent_usage),
+        },
     ],
     fallback: None,
 };
+
+/// `uc agent usage`: the OpenRouter usage of `OPENROUTER_API_KEY`, the key
+/// the coding agent itself chats with.
+fn agent_usage(args: &[OsString]) -> ExitCode {
+    let mut args = args.iter().map(|arg| arg.to_string_lossy().into_owned());
+    let mut key = std::env::var("OPENROUTER_API_KEY")
+        .ok()
+        .filter(|k| !k.trim().is_empty())
+        .unwrap_or_default();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "-h" | "--help" => {
+                println!("usage: uc agent usage [--key KEY]");
+                return ExitCode::SUCCESS;
+            }
+            "--key" => {
+                key = args.next().unwrap_or_default();
+            }
+            other => {
+                eprintln!("uc agent usage: unknown argument '{other}'");
+                eprintln!("usage: uc agent usage [--key KEY]");
+                return ExitCode::from(2);
+            }
+        }
+    }
+    if key.trim().is_empty() {
+        eprintln!("set OPENROUTER_API_KEY (https://openrouter.ai/keys), or pass --key KEY");
+        return ExitCode::from(2);
+    }
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    let result = runtime.block_on(crate::openrouter::OpenRouter::new(key).usage());
+    match result {
+        Ok(usage) => {
+            print!("{}", usage.report());
+            ExitCode::SUCCESS
+        }
+        Err(err) => {
+            eprintln!("uc agent usage: {err:#}");
+            ExitCode::FAILURE
+        }
+    }
+}
 
 pub static DATA: Group = Group {
     path: "uc data",

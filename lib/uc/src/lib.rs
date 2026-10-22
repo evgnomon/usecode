@@ -19,7 +19,8 @@
 //! which looks after the mail server on a cluster, and [`fs`] is `uc fs`,
 //! buckets and objects on the cluster's S3 object storage, and [`logs`] is
 //! `uc kube logs`, the container logs of the whole cluster, [`usage`] is
-//! `uc kube usage`, its CPU, memory, disk and network, and
+//! `uc kube usage`, its CPU, memory, disk and network, [`openrouter`] is
+//! `uc agent usage`, the OpenRouter usage of the coding agent's own key, and
 //! [`workspace`] is `uc workspace` (`uc ws`), dev containers on the cluster.
 
 pub mod authors;
@@ -37,6 +38,7 @@ pub mod http;
 pub mod kube;
 pub mod logs;
 pub mod mail;
+pub mod openrouter;
 pub mod password;
 pub mod registry;
 pub mod repo;
