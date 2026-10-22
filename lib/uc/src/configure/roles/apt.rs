@@ -25,7 +25,7 @@ pub const PROBE: &str = "apt/probe";
 fn profile_groups(profile: Profile) -> &'static [&'static str] {
     match profile {
         Profile::Workstation => &["build", "share", "hardware", "desktop", "virt"],
-        Profile::Wsl => &["build", "share", "virt"],
+        Profile::Wsl => &["build", "share", "virt", "wsl"],
         Profile::Vm | Profile::DevContainer => &["build", "share"],
     }
 }
@@ -126,6 +126,11 @@ fn group(name: &str) -> &'static [&'static str] {
             "qemu-utils",            // qemu-img and friends for creating and converting disk images
             "libvirt-daemon-system", // libvirtd with its systemd units, default network and pools
             "virtinst",              // virt-install for creating libvirt virtual machines
+        ],
+        // WSL2 only: audio goes through WSLg's PulseAudio server
+        "wsl" => &[
+            "sox",              // Audio recorder and converter, used by Claude Code's voice mode
+            "libsox-fmt-pulse", // SoX PulseAudio backend, for recording through WSLg
         ],
         // Packages requiring physical hardware (YubiKey, smartcard) — skipped on WSL2
         "hardware" => &[
