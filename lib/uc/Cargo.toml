@@ -134,10 +134,6 @@ name = "uc-mail-send"
 path = "src/bin/uc-mail-send.rs"
 
 [[bin]]
-name = "uc-mail-reply"
-path = "src/bin/uc-mail-reply.rs"
-
-[[bin]]
 name = "uc-dns"
 path = "src/bin/uc-dns.rs"
 

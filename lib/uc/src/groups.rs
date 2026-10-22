@@ -282,18 +282,13 @@ pub static MAIL: Group = Group {
         ),
         exec(
             "view",
-            "read the mail on this machine, the newest first",
+            "read the mail on this machine, the newest first, and reply to it",
             &["uc-mail-view"],
         ),
         exec(
             "send",
             "write a new mail, with attachments, and send it",
             &["uc-mail-send"],
-        ),
-        exec(
-            "reply",
-            "reply to a mail, to the sender or to all",
-            &["uc-mail-reply"],
         ),
         exec(
             "configure",

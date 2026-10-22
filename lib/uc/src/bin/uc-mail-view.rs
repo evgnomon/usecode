@@ -1,19 +1,29 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! `uc-mail-view`: `uc mail view`, see [`uc::mail::inbox`].
+//! `uc-mail-view`: `uc mail view`, see [`uc::mail::inbox`] and
+//! [`uc::mail::compose`].
 
-use anyhow::Result;
+use anyhow::{Context, Result, bail};
 use clap::Parser;
+use std::fs;
 use std::io::{IsTerminal, Write};
-use std::process::{Command, ExitCode, Stdio};
-use uc::mail::inbox::{self, Entry};
+use std::process::ExitCode;
+use uc::mail::compose::{self, Compose, Draft};
+use uc::mail::inbox::{self, Config, Entry};
 
-/// Read the mail `uc mail pull` fetched, the newest first.
+/// Read the mail `uc mail pull` fetched, the newest first, and reply to it.
 ///
 /// On a terminal it lists the mail in skim: type to narrow it down, read
-/// the one under the cursor below, Tab to pick more, Enter to open them.
+/// the one under the cursor below, Tab to pick more. Enter opens them in
+/// $EDITOR to read, Ctrl-R replies to the one picked.
 /// With -n, --full, --json, ids, or without a terminal it only prints.
+///
+/// With --reply it replies to the id given (or the one picked), to the
+/// sender or, with --all, to everyone on it. Give the reply with --body,
+/// --body-file or on stdin and it is sent right away, the mail quoted below
+/// it. Leave it out on a terminal (or add --edit) and the reply opens in
+/// $EDITOR, then asks before sending.
 #[derive(Parser)]
 #[command(name = "uc mail view", bin_name = "uc mail view", version, after_help = EXAMPLES)]
 struct Cli {
@@ -23,32 +33,51 @@ struct Cli {
     /// Only the newest N.
     #[arg(short = 'n', long, value_name = "N")]
     limit: Option<usize>,
-    /// Only this account's.
-    #[arg(short, long, value_name = "NAME")]
-    account: Option<String>,
     /// Print the messages whole, not one line each.
-    #[arg(short, long)]
+    #[arg(long)]
     full: bool,
     /// Print JSON: one object per message, with its text under "text"
     /// with --full or ids.
     #[arg(long)]
     json: bool,
+    /// Fetch the new mail first, like `uc mail pull`; with --account,
+    /// only that account's.
+    #[arg(short, long)]
+    pull: bool,
+    /// Reply to the mail, not read it.
+    #[arg(short, long, help_heading = "Reply")]
+    reply: bool,
+    /// Reply to everyone it went to, not only the sender.
+    #[arg(long, help_heading = "Reply")]
+    all: bool,
+    /// Leave the mail out of the reply.
+    #[arg(long, help_heading = "Reply")]
+    no_quote: bool,
+    #[command(flatten, next_help_heading = "Reply")]
+    compose: Compose,
 }
 
 const EXAMPLES: &str = "\
 Examples:
-  uc mail view                       pick and read with skim
+  uc mail view                       pick with skim: Enter reads, Ctrl-R replies
+  uc mail view -p                    pull the new mail first, then pick
   uc mail view -n 10                 the 10 newest, one line each
   uc mail view -n 10 --full          the 10 newest, whole
   uc mail view -n 10 --full --json   the same as JSON, for scripts and agents
   uc mail view -a work -n 5
   uc mail view work/INBOX/1-42       one message, by the id a listing shows
+  uc mail view -r                    pick the mail, write the reply in $EDITOR
+  uc mail view -r work/INBOX/1-42 --all
+  uc mail view -r work/INBOX/1-42 -b 'Thanks, done.' -A fix.patch
+  echo 'Sounds good.' | uc mail view -r work/INBOX/1-42 --all --cc joe@example.com
 
-Lines are: received (local time), id, sender, subject, tab-separated.";
+Lines are: received (local time), id, sender, subject, tab-separated.
+A reply goes out from the account the mail came to, unless --account says
+otherwise.";
 
 fn main() -> ExitCode {
     if std::env::args().nth(1).as_deref() == Some("--summary") {
-        println!("read the mail on this machine, the newest first");
+        println!("read the mail on this machine, the newest first, and reply to it");
         return ExitCode::SUCCESS;
     }
     match run(Cli::parse()) {
@@ -61,7 +90,24 @@ fn main() -> ExitCode {
 }
 
 fn run(cli: Cli) -> Result<()> {
-    let mut entries = inbox::entries(cli.account.as_deref())?;
+    let terminal = std::io::stdin().is_terminal() && std::io::stdout().is_terminal();
+    if cli.pull {
+        let accounts: Vec<String> = cli.compose.account.iter().cloned().collect();
+        tokio::runtime::Runtime::new()?.block_on(inbox::pull(&accounts, None))?;
+    }
+    if cli.reply {
+        let id = match cli.ids.as_slice() {
+            [id] => id.clone(),
+            [] if terminal => match pick(&cli)? {
+                Some((ids, _)) => one(ids)?,
+                None => return Ok(()),
+            },
+            [] => bail!("which mail? Give its id, `uc mail view -n 10` shows them"),
+            _ => bail!("give one mail to reply to"),
+        };
+        return reply(&cli, &id);
+    }
+    let mut entries = inbox::entries(cli.compose.account.as_deref())?;
     if !cli.ids.is_empty() {
         entries.retain(|e| cli.ids.contains(&e.id));
         for id in &cli.ids {
@@ -75,29 +121,65 @@ fn run(cli: Cli) -> Result<()> {
     if let Some(n) = cli.limit {
         entries.truncate(n);
     }
-    let interactive = cli.limit.is_none()
-        && !cli.full
-        && !cli.json
-        && std::io::stdin().is_terminal()
-        && std::io::stdout().is_terminal();
-    if !interactive {
+    if cli.full || cli.json || cli.limit.is_some() || !terminal {
         let ids: Vec<String> = entries.iter().map(|e| e.id.clone()).collect();
         return print(&ids, &entries, cli.full, cli.json);
     }
+    match pick(&cli)? {
+        Some((ids, true)) => reply(&cli, &one(ids)?),
+        Some((ids, false)) => read(&ids),
+        None => Ok(()),
+    }
+}
+
+/// The mail picked with skim and whether to reply to it, `None` when none
+/// was.
+fn pick(cli: &Cli) -> Result<Option<(Vec<String>, bool)>> {
+    let entries = inbox::entries(cli.compose.account.as_deref())?;
     if entries.is_empty() {
         eprintln!("No mail here yet, `uc mail pull` fetches it.");
-        return Ok(());
+        return Ok(None);
     }
     let picked = inbox::pick(entries);
-    if picked.is_empty() {
-        return Ok(());
+    if picked.ids.is_empty() {
+        return Ok(None);
     }
-    let text = picked
+    Ok(Some((picked.ids, picked.reply || cli.reply)))
+}
+
+fn one(ids: Vec<String>) -> Result<String> {
+    match <[String; 1]>::try_from(ids) {
+        Ok([id]) => Ok(id),
+        Err(_) => bail!("pick one mail to reply to"),
+    }
+}
+
+/// Replies to `id` as the flags say.
+fn reply(cli: &Cli, id: &str) -> Result<()> {
+    let config = Config::load()?;
+    let account = compose::account(&config, cli.compose.account.as_deref(), Some(id))?;
+    let mut draft = Draft::reply(id, &compose::sender(account)?, cli.all)?;
+    if cli.no_quote {
+        draft.body.clear();
+    }
+    tokio::runtime::Runtime::new()?.block_on(compose::run(account, draft, &cli.compose))
+}
+
+/// Opens the messages `ids` in $EDITOR, to read; the file is gone after.
+fn read(ids: &[String]) -> Result<()> {
+    let text = ids
         .iter()
         .map(|id| inbox::render(id))
         .collect::<Result<Vec<_>>>()?
         .join(&format!("\n{}\n\n", "─".repeat(72)));
-    page(&text)
+    let path = std::env::temp_dir().join(format!("uc-mail-{}.txt", std::process::id()));
+    fs::write(&path, text).with_context(|| format!("writing {}", path.display()))?;
+    let mut perms = fs::metadata(&path)?.permissions();
+    perms.set_readonly(true);
+    fs::set_permissions(&path, perms)?;
+    let read = compose::editor(&path);
+    fs::remove_file(&path).ok();
+    read
 }
 
 /// The messages `ids` as lines, whole, or as JSON.
@@ -139,31 +221,5 @@ fn print(ids: &[String], entries: &[Entry], full: bool, json: bool) -> Result<()
             writeln!(out, "{}\t{}\t{}\t{}", e.date(), e.id, e.from, e.subject)?;
         }
     }
-    Ok(())
-}
-
-/// `text` through $PAGER (less by default), or printed when there is none.
-fn page(text: &str) -> Result<()> {
-    let pager = std::env::var("PAGER")
-        .ok()
-        .filter(|p| !p.trim().is_empty())
-        .unwrap_or_else(|| "less".into());
-    let child = Command::new("sh")
-        .args(["-c", &pager])
-        .env(
-            "LESS",
-            std::env::var("LESS").unwrap_or_else(|_| "FRX".into()),
-        )
-        .stdin(Stdio::piped())
-        .spawn();
-    let Ok(mut child) = child else {
-        println!("{text}");
-        return Ok(());
-    };
-    if let Some(mut stdin) = child.stdin.take() {
-        // The pager may quit before reading it all.
-        let _ = writeln!(stdin, "{text}");
-    }
-    child.wait()?;
     Ok(())
 }

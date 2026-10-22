@@ -9,7 +9,8 @@
 //! account and mailbox a directory with one `<uidvalidity>-<uid>.eml` per
 //! message, an `index.jsonl` of who sent them, their subjects and when the
 //! server got them, and a `state.json` with the last UID fetched. [`entries`]
-//! reads the indexes back, the newest mail first.
+//! reads the indexes back, the newest mail first, and [`pick`] picks from
+//! them, to read or to reply to.
 
 use anyhow::{Context, Result, bail};
 use futures_util::StreamExt;
@@ -546,9 +547,17 @@ fn addresses(address: &Address) -> String {
         .join(", ")
 }
 
-/// Pick messages with skim, reading each in the preview, and return the
-/// picked ones' ids.
-pub fn pick(entries: Vec<Entry>) -> Vec<String> {
+/// The messages picked with [`pick`].
+#[derive(Debug, Default)]
+pub struct Picked {
+    pub ids: Vec<String>,
+    /// Picked with Ctrl-R, to reply to.
+    pub reply: bool,
+}
+
+/// Pick messages with skim, reading each in the preview: Enter to read
+/// them, Ctrl-R to reply.
+pub fn pick(entries: Vec<Entry>) -> Picked {
     use skim::prelude::*;
 
     struct Item(Entry, String);
@@ -574,6 +583,10 @@ pub fn pick(entries: Vec<Entry>) -> Vec<String> {
         .preview(Some(String::new()))
         .preview_window("down:60%:wrap".to_string())
         .prompt("mail> ".to_string())
+        .header(Some(
+            "Enter: read, Ctrl-R: reply, Tab: pick more".to_string(),
+        ))
+        .expect(vec![REPLY_KEY.to_string()])
         .build()
         .expect("skim options");
     let (tx, rx): (SkimItemSender, SkimItemReceiver) = unbounded();
@@ -583,14 +596,20 @@ pub fn pick(entries: Vec<Entry>) -> Vec<String> {
     }
     drop(tx);
     match Skim::run_with(&options, Some(rx)) {
-        Some(out) if !out.is_abort => out
-            .selected_items
-            .iter()
-            .map(|item| item.output().into_owned())
-            .collect(),
-        _ => Vec::new(),
+        Some(out) if !out.is_abort => Picked {
+            ids: out
+                .selected_items
+                .iter()
+                .map(|item| item.output().into_owned())
+                .collect(),
+            reply: matches!(&out.final_event, Event::EvActAccept(Some(key)) if key == REPLY_KEY),
+        },
+        _ => Picked::default(),
     }
 }
+
+/// The key in [`pick`] that replies, not reads.
+const REPLY_KEY: &str = "ctrl-r";
 
 /// One line about a message: when it came, the account, who sent it and
 /// what about.

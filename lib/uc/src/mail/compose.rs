@@ -1,7 +1,7 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! `uc mail send` and `uc mail reply`: write mail and send it.
+//! `uc mail send` and the replies of `uc mail view`: write mail and send it.
 //!
 //! A [`Draft`] is new ([`Draft::default`]) or a reply to a message `uc mail
 //! pull` fetched ([`Draft::reply`]). [`Compose`] are the flags both commands
@@ -22,10 +22,11 @@ use std::io::{BufRead, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// The flags of `uc mail send` and `uc mail reply`.
+/// The flags of `uc mail send` and of replying with `uc mail view`.
 #[derive(clap::Args, Debug, Default)]
 pub struct Compose {
-    /// Send from this account [default: the reply's, else the first one].
+    /// Send from this account [default: the reply's, else the first one];
+    /// `uc mail view` lists only its mail.
     #[arg(short, long, value_name = "NAME")]
     pub account: Option<String>,
     /// To these, e.g. "Ada <ada@example.com>"; repeat it or use commas.
@@ -476,7 +477,7 @@ fn edit_draft(account: &Account, from: &Mailbox, draft: Draft, yes: bool) -> Res
         Ok(None)
     };
     loop {
-        editor(&path)?;
+        editor(&path).with_context(|| format!("the draft is in {}", path.display()))?;
         let text = fs::read_to_string(&path)?;
         let edited = match draft.read_text(&text).and_then(|d| d.check().map(|()| d)) {
             Ok(edited) => edited,
@@ -505,7 +506,7 @@ fn edit_draft(account: &Account, from: &Mailbox, draft: Draft, yes: bool) -> Res
 }
 
 /// Runs `$VISUAL` (or `$EDITOR`, else vi) on `path`.
-fn editor(path: &Path) -> Result<()> {
+pub fn editor(path: &Path) -> Result<()> {
     let editor = ["VISUAL", "EDITOR"]
         .iter()
         .filter_map(|name| std::env::var(name).ok())
@@ -517,7 +518,7 @@ fn editor(path: &Path) -> Result<()> {
         .status()
         .with_context(|| format!("running {editor}"))?;
     if !status.success() {
-        bail!("{editor} failed, the draft is in {}", path.display());
+        bail!("{editor} failed");
     }
     Ok(())
 }
