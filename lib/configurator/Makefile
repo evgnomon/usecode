@@ -1,22 +1,18 @@
 # License-Identifier: HGL
 # Copyright (C) The Usecode Authors (see AUTHORS)
 
-.PHONY: all build install install-eget uninstall clean update
+.PHONY: all build install uninstall clean update
 
-EGET_VERSION ?= latest
 ROOT_DIR ?= $(abspath $(CURDIR)/../..)
 BUILD_DIR ?= $(ROOT_DIR)/build
 BIN_DIR := $(BUILD_DIR)/usr/local/bin
 PREFIX ?= /usr/local
 INSTALL_DIR := $(PREFIX)/bin
-EGET ?= $(BIN_DIR)/eget
 
-
-EGET_BINS := eget gh fd delta rg bat hugo rclone hcloud tflint gvproxy kompose csvlens yq
 GO_BINS := gron golangci-lint yj doctl godoc dlv
 CARGO_BINS := drill
 CARGO_ROOT := $(BIN_DIR:/bin=)
-BIN_NAMES := $(EGET_BINS) $(GO_BINS) $(CARGO_BINS)
+BIN_NAMES := $(GO_BINS) $(CARGO_BINS)
 BUILD_BINS := $(addprefix $(BIN_DIR)/,$(BIN_NAMES))
 INSTALL_BINS := $(addprefix $(INSTALL_DIR)/,$(BIN_NAMES))
 
@@ -29,59 +25,6 @@ install: $(INSTALL_BINS)
 $(INSTALL_DIR)/%: $(BIN_DIR)/%
 	@install -d $(INSTALL_DIR)
 	@install -m 0755 $(BIN_DIR)/$* $@
-
-install-eget: $(EGET)
-
-$(EGET):
-	@mkdir -p $(BIN_DIR)
-	@ARCH=$$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/'); \
-	TMPDIR=$$(mktemp -d); \
-	URL=$$(curl -s https://api.github.com/repos/zyedidia/eget/releases/latest \
-	  | grep browser_download_url \
-	  | grep "linux_$${ARCH}.tar.gz" \
-	  | cut -d'"' -f4); \
-	curl -sL "$$URL" | tar -xz -C $$TMPDIR; \
-	mv $$TMPDIR/*/eget $(BIN_DIR)/eget; \
-	rm -rf $$TMPDIR
-
-$(BIN_DIR)/gh: | $(EGET)
-	$(EGET) --to $(BIN_DIR) -a tar.gz cli/cli
-
-$(BIN_DIR)/fd: | $(EGET)
-	$(EGET) --to $(BIN_DIR) -a gnu sharkdp/fd
-
-$(BIN_DIR)/delta: | $(EGET)
-	$(EGET) --to $(BIN_DIR) -a gnu dandavison/delta
-
-$(BIN_DIR)/rg: | $(EGET)
-	$(EGET) --to $(BIN_DIR) BurntSushi/ripgrep
-
-$(BIN_DIR)/bat: | $(EGET)
-	$(EGET) --to $(BIN_DIR) -a gnu sharkdp/bat
-
-$(BIN_DIR)/hugo: | $(EGET)
-	$(EGET) --to $(BIN_DIR) -a extended -a tar.gz -a withdeploy gohugoio/hugo
-
-$(BIN_DIR)/rclone: | $(EGET)
-	$(EGET) --to $(BIN_DIR) -a zip rclone/rclone
-
-$(BIN_DIR)/hcloud: | $(EGET)
-	$(EGET) --to $(BIN_DIR) -f hcloud -a ^sig hetznercloud/cli
-
-$(BIN_DIR)/tflint: | $(EGET)
-	$(EGET) --to $(BIN_DIR)/tflint terraform-linters/tflint
-
-$(BIN_DIR)/gvproxy: | $(EGET)
-	$(EGET) --to $(BIN_DIR)/gvproxy containers/gvisor-tap-vsock
-
-$(BIN_DIR)/kompose: | $(EGET)
-	$(EGET) --to $(BIN_DIR)/kompose -a tar.gz kubernetes/kompose
-
-$(BIN_DIR)/csvlens: | $(EGET)
-	$(EGET) --to $(BIN_DIR) -a gnu YS-L/csvlens
-
-$(BIN_DIR)/yq: | $(EGET)
-	$(EGET) --to $(BIN_DIR)/yq -a tar.gz -f yq_linux_amd64 mikefarah/yq
 
 $(BIN_DIR)/gron:
 	@mkdir -p $(BIN_DIR)

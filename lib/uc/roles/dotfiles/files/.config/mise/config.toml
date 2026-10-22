@@ -14,6 +14,18 @@ uv = "latest"
 mysql-client = "latest"
 "aqua:rust-lang/rustup" = "latest"
 yazi = "latest"
+gh = "latest"
+fd = "latest"
+delta = "latest"
+bat = "latest"
+"github:gohugoio/hugo" = { version = "latest", matching = "extended_withdeploy" }
+rclone = "latest"
+hcloud = "latest"
+tflint = "latest"
+"github:containers/gvisor-tap-vsock" = { version = "latest", matching = "gvproxy" }
+kompose = "latest"
+"github:YS-L/csvlens" = "latest"
+yq = "latest"
 
 "npm:prettier" = "latest"
 "npm:nodemon" = "latest"
