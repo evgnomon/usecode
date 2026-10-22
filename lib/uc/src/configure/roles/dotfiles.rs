@@ -162,6 +162,21 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
         );
     }
 
+    let jcode_theme = v.config.theme.name();
+    plan.add(
+        Task::new("dotfiles/jcode-theme", "Set the jcode theme in its config")
+            .tags(&["dotfiles", "theme"])
+            .run(move |ctx| async move {
+                let path = ctx.vars().home.join(".jcode/config.toml");
+                let Some(bytes) = file::read(&ctx, &path, false).await? else {
+                    return Ok(Outcome::Ok);
+                };
+                let text = String::from_utf8_lossy(&bytes);
+                let updated = set_jcode_theme(&text, jcode_theme);
+                file::write(&ctx, &path, updated.as_bytes(), None, false).await
+            }),
+    );
+
     let retired_files = files.clone();
     plan.add(
         Task::new("dotfiles/retired", "Copy retired dotfiles over their links")
@@ -238,4 +253,58 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
                 file::chmod(&ctx, &ctx.vars().home.join(".gnupg"), 0o700, false).await
             }),
     );
+}
+
+/// `text`, a jcode `config.toml`, with `theme` in its `[display]` table set
+/// to `theme`. Every other line stays as it is.
+fn set_jcode_theme(text: &str, theme: &str) -> String {
+    let line = format!("theme = \"{theme}\"");
+    let mut out: Vec<String> = Vec::new();
+    let (mut in_display, mut done) = (false, false);
+    for l in text.lines() {
+        let t = l.trim();
+        if t.starts_with('[') {
+            if in_display && !done {
+                out.push(line.clone());
+                done = true;
+            }
+            in_display = t == "[display]";
+        } else if in_display && !done && t.split('=').next().map(str::trim) == Some("theme") {
+            out.push(line.clone());
+            done = true;
+            continue;
+        }
+        out.push(l.to_string());
+    }
+    if !done {
+        if in_display {
+            out.push(line);
+        } else {
+            out.extend(["".into(), "[display]".into(), line]);
+        }
+    }
+    out.join("\n") + "\n"
+}
+
+#[cfg(test)]
+mod jcode_theme_tests {
+    use super::set_jcode_theme;
+
+    #[test]
+    fn replaces_existing() {
+        let t = "[display]\ntheme = \"light\"\nx = 1\n\n[features]\ntheme = \"no\"\n";
+        assert_eq!(
+            set_jcode_theme(t, "dark"),
+            "[display]\ntheme = \"dark\"\nx = 1\n\n[features]\ntheme = \"no\"\n"
+        );
+    }
+
+    #[test]
+    fn adds_missing() {
+        assert_eq!(
+            set_jcode_theme("[display]\nx = 1\n\n[f]\n", "dark"),
+            "[display]\nx = 1\n\ntheme = \"dark\"\n[f]\n"
+        );
+        assert!(set_jcode_theme("[a]\n", "dark").ends_with("[display]\ntheme = \"dark\"\n"));
+    }
 }
