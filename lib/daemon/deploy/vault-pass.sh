@@ -26,4 +26,4 @@ if [ ! -e "$secrets" ] && [ -z "${USECODE_VAULT_WRITE:-}" ]; then
 	echo "no-secrets-yet"
 	exit 0
 fi
-getsecret usecode | jq -r '.vault'
+uc secret get usecode --field vault

@@ -320,8 +320,9 @@ alias `mkpass` runs it.
 
 The other subcommands work on the ansible-vault secret stores in
 `~/src/github.com/$USER/config/secrets`. A store `NAME` is `NAME.yaml`,
-encrypted with ansible-vault, and `NAME.vault.asc`, its vault password as kept
-by the `vault` command; without a name it is `secrets.yaml` and `vault.asc`.
+encrypted with ansible-vault, and `NAME.vault.asc`, its vault password
+encrypted with gpg to the config's `gpg.key`; without a name it is
+`secrets.yaml` and `vault.asc`.
 uc reads and writes the stores itself, so ansible doesn't need to be
 installed, and they still open with `ansible-vault` if you ever want to.
 `-r` picks the current repository's store, `<org>_<repo>` from the working

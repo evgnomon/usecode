@@ -22,7 +22,7 @@ const SUMMARY: &str = "generate secrets and manage the ansible-vault secret stor
 /// Generate secrets and manage the ansible-vault secret stores.
 ///
 /// A store is `<name>.yaml`, encrypted with ansible-vault, next to its
-/// password `<name>.vault.asc`, kept by the `vault` command, in
+/// password `<name>.vault.asc`, encrypted with gpg to `gpg.key`, in
 /// ~/src/github.com/$USER/config/secrets. Without a name the default store
 /// (`secrets.yaml`) is used; with --repo the current repository's
 /// (`<org>_<repo>`), or `<org>_<repo>_<name>` when a name is given too.
@@ -144,7 +144,7 @@ impl Name {
 enum Print {
     /// The secret file's path.
     File,
-    /// The name the password is kept under by `vault`.
+    /// The name the password is kept under, `<name>.asc`.
     Vault,
 }
 

@@ -5,7 +5,7 @@
 //!
 //! A store named `<name>` is two files in [`dir`]: `<name>.yaml`, encrypted
 //! in the ansible-vault format, and `<name>.vault.asc`, that file's vault
-//! password as encrypted by the `vault` command (`vault -e`/`vault -d`). The
+//! password, armored and encrypted with `gpg` to the config's `gpg.key`. The
 //! unnamed store is `secrets.yaml` with `vault.asc`.
 //!
 //! With a [`Profile`] active - for a machine that can't open those because
@@ -45,10 +45,10 @@ pub fn dir() -> PathBuf {
 pub struct Store {
     /// The ansible-vault encrypted secrets.
     pub secret_file: PathBuf,
-    /// The name `vault -e`/`vault -d` know the password by.
+    /// The name the password is kept by, `<dir>/<vault_name>.asc`.
     pub vault_name: String,
     dir: PathBuf,
-    /// Who `vault -e` encrypts to; `vault`'s own key when unset.
+    /// Who the password is encrypted to; gpg's default key when unset.
     gpg_key: Option<String>,
     /// Whether this is a profile's own store.
     profiled: bool,
@@ -79,7 +79,7 @@ impl Store {
             secret_file: dir.join(format!("{prefix}{file}")),
             vault_name: format!("{prefix}{vault_name}"),
             dir: dir.to_path_buf(),
-            gpg_key: profile.name.as_ref().and(profile.gpg_key.clone()),
+            gpg_key: profile.gpg_key.clone(),
             profiled: profile.name.is_some(),
         }
     }
@@ -106,7 +106,7 @@ impl Store {
     }
 
     fn password(&self) -> Result<Zeroizing<Vec<u8>>> {
-        let password = vault_decrypt(&self.vault_name);
+        let password = self.vault_decrypt(&self.vault_name);
         if self.profiled {
             return password;
         }
@@ -115,14 +115,27 @@ impl Store {
         )
     }
 
-    /// `vault -e <name> [key]` with the password on stdin.
+    /// Encrypts `password` to `<name>.asc` for the store's key.
     fn vault_encrypt(&self, name: &str, password: &[u8]) -> Result<()> {
-        if let Some(parent) = self.vault_asc(name).parent() {
+        let asc = self.vault_asc(name);
+        if let Some(parent) = asc.parent() {
             fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
         }
-        let mut cmd = Command::new("vault");
-        cmd.args(["-e", name]).args(&self.gpg_key);
-        feed(&mut cmd, password, "vault -e")
+        let mut cmd = Command::new("gpg");
+        cmd.args(["--yes", "--armor", "--encrypt"]);
+        match &self.gpg_key {
+            Some(key) => cmd.args(["--recipient", key]),
+            None => cmd.arg("--default-recipient-self"),
+        };
+        cmd.arg("--output").arg(&asc);
+        feed(&mut cmd, password, "gpg --encrypt")
+    }
+
+    /// The password stored in `<name>.asc`.
+    fn vault_decrypt(&self, name: &str) -> Result<Zeroizing<Vec<u8>>> {
+        let mut cmd = Command::new("gpg");
+        cmd.args(["--quiet", "--decrypt"]).arg(self.vault_asc(name));
+        output(&mut cmd, "gpg --decrypt").map(Zeroizing::new)
     }
 
     fn decrypt(&self, file: &Path) -> Result<Zeroizing<Vec<u8>>> {
@@ -256,13 +269,6 @@ fn key(password: &[u8]) -> &[u8] {
     password.trim_ascii()
 }
 
-/// `vault -d <name>`: the stored password.
-fn vault_decrypt(name: &str) -> Result<Zeroizing<Vec<u8>>> {
-    let mut cmd = Command::new("vault");
-    cmd.args(["-d", name]);
-    output(&mut cmd, "vault -d").map(Zeroizing::new)
-}
-
 pub(crate) fn status(cmd: &mut Command, what: &str) -> Result<()> {
     let status = cmd.status().with_context(|| format!("running {what}"))?;
     if !status.success() {
@@ -353,8 +359,16 @@ mod tests {
             PathBuf::from("/s/wsl/vault.asc")
         );
         assert_eq!(m.gpg_key.as_deref(), Some("ABCD"));
-        let shared = Store::new(Path::new("/s"), "");
-        assert_eq!(shared.gpg_key, None);
+        let shared = Store::on(
+            &Profile {
+                name: None,
+                gpg_key: Some("C412".into()),
+            },
+            Path::new("/s"),
+            "",
+        );
+        assert_eq!(shared.vault_name, "vault");
+        assert_eq!(shared.gpg_key.as_deref(), Some("C412"));
     }
 
     #[test]

@@ -297,7 +297,7 @@ peer. Nothing else has to be edited.
 
 The vault password comes from `deploy/vault-pass.sh`, which `ansible.cfg`
 names as the `vault_password_file`; being executable, it is run and its
-stdout used, so the password stays in whatever `getsecret` reads and
+stdout used, so the password stays in whatever `uc secret get` reads and
 never lands on disk here. `uc net mesh add` and `apply` read and write
 the vault themselves - no ansible needed on your machine - but find the
 password just like `ansible-vault` run from this directory would, and
