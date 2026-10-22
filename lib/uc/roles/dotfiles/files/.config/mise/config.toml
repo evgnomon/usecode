@@ -73,3 +73,4 @@ powershell = "latest"
 eza = "latest"
 tealdeer = "latest"
 zoxide = "latest"
+"github:1jehuang/jcode" = { version = "latest", rename_exe = "jcode", bin = "jcode" }
