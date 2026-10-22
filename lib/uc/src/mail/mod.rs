@@ -6,8 +6,10 @@
 //! Stalwart settings in shape, from the [`records`] mail needs, with
 //! [`stalwart`]'s management API, and [`settings`] is what mail apps need
 //! to use it. [`manage`] looks after its domains and accounts, and
-//! [`inbox`] pulls the mail of any IMAP account to this machine to read.
+//! [`inbox`] pulls the mail of any IMAP account to this machine to read,
+//! and [`compose`] sends mail and replies over SMTP.
 
+pub mod compose;
 pub mod configure;
 pub mod inbox;
 pub mod manage;

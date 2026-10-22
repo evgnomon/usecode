@@ -130,6 +130,14 @@ name = "uc-mail-view"
 path = "src/bin/uc-mail-view.rs"
 
 [[bin]]
+name = "uc-mail-send"
+path = "src/bin/uc-mail-send.rs"
+
+[[bin]]
+name = "uc-mail-reply"
+path = "src/bin/uc-mail-reply.rs"
+
+[[bin]]
 name = "uc-dns"
 path = "src/bin/uc-dns.rs"
 
@@ -187,3 +195,5 @@ tokio-rustls = { version = "0.26", default-features = false }
 futures-util = "0.3.34"
 rustls-platform-verifier = "0.7"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+mail-send = { version = "0.6", default-features = false, features = ["builder", "tls12"] }
+mime_guess = "2"

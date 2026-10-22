@@ -2,6 +2,7 @@
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
 //! `uc mail pull` and `uc mail view`: your mail, kept on this machine.
+//! [`super::compose`] sends it.
 //!
 //! The accounts are in [`config_path`]. [`pull`] logs in to each over IMAPS
 //! and fetches what came since its last pull into [`data_dir`]: for every
@@ -73,10 +74,36 @@ pub struct Account {
     pub secret_store: String,
     #[serde(default = "inbox")]
     pub mailboxes: Vec<String>,
+    /// Who mail goes out from, e.g. `Ada Lovelace <ada@example.com>`
+    /// [default: user].
+    pub from: Option<String>,
+    /// The SMTP server [default: host, with `imap.` made `smtp.`].
+    pub smtp_host: Option<String>,
+    /// 465 is TLS from the start, any other port STARTTLS.
+    #[serde(default = "submissions_port")]
+    pub smtp_port: u16,
+    /// The mailbox a copy of sent mail goes to, e.g. `Sent`. Leave it out
+    /// when the server keeps one itself, like Gmail does.
+    pub sent_mailbox: Option<String>,
+}
+
+impl Account {
+    /// [`Account::smtp_host`] or its default.
+    pub fn smtp_host(&self) -> String {
+        match (&self.smtp_host, self.host.strip_prefix("imap.")) {
+            (Some(host), _) => host.clone(),
+            (None, Some(domain)) => format!("smtp.{domain}"),
+            (None, None) => self.host.clone(),
+        }
+    }
 }
 
 fn imaps_port() -> u16 {
     993
+}
+
+fn submissions_port() -> u16 {
+    465
 }
 
 fn inbox() -> Vec<String> {
@@ -90,7 +117,11 @@ accounts:
     user: ada@example.com
     password_secret: mail.work   # uc secret edit, or UC_MAIL_PASSWORD_WORK
     # port: 993
-    # mailboxes: [INBOX, Archive]";
+    # mailboxes: [INBOX, Archive]
+    # from: Ada Lovelace <ada@example.com>
+    # smtp_host: smtp.example.com
+    # smtp_port: 465                 # 587 for STARTTLS
+    # sent_mailbox: Sent";
 
 impl Config {
     pub fn load() -> Result<Config> {
@@ -204,12 +235,12 @@ pub async fn pull(names: &[String], last: Option<usize>) -> Result<()> {
 
 /// The `uc secret` stores, each decrypted once.
 #[derive(Default)]
-struct Secrets(HashMap<String, serde_json::Value>);
+pub(crate) struct Secrets(HashMap<String, serde_json::Value>);
 
 impl Secrets {
     /// `UC_MAIL_PASSWORD_<NAME>`, else the account's `password_secret`, else
     /// asked for on the terminal.
-    fn password(&mut self, account: &Account) -> Result<zeroize::Zeroizing<String>> {
+    pub(crate) fn password(&mut self, account: &Account) -> Result<zeroize::Zeroizing<String>> {
         let env = format!(
             "UC_MAIL_PASSWORD_{}",
             account
@@ -245,6 +276,22 @@ impl Secrets {
 }
 
 async fn pull_account(account: &Account, password: &str, last: Option<usize>) -> Result<()> {
+    let mut session = login(account, password).await?;
+    for mailbox in &account.mailboxes {
+        let new = pull_mailbox(&mut session, account, mailbox, last)
+            .await
+            .with_context(|| format!("pulling {mailbox}"))?;
+        println!("{} {mailbox}: {new} new", account.name);
+    }
+    let _ = session.logout().await;
+    Ok(())
+}
+
+/// An IMAP session of `account`, logged in over TLS.
+pub(crate) async fn login(
+    account: &Account,
+    password: &str,
+) -> Result<async_imap::Session<tokio_rustls::client::TlsStream<TcpStream>>> {
     let host = account.host.as_str();
     let tcp = TcpStream::connect((host, account.port))
         .await
@@ -263,19 +310,11 @@ async fn pull_account(account: &Account, password: &str, last: Option<usize>) ->
         .read_response()
         .await?
         .context("the server hung up before greeting")?;
-    let mut session = client
+    client
         .login(&account.user, password)
         .await
         .map_err(|(err, _)| err)
-        .with_context(|| format!("logging in to {host} as {}", account.user))?;
-    for mailbox in &account.mailboxes {
-        let new = pull_mailbox(&mut session, account, mailbox, last)
-            .await
-            .with_context(|| format!("pulling {mailbox}"))?;
-        println!("{} {mailbox}: {new} new", account.name);
-    }
-    let _ = session.logout().await;
-    Ok(())
+        .with_context(|| format!("logging in to {host} as {}", account.user))
 }
 
 async fn pull_mailbox<T>(
@@ -612,6 +651,10 @@ mod tests {
             password_secret: None,
             secret_store: String::new(),
             mailboxes: inbox(),
+            from: None,
+            smtp_host: None,
+            smtp_port: submissions_port(),
+            sent_mailbox: None,
         };
         let raw = b"From: Ada Lovelace <ada@example.com>\r\nSubject: Hello\r\n  there\r\nDate: Thu, 22 Oct 2026 10:00:00 +0000\r\n\r\nHi\r\n";
         let e = index_entry("work/INBOX/1-1".into(), &account, "INBOX", None, raw);

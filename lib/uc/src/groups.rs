@@ -286,6 +286,16 @@ pub static MAIL: Group = Group {
             &["uc-mail-view"],
         ),
         exec(
+            "send",
+            "write a new mail, with attachments, and send it",
+            &["uc-mail-send"],
+        ),
+        exec(
+            "reply",
+            "reply to a mail, to the sender or to all",
+            &["uc-mail-reply"],
+        ),
+        exec(
             "configure",
             "DNS, reverse DNS and Stalwart settings for trusted mail",
             &["uc-mail-configure"],
