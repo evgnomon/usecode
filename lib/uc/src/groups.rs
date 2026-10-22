@@ -273,8 +273,18 @@ pub static NET: Group = Group {
 
 pub static MAIL: Group = Group {
     path: "uc mail",
-    summary: "look after the mail server on your cluster",
+    summary: "read your mail and look after the mail server on your cluster",
     commands: &[
+        exec(
+            "pull",
+            "fetch new mail from your accounts to this machine",
+            &["uc-mail-pull"],
+        ),
+        exec(
+            "view",
+            "read the mail on this machine, the newest first",
+            &["uc-mail-view"],
+        ),
         exec(
             "configure",
             "DNS, reverse DNS and Stalwart settings for trusted mail",

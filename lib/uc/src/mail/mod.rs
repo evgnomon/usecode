@@ -5,9 +5,11 @@
 //! `uc kube sync` runs. [`configure`] keeps its DNS, reverse DNS and
 //! Stalwart settings in shape, from the [`records`] mail needs, with
 //! [`stalwart`]'s management API, and [`settings`] is what mail apps need
-//! to use it. [`manage`] looks after its domains and accounts.
+//! to use it. [`manage`] looks after its domains and accounts, and
+//! [`inbox`] pulls the mail of any IMAP account to this machine to read.
 
 pub mod configure;
+pub mod inbox;
 pub mod manage;
 pub mod records;
 pub mod settings;
