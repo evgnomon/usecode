@@ -13,7 +13,7 @@ LIB_BUILD_DIR := $(CURDIR)/build
 LIB_BUILD_PREFIX := $(LIB_BUILD_DIR)/usr/local
 STAMP_DIR := $(CURDIR)/.stamps
 
-PYTHON_VERSION ?= $(shell cat .deb.jsonc | jsonc | jq -r '.version')
+PYTHON_VERSION ?= $(shell grep -v '^//' .deb.jsonc | jq -r '.version')
 PY_MAJMIN := $(basename $(PYTHON_VERSION))
 CPYTHON_SRC := $(ROOT_DIR)/third_party/python/cpython
 

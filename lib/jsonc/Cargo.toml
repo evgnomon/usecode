@@ -12,7 +12,3 @@ authors.workspace = true
 [lib]
 name = "jsonc"
 path = "src/lib.rs"
-
-[[bin]]
-name = "uc-data-jsonc"
-path = "src/main.rs"

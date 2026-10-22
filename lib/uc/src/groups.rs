@@ -42,8 +42,8 @@ const fn alias(path: &'static str, summary: &'static str, argv: &'static [&'stat
 }
 
 pub const ALL: &[&Group] = &[
-    &IMAGE, &REPO, &CERT, &DEB, &DB, &NET, &DAEMON, &VM, &NEW, &AGENT, &DATA, &PICK, &SYS,
-    &TERMINAL, &MAIL,
+    &IMAGE, &REPO, &CERT, &DEB, &DB, &NET, &DAEMON, &VM, &NEW, &AGENT, &PICK, &SYS, &TERMINAL,
+    &MAIL,
 ];
 
 pub static IMAGE: Group = Group {
@@ -420,29 +420,6 @@ fn agent_usage(args: &[OsString]) -> ExitCode {
         }
     }
 }
-
-pub static DATA: Group = Group {
-    path: "uc data",
-    summary: "convert and tidy CSV and JSON",
-    commands: &[
-        exec(
-            "pdf",
-            "render CSV from stdin as a PDF table",
-            &["uc-data-pdf"],
-        ),
-        exec(
-            "tidy",
-            "align CSV columns so the file reads well as plain text",
-            &["uc-data-tidy"],
-        ),
-        exec(
-            "jsonc",
-            "strip comments and trailing commas from JSONC",
-            &["uc-data-jsonc"],
-        ),
-    ],
-    fallback: None,
-};
 
 pub static PICK: Group = Group {
     path: "uc pick",

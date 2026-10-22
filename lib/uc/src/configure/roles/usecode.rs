@@ -3,9 +3,8 @@
 
 //! `usecode`: update, build, install and link the usecode checkout.
 //!
-//! Python's Makefile reads its version through `jsonc`, and vim links
-//! against the installed libpython, so those two are installed before the
-//! whole tree is built. The packages, Rust and the mise tools it needs are
+//! Vim links against the installed libpython, so Python is installed
+//! before the whole tree is built. The packages, Rust and the mise tools it needs are
 //! pulled in with it (`REQUIRES` in `roles/mod.rs`).
 
 use crate::configure::engine::{Outcome, Plan, Task};
@@ -61,21 +60,9 @@ pub fn tasks(plan: &mut Plan, _v: &Vars) {
     );
 
     plan.add(
-        Task::new("usecode/jsonc", "Build and install jsonc")
-            .tags(&["usecode"])
-            .after(["usecode/submodules", rust::RUSTUP, apt::BUILD_DEPS])
-            .sudo()
-            .run(|ctx| async move {
-                let dir = ctx.vars().usecode_dir.join("lib/jsonc");
-                let built = make(&ctx, &dir, None, false).await?;
-                Ok(built.and(make(&ctx, &dir, Some("install"), true).await?))
-            }),
-    );
-
-    plan.add(
         Task::new("usecode/python", "Build and install Python")
             .tags(&["usecode"])
-            .after(["usecode/jsonc"])
+            .after(["usecode/submodules", apt::BUILD_DEPS])
             .sudo()
             .run(|ctx| async move {
                 let dir = ctx.vars().usecode_dir.join("lib/python");

@@ -15,4 +15,5 @@ name = "uc-deb-build"
 path = "src/main.rs"
 
 [dependencies]
+jsonc = { path = "../jsonc" }
 serde_json = { workspace = true, features = ["preserve_order"] }

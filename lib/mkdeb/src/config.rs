@@ -4,14 +4,10 @@
 //! Reading package properties from `.deb.json` / `.deb.jsonc`.
 
 use std::path::Path;
-use std::process::{Command, Stdio};
 
 use serde_json::{Map, Value};
 
 use crate::log;
-use crate::sys;
-
-const JSONC: &str = "/usr/local/bin/uc-data-jsonc";
 
 /// Parsed top-level object of a `.deb.json` file (empty when absent).
 #[derive(Debug, Default)]
@@ -37,32 +33,23 @@ impl DebJson {
     }
 }
 
-/// Load `file` if it is a regular file; `.jsonc` files are piped through
-/// `/usr/local/bin/uc-data-jsonc` first.
+/// Load `file` if it is a regular file; `.jsonc` files have their comments
+/// and trailing commas stripped first.
 pub fn load(file: &str) -> DebJson {
     if !Path::new(file).is_file() {
         return DebJson::default();
     }
     log::info(&format!("Reading package properties from {file}"));
-    let content = match file.ends_with(".jsonc") {
-        true => strip_comments(file),
-        false => std::fs::read_to_string(file)
-            .unwrap_or_else(|e| log::die(&format!("Cannot read {file}: {e}"))),
-    };
+    let mut content =
+        std::fs::read(file).unwrap_or_else(|e| log::die(&format!("Cannot read {file}: {e}")));
+    if file.ends_with(".jsonc") {
+        jsonc::to_json_in_place(&mut content);
+    }
+    let content = String::from_utf8_lossy(&content);
     DebJson::parse(&content).unwrap_or_else(|e| {
         eprintln!("uc-deb-build: cannot parse {file}: {e}");
         DebJson::default()
     })
-}
-
-fn strip_comments(file: &str) -> String {
-    if !sys::is_executable(Path::new(JSONC)) {
-        log::die(&format!("{JSONC} is required to parse {file}."));
-    }
-    let input =
-        std::fs::File::open(file).unwrap_or_else(|e| log::die(&format!("Cannot read {file}: {e}")));
-    let out = sys::output(Command::new(JSONC).stdin(input).stderr(Stdio::inherit()));
-    String::from_utf8_lossy(&out).into_owned()
 }
 
 #[cfg(test)]

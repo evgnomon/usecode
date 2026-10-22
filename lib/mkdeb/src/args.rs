@@ -36,7 +36,7 @@ Options:
     "section": "utils", "priority": "optional",
     "homepage": "https://example.com", "license": "MIT",
     "root": "./pkg-root", "tmpDir": "./.tmp" }
-  .deb.jsonc may contain comments (stripped via /usr/local/bin/uc-data-jsonc).
+  .deb.jsonc may contain comments and trailing commas.
   CLI arguments override values from these files.
   "root" specifies a directory whose contents are copied into the package
   root. E.g. if root is "./pkg-root" and it contains

@@ -2,11 +2,9 @@
 # License-Identifier: HGL
 # Copyright (C) The Usecode Authors (see AUTHORS)
 
-# Gets a fresh CI runner ready for make dist: the apt build deps, uc,
-# uc-deb-build and jsonc on PATH (the lib dists pack with uc deb build, which
-# runs uc-deb-build, and lib/python reads its version with jsonc), jsonc in
-# /usr/local/bin too (uc-deb-build runs it from there for .deb.jsonc), and
-# CPython in /usr/local for vim to link against.
+# Gets a fresh CI runner ready for make dist: the apt build deps, uc
+# and uc-deb-build on PATH (the lib dists pack with uc deb build, which runs
+# uc-deb-build), and CPython in /usr/local for vim to link against.
 # The build and release workflows both run it, so a dist that would break
 # the release breaks the build first. SKIP (as in each_lib.sh) leaves out
 # the alacritty and python deps and the CPython build.
@@ -40,8 +38,6 @@ sudo apt-get install -y --no-install-recommends musl-tools jq \
     libvirt-dev libisoburn-dev libisofs-dev libburn-dev
 
 make -s -C lib/uc build
-make -s -C lib/jsonc link
-sudo env PATH="$PATH" RELEASE="$release" PROFILE="$profile" make -s -C lib/jsonc install
 make -s -C lib/mkdeb link
 
 [[ "$skip" == *" python "* ]] && exit 0

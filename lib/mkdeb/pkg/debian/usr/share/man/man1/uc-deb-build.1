@@ -122,8 +122,7 @@ If a
 file is present in the source directory it is preferred over
 .IR .deb.json .
 .I .deb.jsonc
-may contain comments and is preprocessed via
-.IR uc-data-jsonc .
+may contain comments and trailing commas.
 .PP
 Recognized keys:
 .BR name ", "
@@ -224,10 +223,6 @@ is required when a
 or
 .I .deb.jsonc
 file is present.
-.I uc-data-jsonc
-is required to parse
-.I .deb.jsonc
-files.
 .SH EXIT STATUS
 .B uc-deb-build
 exits 0 on success and a non-zero status on any error, including missing
