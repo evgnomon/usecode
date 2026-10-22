@@ -80,4 +80,4 @@ alias d='cd "$(fd --type d | sk)"'
 alias gr="uc-repo-open"
 alias k=kubectl
 alias t='uc terminal'
-alias j="jcode"
+alias jc="jcode"
