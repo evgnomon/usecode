@@ -3,5 +3,6 @@
 
 [toolchain]
 channel = "stable"
-# uc builds static for musl; rustup adds the target with the toolchain.
-targets = ["x86_64-unknown-linux-musl"]
+# uc builds static for musl, on x86_64 and on arm (Lima on Apple Silicon,
+# WSL2 on Windows on ARM); rustup adds the targets with the toolchain.
+targets = ["x86_64-unknown-linux-musl", "aarch64-unknown-linux-musl"]

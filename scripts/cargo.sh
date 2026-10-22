@@ -11,8 +11,13 @@ if [ "${RELEASE:-0}" != 1 ]; then
 	if command -v sccache >/dev/null; then
 		export RUSTC_WRAPPER="${RUSTC_WRAPPER:-sccache}"
 	fi
+	# mold goes in through cc, which only the x86_64 builds link with; the
+	# arm build links with rust-lld (see .cargo/config.toml).
 	if command -v mold >/dev/null; then
-		export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-fuse-ld=mold"
+		for triple in X86_64_UNKNOWN_LINUX_GNU X86_64_UNKNOWN_LINUX_MUSL; do
+			var="CARGO_TARGET_${triple}_RUSTFLAGS"
+			export "$var=${!var:-} -C link-arg=-fuse-ld=mold"
+		done
 	fi
 fi
 

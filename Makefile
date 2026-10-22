@@ -130,7 +130,7 @@ headers-check:
 	@$(MAKE) -s -C lib/hgl build
 	@$(HGL) check
 
-UC_REPO := target/x86_64-unknown-linux-musl/$(PROFILE)/uc-repo
+UC_REPO := target/$(shell uname -m)-unknown-linux-musl/$(PROFILE)/uc-repo
 
 authors:
 	@$(MAKE) -s -C lib/uc build

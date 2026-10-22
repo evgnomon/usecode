@@ -1,0 +1,8 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
+# The arm build links with the rust-lld that comes with the toolchain and
+# the musl libc that ships inside the target, so an x86_64 machine builds it
+# without a cross gcc: make -C lib/uc build TARGET=aarch64-unknown-linux-musl
+[target.aarch64-unknown-linux-musl]
+linker = "rust-lld"

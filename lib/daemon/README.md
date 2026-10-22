@@ -192,11 +192,11 @@ reinstalls - the service is restarted only when something changed.
 `uc daemon install --all` does that for every host, which is how a new
 version of the daemon rolls out.
 
-Building for the host needs the musl target on your machine, once:
-
-```sh
-rustup target add x86_64-unknown-linux-musl     # aarch64-unknown-linux-musl for arm hosts
-```
+Building for the host needs its musl target. rustup adds both
+`x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl` on its own
+(see `rust-toolchain.toml`), and an arm host's build links with the
+`rust-lld` that comes with Rust, so an x86_64 control node needs no cross
+compiler for it.
 
 Already have the box as an ssh alias (servers made with usecode.dev get
 one in `~/.ssh/config.d/`)? Then the name is all it needs:

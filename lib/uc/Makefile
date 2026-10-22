@@ -4,7 +4,8 @@
 ROOT_DIR ?= $(abspath ../..)
 SOURCES := $(shell find src tests -type f -name "*.rs") Cargo.toml $(ROOT_DIR)/Cargo.lock
 include $(ROOT_DIR)/lib/profile.mk
-TARGET ?= x86_64-unknown-linux-musl
+# The machine's own arch; TARGET=aarch64-unknown-linux-musl cross-builds for arm.
+TARGET ?= $(shell uname -m)-unknown-linux-musl
 BINS := uc uc-secret-encrypt uc-secret-decrypt uc-sync uc-kube-sync uc-push uc-pull uc-secret \
 	uc-image uc-repo uc-cert uc-deb uc-db uc-net uc-daemon uc-vm uc-new \
 	uc-agent uc-data uc-pick uc-sys uc-terminal uc-mail uc-mail-configure uc-mail-settings uc-mail-domain uc-mail-account uc-mail-pull uc-mail-view uc-mail-send uc-dns uc-fs uc-kube-logs uc-kube-usage uc-forward uc-workspace

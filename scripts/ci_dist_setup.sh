@@ -18,10 +18,19 @@ skip=" ${SKIP:-} "
 release="${RELEASE:-0}"
 profile="${PROFILE:-$([[ "$release" == 1 ]] && echo release || echo fast)}"
 bin="$HOME/.local/bin"
-uc_bin="$PWD/target/x86_64-unknown-linux-musl/$profile"
+uc_bin="$PWD/target/$(uname -m)-unknown-linux-musl/$profile"
 export PATH="$bin:$uc_bin:$PATH"
 echo "$bin" >>"${GITHUB_PATH:-/dev/null}"
 echo "$uc_bin" >>"${GITHUB_PATH:-/dev/null}"
+
+# The arm runner may come without Rust; rust-toolchain.toml picks the
+# toolchain and targets once rustup is there.
+if ! command -v cargo >/dev/null; then
+    curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+    export PATH="$HOME/.cargo/bin:$PATH"
+    echo "$HOME/.cargo/bin" >>"${GITHUB_PATH:-/dev/null}"
+    rustup toolchain install
+fi
 
 sudo apt-get update
 [[ "$skip" == *" alacritty "* ]] || make -C lib/alacritty build-deps

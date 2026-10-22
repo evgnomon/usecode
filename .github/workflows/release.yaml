@@ -1,8 +1,9 @@
 # License-Identifier: HGL
 # Copyright (C) The Usecode Authors (see AUTHORS)
 
-# Builds the Debian packages with make dist on a v* tag and attaches them,
-# with their SHA256SUMS, to the tag's GitHub release.
+# Builds the Debian packages with make dist on a v* tag, on x86_64 and on
+# arm, and attaches both sets, with one SHA256SUMS, to the tag's GitHub
+# release.
 name: Release
 on:
   workflow_dispatch:
@@ -12,11 +13,21 @@ on:
 
 jobs:
   dist:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - runs-on: ubuntu-latest
+            arch: amd64
+          # The vm image and its libvirt domain are x86_64 only.
+          - runs-on: ubuntu-24.04-arm
+            arch: arm64
+            skip: vm
+    runs-on: ${{ matrix.runs-on }}
     permissions:
-      contents: write
+      contents: read
     env:
       RELEASE: 1
+      SKIP: ${{ matrix.skip }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -27,11 +38,29 @@ jobs:
         run: ./scripts/ci_dist_setup.sh
       - name: Dist
         run: make dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-${{ matrix.arch }}
+          path: dist/*.deb
+          if-no-files-found: error
+
+  release:
+    needs: dist
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
       - name: Checksums
         run: cd dist && sha256sum *.deb > SHA256SUMS
       - name: Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
           gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --verify-tag --generate-notes

@@ -455,7 +455,7 @@ terminal are its own.
 ## Build
 
 ```sh
-make build    # cargo build --profile fast (RELEASE=1 for release) --target x86_64-unknown-linux-musl
+make build    # cargo build --profile fast (RELEASE=1 for release) --target $(uname -m)-unknown-linux-musl
 make check    # fmt --check, clippy -D warnings, tests
 make install  # install uc and its uc-* subcommands to /usr/local/bin
 ```
@@ -463,12 +463,22 @@ make install  # install uc and its uc-* subcommands to /usr/local/bin
 `make install` honours `DESTDIR` (with a trailing slash) and `PREFIX`, e.g.
 `make install PREFIX=$HOME/.local`.
 
-The default target is `x86_64-unknown-linux-musl`, added with `rustup` on first
-use. The crate has no C dependencies, so the result is a static-pie executable
+The default target is the musl one for your machine's arch
+(`x86_64-unknown-linux-musl` or `aarch64-unknown-linux-musl`), added with
+`rustup` on first use. The crate has no C dependencies, so the result is a static-pie executable
 with no shared libraries at all — it runs on any Linux of the same
 architecture, including a `scratch` container, and needs no `openssl` on the
 host. `TARGET=` picks another triple, e.g. a dynamically linked glibc build:
 
 ```sh
 make build TARGET=x86_64-unknown-linux-gnu
+```
+
+Got a Mac with Apple Silicon or a Windows on ARM laptop? uc runs there too,
+inside a Lima VM or WSL2, which are aarch64 Linux. An x86_64 machine builds
+that arm binary for you, linked with the `rust-lld` that comes with Rust, so
+there's no cross compiler to install:
+
+```sh
+make build TARGET=aarch64-unknown-linux-musl   # target/aarch64-unknown-linux-musl/fast/
 ```
