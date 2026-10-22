@@ -164,6 +164,7 @@ anyhow.workspace = true
 base64 = "0.23"
 cbc = "0.2"
 clap = { workspace = true, features = ["derive", "env"] }
+flate2 = "1"
 getrandom.workspace = true
 hmac = "0.13"
 libc.workspace = true
@@ -180,6 +181,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_yaml.workspace = true
 sha1 = "0.11"
 sha2 = "0.11"
+tar = { version = "0.4", default-features = false }
 tempfile.workspace = true
 tokio = { workspace = true, features = ["fs", "io-std", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time", "io-util"] }
 zeroize = "1"

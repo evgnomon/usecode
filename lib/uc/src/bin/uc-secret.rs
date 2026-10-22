@@ -11,13 +11,15 @@
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::ffi::OsString;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use uc::dispatch;
 use uc::password::{self, Charset};
 use uc::secret::{self, Store};
+use uc::{backup, cli, dispatch};
+use zeroize::Zeroizing;
 
-const SUMMARY: &str = "generate secrets and manage the ansible-vault secret stores";
+const SUMMARY: &str =
+    "generate secrets, manage the ansible-vault secret stores and back up SSH and GPG keys";
 
 /// Generate secrets and manage the ansible-vault secret stores.
 ///
@@ -87,6 +89,43 @@ enum Cmd {
         #[command(flatten)]
         name: Name,
     },
+    /// Save every user's ~/.ssh and ~/.gnupg and the SSH host keys to a
+    /// password encrypted tar.gz, with their owners and modes. Run as root
+    /// to take them all; otherwise only what is readable is taken.
+    Backup {
+        /// The archive to write [default:
+        /// <hostname>-secrets-<YYYYMMDD>.tar.gz.asc].
+        file: Option<PathBuf>,
+
+        #[command(flatten)]
+        kinds: KindFlags,
+
+        /// Write a plain tar.gz, without asking for a password.
+        #[arg(long)]
+        no_password: bool,
+
+        /// Take the secrets of the system mounted at DIR instead of /.
+        #[arg(long, value_name = "DIR", default_value = "/")]
+        root: PathBuf,
+    },
+    /// Put the secrets of a `uc secret backup` back in place, with the same
+    /// modes and owners (by name, else by id). Existing files are kept. An
+    /// encrypted backup asks for its password.
+    Restore {
+        /// The archive to restore.
+        file: PathBuf,
+
+        #[command(flatten)]
+        kinds: KindFlags,
+
+        /// Replace existing files.
+        #[arg(short, long)]
+        force: bool,
+
+        /// Restore into the system mounted at DIR instead of /.
+        #[arg(long, value_name = "DIR", default_value = "/")]
+        root: PathBuf,
+    },
     /// Encrypt a file to <file>.asc with a password and remove the original.
     #[command(disable_help_flag = true)]
     Encrypt {
@@ -137,6 +176,45 @@ impl Name {
 
     fn store(&self) -> anyhow::Result<Store> {
         Store::open(&self.resolve())
+    }
+}
+
+#[derive(Args)]
+struct KindFlags {
+    /// Leave the SSH keys out.
+    #[arg(long)]
+    no_ssh: bool,
+
+    /// Leave the GPG keys out.
+    #[arg(long)]
+    no_gpg: bool,
+}
+
+impl KindFlags {
+    fn kinds(&self) -> backup::Kinds {
+        backup::Kinds {
+            ssh: !self.no_ssh,
+            gpg: !self.no_gpg,
+        }
+    }
+}
+
+/// Asks twice for the password to encrypt a backup with.
+fn new_password() -> anyhow::Result<Zeroizing<String>> {
+    let password = cli::prompt_password("enter backup password: ")?;
+    if password.is_empty() {
+        anyhow::bail!("empty password; use --no-password for a plain archive");
+    }
+    if *password != *cli::prompt_password("verify backup password: ")? {
+        anyhow::bail!("passwords do not match");
+    }
+    Ok(password)
+}
+
+/// Prints what a backup or restore skipped.
+fn warn(report: &backup::Report) {
+    for warning in &report.warnings {
+        eprintln!("uc-secret: {warning}");
     }
 }
 
@@ -215,6 +293,53 @@ fn run(cmd: Cmd) -> anyhow::Result<ExitCode> {
             }
         }
         Cmd::Rotate { name } => name.store()?.rotate()?,
+        Cmd::Backup {
+            file,
+            kinds,
+            no_password,
+            root,
+        } => {
+            let password = if no_password {
+                None
+            } else {
+                Some(new_password()?)
+            };
+            let file = file.unwrap_or_else(|| backup::default_name(password.is_some()).into());
+            let password = password.as_ref().map(|p| p.as_bytes());
+            let report = backup::backup(&root, kinds.kinds(), &file, password)?;
+            warn(&report);
+            println!(
+                "Saved {} entries ({}) to {}",
+                report.done.len(),
+                backup::counts(&report.done),
+                file.display()
+            );
+        }
+        Cmd::Restore {
+            file,
+            kinds,
+            force,
+            root,
+        } => {
+            let report = backup::restore(&file, &root, kinds.kinds(), force, || {
+                Ok(cli::prompt_password("enter backup password: ")?)
+            })?;
+            warn(&report);
+            for path in &report.done {
+                println!("/{}", path.display());
+            }
+            if !report.kept.is_empty() {
+                eprintln!(
+                    "uc-secret: kept {} existing files; use -f to replace them",
+                    report.kept.len()
+                );
+            }
+            println!(
+                "Restored {} entries ({})",
+                report.done.len(),
+                backup::counts(&report.done)
+            );
+        }
         Cmd::Encrypt { args } => return Ok(dispatch::exec("uc-secret-encrypt", args)),
         Cmd::Decrypt { args } => return Ok(dispatch::exec("uc-secret-decrypt", args)),
         Cmd::Server { args } => return Ok(dispatch::exec("uc-secret-server", args)),

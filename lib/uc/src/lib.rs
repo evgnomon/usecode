@@ -10,7 +10,8 @@
 //! `uc-sync`, [`kube`] the same configurator for a Kubernetes cluster
 //! behind `uc-kube-sync`, [`registry`] the tunnelled image transfer behind
 //! `uc-push` and `uc-pull`, and [`password`], [`secret`] and [`repo`] the
-//! generator and ansible-vault secret stores behind `uc-secret`.
+//! generator and ansible-vault secret stores behind `uc-secret`, with
+//! [`backup`] its SSH and GPG key backup.
 //!
 //! [`group`] and [`groups`] are the command groups (`uc image`, `uc repo`,
 //! ...) that hand over to the standalone tools, found through [`dispatch`],
@@ -24,6 +25,7 @@
 //! [`workspace`] is `uc workspace` (`uc ws`), dev containers on the cluster.
 
 pub mod authors;
+pub mod backup;
 pub mod chat;
 pub mod cli;
 pub mod configure;
