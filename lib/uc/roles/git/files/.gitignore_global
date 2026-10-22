@@ -13,3 +13,4 @@ configs/c.kdbx
 /.run
 /.claude
 /graphify-out
+/.jcode
