@@ -80,4 +80,17 @@ alias d='cd "$(fd --type d | sk)"'
 alias gr="uc-repo-open"
 alias k=kubectl
 alias t='uc terminal'
-alias jc="jcode"
+# jcode can leave the tty raw after an in-place self-update (exec handoff),
+# so put back whatever state the shell had before it started.
+unalias jc 2>/dev/null
+jc() {
+	local tty_state
+	tty_state=$(stty -g 2>/dev/null)
+	jcode "$@"
+	local rc=$?
+	[ -n "$tty_state" ] || return $rc
+	stty "$tty_state" 2>/dev/null
+	# Mouse tracking, focus events and the kitty keyboard protocol off.
+	printf '\e[?1000l\e[?1002l\e[?1003l\e[?1006l\e[?1004l\e[<u'
+	return $rc
+}
