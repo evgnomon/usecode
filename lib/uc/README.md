@@ -52,6 +52,9 @@ Up and Down bring back what you typed before, in uc or in bash, even in an earli
 and Ctrl-R finds it with fzf, just like in bash. Changed your mind while it
 works? Esc or Ctrl-C stops it, and whatever it was running, and you're back at
 the prompt; Ctrl-C at the prompt leaves uc.
+No OpenRouter key yet? No problem: `uc` starts anyway with the AI off, and
+every line you type just runs in bash. Set the key whenever you like and
+the model is there next time.
 
 ```sh
 export OPENROUTER_API_KEY=sk-or-...           # https://openrouter.ai/keys

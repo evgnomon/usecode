@@ -40,8 +40,9 @@
 //! message count, an estimate before the first turn, the real token count of
 //! the last one, the model's window, and what the session has spent.
 //! What the model is told about all this is the main skill, `chat/main.md`, always in its system prompt. The key comes from
-//! `OPENROUTER_API_KEY`, the model from `UC_MODEL`, the reasoning effort from
-//! `UC_EFFORT`. Without `UC_MODEL` but with `TYPESAFE_API_KEY`, a TypeSafe
+//! `OPENROUTER_API_KEY`; without one the AI is off and every line runs in
+//! bash, like a plain shell with uc's history and confirmations. The model
+//! comes from `UC_MODEL`, the reasoning effort from `UC_EFFORT`. Without `UC_MODEL` but with `TYPESAFE_API_KEY`, a TypeSafe
 //! model (`TYPESAFE_MODEL`) reads each line and picks the OpenRouter model
 //! from `MODELS` that suits it best; otherwise it is GLM 5.3 Flash. GPT-6
 //! Luna joins the pool for short but hard thinking, cheap and punching above
@@ -438,10 +439,9 @@ async fn run(
     shell: bool,
     search: Option<Search>,
 ) -> Result<()> {
-    let key = std::env::var("OPENROUTER_API_KEY")
-        .ok()
-        .filter(|k| !k.trim().is_empty())
-        .ok_or_else(|| anyhow!("set OPENROUTER_API_KEY (https://openrouter.ai/keys)"))?;
+    // Without a key the AI is off and every line runs in bash.
+    let key = env("OPENROUTER_API_KEY");
+    let ai = key.is_some();
     let env_or = |name: &str, default: &str| {
         std::env::var(name)
             .ok()
@@ -455,7 +455,7 @@ async fn run(
         .filter(|_| env("UC_MODEL").is_none())
         .map(|key| (key, env_or("TYPESAFE_MODEL", DEFAULT_ROUTER)));
     let mut session = Session {
-        key: key.trim().to_string(),
+        key: key.unwrap_or_default().trim().to_string(),
         messages: vec![json!({"role": "system", "content": system_prompt(&model, ask, output)})],
         planner: model.clone(),
         plan: Vec::new(),
@@ -477,7 +477,7 @@ async fn run(
         last_usage: None,
         spent: 0.0,
     };
-    if shell {
+    if shell || !ai {
         // Read the user's aliases while they type, not when the first line comes.
         std::thread::spawn(user_shell);
     }
@@ -511,6 +511,15 @@ async fn run(
         if matches!(line, "/exit" | "/quit" | "exit") {
             return Ok(());
         }
+        if !ai
+            && matches!(
+                line.split_whitespace().next(),
+                Some("/model" | "/planner" | "/context")
+            )
+        {
+            eprintln!("· AI off: set OPENROUTER_API_KEY to turn it on");
+            continue;
+        }
         if let Some(name) = line
             .strip_prefix("/model")
             .filter(|r| r.is_empty() || r.starts_with(' '))
@@ -538,7 +547,14 @@ async fn run(
         session.allow_turn = approved;
         // A typed command runs straight away, without the model: no routing,
         // no `· models` print, and nothing about it in the next turn.
-        let command = typed_command(line).filter(|_| shell);
+        let command = if ai {
+            typed_command(line).filter(|_| shell)
+        } else {
+            Some(line.strip_prefix('!').unwrap_or(line).trim()).filter(|c| !c.is_empty())
+        };
+        if command.is_none() && !ai {
+            continue;
+        }
         if command.is_none() {
             // The models the line goes to, printed on their own line when
             // they are new or routing has changed them; the same again stays
