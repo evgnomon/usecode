@@ -103,3 +103,4 @@ dist-ssr
 **/secrets.yml
 
 /target
+settings.json.lock

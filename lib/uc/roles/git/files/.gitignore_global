@@ -14,3 +14,4 @@ configs/c.kdbx
 /.claude
 /graphify-out
 /.jcode
+/.test-output
