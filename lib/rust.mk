@@ -7,7 +7,8 @@
 # EXTRA_BINS (other binaries the same package builds and installs - e.g.
 # the daemon's control-node tools), EXTRA_SOURCES, PREFIX and ALIASES
 # (other names install and link add as symlinks to BIN), and then
-# includes this file.
+# includes this file. CARGO_ARGS are added to cargo build, e.g. --bin to
+# leave out a binary that is built on its own.
 
 ROOT_DIR ?= $(abspath $(dir $(lastword $(MAKEFILE_LIST)))..)
 include $(ROOT_DIR)/lib/profile.mk
@@ -30,6 +31,7 @@ LINK_ALIASES := $(addprefix $(dir $(LINK_BIN)),$(ALIASES))
 # The old ALIASES names stay out of it.
 DEB_ROOT ?= $(ROOT_DIR)/lib/uc/pkg/debian
 DEB_BINS := $(filter uc-%,$(BINS))
+CARGO_ARGS ?=
 
 .PHONY: all build check install uninstall link unlink deb-stage test lint fmt clean
 
@@ -38,7 +40,7 @@ all: build
 build: $(OUTPUTS)
 
 $(OUTPUTS) &: $(SOURCES)
-	@$(CARGO) build -p $(NAME) --profile $(PROFILE)
+	@$(CARGO) build -p $(NAME) --profile $(PROFILE) $(CARGO_ARGS)
 	@touch $(OUTPUTS)
 
 install: $(INSTALL_BINS) $(INSTALL_ALIASES)

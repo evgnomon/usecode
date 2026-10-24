@@ -35,9 +35,22 @@ pub(crate) fn user_repo(repo: &str) -> PathBuf {
     ))
 }
 
-/// `$HOME/src/github.com/$USER/config/secrets`
+/// `rel` in the user config, `~/.config/usecode`, or in the config
+/// repository `$HOME/src/github.com/$USER/config` while it is not linked
+/// there yet. A binary install has only the first.
+pub(crate) fn user_config(rel: &str) -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let path = PathBuf::from(format!("{home}/.config/usecode/{rel}"));
+    if path.exists() {
+        path
+    } else {
+        user_repo(&format!("config/{rel}"))
+    }
+}
+
+/// `secrets` in the user config.
 pub fn dir() -> PathBuf {
-    user_repo("config/secrets")
+    user_config("secrets")
 }
 
 /// The files making up one store.

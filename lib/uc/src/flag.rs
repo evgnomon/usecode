@@ -15,7 +15,7 @@
 //! anything else on, so `UC_NO_SHELL=0` undoes a `no_shell: true`.
 
 use crate::configure::vars::read_user_config;
-use crate::secret::user_repo;
+use crate::secret::user_config;
 use serde_yaml::Value;
 use std::sync::OnceLock;
 
@@ -64,7 +64,7 @@ fn truthy(value: &str) -> bool {
 fn config() -> &'static serde_yaml::Mapping {
     static CONFIG: OnceLock<serde_yaml::Mapping> = OnceLock::new();
     CONFIG.get_or_init(|| {
-        let file = user_repo("config/config.yaml");
+        let file = user_config("config.yaml");
         if !file.is_file() {
             return Default::default();
         }

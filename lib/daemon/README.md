@@ -183,16 +183,19 @@ it, binary and systemd service:
 uc daemon install edge root@203.0.113.10
 ```
 
-Run it from anywhere inside a checkout of this repo. It checks that the
-host is reachable and runs systemd, adds it to the inventory, builds a
-static `uc-net-mesh` for the host's architecture, copies it over and runs
+Run it from anywhere. It checks that the host is reachable and runs
+systemd, adds it to the inventory, downloads the static `usecoded` for
+the host's architecture from the GitHub release your uc came from
+(checked against the release's `SHA256SUMS`), copies it over and runs
 `usecoded setup` there, which installs the binary and the unit. No
 vault, no keys, no addresses. Run it again for the same name and it just
 reinstalls - the service is restarted only when something changed.
 `uc daemon install --all` does that for every host, which is how a new
 version of the daemon rolls out.
 
-Building for the host needs its musl target. rustup adds both
+Working on the daemon itself? Run it from inside a checkout of this repo
+and it builds `usecoded` from your checkout instead. That needs the
+host's musl target. rustup adds both
 `x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl` on its own
 (see `rust-toolchain.toml`), and an arm host's build links with the
 `rust-lld` that comes with Rust, so an x86_64 control node needs no cross

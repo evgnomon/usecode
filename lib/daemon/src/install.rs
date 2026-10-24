@@ -5,8 +5,9 @@
 //! control node.
 //!
 //! It only puts the daemon on the host - no mesh, no keys, no vault. For
-//! each host it builds usecoded for the host's architecture, copies it
-//! over and runs `usecoded setup` there, which installs the binary and
+//! each host it gets usecoded for the host's architecture - downloaded
+//! from the GitHub release of this uc, or built when run inside a usecode
+//! checkout - copies it over and runs `usecoded setup` there, which installs the binary and
 //! the systemd unit (see [`crate::setup`]). Whatever the mesh needs is
 //! the daemon's own business once it runs.
 //!
@@ -16,8 +17,13 @@
 //! a new version of the daemon.
 
 use std::collections::BTreeMap;
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
+
+use sha2::{Digest, Sha256};
 
 use crate::error::{Context, Result};
 use crate::inventory::{self, Host, Inventory, NewHost};
@@ -38,8 +44,10 @@ sets the mesh up itself once `uc net mesh add NAME` and
   --all     reinstall every host in the inventory, e.g. to roll out a
             new version of the daemon
 
-Run it from inside a usecode checkout. Running it again for a host that
-is already installed reinstalls it.";
+usecoded comes from the GitHub release of this uc, checked against the
+release's SHA256SUMS. Run from inside a usecode checkout, it is built
+from the checkout instead. Running it again for a host that is already
+installed reinstalls it.";
 
 pub const SUMMARY: &str = "install the usecode daemon on a host with systemd";
 
@@ -131,54 +139,122 @@ fn install(root: &Path, builds: &mut Builds, host: &Host) -> Result<()> {
     result
 }
 
-/// usecoded builds, one per target architecture, so installing on
-/// twenty hosts doesn't mean twenty compiles.
+/// usecoded binaries, one per target architecture, so installing on
+/// twenty hosts doesn't mean twenty downloads or compiles.
 #[derive(Default)]
 struct Builds(BTreeMap<String, PathBuf>);
 
 impl Builds {
-    /// A static (musl) usecoded for `arch` as `uname -m` reports it,
-    /// so it runs on a target whose libc is older than the control
-    /// node's. Cargo's own incremental state in the per-architecture
-    /// cache under ~/.cache makes a rebuild cheap across runs too.
+    /// A static (musl) usecoded for `arch` as `uname -m` reports it, so
+    /// it runs on a target whose libc is older than the control node's:
+    /// built from the checkout at `root`, or downloaded when `root` is
+    /// empty.
     fn get(&mut self, root: &Path, arch: &str) -> Result<PathBuf> {
         if let Some(path) = self.0.get(arch) {
             return Ok(path.clone());
         }
-        let triple = match arch {
-            "x86_64" => "x86_64-unknown-linux-musl",
-            "aarch64" => "aarch64-unknown-linux-musl",
-            other => bail!("no build for a {other} host (x86_64 and aarch64 are supported)"),
-        };
-        let home = std::env::var_os("HOME").ok_or_else(|| err!("HOME is not set"))?;
-        let cache = Path::new(&home).join(".cache/uc-daemon/build").join(arch);
-
-        println!("building usecoded for {triple}");
-        let status = Command::new("cargo")
-            .args([
-                "build",
-                "--release",
-                "--quiet",
-                "-p",
-                "uc-daemon",
-                "--bin",
-                "usecoded",
-            ])
-            .args(["--target", triple])
-            .arg("--target-dir")
-            .arg(&cache)
-            .current_dir(root)
-            .status()
-            .ctx("run cargo")?;
-        if !status.success() {
-            bail!(
-                "cargo build for {triple} failed ({status}); the target may need \
-                 `rustup target add {triple}`"
-            );
+        if !matches!(arch, "x86_64" | "aarch64") {
+            bail!("no usecoded for a {arch} host (x86_64 and aarch64 are supported)");
         }
-
-        let path = cache.join(triple).join("release/usecoded");
+        let home = std::env::var_os("HOME").ok_or_else(|| err!("HOME is not set"))?;
+        let cache = Path::new(&home).join(".cache/uc-daemon");
+        let path = if root.as_os_str().is_empty() {
+            download(&cache.join("release"), arch)?
+        } else {
+            build(root, &cache.join("build").join(arch), arch)?
+        };
         self.0.insert(arch.to_string(), path.clone());
         Ok(path)
     }
 }
+
+/// Build usecoded for `arch` from the checkout at `root`. Cargo's own
+/// incremental state in `cache` makes a rebuild cheap across runs.
+fn build(root: &Path, cache: &Path, arch: &str) -> Result<PathBuf> {
+    let triple = format!("{arch}-unknown-linux-musl");
+    println!("building usecoded for {triple}");
+    let status = Command::new("cargo")
+        .args([
+            "build",
+            "--release",
+            "--quiet",
+            "-p",
+            "uc-daemon",
+            "--bin",
+            "usecoded",
+        ])
+        .args(["--target", &triple])
+        .arg("--target-dir")
+        .arg(cache)
+        .current_dir(root)
+        .status()
+        .ctx("run cargo")?;
+    if !status.success() {
+        bail!(
+            "cargo build for {triple} failed ({status}); the target may need \
+             `rustup target add {triple}`"
+        );
+    }
+    Ok(cache.join(&triple).join("release/usecoded"))
+}
+
+/// The release this uc came from, set by make (see /Makefile); without
+/// one, the latest release.
+const RELEASE: Option<&str> = option_env!("VERSION");
+
+/// Download `usecoded-ARCH` from the GitHub release into `dir`, checked
+/// against the release's SHA256SUMS.
+fn download(dir: &Path, arch: &str) -> Result<PathBuf> {
+    let (base, tag) = match RELEASE.filter(|v| !v.is_empty()) {
+        Some(v) => (format!("{RELEASES}/download/v{v}"), format!("v{v}")),
+        None => (format!("{RELEASES}/latest/download"), "latest".to_string()),
+    };
+    let name = format!("usecoded-{arch}");
+    println!("downloading {name} from the {tag} release");
+
+    // graviola is pure Rust, so the static builds stay free of C.
+    let _ = rustls_graviola::default_provider().install_default();
+    let client = reqwest::blocking::Client::builder()
+        .connect_timeout(Duration::from_secs(15))
+        .timeout(Duration::from_secs(600))
+        .build()
+        .ctx("make an HTTP client")?;
+    let get = |file: &str| -> Result<Vec<u8>> {
+        let url = format!("{base}/{file}");
+        let response = client
+            .get(&url)
+            .send()
+            .and_then(|r| r.error_for_status())
+            .with_ctx(|| format!("download {url}"))?;
+        Ok(response
+            .bytes()
+            .with_ctx(|| format!("download {url}"))?
+            .to_vec())
+    };
+
+    let sums = String::from_utf8_lossy(&get("SHA256SUMS")?).into_owned();
+    let want = sums
+        .lines()
+        .find_map(|l| {
+            let (sum, file) = l.split_once(char::is_whitespace)?;
+            (file.trim_start_matches([' ', '*']) == name).then_some(sum)
+        })
+        .ok_or_else(|| err!("the {tag} release has no {name} in its SHA256SUMS"))?;
+    let binary = get(&name)?;
+    let got: String = Sha256::digest(&binary)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    if got != want {
+        bail!("{name} from the {tag} release does not match its SHA256SUMS");
+    }
+
+    fs::create_dir_all(dir).with_ctx(|| format!("create {}", dir.display()))?;
+    let path = dir.join(&name);
+    fs::write(&path, &binary).with_ctx(|| format!("write {}", path.display()))?;
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o755))
+        .with_ctx(|| format!("chmod {}", path.display()))?;
+    Ok(path)
+}
+
+const RELEASES: &str = "https://github.com/evgnomon/usecode/releases";

@@ -147,7 +147,8 @@ pub struct Inventory {
     /// The inventory root, e.g. `~/.config/usecode/inventory`.
     pub dir: PathBuf,
     /// The directory ansible commands should run from - lib/daemon of
-    /// the usecode checkout, which is where ansible.cfg lives.
+    /// the usecode checkout, which is where ansible.cfg lives. Empty
+    /// outside a checkout.
     pub root: PathBuf,
 
     pub settings: Settings,
@@ -196,21 +197,18 @@ pub fn init(dir: &Path) -> Result<()> {
 }
 
 /// lib/daemon of the usecode checkout, where ansible.cfg lives: looked
-/// for from the current directory up, falling back to the checkout this
-/// binary was built from.
-pub fn checkout() -> PathBuf {
-    let built_from = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let Ok(mut dir) = std::env::current_dir() else {
-        return built_from;
-    };
+/// for from the current directory up. None outside a checkout, which is
+/// the usual case for uc installed from its package.
+pub fn checkout() -> Option<PathBuf> {
+    let mut dir = std::env::current_dir().ok()?;
     loop {
         for base in [dir.clone(), dir.join("lib/daemon")] {
             if base.join("ansible.cfg").exists() && base.join("Cargo.toml").exists() {
-                return base;
+                return Some(base);
             }
         }
         if !dir.pop() {
-            return built_from;
+            return None;
         }
     }
 }
@@ -240,7 +238,7 @@ impl Inventory {
             .with_ctx(|| format!("resolve {}", dir.display()))?;
         let mut inv = Inventory {
             dir: abs,
-            root: checkout(),
+            root: checkout().unwrap_or_default(),
             settings: Settings::default(),
             hosts: Vec::new(),
         };

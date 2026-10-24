@@ -178,17 +178,14 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
             "Merge the Brave bookmarks into the config urls",
         )
         .tags(&["brave_bookmarks"])
-        .when(
-            v.has_config && v.config_dir.is_dir(),
-            format!("{} is not cloned", v.config_dir.display()),
-        )
+        .when(v.has_config, "no user config")
         .run(move |ctx| async move {
             let v = ctx.vars();
-            let config_file = v.config_dir.join("config.yaml");
+            let config_file = &v.config_file;
 
             // The config as it is on disk, so the merge keeps everything
             // else in the file as it is.
-            let raw = std::fs::read_to_string(&config_file)
+            let raw = std::fs::read_to_string(config_file)
                 .with_context(|| format!("reading {}", config_file.display()))?;
             let config: Value = serde_yaml::from_str(&raw)
                 .with_context(|| format!("parsing {}", config_file.display()))?;
@@ -272,7 +269,7 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
                 }
             }
             let updated = format!("{}{}{}", &raw[..start + 1], render(&merged), &raw[end..]);
-            std::fs::write(&config_file, updated)
+            std::fs::write(config_file, updated)
                 .with_context(|| format!("writing {}", config_file.display()))?;
             Ok(Outcome::Changed)
         }),

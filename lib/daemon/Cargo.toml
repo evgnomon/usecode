@@ -37,8 +37,11 @@ path = "src/bin/uc-daemon-ctl.rs"
 ansible_vault = { path = "../ansible_vault" }
 base64 = "0.23"
 libc.workspace = true
+reqwest = { workspace = true, features = ["blocking", "rustls-no-provider"] }
+rustls-graviola = "0.4"
 serde = { workspace = true, features = ["derive"] }
 serde_yaml.workspace = true
+sha2 = "0.11"
 tempfile.workspace = true
 toml.workspace = true
 x25519-dalek = { version = "3", features = ["static_secrets"] }

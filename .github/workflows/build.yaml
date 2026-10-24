@@ -42,4 +42,4 @@ jobs:
       - name: Dist
         run: make dist
       - name: Checksums
-        run: cd dist && sha256sum *.deb > SHA256SUMS
+        run: cd dist && sha256sum *.deb usecoded-* > SHA256SUMS

@@ -26,7 +26,7 @@
 //! used. What gets checked in is up to the user's `.gitignore`.
 
 use crate::configure::vars::{active_profile, read_user_config};
-use crate::secret::{status, user_repo};
+use crate::secret::{status, user_config};
 use anyhow::{Context, Result, bail};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -91,7 +91,7 @@ fn split(path: &str) -> Result<Vec<&str>> {
 }
 
 fn config_file() -> PathBuf {
-    user_repo("config/config.yaml")
+    user_config("config.yaml")
 }
 
 /// Where profile `name` is in `profiles`: `<name>.yaml`, or else `<name>/`.
@@ -145,7 +145,7 @@ pub fn list() -> Result<Vec<String>> {
 }
 
 fn profiles_dir() -> PathBuf {
-    user_repo("config/profiles")
+    user_config("profiles")
 }
 
 /// The active profile path, following the `profile.yaml` links down.

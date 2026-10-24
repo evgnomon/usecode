@@ -141,6 +141,9 @@ pub struct Vars {
     pub cache_dir: PathBuf,
     /// `blueprint_config_dir`: the user's private config repository.
     pub config_dir: PathBuf,
+    /// The user config file: `~/.config/usecode/config.yaml`, or the one in
+    /// `config_dir` while `~/.config/usecode` is not there yet.
+    pub config_file: PathBuf,
     /// Whether the user config file exists.
     pub has_config: bool,
     pub config: UserConfig,
@@ -169,6 +172,18 @@ pub struct LoadOptions {
     pub overlay: Vec<String>,
 }
 
+/// The user config file: `~/.config/usecode/config.yaml`, which is the
+/// config repository once it is linked there, or else the one in the config
+/// repository `config_dir`, before the first sync links it.
+pub fn user_config_file(home: &Path, config_dir: &Path) -> PathBuf {
+    let file = home.join(".config/usecode/config.yaml");
+    if file.is_file() {
+        file
+    } else {
+        config_dir.join("config.yaml")
+    }
+}
+
 impl Vars {
     pub fn load(opts: LoadOptions) -> Result<Vars> {
         let facts = Facts::gather();
@@ -180,7 +195,7 @@ impl Vars {
         let config_dir = home.join("src/github.com").join(&user).join("config");
         let config_file = opts
             .config_file
-            .unwrap_or_else(|| config_dir.join("config.yaml"));
+            .unwrap_or_else(|| user_config_file(&home, &config_dir));
         let has_config = config_file.is_file();
 
         let profile = match opts.profile {
@@ -237,6 +252,7 @@ impl Vars {
             user,
             cache_dir,
             config_dir,
+            config_file: config_file.clone(),
             has_config,
             config: UserConfig::default(),
             assets,
@@ -382,6 +398,7 @@ impl Vars {
             local_bin: home.join(".local/bin"),
             cache_dir: home.join(".cache/blueprint"),
             config_dir: home.join("config"),
+            config_file: home.join(".config/usecode/config.yaml"),
             home,
             user: "tester".into(),
             has_config: false,

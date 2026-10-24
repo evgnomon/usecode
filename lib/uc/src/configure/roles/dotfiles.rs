@@ -227,11 +227,19 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
         )
         .tags(&["dotfiles"])
         .when(
-            v.config_dir.is_dir(),
-            format!("{} is not cloned", v.config_dir.display()),
+            v.config_dir.is_dir() || v.home.join(".config/usecode").is_dir(),
+            format!(
+                "there is no ~/.config/usecode and {} is not cloned",
+                v.config_dir.display()
+            ),
         )
         .run(move |ctx| async move {
             let dest = ctx.vars().home.join(".config/usecode");
+            // A config made right in ~/.config/usecode, with no repository
+            // to link it to, is already where it belongs.
+            if !config_dir.is_dir() {
+                return Ok(Outcome::Ok);
+            }
             file::link(&ctx, &config_dir, &dest, false)
                 .await
                 .with_context(|| {
