@@ -21,7 +21,7 @@
     "enabled": true,
     "mode": "hold"
   },
-  "theme": "custom:usecode",
+  "theme": "auto",
   "skipAutoPermissionPrompt": true,
   "autoMode": {
     "soft_deny": [

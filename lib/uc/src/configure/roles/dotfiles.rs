@@ -44,7 +44,6 @@ const DOTFILES: &[(&str, &[&str])] = &[
     ("fd", &[".fdignore"]),
     ("eget", &[".eget.toml"]),
     ("containers", &[".config/containers/registries.conf"]),
-    ("hcloud", &[".config/hcloud/cli.sh"]),
     ("yt-dlp", &[".config/yt-dlp/config"]),
     ("opencode", &[".config/opencode/opencode.jsonc"]),
     ("claude", &["claude/settings.json:.claude/settings.json"]),
