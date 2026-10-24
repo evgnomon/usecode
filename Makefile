@@ -69,7 +69,7 @@ up reload down logs:
 # python and alacritty are left out, build them by hand with
 # make -C lib/python build and make -C lib/alacritty build.
 build:
-	@MAKE=$(MAKE) SKIP="alacritty python" ./scripts/each_lib.sh $@
+	@MAKE=$(MAKE) SKIP="alacritty python $(SKIP)" ./scripts/each_lib.sh $@
 
 # Debian packages into dist/, each lib making its own with uc deb: lib/uc
 # makes one uc package holding uc and every uc-* command.
@@ -82,7 +82,7 @@ dist:
 # install it by hand with make -C lib/vim install, and python with
 # make -C lib/python install.
 install:
-	@MAKE=$(MAKE) SKIP="alacritty python vim" ./scripts/each_lib.sh $@
+	@MAKE=$(MAKE) SKIP="alacritty python vim $(SKIP)" ./scripts/each_lib.sh $@
 
 link:
 	@MAKE=$(MAKE) ./scripts/each_lib.sh $@
