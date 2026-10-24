@@ -113,11 +113,11 @@ export LESS_TERMCAP_ue=$'\e[0m'        # reset underline
 
 # Modified prompt
 if [ "$(id -u)" -eq 0 ]; then
-  export PS1="${RED}₿ ${RESET}"
+  export PS1="${RED}\u@\h ₿ ${RESET}"
 elif [ "$(hostname)" = "shadow" ]; then
-  export PS1="${BLUE}₿ ${RESET}"
+  export PS1="${BLUE}\u@\h ₿ ${RESET}"
 else
-  export PS1="${FG}₿ ${RESET}"
+  export PS1="${FG}\u@\h ₿ ${RESET}"
 fi
 
 

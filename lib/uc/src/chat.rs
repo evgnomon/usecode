@@ -499,7 +499,8 @@ async fn run(
     });
     let mut shown: Option<String> = None;
     loop {
-        let Some(line) = read_prompt("\x1b[38;5;208m₿\x1b[0m ")? else {
+        let Some(line) = read_prompt(&format!("\x1b[38;5;208m{} ₿\x1b[0m ", user_at_host()))?
+        else {
             eprintln!();
             return Ok(());
         };
@@ -1609,8 +1610,11 @@ impl Session {
         let asks = ask || deletes(command) || !(self.allow_all || self.allow_turn || pushed);
         let title = title.trim();
         if self.show_commands || title.is_empty() || asks {
-            // The ₿ in Gruvbox fg (#ebdbb2) is the shell prompt from the dotfiles' .bashrc.
-            eprintln!("\x1b[38;2;235;219;178m₿\x1b[0m {command}");
+            // `user@host ₿` in Gruvbox fg (#ebdbb2) is the shell prompt from the dotfiles' .bashrc.
+            eprintln!(
+                "\x1b[38;2;235;219;178m{} ₿\x1b[0m {command}",
+                user_at_host()
+            );
         } else {
             eprintln!("· {title}");
         }
@@ -2104,6 +2108,17 @@ async fn spin(what: String) {
         eprint!("\r\x1b[2K{dot} {what}");
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
+}
+
+/// `user@host`, as bash's `\u@\h` shows it before the ₿.
+fn user_at_host() -> String {
+    let user = ["USER", "LOGNAME"]
+        .into_iter()
+        .find_map(|v| std::env::var(v).ok().filter(|u| !u.is_empty()))
+        .unwrap_or_else(|| "?".to_string());
+    let host = std::fs::read_to_string("/proc/sys/kernel/hostname").unwrap_or_default();
+    let host = host.trim().split('.').next().unwrap_or_default();
+    format!("{user}@{host}")
 }
 
 /// The line editor every prompt reads through, so arrow keys edit the line.
