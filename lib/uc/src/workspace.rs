@@ -189,6 +189,8 @@ pub fn manifests(spec: &Spec, keys: &str) -> Vec<Value> {
         requests.insert("memory".into(), json!(memory));
     }
     let mut pod = json!({
+        // The prompt shows the workspace name, not the pod's generated one.
+        "hostname": spec.name,
         "terminationGracePeriodSeconds": 10,
         "containers": [{
             "name": "workspace",
@@ -448,6 +450,7 @@ mod tests {
         assert_eq!(kinds, ["ConfigMap", "Deployment", "Service"]);
         assert_eq!(m[0]["data"]["authorized_keys"], "ssh-ed25519 AAAA ada\n");
         let pod = &m[1]["spec"]["template"]["spec"];
+        assert_eq!(pod["hostname"], "ada");
         assert_eq!(pod["imagePullSecrets"][0]["name"], "registry");
         assert_eq!(pod["containers"][0]["imagePullPolicy"], "Always");
         assert_eq!(pod["containers"][0]["resources"]["requests"]["cpu"], "2");
