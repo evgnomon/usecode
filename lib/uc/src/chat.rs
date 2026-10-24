@@ -200,6 +200,14 @@ static GROUPS: Mutex<BTreeSet<i32>> = Mutex::new(BTreeSet::new());
 /// line being typed is sent.
 static CLEARED: AtomicBool = AtomicBool::new(false);
 
+/// The AI is on and typed commands run straight away: what the prompt loop
+/// decides from, kept for the line editor to color the line the same way.
+static AI: AtomicBool = AtomicBool::new(false);
+static SHELL: AtomicBool = AtomicBool::new(false);
+
+/// The last command the user typed failed: the ₿ turns red, like in bash.
+static FAILED: AtomicBool = AtomicBool::new(false);
+
 fn client() -> &'static reqwest::Client {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
     CLIENT.get_or_init(|| {
@@ -443,6 +451,8 @@ async fn run(
     // Without a key the AI is off and every line runs in bash.
     let key = env("OPENROUTER_API_KEY");
     let ai = key.is_some();
+    AI.store(ai, Ordering::Relaxed);
+    SHELL.store(shell, Ordering::Relaxed);
     let env_or = |name: &str, default: &str| {
         std::env::var(name)
             .ok()
@@ -499,8 +509,7 @@ async fn run(
     });
     let mut shown: Option<String> = None;
     loop {
-        let Some(line) = read_prompt(&format!("\x1b[38;5;208m{} ₿\x1b[0m ", prompt_head()))?
-        else {
+        let Some(line) = read_prompt(&prompt())? else {
             eprintln!();
             return Ok(());
         };
@@ -549,11 +558,7 @@ async fn run(
         session.allow_turn = approved;
         // A typed command runs straight away, without the model: no routing,
         // no `· models` print, and nothing about it in the next turn.
-        let command = if ai {
-            typed_command(line).filter(|_| shell)
-        } else {
-            Some(line.strip_prefix('!').unwrap_or(line).trim()).filter(|c| !c.is_empty())
-        };
+        let command = direct_command(line);
         if command.is_none() && !ai {
             continue;
         }
@@ -605,6 +610,23 @@ async fn run(
             eprintln!("· context cleared");
         }
     }
+}
+
+/// The command line a typed line runs straight away, without the model: with
+/// the AI off every line does, with it on only one that reads like a command.
+fn direct_command(line: &str) -> Option<&str> {
+    if AI.load(Ordering::Relaxed) {
+        typed_command(line).filter(|_| SHELL.load(Ordering::Relaxed))
+    } else {
+        Some(line.strip_prefix('!').unwrap_or(line).trim()).filter(|c| !c.is_empty())
+    }
+}
+
+/// `command` with its first word, the program, in bright green: what a line
+/// that runs straight away looks like at the prompt.
+fn color_program(command: &str) -> String {
+    let end = command.find(char::is_whitespace).unwrap_or(command.len());
+    format!("\x1b[1;92m{}\x1b[0m{}", &command[..end], &command[end..])
 }
 
 /// The command line to run when what was typed is one rather than something for
@@ -823,7 +845,28 @@ impl rustyline::hint::Hinter for Completion {
     type Hint = String;
 }
 
-impl rustyline::highlight::Highlighter for Completion {}
+/// The program of a line that will run straight away turns green as it is
+/// typed, so it shows before Enter whether the line goes to bash or the model.
+impl rustyline::highlight::Highlighter for Completion {
+    fn highlight<'l>(&self, line: &'l str, _: usize) -> std::borrow::Cow<'l, str> {
+        let Some(command) = direct_command(line) else {
+            return std::borrow::Cow::Borrowed(line);
+        };
+        // The command is a slice of the line: after a `!` and spaces, if any.
+        let start = command.as_ptr() as usize - line.as_ptr() as usize;
+        let end = start + command.len();
+        std::borrow::Cow::Owned(format!(
+            "{}{}{}",
+            &line[..start],
+            color_program(command),
+            &line[end..]
+        ))
+    }
+
+    fn highlight_char(&self, _: &str, _: usize, _: rustyline::highlight::CmdKind) -> bool {
+        true
+    }
+}
 
 impl rustyline::validate::Validator for Completion {}
 
@@ -1610,8 +1653,7 @@ impl Session {
         let asks = ask || deletes(command) || !(self.allow_all || self.allow_turn || pushed);
         let title = title.trim();
         if self.show_commands || title.is_empty() || asks {
-            // `user@host dir ₿` in Gruvbox fg (#ebdbb2) is the shell prompt from the dotfiles' .bashrc.
-            eprintln!("\x1b[38;2;235;219;178m{} ₿\x1b[0m {command}", prompt_head());
+            eprintln!("{}{}", prompt(), color_program(command));
         } else {
             eprintln!("· {title}");
         }
@@ -1661,14 +1703,18 @@ impl Session {
         self.confirm("run it?", deletes(&shell.expand(command)))?;
         match cd_target(&shell.expand(command)) {
             Some(dir) => {
+                FAILED.store(true, Ordering::Relaxed);
                 std::env::set_current_dir(&dir).with_context(|| format!("cd {}", dir.display()))?;
+                FAILED.store(false, Ordering::Relaxed);
                 let cwd = std::env::current_dir().unwrap_or(dir);
                 self.messages.push(json!({"role": "user",
                            "content": format!(
                                "I changed the working directory to {}.", cwd.display())}));
             }
             None => {
+                FAILED.store(true, Ordering::Relaxed);
                 let status = on_terminal_status(&shell.script(command)).await?;
+                FAILED.store(!status.success(), Ordering::Relaxed);
                 if !status.success() {
                     eprintln!("· {status}");
                 }
@@ -2107,8 +2153,9 @@ async fn spin(what: String) {
     }
 }
 
-/// `user@host dir`, as bash's `\u@\h \W` shows it before the ₿.
-fn prompt_head() -> String {
+/// `user@host dir ₿ ` in the colors of the dotfiles' .bashrc prompt: the
+/// terminal theme's own, so it looks the same in Gruvbox dark and light.
+fn prompt() -> String {
     let user = ["USER", "LOGNAME"]
         .into_iter()
         .find_map(|v| std::env::var(v).ok().filter(|u| !u.is_empty()))
@@ -2124,7 +2171,18 @@ fn prompt_head() -> String {
             .map(|d| d.to_string_lossy().into_owned())
             .unwrap_or_else(|| cwd.display().to_string())
     };
-    format!("{user}@{host} {dir}")
+    // SAFETY: geteuid can't fail and touches no memory.
+    let who = if unsafe { libc::geteuid() } == 0 {
+        "1;91"
+    } else {
+        "1;96"
+    };
+    let mark = if FAILED.load(Ordering::Relaxed) {
+        "1;91"
+    } else {
+        "0"
+    };
+    format!("\x1b[{who}m{user}\x1b[0m@{host} \x1b[94m{dir} \x1b[{mark}m₿\x1b[0m ")
 }
 
 /// The line editor every prompt reads through, so arrow keys edit the line.

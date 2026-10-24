@@ -11,12 +11,6 @@ case $- in
       *) return;;
 esac
 
-BLUE="\[\e[34m\]"    # Blue for path
-GREEN="\[\e[32m\]"   # Green for Git branch
-RED="\[\e[31m\]"
-RESET="\[\e[0m\]"    # Reset color
-FG="\[\e[39m\]"     # The theme's foreground
-
 
 # check the window size after each command and, if necessary,
 # update the values of LINES and COLUMNS.
@@ -111,14 +105,17 @@ export LESS_TERMCAP_us=$'\e[1;32m'     # begin underline
 export LESS_TERMCAP_ue=$'\e[0m'        # reset underline
 
 
-# Modified prompt
-if [ "$(id -u)" -eq 0 ]; then
-  export PS1="${RED}\u@\h \W ₿ ${RESET}"
-elif [ "$(hostname)" = "shadow" ]; then
-  export PS1="${BLUE}\u@\h \W ₿ ${RESET}"
-else
-  export PS1="${FG}\u@\h \W ₿ ${RESET}"
-fi
+# The prompt, in the terminal theme's own 16 colors so it reads well in both
+# Gruvbox dark and light: the user in bright cyan (bright red for root), the
+# directory in bright blue, and the @, host and ₿ in the default text color,
+# the ₿ bright red after a failed command. `uc chat` draws the same.
+prompt_ps1() {
+  local status=$? who='\[\e[1;96m\]' mark='\[\e[0m\]'
+  [ "$EUID" -eq 0 ] && who='\[\e[1;91m\]'
+  [ "$status" -ne 0 ] && mark='\[\e[1;91m\]'
+  PS1="${who}\u\[\e[0m\]@\h \[\e[94m\]\W ${mark}₿\[\e[0m\] "
+  return "$status"
+}
 
 
 # Check if ~/.local/bin is in PATH
@@ -159,7 +156,7 @@ function reset_keyboard_protocol() {
     # The old CSI > 0 u pushed a new stack entry on every prompt instead of resetting.
     printf '\e[=0;1u\e[>4;0m'
 }
-PROMPT_COMMAND="reset_keyboard_protocol;history -a"
+PROMPT_COMMAND="prompt_ps1;reset_keyboard_protocol;history -a"
 
 # Source drop-in bashrc files from ~/.bashrc.d/ in sorted order
 if [ -d "$HOME/.bashrc.d" ]; then
