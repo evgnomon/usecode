@@ -21,7 +21,8 @@
 //! straight away, with the same confirmations, without the model hearing
 //! about it (`cd` is the exception: it tells the model the directory changed);
 //! the user's bash aliases and functions work there too;
-//! `--no-shell` sends every line to the model. The model can drive the chat
+//! `--no-shell` (or `UC_NO_SHELL=1`, or `no_shell: true` under `uc:` in the
+//! user config, see [`crate::flag`]) sends every line to the model. The model can drive the chat
 //! itself with the `chat` tool: `model` switches both models (`auto` lets
 //! TypeSafe pick again, no `model` lists them), `planner` switches only the
 //! planner (`planner` without a model lists them), `clear` clears the screen

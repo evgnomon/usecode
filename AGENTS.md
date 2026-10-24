@@ -13,6 +13,11 @@ General rules for working in the usecode project.
 * Long logic should be implemented in scripts, not make files.
 * Prefer Rust-native solutions in the Rust code. Call HTTP APIs directly with `reqwest` (rustls) instead of running `curl`, a vendor CLI (`cf`, `hcloud`, ...) or `dig`, and use a crate before shelling out to a tool. Keep crates that build static for musl (like `uc`) free of C: use reqwest's `rustls-no-provider` with the pure-Rust `rustls-graviola` provider, not the default aws-lc or ring. Only run external programs when they are the thing being managed (`kubectl`, `helm`, `systemctl`, ...).
 
+# Flags
+* A flag always has three ways to be given: on the command line (`--no-shell`), as an environment variable (`UC_NO_SHELL=1`), and in the user config (`no_shell: true` under `uc:` in `config.yaml`). The command line wins over the environment, the environment over the config.
+* Environment variables for flags always start with `UC_`.
+* Read flags with `uc::flag::on` rather than looking at the arguments yourself, so all three ways work.
+
 # Docs, README and such:
 * use a friendly language in a friendly way, that means "here's something I made that might be useful for you", instead of acting like you're some big giant new startup coming to change the world.
 * be a seller.

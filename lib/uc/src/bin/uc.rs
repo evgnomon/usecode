@@ -38,33 +38,34 @@ const SEARCH_FLAGS: &[(&str, Search)] = &[
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let subcommand = match args.first().map(String::as_str) {
-        None => return uc::chat::main(false, false, false, true, None),
-        Some(_) if args.iter().all(|a| CHAT_FLAGS.contains(&a.as_str())) => {
-            let has = |flag: &str| args.iter().any(|a| a == flag);
-            let search = SEARCH_FLAGS.iter().find(|(f, _)| has(f)).map(|(_, s)| *s);
-            return uc::chat::main(
-                has("--ask"),
-                has("--output"),
-                has("--commands"),
-                !has("--no-shell"),
-                search,
-            );
-        }
-        Some("help") | Some("-h") | Some("--help") => {
+    // No command is the agent. Each of its flags may also come from
+    // `UC_<FLAG>` or the user config, see `uc::flag`.
+    if args.iter().all(|a| CHAT_FLAGS.contains(&a.as_str())) {
+        let has = |flag: &str| uc::flag::on(&args, flag);
+        let search = SEARCH_FLAGS.iter().find(|(f, _)| has(f)).map(|(_, s)| *s);
+        return uc::chat::main(
+            has("--ask"),
+            has("--output"),
+            has("--commands"),
+            !has("--no-shell"),
+            search,
+        );
+    }
+    let subcommand = match args[0].as_str() {
+        "help" | "-h" | "--help" => {
             print_usage();
             return ExitCode::SUCCESS;
         }
-        Some("--version") | Some("-v") => {
+        "--version" | "-v" => {
             println!("uc {}", env!("CARGO_PKG_VERSION"));
             return ExitCode::SUCCESS;
         }
-        Some(arg) if arg.starts_with('-') => {
+        arg if arg.starts_with('-') => {
             eprintln!("uc: unknown option '{arg}'");
             print_usage();
             return ExitCode::from(2);
         }
-        Some(arg) => ALIASES
+        arg => ALIASES
             .iter()
             .find(|(short, _)| *short == arg)
             .map_or(arg, |(_, long)| long)
@@ -91,6 +92,8 @@ fn print_usage() {
     println!("`· list the rust files`; `uc --commands` shows the command line instead.");
     println!("A line that is a command, like `ls -al`, runs on the terminal straight");
     println!("away; `uc --no-shell` sends every line to the model instead.");
+    println!("Every flag can also be set as UC_<FLAG> (UC_NO_SHELL=1) or under `uc:` in");
+    println!("config.yaml (no_shell: true); the command line wins, then the environment.");
     println!("It searches the web with Parallel (PARALLEL_API_KEY), else Exa (EXA_API_KEY),");
     println!("else DuckDuckGo; `uc --exa` or `uc --duckduckgo` picks one.\n");
     let commands = discover();

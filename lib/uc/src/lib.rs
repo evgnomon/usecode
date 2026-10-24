@@ -13,6 +13,9 @@
 //! generator and ansible-vault secret stores behind `uc-secret`, with
 //! [`backup`] its SSH and GPG key backup.
 //!
+//! [`flag`] reads a flag from the command line, a `UC_` variable or the
+//! user config.
+//!
 //! [`group`] and [`groups`] are the command groups (`uc image`, `uc repo`,
 //! ...) that hand over to the standalone tools, found through [`dispatch`],
 //! and [`authors`] is `uc repo authors`. [`vm`] is `uc vm`, which adds the
@@ -32,6 +35,7 @@ pub mod configure;
 pub mod crypto;
 pub mod dispatch;
 pub mod dns;
+pub mod flag;
 pub mod forward;
 pub mod fs;
 pub mod group;

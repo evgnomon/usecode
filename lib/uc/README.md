@@ -47,7 +47,8 @@ command line as it is.
 Type a command like `ls -al` or `git status` and it just runs on your
 terminal, like in a shell (`cd` and your bash aliases and functions too), with
 the same confirmations; a line that reads like a sentence goes to the model,
-and `!` in front makes anything a command. `uc --no-shell` turns that off and sends every line to the model.
+and `!` in front makes anything a command. Rather talk to the model every
+time? `uc --no-shell` (or `UC_NO_SHELL=1`) sends every line to it.
 Up and Down bring back what you typed before, in uc or in bash, even in an earlier session,
 and Ctrl-R finds it with fzf, just like in bash. Changed your mind while it
 works? Esc or Ctrl-C stops it, and whatever it was running, and you're back at
@@ -65,6 +66,22 @@ uc --commands                                 # show command lines, not their ti
 uc --no-shell                                 # every line goes to the model
 UC_MODEL=openai/gpt-5 uc                      # any OpenRouter model
 UC_EFFORT=medium uc                           # low, medium or high reasoning
+```
+
+Every flag can be set three ways, so you can make your favourite the
+default: on the command line, as a `UC_` environment variable, or under
+`uc:` in your `config.yaml`. The command line wins, then the environment,
+then the config, and `0`, `false`, `no` or `off` turns a flag back off:
+
+```sh
+uc --no-shell                                 # just this once
+export UC_NO_SHELL=1                          # this shell and what it starts
+```
+
+```yaml
+# ~/.config/usecode/config.yaml
+uc:
+  no_shell: true                              # every time
 ```
 
 It runs on GLM 5.3 Flash, which is quick, cheap and good at everyday
