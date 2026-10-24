@@ -37,6 +37,22 @@ pub fn on(args: &[String], flag: &str) -> bool {
     }
 }
 
+/// The value of `flag` (`--roles`): `given` on the command line, else
+/// `UC_ROLES`, else `uc: roles:` in the user config.
+pub fn value(given: Option<String>, flag: &str) -> Option<String> {
+    if given.is_some() {
+        return given;
+    }
+    let name = flag.trim_start_matches('-').replace('-', "_");
+    if let Ok(value) = std::env::var(format!("UC_{}", name.to_uppercase())) {
+        return Some(value).filter(|v| !v.is_empty());
+    }
+    match config().get(name.as_str()) {
+        Some(Value::String(s)) if !s.is_empty() => Some(s.clone()),
+        _ => None,
+    }
+}
+
 fn truthy(value: &str) -> bool {
     !matches!(
         value.trim().to_ascii_lowercase().as_str(),

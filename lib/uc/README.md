@@ -202,10 +202,12 @@ derivation, and says so when it does; re-encrypting upgrades them.
 
 `uc sync` configures the local machine — Apt sources and packages,
 extrepo repositories, dotfiles, git checkouts, toolchains, desktop settings —
-without Python or Ansible. Independent tasks run in parallel.
+without Python or Ansible. Independent tasks run in parallel. All it needs
+is uc itself: install the .deb or drop in the binary and run `uc sync`, no
+checkout required.
 
-Out of the box it only touches what uc itself needs: `~/.local/bin`, the
-`~/.config/usecode` link and building uc from the checkout. Everything else
+Out of the box it only touches what uc itself needs: `~/.local/bin` and the
+`~/.config/usecode` link. Everything else
 is yours to switch on, by role, task id or glob, in the `sync` list of your
 config (`all` turns on every role):
 
@@ -231,8 +233,11 @@ It keeps the architecture of the Ansible playbook it replaced:
 * **roles** (`src/configure/roles`) are the configuration functions, one
   per Ansible role, adding tasks built from those modules to the plan.
 * the files and templates live in `roles/<role>/{files,templates}` and are
-  read from the checkout. Templates render with Ansible's Jinja settings and
-  see the same variables, including `ansible_facts`.
+  built into uc, then copied into place, so your home gets real files rather
+  than links into a checkout. Templates render with Ansible's Jinja settings
+  and see the same variables, including `ansible_facts`. Working on them?
+  `--roles lib/uc/roles` (or `UC_ROLES`) reads them straight from a
+  checkout, no rebuild needed.
 
 ### Scheduling
 
@@ -291,7 +296,7 @@ brave_bookmarks:
 | `-x, --fail-fast` | stop after the first failure |
 | `-l, --list`, `--list-tags`, `--graph` | inspect the plan and exit |
 | `-v, --verbose` | stream every command's output |
-| `--roles DIR`, `--config FILE` | the role files (`lib/uc/roles`) and the user config, found automatically |
+| `--roles DIR`, `--config FILE` | read the role files from `DIR` instead of the built-in ones (also `UC_ROLES`, or `roles:` under `uc:`), and the user config |
 
 Tasks that need root run through `sudo -n`; when the selection has any,
 `uc sync` asks for the password once, before the run, and keeps the

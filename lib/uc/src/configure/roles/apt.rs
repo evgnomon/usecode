@@ -239,7 +239,10 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
         Task::new(SOURCES, "Inflate apt sources and keys into /etc")
             .tags(&["apt"])
             .sudo()
-            .when(templates.is_dir(), format!("no apt templates for {distro}"))
+            .when(
+                v.assets.is_dir(&templates),
+                format!("no apt templates for {distro}"),
+            )
             .run(move |ctx| async move {
                 let mut outcome = inflate(&ctx, &templates, Path::new("/etc"), |_| true).await?;
                 // Drop what the inflated files replace in the same step, so

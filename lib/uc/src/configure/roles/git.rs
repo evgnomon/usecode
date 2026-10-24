@@ -6,14 +6,11 @@
 //! is its own task, so they clone in parallel.
 
 use crate::configure::engine::{Outcome, Plan, Task};
-use crate::configure::modules::{file, git};
+use crate::configure::modules::{copy, git};
 use crate::configure::vars::{GitRepo, Vars};
 use anyhow::{Result, anyhow};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
-
-/// Cloned on every machine, besides the user's own `git_repos`.
-const COMMON_REPOS: &[&str] = &["ssh://git@github.com/evgnomon/usecode.git"];
 
 /// Where a repository goes and which identity it commits with.
 #[derive(Debug, Clone, PartialEq)]
@@ -66,19 +63,13 @@ pub fn target(home: &Path, repo: &GitRepo) -> Result<Target> {
     })
 }
 
-/// The user's repositories and the common ones, each destination once.
+/// The user's repositories, each destination once.
 fn targets(v: &Vars) -> Vec<Result<Target>> {
-    let common = COMMON_REPOS.iter().map(|url| GitRepo {
-        url: url.to_string(),
-        ..GitRepo::default()
-    });
     let mut seen = BTreeSet::new();
     v.config
         .git_repos
         .iter()
-        .cloned()
-        .chain(common)
-        .map(|repo| target(&v.home, &repo))
+        .map(|repo| target(&v.home, repo))
         .filter(|t| match t {
             Ok(t) => seen.insert(t.dest.clone()),
             Err(_) => true,
@@ -89,14 +80,14 @@ fn targets(v: &Vars) -> Vec<Result<Target>> {
 pub fn tasks(plan: &mut Plan, v: &Vars) {
     let files = v.role("git").join("files");
     plan.add(
-        Task::new("git/configs", "Link the git configs")
+        Task::new("git/configs", "Copy the git configs")
             .tags(&["dotfiles", "git"])
             .run(move |ctx| async move {
                 let home = &ctx.vars().home;
                 let mut outcome = Outcome::Ok;
                 for name in [".gitconfig", ".gitignore_global"] {
-                    outcome = outcome
-                        .and(file::link(&ctx, &files.join(name), &home.join(name), false).await?);
+                    let (src, dest) = (files.join(name), home.join(name));
+                    outcome = outcome.and(copy::copy(&ctx, &src, &dest, None, false).await?);
                 }
                 Ok(outcome)
             }),

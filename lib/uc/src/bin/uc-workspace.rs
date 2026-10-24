@@ -186,7 +186,6 @@ async fn run(cli: Cli) -> Result<()> {
                 extra: extra_vars,
                 roles_dir: None,
                 config_file: config,
-                need_roles: false,
                 overlay: vec!["kube".into(), context.clone()],
             })?;
             let registry = var::<String>(&vars, "registry_host")?

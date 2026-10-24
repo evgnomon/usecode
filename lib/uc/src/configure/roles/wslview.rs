@@ -4,7 +4,7 @@
 //! `wslview`: open links in the Windows browser from WSL.
 
 use crate::configure::engine::{Plan, Task};
-use crate::configure::modules::{copy, file};
+use crate::configure::modules::copy;
 use crate::configure::roles::local_bin;
 use crate::configure::vars::{Profile, Vars};
 
@@ -13,12 +13,13 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
     let wsl = v.profile == Profile::Wsl;
 
     plan.add(
-        Task::new("wslview/link", "Link wslview to ~/.local/bin")
+        Task::new("wslview/link", "Copy wslview to ~/.local/bin")
             .tags(&["wslview"])
             .after([local_bin::DIR])
             .when(wsl, "only on the wsl profile")
             .run(move |ctx| async move {
-                file::link(&ctx, &script, &ctx.vars().local_bin.join("wslview"), false).await
+                let dest = ctx.vars().local_bin.join("wslview");
+                copy::copy(&ctx, &script, &dest, Some(0o755), false).await
             }),
     );
 

@@ -5,6 +5,7 @@
 //! role. They are computed once, before any task starts, and are read-only
 //! afterwards, which is what lets tasks run in parallel without coordination.
 
+use crate::configure::assets::Assets;
 use crate::configure::ctx::template_env;
 use crate::configure::facts::Facts;
 use crate::configure::roles::pkg;
@@ -14,7 +15,8 @@ use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-/// The standard usecode checkout, relative to the home directory.
+/// The usecode checkout the opt-in `usecode` role builds, relative to the
+/// home directory.
 const CHECKOUT: &str = "src/github.com/evgnomon/usecode";
 
 /// The installation profile, which switches whole roles on and off.
@@ -142,9 +144,9 @@ pub struct Vars {
     /// Whether the user config file exists.
     pub has_config: bool,
     pub config: UserConfig,
-    /// `lib/uc/roles`, holding the files and templates.
-    pub roles_dir: PathBuf,
-    /// The usecode checkout.
+    /// The roles' files and templates.
+    pub assets: Assets,
+    /// The usecode checkout, for the `usecode` role.
     pub usecode_dir: PathBuf,
     /// `PATH` for every command: the tool directories first.
     pub path: String,
@@ -158,11 +160,10 @@ pub struct Vars {
 pub struct LoadOptions {
     pub profile: Option<Profile>,
     pub extra: Vec<String>,
+    /// Read the roles' files from this directory instead of the ones built
+    /// into uc.
     pub roles_dir: Option<PathBuf>,
     pub config_file: Option<PathBuf>,
-    /// The plan reads files and templates from the roles directory, so it
-    /// must be found; `uc kube sync` reads none.
-    pub need_roles: bool,
     /// A section of the user config laid over its top level before `-e`,
     /// e.g. `["kube", "cp-1"]` for what only that cluster gets.
     pub overlay: Vec<String>,
@@ -191,19 +192,12 @@ impl Vars {
             },
         };
 
-        let roles_dir = match opts.roles_dir.map_or_else(|| find_roles_dir(&home), Ok) {
-            // Links point into this tree and the checkout is found from it,
-            // so it must not carry `..` or a relative prefix.
-            Ok(dir) => std::fs::canonicalize(&dir)
-                .with_context(|| format!("roles directory {}", dir.display()))?,
-            Err(_) if !opts.need_roles => home.join(CHECKOUT).join("lib/uc/roles"),
-            Err(err) => return Err(err),
+        let assets = match opts.roles_dir {
+            Some(dir) if dir.is_dir() => Assets::Dir(dir),
+            Some(dir) => bail!("roles directory {} does not exist", dir.display()),
+            None => Assets::Embedded,
         };
-        let usecode_dir = roles_dir
-            .ancestors()
-            .nth(3)
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| home.join(CHECKOUT));
+        let usecode_dir = home.join(CHECKOUT);
 
         let local_bin = home.join(".local/bin");
         let cache_dir = home.join(".cache/blueprint");
@@ -245,7 +239,7 @@ impl Vars {
             config_dir,
             has_config,
             config: UserConfig::default(),
-            roles_dir,
+            assets,
             usecode_dir,
             path,
             proxy,
@@ -338,7 +332,6 @@ impl Vars {
                 Value::from(self.extrepo_release()),
             ),
             ("proxy_env", Value::from_serialize(&proxy)),
-            ("usecode_repo_dir", path(&self.usecode_dir)),
             // The user config's own `theme` replaces it.
             ("theme", Value::from(Theme::default().name())),
         ];
@@ -357,9 +350,9 @@ impl Vars {
         }
     }
 
-    /// A role's directory under `lib/uc/roles`.
+    /// A role's directory among the [`assets`](Vars::assets).
     pub fn role(&self, name: &str) -> PathBuf {
-        self.roles_dir.join(name)
+        PathBuf::from(name)
     }
 
     /// The value of `proxy_env.http_proxy`.
@@ -393,7 +386,8 @@ impl Vars {
             user: "tester".into(),
             has_config: false,
             config: UserConfig::default(),
-            roles_dir: PathBuf::from("/nonexistent/roles"),
+            // Tests read the files they write by their absolute paths.
+            assets: Assets::Dir(PathBuf::from("/")),
             usecode_dir: PathBuf::from("/nonexistent"),
             path: std::env::var("PATH").unwrap_or_default(),
             proxy: Vec::new(),
@@ -413,89 +407,6 @@ fn detect_profile(facts: &Facts) -> Profile {
         Profile::Wsl
     } else {
         Profile::Workstation
-    }
-}
-
-/// Where the standard checkout is cloned from when there is none yet.
-const CHECKOUT_URL: &str = "https://github.com/evgnomon/usecode.git";
-
-/// Clones the standard checkout when no roles directory can be found, so a
-/// fresh machine with just the uc binaries can sync. git comes from apt
-/// first when it is missing. The submodules are left to
-/// `usecode/submodules`.
-pub fn ensure_checkout() -> Result<()> {
-    let home = PathBuf::from(std::env::var("HOME").context("HOME is not set")?);
-    if find_roles_dir(&home).is_ok() {
-        return Ok(());
-    }
-    if !has_git() {
-        install_git()?;
-    }
-    let dest = home.join(CHECKOUT);
-    eprintln!("uc sync: cloning {CHECKOUT_URL} into {}", dest.display());
-    let status = std::process::Command::new("git")
-        .arg("clone")
-        .arg(CHECKOUT_URL)
-        .arg(&dest)
-        .status()
-        .context("running git")?;
-    if !status.success() {
-        bail!("cloning {CHECKOUT_URL} failed");
-    }
-    Ok(())
-}
-
-fn has_git() -> bool {
-    std::process::Command::new("git")
-        .arg("--version")
-        .stdout(std::process::Stdio::null())
-        .status()
-        .is_ok_and(|s| s.success())
-}
-
-/// `apt-get install git`, through sudo unless uc-sync runs as root.
-fn install_git() -> Result<()> {
-    eprintln!("uc sync: installing git");
-    let root = Facts::gather().uid == 0;
-    for args in [&["update"][..], &["install", "-y", "git"]] {
-        let mut cmd = if root {
-            std::process::Command::new("apt-get")
-        } else {
-            let mut sudo = std::process::Command::new("sudo");
-            sudo.arg("apt-get");
-            sudo
-        };
-        let status = cmd
-            .args(args)
-            .env("DEBIAN_FRONTEND", "noninteractive")
-            .status()
-            .context("running apt-get")?;
-        if !status.success() {
-            bail!("apt-get {} failed", args.join(" "));
-        }
-    }
-    Ok(())
-}
-
-/// The roles next to the checkout uc-sync runs from, found from the
-/// working directory or the executable, else the standard checkout.
-fn find_roles_dir(home: &Path) -> Result<PathBuf> {
-    let from = |p: PathBuf| -> Vec<PathBuf> { p.ancestors().map(Path::to_path_buf).collect() };
-    let mut bases = Vec::new();
-    if let Ok(cwd) = std::env::current_dir() {
-        bases.extend(from(cwd));
-    }
-    if let Ok(exe) = std::env::current_exe() {
-        bases.extend(from(exe));
-    }
-    bases.push(home.join(CHECKOUT));
-    let found = bases
-        .iter()
-        .map(|b| b.join("lib/uc/roles"))
-        .find(|d| d.is_dir());
-    match found {
-        Some(dir) => Ok(dir),
-        None => bail!("cannot find lib/uc/roles; run from the usecode checkout or pass --roles"),
     }
 }
 

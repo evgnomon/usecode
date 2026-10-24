@@ -12,6 +12,7 @@ General rules for working in the usecode project.
 * Remove if's inside make files to keep them short.
 * Long logic should be implemented in scripts, not make files.
 * Prefer Rust-native solutions in the Rust code. Call HTTP APIs directly with `reqwest` (rustls) instead of running `curl`, a vendor CLI (`cf`, `hcloud`, ...) or `dig`, and use a crate before shelling out to a tool. Keep crates that build static for musl (like `uc`) free of C: use reqwest's `rustls-no-provider` with the pure-Rust `rustls-graviola` provider, not the default aws-lc or ring. Only run external programs when they are the thing being managed (`kubectl`, `helm`, `systemctl`, ...).
+* uc ships as a binary and a .deb, so no uc binary may need the usecode checkout: never read from, link into or clone it at run time. Files a binary needs are built into it (see `lib/uc/src/configure/AGENTS.md`).
 
 # Flags
 * A flag always has three ways to be given: on the command line (`--no-shell`), as an environment variable (`UC_NO_SHELL=1`), and in the user config (`no_shell: true` under `uc:` in `config.yaml`). The command line wins over the environment, the environment over the config.

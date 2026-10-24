@@ -8,10 +8,11 @@
 use crate::configure::ctx::Ctx;
 use crate::configure::engine::Outcome;
 use crate::configure::modules::file;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::path::{Path, PathBuf};
 
-/// Where the content comes from.
+/// Where the content comes from. `File` and `Template` are paths among the
+/// roles' files ([`Vars::assets`](crate::configure::vars::Vars::assets)).
 pub enum Source<'a> {
     File(&'a Path),
     Content(&'a str),
@@ -64,14 +65,12 @@ impl<'a> Copy<'a> {
     }
 
     pub async fn run(self, ctx: &Ctx) -> Result<Outcome> {
+        let role_file = matches!(self.source, Source::File(_) | Source::Template(_));
         let content = match self.source {
             Source::Content(text) => text.as_bytes().to_vec(),
-            Source::File(src) => {
-                std::fs::read(src).with_context(|| format!("reading {}", src.display()))?
-            }
+            Source::File(src) => ctx.vars().assets.read(src)?.into_owned(),
             Source::Template(src) => {
-                let text = std::fs::read_to_string(src)
-                    .with_context(|| format!("reading {}", src.display()))?;
+                let text = ctx.vars().assets.read_string(src)?;
                 ctx.render_named(&src.display().to_string(), &text)?
                     .into_bytes()
             }
@@ -89,11 +88,28 @@ impl<'a> Copy<'a> {
             name.push(format!(".{stamp}~"));
             file::write(ctx, &PathBuf::from(name), &old, None, self.sudo).await?;
         }
-        file::write(ctx, self.dest, &content, self.mode, self.sudo).await
+        // Earlier syncs linked role files into the usecode checkout; a copy
+        // replaces such a link rather than writing through it.
+        let linked = role_file
+            && matches!(
+                file::stat(ctx, self.dest, self.sudo).await?,
+                Some(file::Stat {
+                    kind: file::Kind::Link(_),
+                    ..
+                })
+            );
+        if linked {
+            if ctx.check() {
+                return Ok(Outcome::Changed);
+            }
+            file::absent(ctx, self.dest, self.sudo).await?;
+        }
+        let written = file::write(ctx, self.dest, &content, self.mode, self.sudo).await?;
+        Ok(if linked { Outcome::Changed } else { written })
     }
 }
 
-/// `copy: src=… dest=…`.
+/// `copy: src=… dest=…`, `src` among the roles' files.
 pub async fn copy(
     ctx: &Ctx,
     src: &Path,
@@ -123,7 +139,7 @@ pub async fn content(
         .await
 }
 
-/// `template: src=… dest=…`.
+/// `template: src=… dest=…`, `src` among the roles' files.
 pub async fn template(
     ctx: &Ctx,
     src: &Path,
@@ -168,6 +184,27 @@ mod tests {
         );
         assert_eq!(
             template(&c, &src, &dest, None, false).await.unwrap(),
+            Outcome::Ok
+        );
+    }
+
+    #[tokio::test]
+    async fn replaces_a_link_with_a_copy() {
+        let dir = scratch("unlink");
+        let src = dir.join("src");
+        std::fs::write(&src, "same").unwrap();
+        let dest = dir.join("dest");
+        std::os::unix::fs::symlink(&src, &dest).unwrap();
+        let c = ctx(false);
+        assert_eq!(
+            copy(&c, &src, &dest, None, false).await.unwrap(),
+            Outcome::Changed
+        );
+        assert!(!dest.is_symlink());
+        assert_eq!(std::fs::read_to_string(&dest).unwrap(), "same");
+        assert_eq!(std::fs::read_to_string(&src).unwrap(), "same");
+        assert_eq!(
+            copy(&c, &src, &dest, None, false).await.unwrap(),
             Outcome::Ok
         );
     }

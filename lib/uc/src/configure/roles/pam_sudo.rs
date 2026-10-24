@@ -23,7 +23,7 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
             // The U2F module comes with the hardware package group.
             .after([apt::PACKAGES])
             .when(
-                template.is_file(),
+                v.assets.is_file(&template),
                 format!("no sudo PAM template for {distro}"),
             )
             .run(move |ctx| async move {

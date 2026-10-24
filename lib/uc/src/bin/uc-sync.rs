@@ -72,9 +72,10 @@ struct Cli {
     #[arg(short, long)]
     verbose: bool,
 
-    /// The roles directory holding the files and templates [default: lib/uc/roles].
-    #[arg(long, value_name = "DIR", env = "UC_CONFIGURE_ROLES")]
-    roles: Option<PathBuf>,
+    /// Read the roles' files and templates from DIR, e.g. lib/uc/roles of a
+    /// checkout, also UC_ROLES or `uc: roles:` [default: built in].
+    #[arg(long, value_name = "DIR")]
+    roles: Option<String>,
 
     /// The user config file [default: ~/src/github.com/<user>/config/config.yaml].
     #[arg(long, value_name = "FILE", env = "UC_CONFIGURE_CONFIG")]
@@ -107,13 +108,6 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
     let cli = Cli::parse();
-    if cli.roles.is_none()
-        && !cli.check
-        && let Err(err) = uc::configure::vars::ensure_checkout()
-    {
-        eprintln!("uc-sync: {err:#}");
-        return ExitCode::FAILURE;
-    }
     let opts = Options {
         selection: Selection {
             tags: cli.tags,
@@ -131,9 +125,8 @@ fn main() -> ExitCode {
         load: LoadOptions {
             profile: cli.profile,
             extra: cli.extra_vars,
-            roles_dir: cli.roles,
+            roles_dir: uc::flag::value(cli.roles, "--roles").map(PathBuf::from),
             config_file: cli.config,
-            need_roles: true,
             overlay: Vec::new(),
         },
     };

@@ -1,23 +1,24 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! `dotfiles`: render the home templates, and `dot`: link the tracked
+//! `dotfiles`: render the home templates, and `dot`: copy the tracked
 //! dotfiles from `roles/dotfiles/files` into the home directories, one task
-//! per group so the `sync` list picks which ones.
+//! per group so the `sync` list picks which ones. The files are built into
+//! uc, so a copy is all a machine gets: edit them here, not in the home.
 
 use crate::configure::engine::{Outcome, Plan, Task};
-use crate::configure::modules::file;
 use crate::configure::modules::inflate::inflate;
+use crate::configure::modules::{copy, file};
 use crate::configure::vars::Vars;
 use anyhow::Context;
 use std::path::{Path, PathBuf};
 
-/// The role of the dotfile groups: `dot/<group>` in the `sync` list links
-/// one group, `dot` all of them. None is linked unless listed, and they are
+/// The role of the dotfile groups: `dot/<group>` in the `sync` list copies
+/// one group, `dot` all of them. None is copied unless listed, and they are
 /// left untagged so `-t dot` runs only the listed ones.
 pub const DOT: &str = "dot";
 
-/// The task linking a group of [`DOTFILES`].
+/// The task copying a group of [`DOTFILES`].
 pub fn dot(group: &str) -> String {
     format!("{DOT}/{group}")
 }
@@ -40,7 +41,7 @@ const DOTFILES: &[(&str, &[&str])] = &[
     ),
     ("zoxide", &[".bashrc.d/zoxide-init.sh"]),
     ("gnupg", &[".gnupg/gpg.conf", ".gnupg/scdaemon.conf"]),
-    ("ctags", &[".ctags", ".ctags.d/javascript.ctags"]),
+    ("ctags", &[".ctags"]),
     ("fd", &[".fdignore"]),
     ("eget", &[".eget.toml"]),
     ("containers", &[".config/containers/registries.conf"]),
@@ -64,12 +65,12 @@ const DOTFILES: &[(&str, &[&str])] = &[
     ),
 ];
 
-/// Dotfiles no longer linked, `src[:dest]` like those of `DOTFILES`. A link still
-/// pointing at the role's file is replaced by a copy of it, so the home keeps
-/// a real file once the role's file is deleted.
+/// Dotfiles no longer synced, relative to the home. Earlier syncs linked
+/// them into the usecode checkout; such a link is replaced by a copy of what
+/// it points to, so the home keeps a real file without the checkout.
 const RETIRED: &[&str] = &[".config/Code/extensions.txt"];
 
-/// The `bash` group for root, linked by `dot/root`.
+/// The `bash` group for root, copied by `dot/root`.
 const ROOT_DOTFILES: &[&str] = &[
     ".bashrc",
     ".bashrc.d/mise-activate.sh",
@@ -139,15 +140,14 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
             Vec::new()
         };
         plan.add(
-            Task::new(dot(group), format!("Link the {group} dotfiles")).run(
+            Task::new(dot(group), format!("Copy the {group} dotfiles")).run(
                 move |ctx| async move {
                     let home = &ctx.vars().home;
                     let mut outcome = Outcome::Ok;
                     for entry in entries {
                         let (src, dest) = entry.split_once(':').unwrap_or((entry, entry));
-                        let step =
-                            file::link(&ctx, &files.join(src), &home.join(dest), false).await?;
-                        outcome = outcome.and(step);
+                        let (src, dest) = (files.join(src), home.join(dest));
+                        outcome = outcome.and(copy::copy(&ctx, &src, &dest, None, false).await?);
                     }
                     for (dest, src) in &dirs {
                         let step =
@@ -175,7 +175,6 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
             }),
     );
 
-    let retired_files = files.clone();
     plan.add(
         Task::new("dotfiles/retired", "Copy retired dotfiles over their links")
             .tags(&["dotfiles"])
@@ -183,14 +182,16 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
                 let home = &ctx.vars().home;
                 let mut outcome = Outcome::Ok;
                 for entry in RETIRED {
-                    let (src, dest) = entry.split_once(':').unwrap_or((entry, entry));
-                    let (src, dest) = (retired_files.join(src), home.join(dest));
-                    let linked = matches!(
-                        file::stat(&ctx, &dest, false).await?,
-                        Some(file::Stat { kind: file::Kind::Link(target), .. }) if target == src
-                    );
-                    let Some(content) = file::read(&ctx, &src, false).await?.filter(|_| linked)
+                    let dest = home.join(entry);
+                    let Some(file::Stat {
+                        kind: file::Kind::Link(_),
+                        ..
+                    }) = file::stat(&ctx, &dest, false).await?
                     else {
+                        continue;
+                    };
+                    // A link to nothing is left alone: there is nothing to keep.
+                    let Some(content) = file::read(&ctx, &dest, false).await? else {
                         continue;
                     };
                     if ctx.check() {
@@ -205,14 +206,14 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
     );
 
     plan.add(
-        Task::new(dot("root"), "Link the bash dotfiles for root")
+        Task::new(dot("root"), "Copy the bash dotfiles for root")
             .sudo()
             .after(["dotfiles/root-templates"])
             .run(move |ctx| async move {
                 let mut outcome = Outcome::Ok;
                 for entry in ROOT_DOTFILES {
-                    let dest = Path::new("/root").join(entry);
-                    outcome = outcome.and(file::link(&ctx, &files.join(entry), &dest, true).await?);
+                    let (src, dest) = (files.join(entry), Path::new("/root").join(entry));
+                    outcome = outcome.and(copy::copy(&ctx, &src, &dest, None, true).await?);
                 }
                 Ok(outcome)
             }),
@@ -304,5 +305,22 @@ mod jcode_theme_tests {
             "[display]\nx = 1\n\ntheme = \"dark\"\n[f]\n"
         );
         assert!(set_jcode_theme("[a]\n", "dark").ends_with("[display]\ntheme = \"dark\"\n"));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::configure::assets::Assets;
+
+    #[test]
+    fn every_dotfile_is_built_in() {
+        let files = Path::new("dotfiles/files");
+        let entries = DOTFILES.iter().flat_map(|(_, entries)| entries.iter());
+        for entry in entries.chain(ROOT_DOTFILES) {
+            let src = entry.split_once(':').map_or(*entry, |(src, _)| src);
+            assert!(Assets::Embedded.is_file(&files.join(src)), "{src}");
+        }
+        assert!(Assets::Embedded.is_dir(Path::new("dotfiles/templates/home")));
     }
 }

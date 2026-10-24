@@ -15,8 +15,10 @@
 //!   runs after have finished or were excluded by the tag selection, with at
 //!   most `--jobs` running at once.
 //!
-//! The roles' files and templates are read from `lib/uc/roles`.
+//! The roles' files and templates come from `lib/uc/roles`, built into uc
+//! ([`assets`]), so syncing needs nothing but the binary.
 
+pub mod assets;
 pub mod ctx;
 pub mod engine;
 pub mod facts;

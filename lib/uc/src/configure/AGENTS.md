@@ -20,12 +20,19 @@ Copyright (C) The Usecode Authors (see AUTHORS)
   still lets the tasks after it run.
 * `modules/` holds the reusable steps (`file`, `copy`, `apt`, `git`, ...).
   Each one is idempotent, reports `ok` or `changed`, and honours `--check`.
+* `lib/uc/roles/` holds the roles' files and templates. `build.rs` builds
+  them into uc (`assets.rs`), so `uc sync` runs from the binary or the .deb
+  alone. Never read from, link into or clone the usecode checkout: copy role
+  files into place with `copy::copy`/`copy::template`/`inflate`, which take
+  paths relative to `lib/uc/roles` (`v.role("x").join(..)`). `--roles DIR`
+  reads them from a directory instead, for trying changes without a
+  rebuild.
 
 ## Opt-in: uc only touches what it needs
 
 By default a run only does what uc itself needs. That is the `ESSENTIAL`
-list in `roles/mod.rs`: `~/.local/bin`, the `~/.config/usecode` link and
-building uc. The `sync` list in the user config turns on everything else,
+list in `roles/mod.rs`: `~/.local/bin` and the `~/.config/usecode` link.
+The `sync` list in the user config turns on everything else,
 by role, task id or glob, or with `all`.
 
 `Plan::opt_in` tags every task that isn't wanted with `never`, so it stays
