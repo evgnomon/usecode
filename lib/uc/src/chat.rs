@@ -395,6 +395,21 @@ fn signal_group(group: i32, signal: i32) {
     unsafe { libc::kill(-group, signal) };
 }
 
+/// Waits up to `secs` for every process of a group to be gone.
+async fn group_gone(group: i32, secs: u64) -> bool {
+    let until = tokio::time::Instant::now() + Duration::from_secs(secs);
+    loop {
+        // SAFETY: signal 0 only checks whether the group still exists.
+        if unsafe { libc::kill(-group, 0) } == -1 {
+            return true;
+        }
+        if tokio::time::Instant::now() >= until {
+            return false;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
 fn stop_jobs() {
     for group in std::mem::take(&mut *GROUPS.lock().unwrap()) {
         signal_group(group, libc::SIGTERM);
@@ -1828,12 +1843,13 @@ impl Session {
             .get(&id)
             .ok_or_else(|| anyhow!("there is no job {id}"))?;
         let group = job.group;
+        // bash exiting isn't enough: the rest of the pipeline may still run.
         for signal in [libc::SIGTERM, libc::SIGKILL] {
-            if self.jobs[&id].status.is_some() {
-                break;
-            }
             signal_group(group, signal);
             self.wait(id, 3).await;
+            if group_gone(group, 3).await {
+                break;
+            }
         }
         eprintln!("· job {id} stopped");
         let (status, text) = self.take(id);
