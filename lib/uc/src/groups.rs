@@ -53,12 +53,12 @@ pub static IMAGE: Group = Group {
         exec(
             "push",
             "push images through the bastion to the registry",
-            &["uc-push"],
+            &["uc-image-push"],
         ),
         exec(
             "pull",
             "pull images through the bastion from the registry",
-            &["uc-pull"],
+            &["uc-image-pull"],
         ),
         group("run", &IMAGE_RUN),
     ],

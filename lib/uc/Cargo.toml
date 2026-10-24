@@ -34,12 +34,12 @@ name = "uc-kube-sync"
 path = "src/bin/uc-kube-sync.rs"
 
 [[bin]]
-name = "uc-push"
-path = "src/bin/uc-push.rs"
+name = "uc-image-push"
+path = "src/bin/uc-image-push.rs"
 
 [[bin]]
-name = "uc-pull"
-path = "src/bin/uc-pull.rs"
+name = "uc-image-pull"
+path = "src/bin/uc-image-pull.rs"
 
 [[bin]]
 name = "uc-secret"

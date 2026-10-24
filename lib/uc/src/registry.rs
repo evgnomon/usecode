@@ -24,8 +24,8 @@ const PASSWORD_KEY: &str = "vault_container_registry_password";
 /// How many one second attempts the tunnel gets to start listening.
 const TUNNEL_ATTEMPTS: u32 = 30;
 
-/// Where the registry is and how to reach it; shared by `uc push` and
-/// `uc pull`.
+/// Where the registry is and how to reach it; shared by `uc image push` and
+/// `uc image pull`.
 #[derive(Args, Debug)]
 pub struct Config {
     /// Container CLI used to log in, tag, push and pull.

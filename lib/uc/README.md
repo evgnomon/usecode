@@ -18,7 +18,7 @@ uc secret gen          # runs uc-secret gen
 
 This crate ships the dispatcher, the two file encryption subcommands, which
 replace the former `boom` shell script, and `uc sync`, the machine
-configurator, `uc push`/`uc pull`, which move container images through
+configurator, `uc image push`/`uc image pull`, which move container images through
 the registry behind the bastion, and `uc secret`, which generates secrets and
 manages the ansible-vault secret stores.
 The last two replace the former `lib/pylib` Python package.
@@ -304,14 +304,14 @@ credentials fresh until it ends.
 
 ## Moving container images
 
-`uc push` and `uc pull` replace `deploy/push.sh` and `deploy/pull.sh`. The
+`uc image push` and `uc image pull` replace `deploy/push.sh` and `deploy/pull.sh`. The
 registry is only reachable through the bastion, so both open an SSH tunnel to it, log the container CLI in, move
 the images and close the tunnel again:
 
 ```sh
-uc push myimage:latest             # tag as localhost:5000/myimage:latest and push
-uc pull myimage:latest             # pull localhost:5000/myimage:latest
-uc pull --strip-host myimage:latest # ... and also tag it as myimage:latest
+uc image push myimage:latest             # tag as localhost:5000/myimage:latest and push
+uc image pull myimage:latest             # pull localhost:5000/myimage:latest
+uc image pull --strip-host myimage:latest # ... and also tag it as myimage:latest
 ```
 
 The password comes from `REGISTRY_PASSWORD`, or else from
@@ -322,7 +322,7 @@ itself, no ansible needed, finding the vault password just like
 prompt). The registry and bastion addresses, ports and users, and the
 container CLI, are options with the same environment variables the scripts
 read (`BASTION_HOST`, `REGISTRY_HOST`, `LOCAL_PORT`, `CONTAINER_CLI`, ...);
-see `uc push -h`.
+see `uc image push -h`.
 
 ## Secrets
 
@@ -501,7 +501,7 @@ switching scripts over to the `uc` commands is a good idea.
 
 | Command | Executable | Was |
 |---|---|---|
-| `uc image push`, `pull` | `uc-push`, `uc-pull` | |
+| `uc image push`, `pull` | `uc-image-push`, `uc-image-pull` | |
 | `uc image run barge` | `uc-image-run-barge` | `barge` |
 | `uc repo fqn` | `uc-repo-fqn` | `repofqn` |
 | `uc repo version` | `uc-repo-version` | `ucversion` |

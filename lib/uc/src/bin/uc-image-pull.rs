@@ -1,26 +1,30 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! `uc-push` — push local container images to the registry behind the
-//! bastion.
+//! `uc-image-pull` — pull container images from the registry behind the bastion.
 
 use clap::Parser;
 use std::process::ExitCode;
 use uc::registry::{Config, Session};
 
-const SUMMARY: &str = "push container images to the registry behind the bastion";
+const SUMMARY: &str = "pull container images from the registry behind the bastion";
 
-/// Push local container images to the registry behind the bastion.
+/// Pull container images from the registry behind the bastion.
 ///
 /// Opens an SSH tunnel to the registry through the bastion, logs in, then
-/// tags each image under the registry and pushes it.
+/// pulls each image.
 #[derive(Parser)]
-#[command(name = "uc push", bin_name = "uc push", version)]
+#[command(name = "uc image pull", bin_name = "uc image pull", version)]
 struct Cli {
+    /// Also tag each pulled image without the registry host prefix
+    /// (localhost:5000/foo -> foo).
+    #[arg(short, long)]
+    strip_host: bool,
+
     #[command(flatten)]
     config: Config,
 
-    /// Images to push, as <image>[:tag].
+    /// Images to pull, as <image>[:tag].
     #[arg(required = true, value_name = "IMAGE")]
     images: Vec<String>,
 }
@@ -31,10 +35,10 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
     let cli = Cli::parse();
-    match Session::open(&cli.config).and_then(|s| s.push(&cli.images)) {
+    match Session::open(&cli.config).and_then(|s| s.pull(&cli.images, cli.strip_host)) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
-            eprintln!("uc-push: {err:#}");
+            eprintln!("uc-image-pull: {err:#}");
             ExitCode::FAILURE
         }
     }

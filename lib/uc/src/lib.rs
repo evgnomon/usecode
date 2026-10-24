@@ -9,7 +9,7 @@
 //! `uc-secret-decrypt`, [`configure`] the parallel machine configurator behind
 //! `uc-sync`, [`kube`] the same configurator for a Kubernetes cluster
 //! behind `uc-kube-sync`, [`registry`] the tunnelled image transfer behind
-//! `uc-push` and `uc-pull`, and [`password`], [`secret`] and [`repo`] the
+//! `uc-image-push` and `uc-image-pull`, and [`password`], [`secret`] and [`repo`] the
 //! generator and ansible-vault secret stores behind `uc-secret`, with
 //! [`backup`] its SSH, GPG and kubeconfig backup.
 //!
