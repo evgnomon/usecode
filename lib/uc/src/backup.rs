@@ -1,14 +1,15 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! The SSH and GPG key backup behind `uc secret backup` and `uc secret restore`.
+//! The SSH, GPG and kubeconfig backup behind `uc secret backup` and
+//! `uc secret restore`.
 //!
-//! A backup is a `.tar.gz` of every user's `~/.ssh` and `~/.gnupg` (users
-//! and homes from `/etc/passwd`) and the SSH host keys in `/etc/ssh`, with
-//! paths relative to `/`, each entry carrying its mode, owner and group by
-//! number and by name. Sockets and lock files are left out, and symlinks are
-//! kept as symlinks, except for a `~/.ssh` or `~/.gnupg` that is itself one,
-//! whose target's contents are taken.
+//! A backup is a `.tar.gz` of every user's `~/.ssh`, `~/.gnupg` and `~/.kube`
+//! (users and homes from `/etc/passwd`) and the SSH host keys in `/etc/ssh`,
+//! with paths relative to `/`, each entry carrying its mode, owner and group
+//! by number and by name. Sockets, lock files and kubectl's caches are left
+//! out, and symlinks are kept as symlinks, except for a `~/.ssh`, `~/.gnupg`
+//! or `~/.kube` that is itself one, whose target's contents are taken.
 //!
 //! With a password, the archive is encrypted the way `uc secret encrypt`
 //! does it, to `<name>.tar.gz.asc`, and opens with `uc secret decrypt` too.
@@ -36,6 +37,7 @@ use zeroize::Zeroizing;
 pub struct Kinds {
     pub ssh: bool,
     pub gpg: bool,
+    pub kube: bool,
 }
 
 impl Kinds {
@@ -45,7 +47,8 @@ impl Kinds {
         let ssh = parts.starts_with(&["etc".as_ref(), "ssh".as_ref()])
             || parts.iter().any(|p| *p == ".ssh");
         let gpg = parts.iter().any(|p| *p == ".gnupg");
-        (ssh && self.ssh) || (gpg && self.gpg)
+        let kube = parts.iter().any(|p| *p == ".kube");
+        (ssh && self.ssh) || (gpg && self.gpg) || (kube && self.kube)
     }
 }
 
@@ -145,7 +148,11 @@ fn sources(root: &Path, accounts: &Accounts, kinds: Kinds) -> Vec<PathBuf> {
     }
     for home in &accounts.homes {
         let home = root.join(home.trim_start_matches('/'));
-        for (want, dir) in [(kinds.ssh, ".ssh"), (kinds.gpg, ".gnupg")] {
+        for (want, dir) in [
+            (kinds.ssh, ".ssh"),
+            (kinds.gpg, ".gnupg"),
+            (kinds.kube, ".kube"),
+        ] {
             let path = home.join(dir);
             if want && !paths.contains(&path) && fs::metadata(&path).is_ok_and(|m| m.is_dir()) {
                 paths.push(path);
@@ -156,11 +163,17 @@ fn sources(root: &Path, accounts: &Accounts, kinds: Kinds) -> Vec<PathBuf> {
 }
 
 /// Sockets, pipes and gpg's lock files: things that only mean something
-/// while a program is running.
+/// while a program is running. And kubectl's caches in `~/.kube`, which it
+/// fills again by itself.
 fn transient(path: &Path, meta: &fs::Metadata) -> bool {
     let kind = meta.file_type();
     let name = path.file_name().unwrap_or_default().to_string_lossy();
-    kind.is_socket()
+    let in_kube = path
+        .parent()
+        .and_then(Path::file_name)
+        .is_some_and(|p| p == ".kube");
+    (in_kube && (name == "cache" || name == "http-cache"))
+        || kind.is_socket()
         || kind.is_fifo()
         || kind.is_block_device()
         || kind.is_char_device()
@@ -390,17 +403,27 @@ fn shown(root: &Path, path: &Path) -> String {
     format!("/{}", path.strip_prefix(root).unwrap_or(path).display())
 }
 
-/// How many entries of each kind a report covers, as `ssh: N, gpg: M`.
+/// How many entries of each kind a report covers, as
+/// `ssh: N, gpg: M, kube: K`.
 pub fn counts(paths: &[PathBuf]) -> String {
     let mut counts: HashMap<&str, usize> = HashMap::new();
     for path in paths {
-        let gpg = path.components().any(|c| c.as_os_str() == ".gnupg");
-        *counts.entry(if gpg { "gpg" } else { "ssh" }).or_default() += 1;
+        let has = |dir: &str| path.components().any(|c| c.as_os_str() == dir);
+        let kind = if has(".gnupg") {
+            "gpg"
+        } else if has(".kube") {
+            "kube"
+        } else {
+            "ssh"
+        };
+        *counts.entry(kind).or_default() += 1;
     }
+    let count = |kind| counts.get(kind).unwrap_or(&0);
     format!(
-        "ssh: {}, gpg: {}",
-        counts.get("ssh").unwrap_or(&0),
-        counts.get("gpg").unwrap_or(&0)
+        "ssh: {}, gpg: {}, kube: {}",
+        count("ssh"),
+        count("gpg"),
+        count("kube")
     )
 }
 
@@ -409,9 +432,10 @@ mod tests {
     use super::*;
     use std::os::unix::fs::{PermissionsExt, symlink};
 
-    const BOTH: Kinds = Kinds {
+    const ALL: Kinds = Kinds {
         ssh: true,
         gpg: true,
+        kube: true,
     };
 
     fn no_password() -> Result<Zeroizing<String>> {
@@ -461,9 +485,13 @@ mod tests {
         write(&gnupg.join("private-keys-v1.d/ABC.key"), "gpg", 0o600);
         write(&gnupg.join("public-keys.d/pubring.db.lock"), "", 0o600);
         let _socket = std::os::unix::net::UnixListener::bind(gnupg.join("S.gpg-agent")).unwrap();
+        let kube = src.join("home/alice/.kube");
+        write(&kube.join("config"), "kubeconfig", 0o600);
+        write(&kube.join("cache/discovery/x.json"), "{}", 0o644);
+        write(&kube.join("http-cache/y"), "", 0o644);
 
         let out = tmp.path().join("b.tar.gz");
-        let report = backup(&src, BOTH, &out, None).unwrap();
+        let report = backup(&src, ALL, &out, None).unwrap();
         assert!(report.warnings.is_empty(), "{:?}", report.warnings);
         assert_eq!(mode(&out), 0o600);
         let taken: Vec<_> = report.done.iter().map(|p| p.to_str().unwrap()).collect();
@@ -474,9 +502,11 @@ mod tests {
                 .iter()
                 .any(|p| p.ends_with("S.gpg-agent") || p.ends_with(".lock"))
         );
+        assert!(taken.contains(&"home/alice/.kube/config"));
+        assert!(!taken.iter().any(|p| p.contains("cache")));
 
         system(&dst, "alice");
-        let report = restore(&out, &dst, BOTH, false, no_password).unwrap();
+        let report = restore(&out, &dst, ALL, false, no_password).unwrap();
         assert!(report.warnings.is_empty(), "{:?}", report.warnings);
         let ssh = dst.join("home/alice/.ssh");
         assert_eq!(
@@ -496,6 +526,9 @@ mod tests {
             "gpg"
         );
         assert_eq!(mode(&dst.join("etc/ssh/ssh_host_ed25519_key")), 0o600);
+        let config = dst.join("home/alice/.kube/config");
+        assert_eq!(fs::read_to_string(&config).unwrap(), "kubeconfig");
+        assert_eq!(mode(&config), 0o600);
     }
 
     #[test]
@@ -506,14 +539,14 @@ mod tests {
         let key = root.join("home/bob/.ssh/id_rsa");
         write(&key, "old", 0o600);
         let out = tmp.path().join("b.tar.gz");
-        backup(&root, BOTH, &out, None).unwrap();
+        backup(&root, ALL, &out, None).unwrap();
 
         write(&key, "new", 0o644);
-        let report = restore(&out, &root, BOTH, false, no_password).unwrap();
+        let report = restore(&out, &root, ALL, false, no_password).unwrap();
         assert_eq!(report.kept, [PathBuf::from("home/bob/.ssh/id_rsa")]);
         assert_eq!(fs::read_to_string(&key).unwrap(), "new");
 
-        restore(&out, &root, BOTH, true, no_password).unwrap();
+        restore(&out, &root, ALL, true, no_password).unwrap();
         assert_eq!(fs::read_to_string(&key).unwrap(), "old");
         assert_eq!(mode(&key), 0o600);
     }
@@ -529,6 +562,7 @@ mod tests {
         let ssh_only = Kinds {
             ssh: true,
             gpg: false,
+            kube: false,
         };
         let report = backup(&src, ssh_only, &out, None).unwrap();
         assert!(
@@ -539,7 +573,7 @@ mod tests {
         );
 
         system(&dst, "dave");
-        let report = restore(&out, &dst, BOTH, false, no_password).unwrap();
+        let report = restore(&out, &dst, ALL, false, no_password).unwrap();
         assert!(report.done.is_empty());
         assert_eq!(
             report.warnings,
@@ -555,16 +589,16 @@ mod tests {
         let key = root.join("home/erin/.ssh/id_ed25519");
         write(&key, "private", 0o600);
         let out = tmp.path().join("b.tar.gz.asc");
-        backup(&root, BOTH, &out, Some(b"hunter2")).unwrap();
+        backup(&root, ALL, &out, Some(b"hunter2")).unwrap();
         assert!(!fs::read_to_string(&out).unwrap().contains("private"));
         assert_eq!(mode(&out), 0o600);
 
         fs::remove_file(&key).unwrap();
         let wrong = || Ok(Zeroizing::new("nope".to_string()));
-        assert!(restore(&out, &root, BOTH, false, wrong).is_err());
+        assert!(restore(&out, &root, ALL, false, wrong).is_err());
         assert!(!key.exists());
         let right = || Ok(Zeroizing::new("hunter2".to_string()));
-        restore(&out, &root, BOTH, false, right).unwrap();
+        restore(&out, &root, ALL, false, right).unwrap();
         assert_eq!(fs::read_to_string(&key).unwrap(), "private");
     }
 }

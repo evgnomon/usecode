@@ -19,7 +19,7 @@ use uc::{backup, cli, dispatch};
 use zeroize::Zeroizing;
 
 const SUMMARY: &str =
-    "generate secrets, manage the ansible-vault secret stores and back up SSH and GPG keys";
+    "generate secrets, manage the ansible-vault secret stores and back up SSH, GPG and kube keys";
 
 /// Generate secrets and manage the ansible-vault secret stores.
 ///
@@ -89,8 +89,8 @@ enum Cmd {
         #[command(flatten)]
         name: Name,
     },
-    /// Save every user's ~/.ssh and ~/.gnupg and the SSH host keys to a
-    /// password encrypted tar.gz, with their owners and modes. Run as root
+    /// Save every user's ~/.ssh, ~/.gnupg and ~/.kube and the SSH host keys
+    /// to a password encrypted tar.gz, with their owners and modes. Run as root
     /// to take them all; otherwise only what is readable is taken.
     Backup {
         /// The archive to write [default:
@@ -188,6 +188,10 @@ struct KindFlags {
     /// Leave the GPG keys out.
     #[arg(long)]
     no_gpg: bool,
+
+    /// Leave the kubeconfigs out.
+    #[arg(long)]
+    no_kube: bool,
 }
 
 impl KindFlags {
@@ -195,6 +199,7 @@ impl KindFlags {
         backup::Kinds {
             ssh: !self.no_ssh,
             gpg: !self.no_gpg,
+            kube: !self.no_kube,
         }
     }
 }

@@ -11,7 +11,7 @@
 //! behind `uc-kube-sync`, [`registry`] the tunnelled image transfer behind
 //! `uc-push` and `uc-pull`, and [`password`], [`secret`] and [`repo`] the
 //! generator and ansible-vault secret stores behind `uc-secret`, with
-//! [`backup`] its SSH and GPG key backup.
+//! [`backup`] its SSH, GPG and kubeconfig backup.
 //!
 //! [`flag`] reads a flag from the command line, a `UC_` variable or the
 //! user config.

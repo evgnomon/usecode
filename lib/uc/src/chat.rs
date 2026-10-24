@@ -2224,12 +2224,7 @@ impl ConditionalEventHandler for FzfHistory {
             }
         }
         let mut fzf = std::process::Command::new("fzf")
-            .args([
-                "--height=40%",
-                "--scheme=history",
-                "--read0",
-                "--print0",
-            ])
+            .args(["--height=40%", "--scheme=history", "--read0", "--print0"])
             .args(["--bind=ctrl-r:toggle-sort", "--query", ctx.line()])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

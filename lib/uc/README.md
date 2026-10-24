@@ -333,7 +333,7 @@ uc profile laptop-wsl            # stores of this machine's own, see below
 uc secret encrypt notes.txt      # see Encrypting files
 uc secret server read acme prod db  # the SSH key authenticated secret server
 uc secret serve                  # same as uc secret server serve
-sudo uc secret backup            # all SSH and GPG keys -> <host>-secrets-<date>.tar.gz.asc
+sudo uc secret backup            # all SSH, GPG and kube keys -> <host>-secrets-<date>.tar.gz.asc
 sudo uc secret restore FILE      # put them back, same owners and modes
 ```
 
@@ -444,17 +444,17 @@ for `server serve`.
 | `ensure_vault` | `uc secret ensure -r --print vault` |
 | `rotate_keychain_pass [NAME]` | `uc secret rotate [NAME]` |
 
-### Backing up SSH and GPG keys
+### Backing up SSH, GPG and kube keys
 
 Moving to a new machine, or about to wipe one? `uc secret backup` puts every
-user's `~/.ssh` and `~/.gnupg` (users from `/etc/passwd`) and the SSH host
-keys from `/etc/ssh` into one password encrypted `.tar.gz.asc`, and
+user's `~/.ssh`, `~/.gnupg` and `~/.kube` (users from `/etc/passwd`) and the
+SSH host keys from `/etc/ssh` into one password encrypted `.tar.gz.asc`, and
 `uc secret restore` puts them back where they were, with the same modes and
 owners:
 
 ```sh
 sudo uc secret backup                         # <hostname>-secrets-<YYYYMMDD>.tar.gz.asc
-sudo uc secret backup keys.tar.gz.asc --no-gpg   # only the SSH keys
+sudo uc secret backup keys.tar.gz.asc --no-gpg --no-kube   # only the SSH keys
 sudo uc secret restore keys.tar.gz.asc        # asks for the password; existing files are kept
 sudo uc secret restore -f keys.tar.gz.asc     # ... or replaced
 ```
@@ -463,7 +463,10 @@ Run them as root to cover everyone; as yourself you get what you can read,
 which is usually your own keys. Owners are matched by user name, so a user
 with a different uid on the new machine still gets their files, and a user
 who has no home there is skipped with a note. Agent sockets and lock files
-are left out. `--no-ssh` and `--no-gpg` work on both sides, and `--root DIR`
+are left out, and so are kubectl's caches. Your kubeconfigs are also all
+`uc fs` needs: it keeps no keys of its own on disk and reads them from the
+cluster each time (or from `UC_FS_*` in your environment). `--no-ssh`,
+`--no-gpg` and `--no-kube` work on both sides, and `--root DIR`
 backs up or restores a system mounted at `DIR`.
 
 Backups are encrypted the same way as `uc secret encrypt` (AES-256 with
