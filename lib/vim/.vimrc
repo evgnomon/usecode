@@ -95,16 +95,12 @@ set completeopt=preview,menuone,popup      " Configure completion options: show 
 
 " Plugins
 call plug#begin('~/.vim/plugged')
-Plug 'voldikss/vim-floaterm'
 Plug 'neoclide/jsonc.vim', {'commit': '6fb92460f9e50505c9b93181a00f27d10c9b383f' }
 Plug 'morhetz/gruvbox', {'commit': '697c00291db857ca0af00ec154e5bd514a79191f' }
 
 " Search
 Plug 'junegunn/fzf', { 'do': { -> fzf#install() } }
 Plug 'junegunn/fzf.vim'
-
-" Snippet
-Plug 'SirVer/ultisnips'
 
 " Formatter
 Plug 'tpope/vim-commentary'
@@ -113,12 +109,6 @@ Plug 'prettier/vim-prettier', { 'do': 'yarn install' }
 
 " Terraform
 Plug 'hashivim/vim-terraform'
-
-" JS/TS
-Plug 'heavenshell/vim-jsdoc', {
-      \ 'for': ['javascript', 'javascript.jsx','typescript'],
-      \ 'do': 'make install'
-      \}
 
 " Copilot
 Plug 'github/copilot.vim'
@@ -139,18 +129,8 @@ let g:coc_global_extensions = [
       \ 'coc-clangd'
       \]
 
-nmap <silent> <leader>kk ?function<cr>:noh<cr><Plug>(jsdoc)
-
 " Must be after laoding plugins
 colorscheme gruvbox
-
-" Snippets
-let g:UltiSnipsSnippetStorageDirectoryForUltiSnipsEdit = $HOME."/src/github.com/".$USER."/usecode/lib/snippets/ultisnips"
-let g:UltiSnipsSnippetDirectories=[$HOME."/src/github.com/".$USER."/usecode/lib/snippets/ultisnips", "UltiSnips"]
-" Avoid <Tab> collision with Copilot; use <C-J>/<C-K> for UltiSnips.
-let g:UltiSnipsExpandTrigger="<C-J>"
-let g:UltiSnipsJumpForwardTrigger="<C-J>"
-let g:UltiSnipsJumpBackwardTrigger="<C-K>"
 
 nnoremap <C-P> :History<CR>
 nnoremap <leader>o :Files<CR>

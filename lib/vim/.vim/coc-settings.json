@@ -2,7 +2,6 @@
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
 {
-  "snippets.ultisnips.pythonPrompt": false,
   "python.formatting.provider": "ruff",
   "[zig]": {
     "coc.preferences.formatOnSave": true,
