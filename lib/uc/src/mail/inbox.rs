@@ -578,7 +578,6 @@ pub fn pick(entries: Vec<Entry>) -> Picked {
 
     let options = SkimOptionsBuilder::default()
         .multi(true)
-        .reverse(true)
         .tiebreak(vec![RankCriteria::Score, RankCriteria::Index])
         .preview(Some(String::new()))
         .preview_window("down:60%:wrap".to_string())

@@ -2226,7 +2226,6 @@ impl ConditionalEventHandler for FzfHistory {
         let mut fzf = std::process::Command::new("fzf")
             .args([
                 "--height=40%",
-                "--reverse",
                 "--scheme=history",
                 "--read0",
                 "--print0",
