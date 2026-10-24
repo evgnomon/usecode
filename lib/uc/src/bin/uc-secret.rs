@@ -89,9 +89,8 @@ enum Cmd {
         #[command(flatten)]
         name: Name,
     },
-    /// Save every user's ~/.ssh, ~/.gnupg and ~/.kube and the SSH host keys
-    /// to a password encrypted tar.gz, with their owners and modes. Run as root
-    /// to take them all; otherwise only what is readable is taken.
+    /// Save your ~/.ssh, ~/.gnupg and ~/.kube to a password encrypted tar.gz,
+    /// with their modes. Under sudo they are the sudo user's.
     Backup {
         /// The archive to write [default:
         /// <hostname>-secrets-<YYYYMMDD>.tar.gz.asc].
@@ -108,9 +107,9 @@ enum Cmd {
         #[arg(long, value_name = "DIR", default_value = "/")]
         root: PathBuf,
     },
-    /// Put the secrets of a `uc secret backup` back in place, with the same
-    /// modes and owners (by name, else by id). Existing files are kept. An
-    /// encrypted backup asks for its password.
+    /// Put the secrets of a `uc secret backup` back into your home, with the
+    /// same modes, owned by you, whatever your username is here. Existing
+    /// files are kept. An encrypted backup asks for its password.
     Restore {
         /// The archive to restore.
         file: PathBuf,
@@ -316,7 +315,7 @@ fn run(cmd: Cmd) -> anyhow::Result<ExitCode> {
             println!(
                 "Saved {} entries ({}) to {}",
                 report.done.len(),
-                backup::counts(&report.done),
+                backup::counts(&report),
                 file.display()
             );
         }
@@ -342,7 +341,7 @@ fn run(cmd: Cmd) -> anyhow::Result<ExitCode> {
             println!(
                 "Restored {} entries ({})",
                 report.done.len(),
-                backup::counts(&report.done)
+                backup::counts(&report)
             );
         }
         Cmd::Encrypt { args } => return Ok(dispatch::exec("uc-secret-encrypt", args)),

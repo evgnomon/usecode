@@ -333,8 +333,8 @@ uc profile laptop-wsl            # stores of this machine's own, see below
 uc secret encrypt notes.txt      # see Encrypting files
 uc secret server read acme prod db  # the SSH key authenticated secret server
 uc secret serve                  # same as uc secret server serve
-sudo uc secret backup            # all SSH, GPG and kube keys -> <host>-secrets-<date>.tar.gz.asc
-sudo uc secret restore FILE      # put them back, same owners and modes
+uc secret backup                 # your SSH, GPG and kube keys -> <host>-secrets-<date>.tar.gz.asc
+uc secret restore FILE           # put them back in your home, same modes
 ```
 
 `gen` draws characters uniformly from the OS random source; the dotfiles
@@ -446,23 +446,28 @@ for `server serve`.
 
 ### Backing up SSH, GPG and kube keys
 
-Moving to a new machine, or about to wipe one? `uc secret backup` puts every
-user's `~/.ssh`, `~/.gnupg` and `~/.kube` (users from `/etc/passwd`) and the
-SSH host keys from `/etc/ssh` into one password encrypted `.tar.gz.asc`, and
-`uc secret restore` puts them back where they were, with the same modes and
-owners:
+Moving to a new machine, or about to wipe one? `uc secret backup` puts your
+`~/.ssh`, `~/.gnupg` and `~/.kube` into one password encrypted
+`.tar.gz.asc`, and `uc secret restore` puts them back into your home, with
+the same modes:
 
 ```sh
-sudo uc secret backup                         # <hostname>-secrets-<YYYYMMDD>.tar.gz.asc
-sudo uc secret backup keys.tar.gz.asc --no-gpg --no-kube   # only the SSH keys
-sudo uc secret restore keys.tar.gz.asc        # asks for the password; existing files are kept
-sudo uc secret restore -f keys.tar.gz.asc     # ... or replaced
+uc secret backup                              # <hostname>-secrets-<YYYYMMDD>.tar.gz.asc
+uc secret backup keys.tar.gz.asc --no-gpg --no-kube   # only the SSH keys
+uc secret restore keys.tar.gz.asc             # asks for the password; existing files are kept
+uc secret restore -f keys.tar.gz.asc          # ... or replaced
 ```
 
-Run them as root to cover everyone; as yourself you get what you can read,
-which is usually your own keys. Owners are matched by user name, so a user
-with a different uid on the new machine still gets their files, and a user
-who has no home there is skipped with a note. Agent sockets and lock files
+No root needed: it's always just you (under `sudo`, the user who ran it).
+Got a different username or home on the new machine? No problem, the keys
+land in your home there, owned by you, and absolute symlinks into the old
+home are pointed at the new one.
+
+Backups made by an older or a newer uc restore just fine: the archive
+carries a small `uc-backup.json` saying what's in it, older uc's skip it,
+and anything a newer uc added that this one doesn't know yet is put back
+as it is. From an older backup that took every user, you get yours back
+(the one with your name, or the only one). Agent sockets and lock files
 are left out, and so are kubectl's caches. Your kubeconfigs are also all
 `uc fs` needs: it keeps no keys of its own on disk and reads them from the
 cluster each time (or from `UC_FS_*` in your environment). `--no-ssh`,
