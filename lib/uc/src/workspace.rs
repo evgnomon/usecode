@@ -117,7 +117,8 @@ pub fn check_name(name: &str) -> Result<()> {
 }
 
 /// The public keys in `~/.ssh/*.pub`, or in `files` when given, one per
-/// line.
+/// line. Hidden files are skipped, like the `._*.pub` macOS leaves behind
+/// when copying a key.
 pub fn authorized_keys(home: &Path, files: &[std::path::PathBuf]) -> Result<String> {
     let files = if files.is_empty() {
         let dir = home.join(".ssh");
@@ -127,6 +128,10 @@ pub fn authorized_keys(home: &Path, files: &[std::path::PathBuf]) -> Result<Stri
             .flatten()
             .map(|e| e.path())
             .filter(|p| p.extension().is_some_and(|e| e == "pub"))
+            .filter(|p| {
+                !p.file_name()
+                    .is_some_and(|n| n.as_encoded_bytes().starts_with(b"."))
+            })
             .collect();
         found.sort();
         if found.is_empty() {
@@ -473,6 +478,7 @@ mod tests {
         assert!(authorized_keys(&dir, &[]).is_err());
         std::fs::write(dir.join(".ssh/id_ed25519.pub"), "ssh-ed25519 AAAA ada\n\n").unwrap();
         std::fs::write(dir.join(".ssh/id_ed25519"), "private").unwrap();
+        std::fs::write(dir.join(".ssh/._id_ed25519.pub"), [0u8, 5, 22, 7, 0xff]).unwrap();
         assert_eq!(
             authorized_keys(&dir, &[]).unwrap(),
             "ssh-ed25519 AAAA ada\n"
