@@ -51,8 +51,13 @@ pub fn tasks(plan: &mut Plan, _v: &Vars) {
                         .output()
                 };
                 let before = head().await?.stdout;
+                // Never prompt: a passphrase asked for amid the parallel
+                // progress lines looks like a hang. Without a key in the
+                // agent the pull fails and the checkout stays where it is.
                 ctx.cmd("git")
                     .args(["-C", &dir, "pull", "--ff-only"])
+                    .env("GIT_SSH_COMMAND", "ssh -o BatchMode=yes")
+                    .env("GIT_TERMINAL_PROMPT", "0")
                     .output()
                     .await?;
                 Ok(Outcome::changed(head().await?.stdout != before))
