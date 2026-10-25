@@ -1325,7 +1325,7 @@ dependencies = [
  "base16ct",
  "crypto-bigint",
  "digest 0.10.7",
- "ff 0.13.1",
+ "ff",
  "generic-array",
  "group",
  "pkcs8",
@@ -1431,10 +1431,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "extract-tool"
-version = "0.1.0"
-
-[[package]]
 name = "fallible-iterator"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1474,10 +1470,6 @@ dependencies = [
  "subtle",
  "zeroize",
 ]
-
-[[package]]
-name = "ff"
-version = "0.1.0"
 
 [[package]]
 name = "ff"
@@ -1681,13 +1673,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "fzurls"
-version = "0.1.0"
-dependencies = [
- "serde_json",
-]
-
-[[package]]
 name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1754,10 +1739,6 @@ name = "git_repos"
 version = "0.1.0"
 
 [[package]]
-name = "gotorepo"
-version = "0.1.0"
-
-[[package]]
 name = "graviola"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1773,7 +1754,7 @@ version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f0f9ef7462f7c099f518d754361858f86d8a07af53ba9af0fe635bbccb151a63"
 dependencies = [
- "ff 0.13.1",
+ "ff",
  "rand_core 0.6.4",
  "subtle",
 ]
@@ -2782,14 +2763,6 @@ name = "multiversion_no_op"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "743fb55ba31b18fb1ecef6bdc9aa2743314978ac084044301a7eee33fb99a20d"
-
-[[package]]
-name = "natsup"
-version = "0.1.0"
-dependencies = [
- "clap",
- "serde_json",
-]
 
 [[package]]
 name = "ndk-context"
@@ -4211,10 +4184,6 @@ dependencies = [
  "serde",
  "unsafe-libyaml",
 ]
-
-[[package]]
-name = "set_git_conf"
-version = "0.1.0"
 
 [[package]]
 name = "sha1"

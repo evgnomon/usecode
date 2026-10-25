@@ -13,7 +13,6 @@
 pub mod alacritty;
 pub mod apt;
 pub mod bash_history_backup;
-pub mod brave_bookmarks;
 pub mod docker;
 pub mod dotfiles;
 pub mod extrepo;
@@ -106,7 +105,6 @@ pub fn plan(v: &Vars) -> Plan {
     fonts::tasks(&mut plan, v);
     mise::tasks(&mut plan, v);
     bash_history_backup::tasks(&mut plan, v);
-    brave_bookmarks::tasks(&mut plan, v);
     wslview::tasks(&mut plan, v);
     wsl_sudo::tasks(&mut plan, v);
     yubikey::tasks(&mut plan, v);

@@ -2,3 +2,7 @@
 # Copyright (C) The Usecode Authors (see AUTHORS)
 
 set bell-style none
+
+# Up/Down: search history for commands starting with the typed prefix
+"\e[A": history-search-backward
+"\e[B": history-search-forward

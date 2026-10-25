@@ -25,7 +25,7 @@ The last two replace the former `lib/pylib` Python package.
 
 It also ships the command groups — `uc image`, `uc repo`, `uc cert`,
 `uc deb`, `uc db`, `uc net`, `uc daemon`, `uc vm`, `uc new`,
-`uc agent`, `uc pick` and `uc sys` — which gather
+`uc agent` and `uc sys` — which gather
 every tool in `lib/` under one command; see [Command groups](#command-groups).
 
 ## Talking to uc
@@ -262,27 +262,6 @@ them out, `always` tasks run unless skipped by name, and `never` tasks
 their id. A task's role and id also work as tags, and tags may contain `*`.
 `-d/--with-deps` also pulls in what the selected tasks run after.
 
-### Brave bookmarks
-
-`brave_bookmarks` merges the bookmarks of the Brave profiles into the
-`urls` list of the user config, so the picker sees everything the browser
-has and every machine carries the same links:
-
-```sh
-uc sync -t brave_bookmarks
-```
-
-The merge is by URL: entries the config already has keep their place,
-bookmarks Brave added are appended in Brave's order, and a bookmark's name
-in Brave is written over the config's. Links the config has and Brave does
-not are left alone, so hand-picked ones survive. The roots to read, out of
-`bookmark_bar`, `other` and `synced`, come from the config:
-
-```yaml
-brave_bookmarks:
-  roots: [bookmark_bar, other, synced]
-```
-
 ### Options
 
 | Flag | Meaning |
@@ -505,10 +484,7 @@ switching scripts over to the `uc` commands is a good idea.
 | `uc image run barge` | `uc-image-run-barge` | `barge` |
 | `uc repo fqn` | `uc-repo-fqn` | `repofqn` |
 | `uc repo version` | `uc-repo-version` | `ucversion` |
-| `uc repo open` | `uc-repo-open` | `gotorepo` |
 | `uc repo status [DIR]` | `uc-repo-status` | `git_repos` |
-| `uc repo git-config` | `uc-repo-git-config` | `set_git_conf` |
-| `uc repo extract` | `uc-repo-extract` | `extract-tool` |
 | `uc repo headers check`, `fix` | `uc-repo-headers` | `hgl` |
 | `uc repo authors` | built in | `scripts/authors.sh` (`make authors`) |
 | `uc cert init`, `server`, `client`, ... | `uc-cert-gen`: any command not below | `certgen` |
@@ -525,12 +501,10 @@ switching scripts over to the `uc` commands is a good idea.
 | `uc net ipsec`, `dig` | `uc-net-ipsec`, `uc-net-dig` | `ipmesh`, `diga` |
 | `uc daemon install`, `reload` | `uc-daemon-ctl install`, `reload` | |
 | `uc vm` | `uc-vm-local`, arguments and all; with `--provider`, built in (see below) | `vm` |
-| `uc nats` | `uc-nats` itself | `natsup` |
 | `uc new script`, `unit` | `uc-new-script`, `uc-new-unit` | `shole`, `mkunit` |
 | `uc secret server` | `uc-secret-server` | `secd` |
 | `uc agent api`, `mcp` | `uc-agent-api`, `uc-agent-mcp` | `usecode-agent-api`, `usecode-mcp` |
 | `uc agent usage` | built in | |
-| `uc pick file`, `url` | `uc-pick-file`, `uc-pick-url` | `ff`, `fzurls` |
 | `uc sys yubikey`, `argv` | `uc-sys-yubikey`, `uc-sys-argv` | `ykattach`, `num_argv` |
 | `uc sys vi` | `uc-sys-vi` | `vi` |
 | `uc terminal` | `uc-terminal-tm`, arguments and all | |

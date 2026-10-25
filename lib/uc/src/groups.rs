@@ -42,7 +42,7 @@ const fn alias(path: &'static str, summary: &'static str, argv: &'static [&'stat
 }
 
 pub const ALL: &[&Group] = &[
-    &IMAGE, &REPO, &CERT, &DEB, &DB, &NET, &DAEMON, &VM, &NEW, &AGENT, &PICK, &SYS, &TERMINAL,
+    &IMAGE, &REPO, &CERT, &DEB, &DB, &NET, &DAEMON, &VM, &NEW, &AGENT, &SYS, &TERMINAL,
     &MAIL,
 ];
 
@@ -91,24 +91,9 @@ pub static REPO: Group = Group {
             &["uc-repo-version"],
         ),
         exec(
-            "open",
-            "open the origin remote in the browser",
-            &["uc-repo-open"],
-        ),
-        exec(
             "status",
             "list repositories that are dirty, untracked or behind",
             &["uc-repo-status"],
-        ),
-        exec(
-            "git-config",
-            "set git identity and signing from the blueprint config",
-            &["uc-repo-git-config"],
-        ),
-        exec(
-            "extract",
-            "extract a tool from evgnomon/flow into its own repository",
-            &["uc-repo-extract"],
         ),
         exec(
             "headers",
@@ -420,24 +405,6 @@ fn agent_usage(args: &[OsString]) -> ExitCode {
         }
     }
 }
-
-pub static PICK: Group = Group {
-    path: "uc pick",
-    summary: "fuzzy-pick files and URLs with fzf",
-    commands: &[
-        exec(
-            "file",
-            "fuzzy-pick files under a directory",
-            &["uc-pick-file"],
-        ),
-        exec(
-            "url",
-            "open URLs, files, searches or picked bookmarks in Brave",
-            &["uc-pick-url"],
-        ),
-    ],
-    fallback: None,
-};
 
 pub static SYS: Group = Group {
     path: "uc sys",

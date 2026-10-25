@@ -64,10 +64,10 @@
 
 use anyhow::{Context, Result, anyhow, bail};
 use rustyline::error::ReadlineError;
-use rustyline::history::DefaultHistory;
+use rustyline::history::{DefaultHistory, SearchDirection};
 use rustyline::{
     Cmd, CompletionType, ConditionalEventHandler, Config, Editor, Event, EventContext,
-    EventHandler, KeyEvent, Modifiers, Movement, RepeatCount,
+    EventHandler, KeyCode, KeyEvent, Modifiers, Movement, RepeatCount,
 };
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
@@ -2337,6 +2337,22 @@ impl ConditionalEventHandler for FzfHistory {
     }
 }
 
+/// Up and Down find the earlier lines that start with what is typed before
+/// the cursor, like bash's `history-search-backward`. Inside a line of
+/// several, they move between its lines first.
+struct PrefixHistory(SearchDirection);
+
+impl ConditionalEventHandler for PrefixHistory {
+    fn handle(&self, _: &Event, _: RepeatCount, _: bool, ctx: &EventContext) -> Option<Cmd> {
+        let (before, after) = ctx.line().split_at(ctx.pos());
+        match self.0 {
+            SearchDirection::Reverse if !before.contains('\n') => Some(Cmd::HistorySearchBackward),
+            SearchDirection::Forward if !after.contains('\n') => Some(Cmd::HistorySearchForward),
+            _ => None,
+        }
+    }
+}
+
 /// The entries of a rustyline history file, the one uc kept before it kept
 /// the time, oldest first; `#V2` files escape
 /// newlines and backslashes.
@@ -2413,6 +2429,14 @@ fn read_line(prompt: &str) -> Result<Option<String>> {
         new.bind_sequence(
             KeyEvent::ctrl('R'),
             EventHandler::Conditional(Box::new(FzfHistory)),
+        );
+        new.bind_sequence(
+            KeyEvent(KeyCode::Up, Modifiers::NONE),
+            EventHandler::Conditional(Box::new(PrefixHistory(SearchDirection::Reverse))),
+        );
+        new.bind_sequence(
+            KeyEvent(KeyCode::Down, Modifiers::NONE),
+            EventHandler::Conditional(Box::new(PrefixHistory(SearchDirection::Forward))),
         );
         new.bind_sequence(
             KeyEvent::ctrl('L'),

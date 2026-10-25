@@ -124,22 +124,6 @@ if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
 fi
 
 
-sk-url-widget() {
-  uc-pick-url < /dev/tty > /dev/tty 2>&1
-  READLINE_LINE=""
-  READLINE_POINT=0
-}
-
-if (( BASH_VERSINFO[0] >= 4 )); then
-  bind -m emacs-standard -x '"\C-k": sk-url-widget'
-  bind -m vi-command -x '"\C-k": sk-url-widget'
-  bind -m vi-insert -x '"\C-k": sk-url-widget'
-else
-  bind -m emacs-standard '"\C-k": " \C-b\C-k \C-u`uc-pick-url < /dev/tty > /dev/tty 2>&1`\e\C-e\er\C-a\C-y\C-h\C-e\e \C-y\ey\C-x\C-x\C-f"'
-  bind -m vi-command '"\C-k": "\C-z\C-k\C-z"'
-  bind -m vi-insert '"\C-k": "\C-z\C-k\C-z"'
-fi
-
 # for setting history length see HISTSIZE and HISTFILESIZE in bash(1)
 HISTFILE=~/.history
 HISTSIZE=100000
@@ -202,7 +186,21 @@ fi
 CDPATH="$CDPATH:/media/$USER"
 export LIBVIRT_DEFAULT_URI="qemu:///system"
 
-eval "$(ssh-agent -s)" > /dev/null
+# One ssh-agent for all shells: keep a reachable one (inherited or forwarded),
+# else use the systemd user agent, else start one on a fixed socket.
+ssh-add -l > /dev/null 2>&1
+if [ $? -eq 2 ]; then
+    if [ -S "$XDG_RUNTIME_DIR/openssh_agent" ]; then
+        export SSH_AUTH_SOCK="$XDG_RUNTIME_DIR/openssh_agent"
+    else
+        export SSH_AUTH_SOCK="${XDG_RUNTIME_DIR:-$HOME/.ssh}/ssh-agent.sock"
+        ssh-add -l > /dev/null 2>&1
+        if [ $? -eq 2 ]; then
+            rm -f "$SSH_AUTH_SOCK"
+            eval "$(ssh-agent -s -a "$SSH_AUTH_SOCK")" > /dev/null
+        fi
+    fi
+fi
 export GPG_TTY=$(tty)
 gpg --card-status > /dev/null 2>&1 || true
 export EDITOR=vim

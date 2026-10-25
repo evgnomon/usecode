@@ -263,21 +263,6 @@ enum DbCommand {
     Add { name: String },
     /// Drop a database.
     Drop { name: String },
-    /// Save (dump) a database using mongodump.
-    Save {
-        name: String,
-        /// Output file path (default: <name>.archive.gz)
-        #[arg(short, long)]
-        output: Option<String>,
-    },
-    /// Restore a database from a mongodump archive.
-    Restore {
-        #[arg(value_parser = existing_path)]
-        input_file: PathBuf,
-        /// Database name (default: inferred from filename)
-        #[arg(short, long)]
-        name: Option<String>,
-    },
 }
 
 fn main() {
@@ -376,8 +361,6 @@ fn main() {
             DbCommand::List => cmd::database::list(),
             DbCommand::Add { name } => cmd::database::add(&name),
             DbCommand::Drop { name } => cmd::database::drop(&name),
-            DbCommand::Save { name, output } => cmd::database::save(&name, output),
-            DbCommand::Restore { input_file, name } => cmd::database::restore(&input_file, name),
         },
     }
 }

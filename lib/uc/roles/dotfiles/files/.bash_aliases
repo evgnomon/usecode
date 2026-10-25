@@ -77,7 +77,6 @@ alias cc=claude
 alias oc=opencode
 alias co=copilot
 alias d='cd "$(fd --type d | sk)"'
-alias gr="uc-repo-open"
 alias k=kubectl
 alias t='uc terminal'
 # jcode can leave the tty raw after an in-place self-update (exec handoff),

@@ -86,10 +86,6 @@ name = "uc-agent"
 path = "src/bin/uc-agent.rs"
 
 [[bin]]
-name = "uc-pick"
-path = "src/bin/uc-pick.rs"
-
-[[bin]]
 name = "uc-profile"
 path = "src/bin/uc-profile.rs"
 
