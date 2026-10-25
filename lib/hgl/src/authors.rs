@@ -1,7 +1,7 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! `uc repo authors`: add contributors from git history to `AUTHORS`.
+//! `hgl authors`: add contributors from git history to `AUTHORS`.
 //!
 //! Existing entries are kept as written, so contributors can change how they
 //! are credited by editing `AUTHORS`. Only authors whose email is not listed
@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 const HEADER: &str = "\
-# Contributors to usecode, generated from git history by uc repo authors.
+# Contributors to usecode, generated from git history by make authors.
 # To be credited under a different name or email, edit your entry.";
 
 fn git(args: &[&str]) -> Result<String> {

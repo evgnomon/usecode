@@ -168,8 +168,8 @@ impl Name {
         let name = self.name.clone().unwrap_or_default();
         match (self.repo, name.is_empty()) {
             (false, _) => name,
-            (true, true) => uc::repo::fqn(),
-            (true, false) => format!("{}_{name}", uc::repo::fqn()),
+            (true, true) => repofqn::fqn(),
+            (true, false) => format!("{}_{name}", repofqn::fqn()),
         }
     }
 

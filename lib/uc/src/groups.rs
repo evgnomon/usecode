@@ -42,8 +42,7 @@ const fn alias(path: &'static str, summary: &'static str, argv: &'static [&'stat
 }
 
 pub const ALL: &[&Group] = &[
-    &IMAGE, &REPO, &CERT, &DEB, &DB, &NET, &DAEMON, &VM, &NEW, &AGENT, &TERMINAL,
-    &MAIL,
+    &IMAGE, &CERT, &DEB, &DB, &NET, &DAEMON, &VM, &NEW, &AGENT, &TERMINAL, &MAIL,
 ];
 
 pub static IMAGE: Group = Group {
@@ -75,53 +74,6 @@ pub static IMAGE_RUN: Group = Group {
     )],
     fallback: None,
 };
-
-pub static REPO: Group = Group {
-    path: "uc repo",
-    summary: "inspect and maintain git repositories",
-    commands: &[
-        exec(
-            "fqn",
-            "print the org_repo name of the current directory",
-            &["uc-repo-fqn"],
-        ),
-        exec(
-            "version",
-            "print the latest tag on master or the branch name",
-            &["uc-repo-version"],
-        ),
-        exec(
-            "status",
-            "list repositories that are dirty, untracked or behind",
-            &["uc-repo-status"],
-        ),
-        exec(
-            "headers",
-            "check and add the HGL license headers",
-            &["uc-repo-headers"],
-        ),
-        Sub {
-            name: "authors",
-            summary: "add contributors from git history to AUTHORS",
-            run: Run::Builtin(authors),
-        },
-    ],
-    fallback: None,
-};
-
-fn authors(args: &[OsString]) -> ExitCode {
-    if !args.is_empty() {
-        eprintln!("usage: uc repo authors");
-        return ExitCode::from(2);
-    }
-    match crate::authors::update() {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(err) => {
-            eprintln!("uc repo authors: {err:#}");
-            ExitCode::FAILURE
-        }
-    }
-}
 
 pub static CERT: Group = Group {
     path: "uc cert",

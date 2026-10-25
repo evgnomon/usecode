@@ -798,12 +798,8 @@ struct Credentials {
 
 impl Credentials {
     fn get(&mut self, env: &str, key: &str) -> Result<String> {
-        self.find(env, key)?.with_context(|| {
-            format!(
-                "no {key} in the {} secrets (or set {env})",
-                crate::repo::fqn()
-            )
-        })
+        self.find(env, key)?
+            .with_context(|| format!("no {key} in the {} secrets (or set {env})", repofqn::fqn()))
     }
 
     fn find(&mut self, env: &str, key: &str) -> Result<Option<String>> {
@@ -811,7 +807,7 @@ impl Credentials {
             return Ok(Some(value));
         }
         if self.secrets.is_none() {
-            let repo = crate::repo::fqn();
+            let repo = repofqn::fqn();
             let secrets = crate::secret::Store::open(&repo)
                 .and_then(|store| store.get())
                 .with_context(|| format!("reading the {repo} secrets (or set {env})"))?;

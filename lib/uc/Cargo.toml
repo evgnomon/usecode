@@ -50,10 +50,6 @@ name = "uc-image"
 path = "src/bin/uc-image.rs"
 
 [[bin]]
-name = "uc-repo"
-path = "src/bin/uc-repo.rs"
-
-[[bin]]
 name = "uc-cert"
 path = "src/bin/uc-cert.rs"
 
@@ -152,6 +148,7 @@ path = "src/bin/uc-workspace.rs"
 [dependencies]
 aes = "0.9"
 ansible_vault = { path = "../ansible_vault" }
+repofqn = { path = "../repofqn" }
 anyhow.workspace = true
 base64 = "0.23"
 cbc = "0.2"

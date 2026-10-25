@@ -123,7 +123,7 @@ fmt-html:
 fmt: fmt-html
 	@cargo fmt --all
 
-HGL := target/$(PROFILE)/uc-repo-headers
+HGL := target/$(PROFILE)/hgl
 
 headers:
 	@$(MAKE) -s -C lib/hgl build
@@ -133,8 +133,6 @@ headers-check:
 	@$(MAKE) -s -C lib/hgl build
 	@$(HGL) check
 
-UC_REPO := target/$(shell uname -m)-unknown-linux-musl/$(PROFILE)/uc-repo
-
 authors:
-	@$(MAKE) -s -C lib/uc build
-	@$(UC_REPO) authors
+	@$(MAKE) -s -C lib/hgl build
+	@$(HGL) authors

@@ -234,10 +234,6 @@ mod tests {
             ["uc-image-run-barge", "-v"]
         );
         assert_eq!(
-            exec_of(&REPO, &["headers", "check"]),
-            ["uc-repo-headers", "check"]
-        );
-        assert_eq!(
             exec_of(&CERT, &["init", "--days", "1"]),
             ["uc-cert-gen", "init", "--days", "1"]
         );
@@ -277,9 +273,12 @@ mod tests {
         assert_eq!(route(&IMAGE, &["run", "help"]), "Help(Group(uc image run))");
         assert_eq!(route(&CERT, &[]), "Missing(Group(uc cert))");
         assert_eq!(route(&CERT, &["--help"]), "Help(Group(uc cert))");
-        assert_eq!(route(&REPO, &["nope"]), "Unknown(Group(uc repo), \"nope\")");
+        assert_eq!(
+            route(&AGENT, &["nope"]),
+            "Unknown(Group(uc agent), \"nope\")"
+        );
         assert!(matches!(
-            REPO.route(&args(&["authors"])),
+            AGENT.route(&args(&["usage"])),
             Action::Builtin(..)
         ));
         assert!(IMAGE.usage().contains("\n  run   "));

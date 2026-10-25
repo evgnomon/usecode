@@ -5,13 +5,12 @@
 name = "repofqn"
 version = "0.1.0"
 edition.workspace = true
-description = "Print the org_repo name of the current directory"
+description = "The org_repo name of the current directory"
 license.workspace = true
 authors.workspace = true
 publish = false
 
-[[bin]]
-name = "uc-repo-fqn"
-path = "src/main.rs"
+[lib]
+path = "src/lib.rs"
 
 [dependencies]

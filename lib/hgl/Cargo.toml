@@ -13,5 +13,8 @@ name = "hgl"
 path = "src/lib.rs"
 
 [[bin]]
-name = "uc-repo-headers"
+name = "hgl"
 path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true

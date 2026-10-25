@@ -1735,10 +1735,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "git_repos"
-version = "0.1.0"
-
-[[package]]
 name = "graviola"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1831,6 +1827,9 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 [[package]]
 name = "hgl"
 version = "0.1.0"
+dependencies = [
+ "anyhow",
+]
 
 [[package]]
 name = "hickory-net"
@@ -5271,6 +5270,7 @@ dependencies = [
  "minijinja-contrib",
  "pbkdf2 0.13.0",
  "pulseaudio",
+ "repofqn",
  "reqwest",
  "roxmltree",
  "rpassword",
@@ -5306,10 +5306,6 @@ dependencies = [
  "toml",
  "x25519-dalek",
 ]
-
-[[package]]
-name = "ucversion"
-version = "0.1.0"
 
 [[package]]
 name = "unicase"

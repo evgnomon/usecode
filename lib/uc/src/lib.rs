@@ -16,9 +16,9 @@
 //! [`flag`] reads a flag from the command line, a `UC_` variable or the
 //! user config.
 //!
-//! [`group`] and [`groups`] are the command groups (`uc image`, `uc repo`,
-//! ...) that hand over to the standalone tools, found through [`dispatch`],
-//! and [`authors`] is `uc repo authors`. [`vm`] is `uc vm`, which adds the
+//! [`group`] and [`groups`] are the command groups (`uc image`, `uc cert`,
+//! ...) that hand over to the standalone tools, found through [`dispatch`].
+//! [`vm`] is `uc vm`, which adds the
 //! cloud providers to the local machines of `vm`, and [`mail`] is `uc mail`,
 //! which looks after the mail server on a cluster, and [`fs`] is `uc fs`,
 //! buckets and objects on the cluster's S3 object storage, and [`logs`] is
@@ -27,7 +27,6 @@
 //! `uc agent usage`, the OpenRouter usage of the coding agent's own key, and
 //! [`workspace`] is `uc workspace` (`uc ws`), dev containers on the cluster.
 
-pub mod authors;
 pub mod backup;
 pub mod chat;
 pub mod cli;
@@ -48,7 +47,6 @@ pub mod openrouter;
 pub mod password;
 pub mod profile;
 pub mod registry;
-pub mod repo;
 pub mod secret;
 pub mod usage;
 pub mod vm;

@@ -1,9 +1,11 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! CLI: check or add the license header in files tracked by git.
+//! CLI: check or add the license header in files tracked by git, and add
+//! contributors to `AUTHORS`.
 //!
-//! Use:  uc repo headers [check|fix] [-x PATHSPEC]... [PATH]...
+//! Use:  hgl [check|fix] [-x PATHSPEC]... [PATH]...
+//!       hgl authors
 //!
 //! `check` (the default) lists files missing the header and exits 1 if any.
 //! `fix` adds the header to them. Symlinks and submodules are skipped, so
@@ -12,13 +14,15 @@
 use std::process::{Command, ExitCode};
 
 const USAGE: &str = "\
-usage: uc repo headers [check|fix] [-x PATHSPEC]... [PATH]...
+usage: hgl [check|fix] [-x PATHSPEC]... [PATH]...
+       hgl authors
 
 Check or add the license header in files tracked by git.
 
 commands:
   check   list files missing the header, exit 1 if any (default)
   fix     add the header to files missing it
+  authors add contributors from git history to AUTHORS
 
 options:
   -x, --exclude PATHSPEC   skip files matching PATHSPEC (repeatable)
@@ -118,6 +122,15 @@ fn run(args: &Args) -> Result<usize, String> {
 }
 
 fn main() -> ExitCode {
+    if std::env::args().nth(1).as_deref() == Some("authors") {
+        return match hgl::authors::update() {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(err) => {
+                eprintln!("hgl authors: {err:#}");
+                ExitCode::FAILURE
+            }
+        };
+    }
     let args = match parse_args() {
         Ok(Some(args)) => args,
         Ok(None) => {
@@ -125,22 +138,22 @@ fn main() -> ExitCode {
             return ExitCode::SUCCESS;
         }
         Err(err) => {
-            eprintln!("uc-repo-headers: {err}\n\n{USAGE}");
+            eprintln!("hgl: {err}\n\n{USAGE}");
             return ExitCode::from(2);
         }
     };
     match run(&args) {
         Ok(0) => ExitCode::SUCCESS,
         Ok(n) if args.fix => {
-            eprintln!("uc-repo-headers: added the header to {n} file(s)");
+            eprintln!("hgl: added the header to {n} file(s)");
             ExitCode::SUCCESS
         }
         Ok(n) => {
-            eprintln!("uc-repo-headers: {n} file(s) missing the header; run `uc repo headers fix`");
+            eprintln!("hgl: {n} file(s) missing the header; run `make headers`");
             ExitCode::FAILURE
         }
         Err(err) => {
-            eprintln!("uc-repo-headers: {err}");
+            eprintln!("hgl: {err}");
             ExitCode::from(2)
         }
     }

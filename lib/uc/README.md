@@ -23,7 +23,7 @@ the registry behind the bastion, and `uc secret`, which generates secrets and
 manages the ansible-vault secret stores.
 The last two replace the former `lib/pylib` Python package.
 
-It also ships the command groups — `uc image`, `uc repo`, `uc cert`,
+It also ships the command groups — `uc image`, `uc cert`,
 `uc deb`, `uc db`, `uc net`, `uc daemon`, `uc vm`, `uc new`
 and `uc agent` — which gather
 every tool in `lib/` under one command; see [Command groups](#command-groups).
@@ -482,11 +482,6 @@ switching scripts over to the `uc` commands is a good idea.
 |---|---|---|
 | `uc image push`, `pull` | `uc-image-push`, `uc-image-pull` | |
 | `uc image run barge` | `uc-image-run-barge` | `barge` |
-| `uc repo fqn` | `uc-repo-fqn` | `repofqn` |
-| `uc repo version` | `uc-repo-version` | `ucversion` |
-| `uc repo status [DIR]` | `uc-repo-status` | `git_repos` |
-| `uc repo headers check`, `fix` | `uc-repo-headers` | `hgl` |
-| `uc repo authors` | built in | `scripts/authors.sh` (`make authors`) |
 | `uc cert init`, `server`, `client`, ... | `uc-cert-gen`: any command not below | `certgen` |
 | `uc cert trust HOST:PORT` | `uc-cert-trust` | `trust_ca` |
 | `uc cert p12 KEYNAME` | `uc-cert-p12-bundle` | `mkp12` |
