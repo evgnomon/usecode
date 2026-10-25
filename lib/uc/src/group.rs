@@ -265,7 +265,6 @@ mod tests {
         assert_eq!(exec_of(&VM, &[]), ["uc-vm-local"]);
         assert_eq!(exec_of(&VM, &["-h"]), ["uc-vm-local", "-h"]);
         assert_eq!(exec_of(&AGENT, &["mcp"]), ["uc-agent-mcp"]);
-        assert_eq!(exec_of(&SYS, &["vi", "a.txt"]), ["uc-sys-vi", "a.txt"]);
     }
 
     #[test]

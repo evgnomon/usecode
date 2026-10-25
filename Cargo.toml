@@ -22,7 +22,6 @@ members = [
     "lib/mkp12",
     "lib/mkpod",
     "lib/mkunit",
-    "lib/num_argv",
     "lib/pg",
     "lib/pubdeb",
     "lib/repofqn",
@@ -35,7 +34,6 @@ members = [
     "lib/ucversion",
     "lib/vi",
     "lib/vm",
-    "lib/ykattach",
     "lib/ysys",
     "lib/zcdump",
 ]

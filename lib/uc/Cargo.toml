@@ -90,10 +90,6 @@ name = "uc-profile"
 path = "src/bin/uc-profile.rs"
 
 [[bin]]
-name = "uc-sys"
-path = "src/bin/uc-sys.rs"
-
-[[bin]]
 name = "uc-terminal"
 path = "src/bin/uc-terminal.rs"
 

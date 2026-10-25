@@ -42,7 +42,7 @@ const fn alias(path: &'static str, summary: &'static str, argv: &'static [&'stat
 }
 
 pub const ALL: &[&Group] = &[
-    &IMAGE, &REPO, &CERT, &DEB, &DB, &NET, &DAEMON, &VM, &NEW, &AGENT, &SYS, &TERMINAL,
+    &IMAGE, &REPO, &CERT, &DEB, &DB, &NET, &DAEMON, &VM, &NEW, &AGENT, &TERMINAL,
     &MAIL,
 ];
 
@@ -405,29 +405,6 @@ fn agent_usage(args: &[OsString]) -> ExitCode {
         }
     }
 }
-
-pub static SYS: Group = Group {
-    path: "uc sys",
-    summary: "small helpers for the local machine",
-    commands: &[
-        exec(
-            "yubikey",
-            "attach a YubiKey to WSL and show its info",
-            &["uc-sys-yubikey"],
-        ),
-        exec(
-            "vi",
-            "hardened vim without config, plugins, backups or modelines",
-            &["uc-sys-vi"],
-        ),
-        exec(
-            "argv",
-            "print argc and each argv element with its index",
-            &["uc-sys-argv"],
-        ),
-    ],
-    fallback: None,
-};
 
 pub static TERMINAL: Group = alias(
     "uc terminal",

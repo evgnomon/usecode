@@ -24,8 +24,8 @@ manages the ansible-vault secret stores.
 The last two replace the former `lib/pylib` Python package.
 
 It also ships the command groups — `uc image`, `uc repo`, `uc cert`,
-`uc deb`, `uc db`, `uc net`, `uc daemon`, `uc vm`, `uc new`,
-`uc agent` and `uc sys` — which gather
+`uc deb`, `uc db`, `uc net`, `uc daemon`, `uc vm`, `uc new`
+and `uc agent` — which gather
 every tool in `lib/` under one command; see [Command groups](#command-groups).
 
 ## Talking to uc
@@ -505,13 +505,9 @@ switching scripts over to the `uc` commands is a good idea.
 | `uc secret server` | `uc-secret-server` | `secd` |
 | `uc agent api`, `mcp` | `uc-agent-api`, `uc-agent-mcp` | `usecode-agent-api`, `usecode-mcp` |
 | `uc agent usage` | built in | |
-| `uc sys yubikey`, `argv` | `uc-sys-yubikey`, `uc-sys-argv` | `ykattach`, `num_argv` |
-| `uc sys vi` | `uc-sys-vi` | `vi` |
 | `uc terminal` | `uc-terminal-tm`, arguments and all | |
 
-`vi` does its job by standing in for the real one on `PATH`, so that name
-stays installed as a symlink for good. For `uc terminal`, the dotfiles
-give you the shell alias `t`.
+For `uc terminal`, the dotfiles give you the shell alias `t`.
 
 ### Cloud VMs
 

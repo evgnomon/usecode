@@ -2879,10 +2879,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "num_argv"
-version = "0.1.0"
-
-[[package]]
 name = "objc2-core-foundation"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5944,10 +5940,6 @@ dependencies = [
  "rand_core 0.10.1",
  "zeroize",
 ]
-
-[[package]]
-name = "ykattach"
-version = "0.1.0"
 
 [[package]]
 name = "yoke"
