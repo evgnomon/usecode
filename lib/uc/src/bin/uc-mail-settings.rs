@@ -68,7 +68,6 @@ fn run(cli: Cli) -> Result<()> {
         extra: cli.extra_vars,
         roles_dir: None,
         config_file: cli.config,
-        need_roles: false,
         overlay: vec!["kube".into(), context.clone()],
     })?;
     let Some(host) = var::<String>(&vars, "mail_host")? else {

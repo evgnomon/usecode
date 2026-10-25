@@ -221,7 +221,7 @@ mod tests {
         assert_eq!(style_for("x/app.css", ""), Some(Style::Block));
         assert_eq!(style_for("README.md", ""), Some(Style::Html));
         assert_eq!(style_for("t/base.html.jinja2", ""), Some(Style::Jinja));
-        assert_eq!(style_for("lib/vim/.vimrc", ""), Some(Style::Vim));
+        assert_eq!(style_for("lib/uc/roles/vim/files/.vimrc", ""), Some(Style::Vim));
         assert_eq!(style_for("man1/mkdeb.1", ""), Some(Style::Roff));
         assert_eq!(style_for("docs/make.bat", ""), Some(Style::Bat));
         assert_eq!(style_for("migrations/README", ""), Some(Style::Text));

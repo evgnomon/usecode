@@ -49,7 +49,7 @@ pub struct Settings {
     pub compose_file: Option<String>,
 
     // Container tooling to drive the compose file with: "podman" (uses
-    // podman-compose, matching uc push and uc pull) or "docker"
+    // podman-compose, matching uc image push and uc image pull) or "docker"
     // (uses `docker compose`).
     pub container_cli: String,
 

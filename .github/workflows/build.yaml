@@ -3,9 +3,9 @@
 
 # Builds, tests and packs every push with make, set up the same way as the
 # release workflow (scripts/ci_dist_setup.sh), so what would break a release
-# breaks here first. The vendored builds (CPython, vim, alacritty) take long
-# and only change with their submodules, so they're left to the release
-# workflow. It runs on both arches the release ships, x86_64 and arm.
+# breaks here first. The vendored builds (CPython, vim, alacritty) aren't
+# released, so they're left out here too. It runs on both arches the
+# release ships, x86_64 and arm.
 name: Build
 on:
   workflow_dispatch:
@@ -42,4 +42,4 @@ jobs:
       - name: Dist
         run: make dist
       - name: Checksums
-        run: cd dist && sha256sum *.deb > SHA256SUMS
+        run: cd dist && sha256sum *.deb usecoded-* > SHA256SUMS

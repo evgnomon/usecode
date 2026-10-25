@@ -1,36 +1,37 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! `alacritty`: the terminal configuration from `lib/alacritty`. On a
-//! workstation it is linked into `~/.config/alacritty`; under WSL it goes to
-//! the Windows Alacritty in `%APPDATA%\alacritty`, with a shell that opens
+//! `alacritty`: the terminal configuration from `roles/alacritty/files`. On
+//! a workstation it is copied into `~/.config/alacritty`; under WSL it goes
+//! to the Windows Alacritty in `%APPDATA%\alacritty`, with a shell that opens
 //! tmux in this distribution and a maximized window instead of a full screen.
-//! The colors come from `lib/alacritty/themes`, the one `theme` names.
+//! The colors come from `roles/alacritty/files/themes`, the one `theme` names.
 
 use crate::configure::ctx::Ctx;
 use crate::configure::engine::{Outcome, Plan, Task};
-use crate::configure::modules::{copy, file};
+use crate::configure::modules::copy;
 use crate::configure::roles::WORKSTATION_ONLY;
 use crate::configure::vars::{Profile, Theme, Vars};
 use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
 
 pub fn tasks(plan: &mut Plan, v: &Vars) {
-    let shared = v.usecode_dir.join("lib/alacritty/alacritty.toml");
-    let theme = theme_file(&v.usecode_dir, v.config.theme);
+    let shared = v.role("alacritty").join("files/alacritty.toml");
+    let theme = theme_file(&v.role("alacritty"), v.config.theme);
 
     let config = shared.clone();
     let colors = theme.clone();
     plan.add(
-        Task::new("alacritty/link", "Link the Alacritty configuration")
+        Task::new("alacritty/link", "Copy the Alacritty configuration")
             .tags(&["alacritty", "theme"])
             .when(v.profile == Profile::Workstation, WORKSTATION_ONLY)
             .run(move |ctx| async move {
                 let dir = ctx.vars().home.join(".config/alacritty");
-                let main = file::link(&ctx, &config, &dir.join("alacritty.toml"), false).await?;
+                let (main_dest, theme_dest) = (dir.join("alacritty.toml"), dir.join("theme.toml"));
+                let main = copy::copy(&ctx, &config, &main_dest, None, false).await?;
                 // Alacritty watches its imports, so the open windows switch
-                // colors as soon as the link does.
-                let theme = file::link(&ctx, &colors, &dir.join("theme.toml"), false).await?;
+                // colors as soon as the theme is written.
+                let theme = copy::copy(&ctx, &colors, &theme_dest, None, false).await?;
                 Ok(main.and(theme))
             }),
     );
@@ -58,10 +59,7 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
                 }
                 _ => Outcome::Ok,
             };
-            // Windows cannot follow a link into WSL, so the shared file is
-            // copied.
-            let text = std::fs::read_to_string(&shared)
-                .with_context(|| format!("reading {}", shared.display()))?;
+            let text = ctx.vars().assets.read_string(&shared)?;
             let shared_copy = copy::content(
                 &ctx,
                 &maximized(&without_import(&without_shell(&text))),
@@ -70,8 +68,7 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
                 false,
             )
             .await?;
-            let colors = std::fs::read_to_string(&theme)
-                .with_context(|| format!("reading {}", theme.display()))?;
+            let colors = ctx.vars().assets.read_string(&theme)?;
             let theme_copy =
                 copy::content(&ctx, &colors, &dir.join("theme.toml"), None, false).await?;
             let main = copy::content(
@@ -139,13 +136,13 @@ async fn wsl_path(ctx: &Ctx, windows: &str) -> Result<PathBuf> {
     Ok(PathBuf::from(out.stdout.trim()))
 }
 
-/// The colors of `theme`.
-fn theme_file(usecode_dir: &Path, theme: Theme) -> PathBuf {
+/// The colors of `theme`, in the role's directory `role`.
+fn theme_file(role: &Path, theme: Theme) -> PathBuf {
     let name = match theme {
         Theme::Dark => "gruvbox-dark",
         Theme::Light => "gruvbox-light-hard",
     };
-    usecode_dir.join(format!("lib/alacritty/themes/{name}.toml"))
+    role.join(format!("files/themes/{name}.toml"))
 }
 
 /// A configuration without its `import = …` line: its paths are the Linux
@@ -216,7 +213,7 @@ fn windows_config(appdata: &str, distro: Option<&str>) -> String {
         .collect::<Vec<_>>()
         .join(", ");
     format!(
-        "{MARKER}; edit lib/alacritty/alacritty.toml, or local.toml next to this file.\n\
+        "{MARKER}; edit local.toml next to this file.\n\
          \n\
          [general]\n\
          import = ['{appdata}\\alacritty\\usecode.toml', '{appdata}\\alacritty\\theme.toml', '{appdata}\\alacritty\\local.toml']\n\
@@ -268,9 +265,10 @@ mod tests {
 
     #[test]
     fn theme_file_exists_for_every_theme() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let assets = crate::configure::assets::Assets::Embedded;
         for theme in [Theme::Dark, Theme::Light] {
-            assert!(theme_file(&root, theme).is_file(), "{theme:?}");
+            let file = theme_file(Path::new("alacritty"), theme);
+            assert!(assets.is_file(&file), "{theme:?}");
         }
     }
 

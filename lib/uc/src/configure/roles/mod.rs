@@ -131,3 +131,36 @@ pub fn plan(v: &Vars) -> Plan {
 pub const NOT_IN_DEV_CONTAINER: &str = "not installed in dev containers";
 pub const DESKTOP_ONLY: &str = "only on the desktop (workstation) profile";
 pub const WORKSTATION_ONLY: &str = "only on the workstation profile";
+
+#[cfg(test)]
+mod tests {
+    use crate::configure::assets::Assets;
+    use std::path::Path;
+
+    #[test]
+    fn the_role_files_are_built_in() {
+        for file in [
+            "alacritty/files/alacritty.toml",
+            "bash_history_backup/files/backup-bash-history",
+            "bash_history_backup/files/backup-bash-history.service",
+            "bash_history_backup/files/backup-bash-history.timer",
+            "extrepo/templates/etc/extrepo/config.yaml.j2",
+            "git/files/.gitconfig",
+            "git/files/.gitignore_global",
+            "pam_sudo/templates/Debian/sudo.j2",
+            "pam_sudo/templates/Ubuntu/sudo.j2",
+            "sysctl/files/99-disable-ipv6.conf",
+            "sysctl/templates/sysctl.conf.j2",
+            "udev_hwdb/files/61-keyboard-builtin-altwin.hwdb",
+            "udev_hwdb/files/hid_apple.conf",
+            "wslview/files/wslview",
+            "yubikey/files/70-u2f.rules",
+            "yubikey/files/90-pcscd.rules",
+        ] {
+            assert!(Assets::Embedded.is_file(Path::new(file)), "{file}");
+        }
+        for dir in ["apt/templates/Debian/etc", "apt/templates/Ubuntu/etc"] {
+            assert!(Assets::Embedded.is_dir(Path::new(dir)), "{dir}");
+        }
+    }
+}

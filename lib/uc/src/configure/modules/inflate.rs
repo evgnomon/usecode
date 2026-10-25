@@ -8,11 +8,12 @@
 
 use crate::configure::ctx::Ctx;
 use crate::configure::engine::Outcome;
-use crate::configure::modules::{copy, walk_files};
+use crate::configure::modules::copy;
 use anyhow::Result;
 use std::path::Path;
 
-/// Inflates every file under `src` whose relative path passes `filter`.
+/// Inflates every file under `src`, a directory among the roles' files,
+/// whose relative path passes `filter`.
 pub async fn inflate(
     ctx: &Ctx,
     src: &Path,
@@ -21,7 +22,7 @@ pub async fn inflate(
 ) -> Result<Outcome> {
     let sudo = target == Path::new("/etc") || target == Path::new("/root");
     let mut outcome = Outcome::Ok;
-    for rel in walk_files(src)? {
+    for rel in ctx.vars().assets.walk(src)? {
         if !filter(&rel) {
             continue;
         }

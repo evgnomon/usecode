@@ -1,8 +1,8 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-//! `vim`: vim-plug and the plugin directory; the vim configs themselves are
-//! linked by `usecode/link`.
+//! `vim`: the vim configs from `roles/vim/files`, copied into the home,
+//! vim-plug and the plugin directory.
 
 use crate::configure::engine::{Outcome, Plan, Task};
 use crate::configure::modules::{copy, file};
@@ -11,7 +11,31 @@ use anyhow::Context;
 
 const PLUG: &str = "https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim";
 
-pub fn tasks(plan: &mut Plan, _v: &Vars) {
+/// The configs, relative to the role's files and the home directory.
+const CONFIGS: &[&str] = &[
+    ".vimrc",
+    ".ideavimrc",
+    ".vim/coc-settings.json",
+    ".vim/plugin/wl_clipboard.vim",
+];
+
+pub fn tasks(plan: &mut Plan, v: &Vars) {
+    let files = v.role("vim").join("files");
+    plan.add(
+        Task::new("vim/config", "Copy the vim configs")
+            .tags(&["vim"])
+            .run(move |ctx| async move {
+                let home = &ctx.vars().home;
+                let mut outcome = Outcome::Ok;
+                for entry in CONFIGS {
+                    let step = copy::copy(&ctx, &files.join(entry), &home.join(entry), None, false)
+                        .await?;
+                    outcome = outcome.and(step);
+                }
+                Ok(outcome)
+            }),
+    );
+
     plan.add(
         Task::new("vim/plugin-dir", "Ensure ~/.vim/plugin exists")
             .tags(&["vim"])
@@ -44,4 +68,19 @@ pub fn tasks(plan: &mut Plan, _v: &Vars) {
                 copy::content(&ctx, &text, &dest, Some(0o644), false).await
             }),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CONFIGS;
+    use crate::configure::assets::Assets;
+    use std::path::Path;
+
+    #[test]
+    fn every_config_is_built_in() {
+        for entry in CONFIGS {
+            let src = Path::new("vim/files").join(entry);
+            assert!(Assets::Embedded.is_file(&src), "{entry}");
+        }
+    }
 }

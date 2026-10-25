@@ -66,8 +66,10 @@ up reload down logs:
 # here would resolve features differently and relink every binary to an older
 # artifact, so the next make would rebuild them all again.
 # Builds the quick fast profile; RELEASE=1 builds release instead.
+# python and alacritty are left out, build them by hand with
+# make -C lib/python build and make -C lib/alacritty build.
 build:
-	@MAKE=$(MAKE) ./scripts/each_lib.sh $@
+	@MAKE=$(MAKE) SKIP="alacritty python $(SKIP)" ./scripts/each_lib.sh $@
 
 # Debian packages into dist/, each lib making its own with uc deb: lib/uc
 # makes one uc package holding uc and every uc-* command.
@@ -77,9 +79,10 @@ dist:
 # install only copies what build staged, so it runs under sudo without cargo.
 # alacritty is left out: its binary is busy while the terminal runs, so it
 # installs on its own with make -C lib/alacritty install. vim is left out too,
-# install it by hand with make -C lib/vim install.
+# install it by hand with make -C lib/vim install, and python with
+# make -C lib/python install.
 install:
-	@MAKE=$(MAKE) SKIP="alacritty vim" ./scripts/each_lib.sh $@
+	@MAKE=$(MAKE) SKIP="alacritty python vim $(SKIP)" ./scripts/each_lib.sh $@
 
 link:
 	@MAKE=$(MAKE) ./scripts/each_lib.sh $@

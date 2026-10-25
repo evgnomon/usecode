@@ -15,9 +15,14 @@ put daemon features into `uc-net-mesh`, which is only the mesh's CLI.
 
 ## Installing only puts the daemon on the host
 
-`uc daemon install` builds `usecoded`, copies it to the host and runs
+`uc daemon install` gets `usecoded` (the released `usecoded-ARCH`, or a
+build when run inside a checkout), copies it to the host and runs
 `usecoded setup`, which installs the binary and the unit - nothing else.
 No keys, no vault, no packages, no feature setup.
+
+`usecoded` is built and packaged on its own (`make -C lib/daemon
+usecoded`, `dist`), never as part of the control-node build, and uc
+must never need the checkout to install it.
 
 ## Setting up is the daemon's job
 

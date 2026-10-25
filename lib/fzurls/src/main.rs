@@ -13,6 +13,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::io::Write;
 use std::os::unix::ffi::OsStrExt;
+use std::path::Path;
 use std::process::{Command, Stdio, exit};
 
 use serde_json::Value;
@@ -115,7 +116,15 @@ fn url_lines(json: &Value) -> Vec<String> {
 fn config_lines() -> Vec<String> {
     let home = env::var("HOME").unwrap_or_default();
     let user = env::var("USER").unwrap_or_default();
-    let path = format!("{home}/src/github.com/{user}/config/config.yaml");
+    // The usecode config, or the config repository before it is linked
+    // into ~/.config/usecode.
+    let path = [
+        format!("{home}/.config/usecode/config.yaml"),
+        format!("{home}/src/github.com/{user}/config/config.yaml"),
+    ]
+    .into_iter()
+    .find(|p| Path::new(p).is_file())
+    .unwrap_or_else(|| format!("{home}/.config/usecode/config.yaml"));
     let yaml = fs::read(&path).unwrap_or_else(|e| {
         eprintln!("cat: {path}: {e}");
         Vec::new()

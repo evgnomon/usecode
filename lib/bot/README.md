@@ -66,7 +66,7 @@ directory, and anything already set in the environment wins over it.
 - `USECODE_MCP_SSH_PUBLIC_KEY` — the public key new servers get (default
   `~/.ssh/id_ed25519.pub`); its private half goes in their ssh config entries.
 - `USECODE_MCP_CONTAINER_CLI` — `podman` (default, uses `podman-compose`, matching
-  `uc push`/`uc pull`) or `docker` (uses `docker compose`).
+  `uc image push`/`uc image pull`) or `docker` (uses `docker compose`).
 
 ## Tools
 

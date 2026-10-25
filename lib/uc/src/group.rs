@@ -228,7 +228,7 @@ mod tests {
     #[test]
     fn commands_reach_their_tools() {
         use crate::groups::*;
-        assert_eq!(exec_of(&IMAGE, &["push", "a:1"]), ["uc-push", "a:1"]);
+        assert_eq!(exec_of(&IMAGE, &["push", "a:1"]), ["uc-image-push", "a:1"]);
         assert_eq!(
             exec_of(&IMAGE, &["run", "barge", "-v"]),
             ["uc-image-run-barge", "-v"]

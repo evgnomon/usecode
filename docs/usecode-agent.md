@@ -48,20 +48,20 @@ See `lib/bot/README.md` for configuration and the full tool list.
 
 ## Container registry
 
-`uc push` and `uc pull` (from `lib/uc`) push/pull container images to the registry. The registry host is only
+`uc image push` and `uc image pull` (from `lib/uc`) push/pull container images to the registry. The registry host is only
 reachable through the `shadow` bastion, so both commands open a local SSH tunnel before logging in.
 
 ```sh
 # push a local image
-uc push myimage:latest
+uc image push myimage:latest
 
 # pull an image, optionally stripping the registry host from the resulting tag
-uc pull myimage:latest
-uc pull --strip-host myimage:latest
+uc image pull myimage:latest
+uc image pull --strip-host myimage:latest
 ```
 
 Both commands read the registry password from `deploy/vault.yaml` of the current git
 checkout (decrypted by uc itself, no ansible needed; the vault password is found the way
 `ansible-vault` would find it) unless `REGISTRY_PASSWORD` is set (or `--vault-file` points
-elsewhere), and require an SSH host entry (or DNS-resolvable name) for the bastion. Run `uc push -h` for the
+elsewhere), and require an SSH host entry (or DNS-resolvable name) for the bastion. Run `uc image push -h` for the
 other settings; each has a matching environment variable.
