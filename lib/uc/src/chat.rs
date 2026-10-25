@@ -2300,6 +2300,10 @@ fn read_prompt(prompt: &str) -> Result<Option<String>> {
         if let Some(editor) = editor.as_mut() {
             let _ = editor.add_history_entry(line);
         }
+        TYPED
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(line.to_string());
         let _ = keep_line(line);
     }
     Ok(line)
@@ -2337,15 +2341,37 @@ impl ConditionalEventHandler for FzfHistory {
     }
 }
 
+/// Every earlier line, bash's and uc's, to tell one Up put there from one
+/// typed.
+static TYPED: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+
+/// Up or Down went to the previous or next line without a prefix, and the
+/// next one should too.
+static BROWSING: AtomicBool = AtomicBool::new(false);
+
 /// Up and Down find the earlier lines that start with what is typed before
-/// the cursor, like bash's `history-search-backward`. Inside a line of
-/// several, they move between its lines first.
+/// the cursor, like bash's `history-search-backward`. On an empty line they
+/// go through every earlier line, as rustyline's search finds nothing for an
+/// empty prefix. Inside a line of several, they move between its lines
+/// first.
 struct PrefixHistory(SearchDirection);
 
 impl ConditionalEventHandler for PrefixHistory {
     fn handle(&self, _: &Event, _: RepeatCount, _: bool, ctx: &EventContext) -> Option<Cmd> {
         let (before, after) = ctx.line().split_at(ctx.pos());
+        // A line an earlier Up put there, not edited since: the cursor is
+        // at its end, so `before` is all of it, not a prefix.
+        let browsing = BROWSING.load(Ordering::Relaxed)
+            && after.is_empty()
+            && TYPED
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .contains(before);
+        let plain = before.is_empty() || browsing;
+        BROWSING.store(plain, Ordering::Relaxed);
         match self.0 {
+            SearchDirection::Reverse if plain => Some(Cmd::PreviousHistory),
+            SearchDirection::Forward if plain => Some(Cmd::NextHistory),
             SearchDirection::Reverse if !before.contains('\n') => Some(Cmd::HistorySearchBackward),
             SearchDirection::Forward if !after.contains('\n') => Some(Cmd::HistorySearchForward),
             _ => None,
@@ -2423,9 +2449,12 @@ fn read_line(prompt: &str) -> Result<Option<String>> {
         let mut new = Editor::with_config(config).context("opening the terminal")?;
         new.set_helper(Some(Completion));
         let _ = upgrade_history();
+        let mut typed = TYPED.lock().unwrap_or_else(|e| e.into_inner());
         for line in past_lines() {
-            let _ = new.add_history_entry(line);
+            let _ = new.add_history_entry(line.as_str());
+            typed.insert(line);
         }
+        drop(typed);
         new.bind_sequence(
             KeyEvent::ctrl('R'),
             EventHandler::Conditional(Box::new(FzfHistory)),
@@ -2448,6 +2477,7 @@ fn read_line(prompt: &str) -> Result<Option<String>> {
         );
         *editor = Some(new);
     }
+    BROWSING.store(false, Ordering::Relaxed);
     match editor.as_mut().map(|e| e.readline(prompt)) {
         Some(Ok(line)) => match voice::SAID.lock().unwrap_or_else(|e| e.into_inner()).take() {
             // Shown where it would have been typed, the line above.
