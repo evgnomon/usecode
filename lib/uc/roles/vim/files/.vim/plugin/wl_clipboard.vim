@@ -1,6 +1,11 @@
 " License-Identifier: HGL
 " Copyright (C) The Usecode Authors (see AUTHORS)
 
+" Clipboard providers (and the tuple type) need a newer Vim than Debian's.
+if !exists('v:clipproviders')
+    finish
+endif
+
 vim9script
 
 def WlAvailable(): bool
