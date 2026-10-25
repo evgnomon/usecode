@@ -1,0 +1,7 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
+# Keep USB webcams that never stream again after a USB autosuspend awake.
+# The DJI Osmo Pocket 4P in webcam mode starts streaming but sends no
+# frames once Linux has suspended it.
+ACTION!="remove", SUBSYSTEM=="usb", ATTR{idVendor}=="2ca3", ATTR{idProduct}=="0023", TEST=="power/control", ATTR{power/control}="on"

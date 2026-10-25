@@ -19,7 +19,8 @@ uc sync -C              # dry run; e.g. -t dotfiles,git for just those roles
 needed). Everything else is opt-in through the `sync` list of your config:
 `usecode` builds the checkout and brings along what that needs (the build
 packages, rustup, mise and its tools), and there's `yubikey` (udev and
-polkit rules, usbip), `wsl_sudo` (sudo.ws under WSL), `vim` (vim-plug) and
+polkit rules, usbip), `webcam` (keeps USB webcams like the DJI Osmo
+Pocket 4P out of autosuspend so they keep streaming), `wsl_sudo` (sudo.ws under WSL), `vim` (vim-plug) and
 the rest of the roles.
 
 ## Installation profiles

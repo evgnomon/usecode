@@ -30,6 +30,7 @@ pub mod sysctl;
 pub mod udev_hwdb;
 pub mod usecode;
 pub mod vim;
+pub mod webcam;
 pub mod wsl_sudo;
 pub mod wslview;
 pub mod yubikey;
@@ -100,6 +101,7 @@ pub fn plan(v: &Vars) -> Plan {
     sudo_nopasswd::tasks(&mut plan, v);
     sysctl::tasks(&mut plan, v);
     udev_hwdb::tasks(&mut plan, v);
+    webcam::tasks(&mut plan, v);
     gnome::tasks(&mut plan, v);
     fonts::tasks(&mut plan, v);
     mise::tasks(&mut plan, v);
