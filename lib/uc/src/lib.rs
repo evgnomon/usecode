@@ -16,8 +16,8 @@
 //! [`flag`] reads a flag from the command line, a `UC_` variable or the
 //! user config.
 //!
-//! [`group`] and [`groups`] are the command groups (`uc image`, `uc cert`,
-//! ...) that hand over to the standalone tools, found through [`dispatch`].
+//! [`group`] and [`groups`] are the command groups (`uc image`,
+//! `uc secret cert`, ...) that hand over to the standalone tools, found through [`dispatch`].
 //! [`vm`] is `uc vm`, which adds the
 //! cloud providers to the local machines of `vm`, and [`mail`] is `uc mail`,
 //! which looks after the mail server on a cluster, and [`fs`] is `uc fs`,

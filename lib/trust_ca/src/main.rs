@@ -10,10 +10,10 @@ mod sh;
 use std::process::exit;
 
 const USAGE: &str = "\
-Usage: uc cert trust <host:port>           Fetch and install the CA serving this endpoint
-       uc cert trust --remove <host:port>  Remove the CA installed for this endpoint
-       uc cert trust --list [host[:port]]  List custom-trusted CAs (optionally filtered)
-       uc cert trust -h|--help             Show this help
+Usage: uc secret cert trust <host:port>           Fetch and install the CA serving this endpoint
+       uc secret cert trust --remove <host:port>  Remove the CA installed for this endpoint
+       uc secret cert trust --list [host[:port]]  List custom-trusted CAs (optionally filtered)
+       uc secret cert trust -h|--help             Show this help
 
 What it does:
   Connects to <host:port> via TLS, extracts the CA cert(s) from the chain
@@ -23,10 +23,10 @@ What it does:
     - ~/.pki/nssdb                        (Brave/Chrome, via certutil)
 
 Examples:
-  uc cert trust registry.example.com:443
-  uc cert trust --remove registry.example.com:443
-  uc cert trust --list             # all custom-trusted CAs across stores
-  uc cert trust --list example.com # only CAs whose host matches \"example.com\"
+  uc secret cert trust registry.example.com:443
+  uc secret cert trust --remove registry.example.com:443
+  uc secret cert trust --list             # all custom-trusted CAs across stores
+  uc secret cert trust --list example.com # only CAs whose host matches \"example.com\"
 
 Notes:
   - The endpoint must be live — the cert is scraped from the TLS handshake.

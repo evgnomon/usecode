@@ -76,18 +76,18 @@ pub static IMAGE_RUN: Group = Group {
 };
 
 pub static CERT: Group = Group {
-    path: "uc cert",
+    path: "uc secret cert",
     summary: "manage X.509 certificates and trust",
     commands: &[
         exec(
             "trust",
             "trust the CA serving a TLS endpoint",
-            &["uc-cert-trust"],
+            &["uc-secret-cert-trust"],
         ),
         group("p12", &CERT_P12),
     ],
     fallback: Some(Fallback {
-        argv: &["uc-cert-gen"],
+        argv: &["uc-secret-cert-gen"],
         summary: "certgen's local CA, server and client certificates \
                   (init, server, client, list, show, verify, delete, nginx-config)",
         bare: false,
@@ -95,15 +95,15 @@ pub static CERT: Group = Group {
 };
 
 pub static CERT_P12: Group = Group {
-    path: "uc cert p12",
+    path: "uc secret cert p12",
     summary: "bundle zygote keys and certificates as PKCS#12",
     commands: &[exec(
         "fetch",
         "fetch the zygote CA and user certificates and bundle them",
-        &["uc-cert-p12-fetch"],
+        &["uc-secret-cert-p12-fetch"],
     )],
     fallback: Some(Fallback {
-        argv: &["uc-cert-p12-bundle"],
+        argv: &["uc-secret-cert-p12-bundle"],
         summary: "KEYNAME bundles that function key and certificate",
         bare: true,
     }),

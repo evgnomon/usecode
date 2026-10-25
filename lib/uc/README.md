@@ -19,11 +19,12 @@ uc secret gen          # runs uc-secret gen
 This crate ships the dispatcher, the two file encryption subcommands, which
 replace the former `boom` shell script, and `uc sync`, the machine
 configurator, `uc image push`/`uc image pull`, which move container images through
-the registry behind the bastion, and `uc secret`, which generates secrets and
-manages the ansible-vault secret stores.
+the registry behind the bastion, and `uc secret`, which generates secrets,
+manages the ansible-vault secret stores and, with `uc secret cert`, your
+certificates and trust.
 The last two replace the former `lib/pylib` Python package.
 
-It also ships the command groups — `uc image`, `uc cert`,
+It also ships the command groups — `uc image`, `uc secret cert`,
 `uc deb`, `uc db`, `uc net`, `uc daemon`, `uc vm`, `uc new`
 and `uc agent` — which gather
 every tool in `lib/` under one command; see [Command groups](#command-groups).
@@ -466,8 +467,8 @@ plain `.tar.gz` instead, and `restore` takes either.
 ## Command groups
 
 Every other tool in `lib/` is its own executable, named after the command
-that runs it: `uc db pg` runs `uc-db-pg`, `uc cert p12 fetch` runs
-`uc-cert-p12-fetch`. So you can call a tool through `uc` or straight by its
+that runs it: `uc db pg` runs `uc-db-pg`, `uc secret cert p12 fetch` runs
+`uc-secret-cert-p12-fetch`. So you can call a tool through `uc` or straight by its
 `uc-*` name, whichever reads better in a script. A group is a `uc-<group>`
 executable that hands the rest of the command line to the tool, the way `uc`
 hands it to the group; `uc <group>` lists its commands and flags the ones
@@ -482,10 +483,10 @@ switching scripts over to the `uc` commands is a good idea.
 |---|---|---|
 | `uc image push`, `pull` | `uc-image-push`, `uc-image-pull` | |
 | `uc image run barge` | `uc-image-run-barge` | `barge` |
-| `uc cert init`, `server`, `client`, ... | `uc-cert-gen`: any command not below | `certgen` |
-| `uc cert trust HOST:PORT` | `uc-cert-trust` | `trust_ca` |
-| `uc cert p12 KEYNAME` | `uc-cert-p12-bundle` | `mkp12` |
-| `uc cert p12 fetch` | `uc-cert-p12-fetch` | `zcdump` |
+| `uc secret cert init`, `server`, `client`, ... | `uc-secret-cert-gen`: any command not below | `certgen` |
+| `uc secret cert trust HOST:PORT` | `uc-secret-cert-trust` | `trust_ca` |
+| `uc secret cert p12 KEYNAME` | `uc-secret-cert-p12-bundle` | `mkp12` |
+| `uc secret cert p12 fetch` | `uc-secret-cert-p12-fetch` | `zcdump` |
 | `uc deb build`, `publish` | `uc-deb-build`, `uc-deb-publish` | `mkdeb`, `pubdeb` |
 | `uc db pg`, `mongo`, `migrate` | `uc-db-pg`, `uc-db-mongo`, `uc-db-migrate` | `pg`, `mgo`, `sqlize` |
 | `uc db resources sync`, `dump` | `uc-db-resources-yaml sync`, `dump` | `ysys` |

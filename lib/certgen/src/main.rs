@@ -18,7 +18,7 @@ use crate::store::Store;
 ///
 /// All certificates are stored in ~/.x509/
 #[derive(Parser)]
-#[command(name = "uc-cert-gen", version = "1.0.0", verbatim_doc_comment)]
+#[command(name = "uc-secret-cert-gen", version = "1.0.0", verbatim_doc_comment)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -47,9 +47,9 @@ enum Command {
     ///
     /// Examples:
     ///
-    ///     uc cert server myapp -d localhost -d myapp.local -i 127.0.0.1
+    ///     uc secret cert server myapp -d localhost -d myapp.local -i 127.0.0.1
     ///
-    ///     uc cert server nginx -d example.com -d www.example.com --p12
+    ///     uc secret cert server nginx -d example.com -d www.example.com --p12
     #[command(verbatim_doc_comment, about = "Create a server certificate")]
     Server {
         name: String,
@@ -81,9 +81,9 @@ enum Command {
     ///
     /// Examples:
     ///
-    ///     uc cert client alice --email alice@example.com
+    ///     uc secret cert client alice --email alice@example.com
     ///
-    ///     uc cert client api-client --p12-password mysecret
+    ///     uc secret cert client api-client --p12-password mysecret
     #[command(verbatim_doc_comment, about = "Create a client certificate")]
     Client {
         name: String,

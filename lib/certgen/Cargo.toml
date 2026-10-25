@@ -11,7 +11,7 @@ authors.workspace = true
 publish = false
 
 [[bin]]
-name = "uc-cert-gen"
+name = "uc-secret-cert-gen"
 path = "src/main.rs"
 
 [dependencies]

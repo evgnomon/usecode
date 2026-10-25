@@ -25,19 +25,24 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
     );
 
     plan.add(
-        Task::new("webcam/reload", "Apply the webcam rules to connected cameras")
-            .tags(&["webcam"])
+        Task::new(
+            "webcam/reload",
+            "Apply the webcam rules to connected cameras",
+        )
+        .tags(&["webcam"])
+        .sudo()
+        .after(["webcam/udev"])
+        .when(workstation, WORKSTATION_ONLY)
+        .run(|ctx| async move {
+            if !ctx.deps_changed() {
+                return Ok(Outcome::Skipped("webcam rules unchanged".into()));
+            }
+            ctx.shell(
+                "udevadm control --reload && udevadm trigger --subsystem-match=usb --action=change",
+            )
             .sudo()
-            .after(["webcam/udev"])
-            .when(workstation, WORKSTATION_ONLY)
-            .run(|ctx| async move {
-                if !ctx.deps_changed() {
-                    return Ok(Outcome::Skipped("webcam rules unchanged".into()));
-                }
-                ctx.shell("udevadm control --reload && udevadm trigger --subsystem-match=usb --action=change")
-                    .sudo()
-                    .run_step()
-                    .await
-            }),
+            .run_step()
+            .await
+        }),
     );
 }

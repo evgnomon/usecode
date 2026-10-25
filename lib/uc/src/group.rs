@@ -7,7 +7,7 @@
 //! A [`Group`] is a table of commands, each handing over to a tool (with
 //! arguments of its own put in front of the user's), to a nested group, or to
 //! a function in this crate. A group may also have a fallback tool that gets
-//! any other command line, so `uc cert init` reaches `uc-cert-gen init`.
+//! any other command line, so `uc secret cert init` reaches `uc-secret-cert-gen init`.
 //! The tables themselves are in [`crate::groups`].
 
 use crate::dispatch;
@@ -235,13 +235,16 @@ mod tests {
         );
         assert_eq!(
             exec_of(&CERT, &["init", "--days", "1"]),
-            ["uc-cert-gen", "init", "--days", "1"]
+            ["uc-secret-cert-gen", "init", "--days", "1"]
         );
         assert_eq!(
             exec_of(&CERT, &["p12", "user_1"]),
-            ["uc-cert-p12-bundle", "user_1"]
+            ["uc-secret-cert-p12-bundle", "user_1"]
         );
-        assert_eq!(exec_of(&CERT, &["p12", "fetch"]), ["uc-cert-p12-fetch"]);
+        assert_eq!(
+            exec_of(&CERT, &["p12", "fetch"]),
+            ["uc-secret-cert-p12-fetch"]
+        );
         assert_eq!(
             exec_of(&DB, &["resources", "sync", "."]),
             ["uc-db-resources-yaml", "sync", "."]
@@ -271,8 +274,8 @@ mod tests {
         assert_eq!(route(&IMAGE, &[]), "Missing(Group(uc image))");
         assert_eq!(route(&IMAGE, &["-h"]), "Help(Group(uc image))");
         assert_eq!(route(&IMAGE, &["run", "help"]), "Help(Group(uc image run))");
-        assert_eq!(route(&CERT, &[]), "Missing(Group(uc cert))");
-        assert_eq!(route(&CERT, &["--help"]), "Help(Group(uc cert))");
+        assert_eq!(route(&CERT, &[]), "Missing(Group(uc secret cert))");
+        assert_eq!(route(&CERT, &["--help"]), "Help(Group(uc secret cert))");
         assert_eq!(
             route(&AGENT, &["nope"]),
             "Unknown(Group(uc agent), \"nope\")"

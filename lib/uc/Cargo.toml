@@ -50,8 +50,8 @@ name = "uc-image"
 path = "src/bin/uc-image.rs"
 
 [[bin]]
-name = "uc-cert"
-path = "src/bin/uc-cert.rs"
+name = "uc-secret-cert"
+path = "src/bin/uc-secret-cert.rs"
 
 [[bin]]
 name = "uc-deb"

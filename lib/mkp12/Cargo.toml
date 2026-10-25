@@ -11,7 +11,7 @@ authors.workspace = true
 publish = false
 
 [[bin]]
-name = "uc-cert-p12-bundle"
+name = "uc-secret-cert-p12-bundle"
 path = "src/main.rs"
 
 [dependencies]

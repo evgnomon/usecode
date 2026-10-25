@@ -6,8 +6,8 @@
 //! Installed under the names of the tools it replaces (`getsecret`,
 //! `keychain`, `rchain`, `ghchain`, `ensure_vault`, `ensure_secret`,
 //! `rotate_keychain_pass`), it behaves as they did. `encrypt`,
-//! `decrypt`, `server` and `serve` hand over to `uc-secret-encrypt`,
-//! `uc-secret-decrypt` and `uc-secret-server`.
+//! `decrypt`, `server`, `serve` and `cert` hand over to `uc-secret-encrypt`,
+//! `uc-secret-decrypt`, `uc-secret-server` and `uc-secret-cert`.
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::ffi::OsString;
@@ -128,6 +128,12 @@ enum Cmd {
     /// Encrypt a file to <file>.asc with a password and remove the original.
     #[command(disable_help_flag = true)]
     Encrypt {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<OsString>,
+    },
+    /// Manage X.509 certificates and trust (`uc secret cert` lists its commands).
+    #[command(disable_help_flag = true)]
+    Cert {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<OsString>,
     },
@@ -347,6 +353,7 @@ fn run(cmd: Cmd) -> anyhow::Result<ExitCode> {
         Cmd::Encrypt { args } => return Ok(dispatch::exec("uc-secret-encrypt", args)),
         Cmd::Decrypt { args } => return Ok(dispatch::exec("uc-secret-decrypt", args)),
         Cmd::Server { args } => return Ok(dispatch::exec("uc-secret-server", args)),
+        Cmd::Cert { args } => return Ok(dispatch::exec("uc-secret-cert", args)),
         Cmd::Serve { args } => {
             return Ok(dispatch::exec(
                 "uc-secret-server",
@@ -410,6 +417,7 @@ mod tests {
             ("decrypt", vec!["-h"]),
             ("server", vec!["read", "-h"]),
             ("serve", vec!["--help"]),
+            ("cert", vec!["p12", "-h"]),
         ] {
             let mut argv = vec!["uc-secret", sub];
             argv.extend(&words);
@@ -417,7 +425,8 @@ mod tests {
                 Cmd::Encrypt { args }
                 | Cmd::Decrypt { args }
                 | Cmd::Server { args }
-                | Cmd::Serve { args } => args,
+                | Cmd::Serve { args }
+                | Cmd::Cert { args } => args,
                 _ => panic!("{sub}"),
             };
             assert_eq!(args, words, "{sub}");

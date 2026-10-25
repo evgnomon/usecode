@@ -30,7 +30,7 @@ fn main() {
         let arg0 = args
             .first()
             .map(String::as_str)
-            .unwrap_or("uc-cert-p12-bundle");
+            .unwrap_or("uc-secret-cert-p12-bundle");
         println!("Usage: {arg0} <keyname>");
         exit(1);
     }
@@ -38,7 +38,7 @@ fn main() {
     let err = Command::new("openssl")
         .args(openssl_args(&home, &args[1]))
         .exec();
-    eprintln!("uc-cert-p12-bundle: openssl: {err}");
+    eprintln!("uc-secret-cert-p12-bundle: openssl: {err}");
     exit(if err.kind() == io::ErrorKind::NotFound {
         127
     } else {
