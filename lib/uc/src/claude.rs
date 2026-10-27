@@ -1,0 +1,727 @@
+// License-Identifier: HGL
+// Copyright (C) The Usecode Authors (see AUTHORS)
+
+//! `uc agent login claude`, and the Claude subscription as the coding
+//! agent's other model provider next to OpenRouter.
+//!
+//! The login is the OAuth flow Claude Code itself uses (`claude setup-token`):
+//! authorization code with PKCE, the user pastes the code the browser shows,
+//! and the token that comes back, good for a year and for inference only, is
+//! written to `~/.bashrc.d/claude.sh` as `CLAUDE_CODE_OAUTH_TOKEN`, the way
+//! `OPENROUTER_API_KEY` sits in `~/.bashrc.d/openrouter.sh`.
+//!
+//! The chat speaks OpenAI's chat completions, which is what OpenRouter
+//! takes. Anthropic's Messages API is not that, so [`stream`] and [`send`]
+//! turn the chat's request into one and the reply back into the chunks the
+//! chat already reads. A subscription token is only taken by the Messages
+//! API when the request looks like Claude Code's: the beta header, the
+//! Claude Code identity as the first system block, and a few tool names
+//! spelled the way Claude Code spells them (see [`wire`]).
+
+use anyhow::{Context, Result, anyhow, bail};
+use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use futures_util::{Stream, StreamExt};
+use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
+use std::io::{BufRead, IsTerminal, Write};
+use std::path::PathBuf;
+use std::pin::Pin;
+use std::sync::OnceLock;
+use std::time::Duration;
+
+/// The variable the token lives in; Claude Code reads the same one.
+pub const TOKEN_VAR: &str = "CLAUDE_CODE_OAUTH_TOKEN";
+
+const CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
+const AUTHORIZE_URL: &str = "https://claude.com/cai/oauth/authorize";
+const TOKEN_URL: &str = "https://platform.claude.com/v1/oauth/token";
+const REDIRECT_URI: &str = "https://platform.claude.com/oauth/code/callback";
+/// Inference only: all the chat needs, and all a long-lived token should hold.
+const SCOPE: &str = "user:inference";
+/// A year, the lifetime `claude setup-token` asks for.
+const LIFETIME: u64 = 365 * 24 * 60 * 60;
+const MESSAGES_URL: &str = "https://api.anthropic.com/v1/messages?beta=true";
+const IDENTITY: &str = "You are Claude Code, Anthropic's official CLI for Claude.";
+const MAX_TOKENS: u64 = 32_000;
+
+/// Tool names the subscription API refuses unless they are Claude Code's.
+const NAMES: &[(&str, &str)] = &[("bash", "Bash"), ("grep", "Grep"), ("glob", "Glob")];
+
+/// The name of a tool on the wire.
+fn wire(name: &str) -> &str {
+    NAMES
+        .iter()
+        .find(|(ours, _)| *ours == name)
+        .map_or(name, |(_, theirs)| theirs)
+}
+
+/// The chat's name of a tool the wire called `name`.
+fn unwire(name: &str) -> &str {
+    NAMES
+        .iter()
+        .find(|(_, theirs)| *theirs == name)
+        .map_or(name, |(ours, _)| ours)
+}
+
+/// The Anthropic id of a model the chat names the OpenRouter way:
+/// `anthropic/claude-opus-5.5` is `claude-opus-5-5`.
+pub fn model_id(model: &str) -> String {
+    model
+        .strip_prefix("anthropic/")
+        .unwrap_or(model)
+        .replace('.', "-")
+}
+
+fn client() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        let _ = rustls_graviola::default_provider().install_default();
+        reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(15))
+            .read_timeout(Duration::from_secs(600))
+            .build()
+            .expect("HTTP client")
+    })
+}
+
+// ---------------------------------------------------------------- login ----
+
+/// A PKCE verifier and its S256 challenge.
+fn pkce() -> Result<(String, String)> {
+    let mut bytes = [0u8; 32];
+    getrandom::fill(&mut bytes).map_err(|e| anyhow!("{e}"))?;
+    let verifier = URL_SAFE_NO_PAD.encode(bytes);
+    let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
+    Ok((verifier, challenge))
+}
+
+fn encode(s: &str) -> String {
+    let mut out = String::new();
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
+/// The page the user logs in on. `state` is the verifier, as Claude Code
+/// does, so the code pasted back carries it for the exchange.
+fn authorize_url(challenge: &str, state: &str) -> String {
+    format!(
+        "{AUTHORIZE_URL}?code=true&client_id={CLIENT_ID}&response_type=code&redirect_uri={}\
+         &scope={}&code_challenge={challenge}&code_challenge_method=S256&state={state}",
+        encode(REDIRECT_URI),
+        encode(SCOPE),
+    )
+}
+
+/// The code and state out of what the user pasted: the bare `code#state` the
+/// page shows, or a URL or query string with `code=` in it.
+fn parse_code(input: &str) -> Result<(String, Option<String>)> {
+    let input = input.trim();
+    let (mut code, mut state) = (input.to_string(), None);
+    if let Some((_, query)) = input
+        .split_once('?')
+        .or_else(|| input.contains("code=").then_some(("", input)))
+    {
+        for pair in query.split('&') {
+            match pair.split_once('=') {
+                Some(("code", v)) => code = v.to_string(),
+                Some(("state", v)) => state = Some(v.to_string()),
+                _ => {}
+            }
+        }
+    }
+    if let Some((c, s)) = code.clone().split_once('#') {
+        code = c.to_string();
+        state = Some(s.to_string());
+    }
+    if code.is_empty() {
+        bail!("no authorization code in what was pasted");
+    }
+    Ok((code, state))
+}
+
+/// What the token endpoint gave back.
+#[derive(Debug)]
+pub struct Token {
+    pub access: String,
+    pub expires_in: u64,
+    pub scope: String,
+}
+
+/// Trades the code for a token.
+async fn exchange(verifier: &str, input: &str) -> Result<Token> {
+    let (code, state) = parse_code(input)?;
+    if state.as_deref().is_some_and(|s| s != verifier) {
+        bail!("the code is from another login (state mismatch); run the login again");
+    }
+    let reply = client()
+        .post(TOKEN_URL)
+        .json(&json!({
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": REDIRECT_URI,
+            "client_id": CLIENT_ID,
+            "code_verifier": verifier,
+            "state": verifier,
+            "expires_in": LIFETIME,
+        }))
+        .timeout(Duration::from_secs(30))
+        .send()
+        .await
+        .context("calling Anthropic's token endpoint")?;
+    let status = reply.status();
+    let text = reply.text().await.context("reading the token reply")?;
+    if !status.is_success() {
+        bail!("token exchange failed: HTTP {status}: {text}");
+    }
+    let value: Value = serde_json::from_str(&text).context("reading the token reply")?;
+    token_from(&value)
+}
+
+fn token_from(value: &Value) -> Result<Token> {
+    let access = value["access_token"]
+        .as_str()
+        .ok_or_else(|| anyhow!("the token reply had no access_token"))?
+        .to_string();
+    let scope = value["scope"].as_str().unwrap_or_default().to_string();
+    if !scope.is_empty() && !scope.split_whitespace().any(|s| s == "user:inference") {
+        bail!("the token has no user:inference scope (it has: {scope})");
+    }
+    Ok(Token {
+        access,
+        expires_in: value["expires_in"].as_u64().unwrap_or_default(),
+        scope,
+    })
+}
+
+/// Where the token is saved: next to the other keys.
+pub fn env_file() -> Result<PathBuf> {
+    let home = std::env::var_os("HOME").ok_or_else(|| anyhow!("HOME is not set"))?;
+    Ok(PathBuf::from(home).join(".bashrc.d/claude.sh"))
+}
+
+/// Writes the token as an `export` the shell sources, readable by the user
+/// only.
+pub fn save(token: &str) -> Result<PathBuf> {
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+    let path = env_file()?;
+    std::fs::create_dir_all(path.parent().expect("a parent"))?;
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(&path)
+        .with_context(|| format!("writing {}", path.display()))?;
+    // `mode` only applies to a file that is new.
+    file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    writeln!(
+        file,
+        "# Claude subscription token for `uc` chat (uc agent login claude)\nexport {TOKEN_VAR}={token}"
+    )?;
+    Ok(path)
+}
+
+/// `uc agent login claude`: log in with the Claude subscription and save the
+/// token. `--print` shows the token instead of saving it.
+pub async fn login(print_only: bool) -> Result<()> {
+    if !std::io::stdin().is_terminal() {
+        bail!("the login needs a terminal to paste the code into");
+    }
+    let (verifier, challenge) = pkce()?;
+    let url = authorize_url(&challenge, &verifier);
+    eprintln!("Open this URL in a browser and log in with your Claude account:\n\n{url}\n");
+    let _ = std::process::Command::new("xdg-open")
+        .arg(&url)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+    eprintln!("Then paste the code the page shows here:");
+    eprint!("> ");
+    std::io::stderr().flush()?;
+    let mut input = String::new();
+    std::io::stdin().lock().read_line(&mut input)?;
+    if input.trim().is_empty() {
+        bail!("no code entered");
+    }
+    eprintln!("Exchanging the code for a token...");
+    let token = exchange(&verifier, &input).await?;
+    if print_only {
+        println!("export {TOKEN_VAR}={}", token.access);
+        return Ok(());
+    }
+    let path = save(&token.access)?;
+    let days = token.expires_in / 86_400;
+    eprintln!("Saved {TOKEN_VAR} to {}", path.display());
+    if token.expires_in > 0 && days < 30 {
+        eprintln!(
+            "Note: this token lasts only {} hours, not a year; log in again when it stops working.",
+            token.expires_in / 3600
+        );
+    }
+    eprintln!(
+        "Open a new shell, or `source {}`, and run `uc`.",
+        path.display()
+    );
+    Ok(())
+}
+
+// ------------------------------------------------------------- requests ----
+
+/// The text of a message's content, be it a string or a list of parts.
+fn blocks(content: &Value) -> Vec<Value> {
+    match content {
+        Value::String(text) if !text.is_empty() => vec![json!({"type": "text", "text": text})],
+        Value::Array(parts) => parts
+            .iter()
+            .filter(|p| p["text"].as_str().is_some_and(|t| !t.is_empty()))
+            .map(|p| {
+                let mut block = json!({"type": "text", "text": p["text"]});
+                if let Some(cache) = p.get("cache_control") {
+                    block["cache_control"] = cache.clone();
+                }
+                block
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// An Anthropic Messages request out of the chat's OpenAI one.
+pub fn request(body: &Value, stream: bool) -> Value {
+    let mut system = vec![json!({"type": "text", "text": IDENTITY})];
+    let mut messages: Vec<Value> = Vec::new();
+    // A message after one of the same role joins it: tool results come as one
+    // `tool` message each but must share the user turn that follows the call.
+    let mut push = |role: &str, content: Vec<Value>| {
+        if content.is_empty() {
+            return;
+        }
+        match messages.last_mut() {
+            Some(last) if last["role"] == role => {
+                last["content"]
+                    .as_array_mut()
+                    .expect("blocks")
+                    .extend(content);
+            }
+            _ => messages.push(json!({"role": role, "content": content})),
+        }
+    };
+    for message in body["messages"].as_array().into_iter().flatten() {
+        match message["role"].as_str().unwrap_or_default() {
+            "system" => system.extend(blocks(&message["content"])),
+            "user" => push("user", blocks(&message["content"])),
+            "assistant" => {
+                let mut content = blocks(&message["content"]);
+                for call in message["tool_calls"].as_array().into_iter().flatten() {
+                    let input: Value = call["function"]["arguments"]
+                        .as_str()
+                        .and_then(|a| serde_json::from_str(a).ok())
+                        .filter(Value::is_object)
+                        .unwrap_or_else(|| json!({}));
+                    content.push(json!({
+                        "type": "tool_use",
+                        "id": call["id"],
+                        "name": wire(call["function"]["name"].as_str().unwrap_or_default()),
+                        "input": input,
+                    }));
+                }
+                push("assistant", content);
+            }
+            "tool" => push(
+                "user",
+                vec![json!({
+                    "type": "tool_result",
+                    "tool_use_id": message["tool_call_id"],
+                    "content": message["content"].as_str().unwrap_or_default(),
+                })],
+            ),
+            _ => {}
+        }
+    }
+    // The prompt is read from the cache up to the last system block and the
+    // last message of the turn.
+    if let Some(last) = system.last_mut() {
+        last["cache_control"] = json!({"type": "ephemeral"});
+    }
+    if let Some(block) = messages
+        .last_mut()
+        .and_then(|m| m["content"].as_array_mut())
+        .and_then(|c| c.last_mut())
+    {
+        block["cache_control"] = json!({"type": "ephemeral"});
+    }
+    let mut request = json!({
+        "model": model_id(body["model"].as_str().unwrap_or_default()),
+        "max_tokens": MAX_TOKENS,
+        "system": system,
+        "messages": messages,
+        "stream": stream,
+    });
+    let tools: Vec<Value> = body["tools"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|t| {
+            json!({
+                "name": wire(t["function"]["name"].as_str().unwrap_or_default()),
+                "description": t["function"]["description"],
+                "input_schema": t["function"]["parameters"],
+            })
+        })
+        .collect();
+    if !tools.is_empty() {
+        request["tools"] = json!(tools);
+    }
+    request
+}
+
+/// How many times a request is tried, as for OpenRouter.
+const ATTEMPTS: u32 = 4;
+
+/// Posts the request, trying again after a pause on a network error, 429,
+/// 529 or 5xx.
+async fn post(token: &str, request: &Value) -> Result<reqwest::Response> {
+    let mut attempt = 1;
+    loop {
+        let sent = client()
+            .post(MESSAGES_URL)
+            .bearer_auth(token)
+            .header("anthropic-version", "2023-06-01")
+            .header("anthropic-beta", "oauth-2025-04-20,claude-code-20250219")
+            .header("user-agent", "claude-cli/1.0.0")
+            .header("x-app", "cli")
+            .json(request)
+            .send()
+            .await;
+        let (retry, error) = match sent {
+            Err(e) => (true, anyhow::Error::new(e).context("calling Claude")),
+            Ok(response) if response.status().is_success() => return Ok(response),
+            Ok(response) => {
+                let status = response.status();
+                let value: Value = response.json().await.unwrap_or(Value::Null);
+                let msg = value["error"]["message"].as_str().unwrap_or("no message");
+                let retry = matches!(status.as_u16(), 429 | 529) || status.is_server_error();
+                let hint = if status.as_u16() == 401 {
+                    format!(" (log in again: uc agent login claude; {TOKEN_VAR} must be set)")
+                } else {
+                    String::new()
+                };
+                (retry, anyhow!("Claude: {status}: {msg}{hint}"))
+            }
+        };
+        if !retry || attempt == ATTEMPTS {
+            return Err(error);
+        }
+        eprintln!("\x1b[2m· {error:#}; trying again\x1b[0m");
+        tokio::time::sleep(Duration::from_secs(1 << attempt)).await;
+        attempt += 1;
+    }
+}
+
+/// An OpenAI `usage` out of Anthropic's. Prompt tokens count the cached ones
+/// too, as OpenAI's do.
+fn usage(input: u64, cached: u64, written: u64, output: u64) -> Value {
+    let prompt = input + cached + written;
+    json!({
+        "prompt_tokens": prompt,
+        "completion_tokens": output,
+        "total_tokens": prompt + output,
+        "prompt_tokens_details": {"cached_tokens": cached},
+    })
+}
+
+/// Anthropic's stream, event by event, as the chunks of an OpenAI one.
+#[derive(Default)]
+pub struct Translator {
+    /// The tool calls so far, by the index of the content block they are in.
+    calls: Vec<u64>,
+    input: u64,
+    cached: u64,
+    written: u64,
+    output: u64,
+}
+
+impl Translator {
+    /// The chunks one event adds.
+    pub fn event(&mut self, event: &Value) -> Vec<Value> {
+        let chunk = |delta: Value| json!({"choices": [{"index": 0, "delta": delta}]});
+        match event["type"].as_str().unwrap_or_default() {
+            "message_start" => {
+                let u = &event["message"]["usage"];
+                self.input = u["input_tokens"].as_u64().unwrap_or_default();
+                self.cached = u["cache_read_input_tokens"].as_u64().unwrap_or_default();
+                self.written = u["cache_creation_input_tokens"]
+                    .as_u64()
+                    .unwrap_or_default();
+                self.output = u["output_tokens"].as_u64().unwrap_or_default();
+                Vec::new()
+            }
+            "content_block_start" if event["content_block"]["type"] == "tool_use" => {
+                self.calls.push(event["index"].as_u64().unwrap_or_default());
+                let name = event["content_block"]["name"].as_str().unwrap_or_default();
+                vec![chunk(json!({"tool_calls": [{
+                    "index": self.calls.len() - 1,
+                    "id": event["content_block"]["id"],
+                    "function": {"name": unwire(name), "arguments": ""},
+                }]}))]
+            }
+            "content_block_delta" => {
+                let delta = &event["delta"];
+                match delta["type"].as_str().unwrap_or_default() {
+                    "text_delta" => vec![chunk(json!({"content": delta["text"]}))],
+                    "input_json_delta" => {
+                        let index = event["index"].as_u64().unwrap_or_default();
+                        match self.calls.iter().position(|c| *c == index) {
+                            Some(i) => vec![chunk(json!({"tool_calls": [{
+                                "index": i,
+                                "function": {"arguments": delta["partial_json"]},
+                            }]}))],
+                            None => Vec::new(),
+                        }
+                    }
+                    _ => Vec::new(),
+                }
+            }
+            "message_delta" => {
+                if let Some(output) = event["usage"]["output_tokens"].as_u64() {
+                    self.output = output;
+                }
+                Vec::new()
+            }
+            "message_stop" => vec![json!({
+                "choices": [],
+                "usage": usage(self.input, self.cached, self.written, self.output),
+            })],
+            "error" => vec![json!({"error": {
+                "message": event["error"]["message"].as_str().unwrap_or("no message"),
+            }})],
+            _ => Vec::new(),
+        }
+    }
+}
+
+/// The reply bytes the chat reads: OpenAI-style server-sent events.
+pub type Bytes = Pin<Box<dyn Stream<Item = std::io::Result<Vec<u8>>> + Send>>;
+
+/// Posts the chat's streaming request to Claude and gives back its reply as
+/// the SSE chunks the chat reads from OpenRouter.
+pub async fn stream(token: &str, body: &Value) -> Result<Bytes> {
+    let response = post(token, &request(body, true)).await?;
+    let mut upstream = response.bytes_stream();
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<std::io::Result<Vec<u8>>>();
+    tokio::spawn(async move {
+        let mut translator = Translator::default();
+        let mut pending: Vec<u8> = Vec::new();
+        while let Some(bytes) = upstream.next().await {
+            let bytes = match bytes {
+                Ok(bytes) => bytes,
+                Err(err) => {
+                    let _ = tx.send(Err(std::io::Error::other(err)));
+                    return;
+                }
+            };
+            pending.extend_from_slice(&bytes);
+            while let Some(end) = pending.iter().position(|b| *b == b'\n') {
+                let line: Vec<u8> = pending.drain(..=end).collect();
+                let line = String::from_utf8_lossy(&line);
+                let Some(data) = line.trim().strip_prefix("data:").map(str::trim) else {
+                    continue;
+                };
+                let Ok(event) = serde_json::from_str::<Value>(data) else {
+                    continue;
+                };
+                for chunk in translator.event(&event) {
+                    if tx
+                        .send(Ok(format!("data: {chunk}\n").into_bytes()))
+                        .is_err()
+                    {
+                        return;
+                    }
+                }
+            }
+        }
+        let _ = tx.send(Ok(b"data: [DONE]\n".to_vec()));
+    });
+    Ok(Box::pin(futures_util::stream::unfold(rx, |mut rx| async {
+        rx.recv().await.map(|item| (item, rx))
+    })))
+}
+
+/// Posts a request that doesn't stream; the reply is OpenAI's: the message
+/// in `choices[0].message`.
+pub async fn send(token: &str, body: &Value) -> Result<Value> {
+    let value: Value = post(token, &request(body, false))
+        .await?
+        .json()
+        .await
+        .context("reading Claude's reply")?;
+    let text: String = value["content"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|b| b["type"] == "text")
+        .filter_map(|b| b["text"].as_str())
+        .collect();
+    let u = &value["usage"];
+    Ok(json!({
+        "choices": [{"message": {"role": "assistant", "content": text}}],
+        "usage": usage(
+            u["input_tokens"].as_u64().unwrap_or_default(),
+            u["cache_read_input_tokens"].as_u64().unwrap_or_default(),
+            u["cache_creation_input_tokens"].as_u64().unwrap_or_default(),
+            u["output_tokens"].as_u64().unwrap_or_default(),
+        ),
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn models_are_named_the_anthropic_way() {
+        assert_eq!(model_id("anthropic/claude-opus-5.5"), "claude-opus-5-5");
+        assert_eq!(model_id("claude-haiku-5-5"), "claude-haiku-5-5");
+    }
+
+    #[test]
+    fn the_login_url_carries_the_challenge_and_state() {
+        let url = authorize_url("CHAL", "VER");
+        assert!(url.starts_with("https://claude.com/cai/oauth/authorize?code=true&client_id="));
+        assert!(url.contains("code_challenge=CHAL&code_challenge_method=S256&state=VER"));
+        assert!(url.contains("scope=user%3Ainference"));
+        assert!(
+            url.contains(
+                "redirect_uri=https%3A%2F%2Fplatform.claude.com%2Foauth%2Fcode%2Fcallback"
+            )
+        );
+    }
+
+    #[test]
+    fn pkce_challenge_is_the_hash_of_the_verifier() {
+        let (verifier, challenge) = pkce().unwrap();
+        assert_eq!(
+            challenge,
+            URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
+        );
+        assert!(verifier.len() >= 43);
+    }
+
+    #[test]
+    fn the_pasted_code_comes_in_any_shape() {
+        assert_eq!(
+            parse_code("abc#st").unwrap(),
+            ("abc".into(), Some("st".into()))
+        );
+        assert_eq!(parse_code("  abc ").unwrap(), ("abc".into(), None));
+        let url = "https://platform.claude.com/oauth/code/callback?code=abc&state=st";
+        assert_eq!(parse_code(url).unwrap(), ("abc".into(), Some("st".into())));
+        assert_eq!(
+            parse_code("code=abc&state=st").unwrap(),
+            ("abc".into(), Some("st".into()))
+        );
+        assert!(parse_code("  ").is_err());
+    }
+
+    #[test]
+    fn a_token_without_inference_is_refused() {
+        let ok = json!({"access_token": "t", "expires_in": 100, "scope": "user:inference"});
+        assert_eq!(token_from(&ok).unwrap().access, "t");
+        let bad = json!({"access_token": "t", "scope": "user:profile"});
+        assert!(token_from(&bad).is_err());
+        assert!(token_from(&json!({})).is_err());
+    }
+
+    fn chat() -> Value {
+        json!({
+            "model": "anthropic/claude-opus-5.5",
+            "messages": [
+                {"role": "system", "content": [
+                    {"type": "text", "text": "be uc", "cache_control": {"type": "ephemeral"}}]},
+                {"role": "user", "content": "list files"},
+                {"role": "assistant", "content": null, "tool_calls": [
+                    {"id": "t1", "type": "function",
+                     "function": {"name": "bash", "arguments": "{\"command\":\"ls\"}"}},
+                    {"id": "t2", "type": "function",
+                     "function": {"name": "read_file", "arguments": "{\"path\":\"a\"}"}}]},
+                {"role": "tool", "tool_call_id": "t1", "content": "a b"},
+                {"role": "tool", "tool_call_id": "t2", "content": "text"},
+            ],
+            "tools": [{"type": "function", "function": {
+                "name": "bash", "description": "run", "parameters": {"type": "object"}}}],
+        })
+    }
+
+    #[test]
+    fn the_request_is_claude_codes() {
+        let r = request(&chat(), true);
+        assert_eq!(r["model"], "claude-opus-5-5");
+        assert_eq!(r["stream"], true);
+        assert_eq!(r["system"][0]["text"], IDENTITY);
+        assert_eq!(r["system"][1]["text"], "be uc");
+        assert_eq!(r["system"][1]["cache_control"]["type"], "ephemeral");
+        assert_eq!(r["tools"][0]["name"], "Bash");
+        assert_eq!(r["tools"][0]["input_schema"]["type"], "object");
+        let m = r["messages"].as_array().unwrap();
+        assert_eq!(m.len(), 3);
+        assert_eq!(m[1]["content"][0]["name"], "Bash");
+        assert_eq!(m[1]["content"][0]["input"]["command"], "ls");
+        assert_eq!(m[1]["content"][1]["name"], "read_file");
+        // Both results share the one user turn after the calls.
+        assert_eq!(m[2]["role"], "user");
+        assert_eq!(m[2]["content"].as_array().unwrap().len(), 2);
+        assert_eq!(m[2]["content"][0]["tool_use_id"], "t1");
+        assert_eq!(m[2]["content"][1]["cache_control"]["type"], "ephemeral");
+    }
+
+    #[test]
+    fn the_stream_becomes_chat_chunks() {
+        let mut t = Translator::default();
+        let events = [
+            json!({"type": "message_start", "message": {"usage": {
+                "input_tokens": 10, "cache_read_input_tokens": 90, "output_tokens": 1}}}),
+            json!({"type": "content_block_start", "index": 0,
+                   "content_block": {"type": "text", "text": ""}}),
+            json!({"type": "content_block_delta", "index": 0,
+                   "delta": {"type": "text_delta", "text": "hi"}}),
+            json!({"type": "content_block_start", "index": 1,
+                   "content_block": {"type": "tool_use", "id": "t1", "name": "Bash"}}),
+            json!({"type": "content_block_delta", "index": 1,
+                   "delta": {"type": "input_json_delta", "partial_json": "{\"command\""}}),
+            json!({"type": "content_block_delta", "index": 1,
+                   "delta": {"type": "input_json_delta", "partial_json": ":\"ls\"}"}}),
+            json!({"type": "message_delta", "usage": {"output_tokens": 7}}),
+            json!({"type": "message_stop"}),
+        ];
+        let chunks: Vec<Value> = events.iter().flat_map(|e| t.event(e)).collect();
+        assert_eq!(chunks[0]["choices"][0]["delta"]["content"], "hi");
+        let start = &chunks[1]["choices"][0]["delta"]["tool_calls"][0];
+        assert_eq!(start["index"], 0);
+        assert_eq!(start["id"], "t1");
+        assert_eq!(start["function"]["name"], "bash");
+        assert_eq!(
+            chunks[3]["choices"][0]["delta"]["tool_calls"][0]["function"]["arguments"],
+            ":\"ls\"}"
+        );
+        let usage = &chunks.last().unwrap()["usage"];
+        assert_eq!(usage["prompt_tokens"], 100);
+        assert_eq!(usage["completion_tokens"], 7);
+        assert_eq!(usage["total_tokens"], 107);
+        assert_eq!(usage["prompt_tokens_details"]["cached_tokens"], 90);
+    }
+
+    #[test]
+    fn a_stream_error_is_a_chat_error() {
+        let mut t = Translator::default();
+        let chunks = t.event(&json!({"type": "error", "error": {"message": "overloaded"}}));
+        assert_eq!(chunks[0]["error"]["message"], "overloaded");
+    }
+}

@@ -3,7 +3,9 @@
 
 //! Shared implementation behind the `uc` command family.
 //!
-//! [`chat`] is `uc` itself, run with no command: the coding agent.
+//! [`chat`] is `uc` itself, run with no command: the coding agent, and
+//! [`claude`] its other model provider, the Claude subscription, with the
+//! login that gets its token.
 //! [`crypto`] carries the OpenSSL-compatible `aes-256-cbc` container format,
 //! [`cli`] the option parsing and terminal helpers shared by `uc-secret-encrypt` and
 //! `uc-secret-decrypt`, [`configure`] the parallel machine configurator behind
@@ -29,6 +31,7 @@
 
 pub mod backup;
 pub mod chat;
+pub mod claude;
 pub mod cli;
 pub mod configure;
 pub mod crypto;

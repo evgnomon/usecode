@@ -308,9 +308,55 @@ pub static AGENT: Group = Group {
             summary: "the OpenRouter usage and credits of the agent's own key",
             run: Run::Builtin(agent_usage),
         },
+        Sub {
+            name: "login",
+            summary: "log in with a Claude subscription and save its token for the chat",
+            run: Run::Builtin(agent_login),
+        },
     ],
     fallback: None,
 };
+
+/// `uc agent login claude [--print]`: the Claude subscription's token, saved
+/// as `CLAUDE_CODE_OAUTH_TOKEN` in `~/.bashrc.d/claude.sh`.
+fn agent_login(args: &[OsString]) -> ExitCode {
+    let args: Vec<String> = args
+        .iter()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
+    let usage = "usage: uc agent login claude [--print]";
+    match args.iter().map(String::as_str).collect::<Vec<_>>()[..] {
+        ["-h" | "--help"] => {
+            println!(
+                "{usage}\n\nLogs in with your Claude subscription (Pro or Max) and saves the token as"
+            );
+            println!(
+                "CLAUDE_CODE_OAUTH_TOKEN in ~/.bashrc.d/claude.sh. `uc` then chats through the"
+            );
+            println!(
+                "subscription when OPENROUTER_API_KEY is not set, or with UC_PROVIDER=claude."
+            );
+            println!("--print shows the export line instead of saving it.");
+            return ExitCode::SUCCESS;
+        }
+        ["claude"] | ["claude", "--print"] => {}
+        _ => {
+            eprintln!("{usage}");
+            return ExitCode::from(2);
+        }
+    }
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    match runtime.block_on(crate::claude::login(args.len() == 2)) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(err) => {
+            eprintln!("uc agent login: {err:#}");
+            ExitCode::FAILURE
+        }
+    }
+}
 
 /// `uc agent usage`: the OpenRouter usage of `OPENROUTER_API_KEY`, the key
 /// the coding agent itself chats with.

@@ -69,6 +69,15 @@ UC_MODEL=openai/gpt-5 uc                      # any OpenRouter model
 UC_EFFORT=medium uc                           # low, medium or high reasoning
 ```
 
+Have a Claude Pro or Max subscription instead? `uc agent login claude` opens
+Claude's login, takes the code the page shows, and saves a year-long,
+inference-only token as `CLAUDE_CODE_OAUTH_TOKEN` in `~/.bashrc.d/claude.sh`
+(`--print` shows the export line instead). With that set and no
+`OPENROUTER_API_KEY`, `uc` chats through the subscription, with Haiku, Sonnet
+(the default) and Opus in `/model`; `UC_PROVIDER=claude` or `UC_PROVIDER=openrouter`
+picks one when both keys are set. TypeSafe routing, reasoning effort and the
+cost line are OpenRouter's and do not apply there.
+
 Every flag can be set three ways, so you can make your favourite the
 default: on the command line, as a `UC_` environment variable, or under
 `uc:` in your `config.yaml`. The command line wins, then the environment,

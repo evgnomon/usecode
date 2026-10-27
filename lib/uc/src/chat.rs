@@ -81,10 +81,14 @@ use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::task::JoinHandle;
 
+use crate::claude;
+
 mod voice;
 
 const API: &str = "https://openrouter.ai/api/v1/chat/completions";
 const DEFAULT_MODEL: &str = "z-ai/glm-5.3-flash";
+/// The model on the Claude subscription unless `UC_MODEL` says otherwise.
+const DEFAULT_CLAUDE_MODEL: &str = "anthropic/claude-sonnet-5.5";
 const DEFAULT_EFFORT: &str = "high";
 const TYPESAFE: &str = "https://api.typesafe.ai/v1/systemone";
 const DEFAULT_ROUTER: &str = "jev-latest";
@@ -133,6 +137,22 @@ const MODELS: &[(&str, &str)] = &[
          architecture and design, a nasty bug nobody has found, multi-step changes \
          where being right matters more than the price. Dear per token, so overkill \
          for anything the others do well",
+    ),
+];
+/// What the Claude subscription serves, in OpenRouter's names (see
+/// `claude::model_id`); there is no TypeSafe routing between them.
+const CLAUDE_MODELS: &[(&str, &str)] = &[
+    (
+        "anthropic/claude-haiku-5.5",
+        "Quick, cheap on the limits: everyday lines, reading a lot",
+    ),
+    (
+        DEFAULT_CLAUDE_MODEL,
+        "The all-rounder: coding, tools and reasoning for most work",
+    ),
+    (
+        "anthropic/claude-opus-5.5",
+        "The strongest: the hardest coding and reasoning",
     ),
 ];
 const DUCKDUCKGO: &str = "https://html.duckduckgo.com/html/";
@@ -290,6 +310,8 @@ impl Engine {
 
 struct Session {
     key: String,
+    /// The key is the Claude subscription's token, not OpenRouter's.
+    claude: bool,
     /// The doer: the model that does what a line asks.
     model: String,
     /// The model that reads a line and the code first and briefs the doer.
@@ -464,8 +486,21 @@ async fn run(
     shell: bool,
     search: Option<Search>,
 ) -> Result<()> {
-    // Without a key the AI is off and every line runs in bash.
-    let key = env("OPENROUTER_API_KEY");
+    // Without a key the AI is off and every line runs in bash. OpenRouter's
+    // key wins unless `UC_PROVIDER=claude` asks for the Claude subscription,
+    // which is also the one used when only its token is set.
+    let provider = env("UC_PROVIDER").map(|p| p.to_lowercase());
+    let claude = match provider.as_deref() {
+        Some("claude") => true,
+        Some("openrouter") => false,
+        Some(other) => bail!("UC_PROVIDER is {other}; it is openrouter or claude"),
+        None => env("OPENROUTER_API_KEY").is_none() && env(claude::TOKEN_VAR).is_some(),
+    };
+    let key = env(if claude {
+        claude::TOKEN_VAR
+    } else {
+        "OPENROUTER_API_KEY"
+    });
     let ai = key.is_some();
     AI.store(ai, Ordering::Relaxed);
     SHELL.store(shell, Ordering::Relaxed);
@@ -475,14 +510,22 @@ async fn run(
             .filter(|v| !v.trim().is_empty())
             .unwrap_or_else(|| default.to_string())
     };
-    let model = env_or("UC_MODEL", DEFAULT_MODEL);
+    let model = env_or(
+        "UC_MODEL",
+        if claude {
+            DEFAULT_CLAUDE_MODEL
+        } else {
+            DEFAULT_MODEL
+        },
+    );
     let effort = env_or("UC_EFFORT", DEFAULT_EFFORT);
     // A model asked for is the one used for every line.
     let router = env("TYPESAFE_API_KEY")
-        .filter(|_| env("UC_MODEL").is_none())
+        .filter(|_| env("UC_MODEL").is_none() && !claude)
         .map(|key| (key, env_or("TYPESAFE_MODEL", DEFAULT_ROUTER)));
     let mut session = Session {
         key: key.unwrap_or_default().trim().to_string(),
+        claude,
         messages: vec![json!({"role": "system", "content": system_prompt(&model, ask, output)})],
         planner: model.clone(),
         plan: Vec::new(),
@@ -544,7 +587,9 @@ async fn run(
                 Some("/model" | "/planner" | "/context" | "/compact")
             )
         {
-            eprintln!("· AI off: set OPENROUTER_API_KEY to turn it on");
+            eprintln!(
+                "· AI off: set OPENROUTER_API_KEY, or log in with `uc agent login claude`, to turn it on"
+            );
             continue;
         }
         if let Some(name) = line
@@ -1453,7 +1498,7 @@ fn system_prompt(model: &str, ask: bool, output: bool) -> String {
     };
     format!(
         "You are uc, the usecode coding agent, running in a terminal on the user's machine, \
-         on the model {model} via OpenRouter. The working directory is {cwd}. Use the tools to \
+         on the model {model}. The working directory is {cwd}. Use the tools to \
          look around, run commands and change files; {confirms}. {sees}\n\n{MAIN_SKILL}"
     )
 }
@@ -1667,6 +1712,11 @@ impl Session {
         }
     }
 
+    /// The models `/model` lists: the Claude subscription's three, or OpenRouter's.
+    fn pool(&self) -> &'static [(&'static str, &'static str)] {
+        if self.claude { CLAUDE_MODELS } else { MODELS }
+    }
+
     /// Makes `model` the doer.
     fn set_model(&mut self, model: String) {
         if model != self.model {
@@ -1718,7 +1768,7 @@ impl Session {
     fn switch(&mut self, name: &str) -> String {
         if name.is_empty() {
             let mut lines = String::new();
-            for (i, (model, _)) in MODELS.iter().enumerate() {
+            for (i, (model, _)) in self.pool().iter().enumerate() {
                 let mark = match (*model == self.model, *model == self.planner) {
                     (true, true) => "*",
                     (true, false) => "D",
@@ -1756,7 +1806,7 @@ impl Session {
             eprint!("{line}");
             return line.to_string();
         }
-        match model_named(name) {
+        match model_named(self.pool(), name) {
             Some(model) => {
                 self.planner = model.clone();
                 self.planner_pinned = false;
@@ -1779,7 +1829,7 @@ impl Session {
     fn switch_planner(&mut self, name: &str) -> String {
         if name.is_empty() {
             let mut lines = String::new();
-            for (i, (model, _)) in MODELS.iter().enumerate() {
+            for (i, (model, _)) in self.pool().iter().enumerate() {
                 let mark = if *model == self.planner { "*" } else { " " };
                 let line = format!("{mark} {} {model}\n", i + 1);
                 eprint!("{line}");
@@ -1790,7 +1840,7 @@ impl Session {
             lines.push_str(&line);
             return lines;
         }
-        match model_named(name) {
+        match model_named(self.pool(), name) {
             Some(model) => {
                 self.planner = model.clone();
                 self.planner_pinned = true;
@@ -1885,7 +1935,11 @@ impl Session {
         let _clock = std::io::stderr()
             .is_terminal()
             .then(|| Clock(tokio::spawn(spin("summarising the conversation".into()))));
-        let value = send(&self.key, &body).await?;
+        let value = if self.claude {
+            claude::send(&self.key, &body).await?
+        } else {
+            send(&self.key, &body).await?
+        };
         if let Some(cost) = value["usage"]["cost"].as_f64() {
             self.spent += cost;
         }
@@ -2057,14 +2111,22 @@ impl Session {
         let mut clock = std::io::stderr()
             .is_terminal()
             .then(|| Clock(tokio::spawn(spin(what))));
-        let response = open(&self.key, &body).await?;
-        let mut stream = response.bytes_stream();
+        let mut stream: claude::Bytes = if self.claude {
+            claude::stream(&self.key, &body).await?
+        } else {
+            Box::pin(
+                open(&self.key, &body)
+                    .await?
+                    .bytes_stream()
+                    .map(|bytes| bytes.map(|b| b.to_vec()).map_err(std::io::Error::other)),
+            )
+        };
         let mut pending = Vec::new();
         let mut reply = Reply::default();
         let mut shown = false;
         let mut dim = None;
         'stream: while let Some(bytes) = stream.next().await {
-            pending.extend_from_slice(&bytes.context("reading OpenRouter's reply")?);
+            pending.extend_from_slice(&bytes.context("reading the model's reply")?);
             while let Some(end) = pending.iter().position(|b| *b == b'\n') {
                 let line: Vec<u8> = pending.drain(..=end).collect();
                 let line = String::from_utf8_lossy(&line);
@@ -3034,14 +3096,14 @@ fn read_line(prompt: &str) -> Result<Option<String>> {
     }
 }
 
-/// The model `/model <name>` means: its number in `MODELS`, the one listed
+/// The model `/model <name>` means: its number in `pool`, the one listed
 /// there whose id has `name` in it, or `name` itself when it is an id.
-fn model_named(name: &str) -> Option<String> {
+fn model_named(pool: &[(&str, &str)], name: &str) -> Option<String> {
     if let Ok(n) = name.parse::<usize>() {
-        return MODELS.get(n.checked_sub(1)?).map(|(m, _)| m.to_string());
+        return pool.get(n.checked_sub(1)?).map(|(m, _)| m.to_string());
     }
     let lower = name.to_lowercase();
-    let found: Vec<&str> = MODELS
+    let found: Vec<&str> = pool
         .iter()
         .map(|(m, _)| *m)
         .filter(|m| m.contains(&lower))
@@ -3815,24 +3877,33 @@ mod tests {
     #[test]
     fn model_named_takes_a_number_part_of_an_id_or_an_id() {
         assert_eq!(
-            model_named("2").as_deref(),
+            model_named(MODELS, "2").as_deref(),
             Some("anthropic/claude-haiku-5.5")
         );
-        assert_eq!(model_named("0"), None);
-        assert_eq!(model_named("9"), None);
+        assert_eq!(model_named(MODELS, "0"), None);
+        assert_eq!(model_named(MODELS, "9"), None);
         assert_eq!(
-            model_named("haiku").as_deref(),
+            model_named(MODELS, "haiku").as_deref(),
             Some("anthropic/claude-haiku-5.5")
         );
-        assert_eq!(model_named("glm-5.3").as_deref(), Some("z-ai/glm-5.3"));
-        assert_eq!(model_named("glm"), None);
         assert_eq!(
-            model_named("opus").as_deref(),
+            model_named(MODELS, "glm-5.3").as_deref(),
+            Some("z-ai/glm-5.3")
+        );
+        assert_eq!(model_named(MODELS, "glm"), None);
+        assert_eq!(
+            model_named(MODELS, "opus").as_deref(),
             Some("anthropic/claude-opus-5.5")
         );
-        assert_eq!(model_named("luna").as_deref(), Some("openai/gpt-6-luna"));
-        assert_eq!(model_named("openai/gpt-5").as_deref(), Some("openai/gpt-5"));
-        assert_eq!(model_named("nope"), None);
+        assert_eq!(
+            model_named(MODELS, "luna").as_deref(),
+            Some("openai/gpt-6-luna")
+        );
+        assert_eq!(
+            model_named(MODELS, "openai/gpt-5").as_deref(),
+            Some("openai/gpt-5")
+        );
+        assert_eq!(model_named(MODELS, "nope"), None);
     }
 
     #[test]
@@ -3886,6 +3957,7 @@ mod tests {
     fn session() -> Session {
         Session {
             key: String::new(),
+            claude: false,
             model: String::new(),
             planner: String::new(),
             plan: Vec::new(),
