@@ -76,7 +76,9 @@ inference-only token as `CLAUDE_CODE_OAUTH_TOKEN` in `~/.bashrc.d/claude.sh`
 `OPENROUTER_API_KEY`, `uc` chats through the subscription, with Haiku, Sonnet
 (the default) and Opus in `/model`; `UC_PROVIDER=claude` or `UC_PROVIDER=openrouter`
 picks one when both keys are set. TypeSafe routing, reasoning effort and the
-cost line are OpenRouter's and do not apply there.
+cost line are OpenRouter's and do not apply there. `uc agent usage` shows how
+much of the subscription's 5-hour and weekly windows you have used, next to the
+OpenRouter spend when both keys are set.
 
 Every flag can be set three ways, so you can make your favourite the
 default: on the command line, as a `UC_` environment variable, or under
@@ -509,7 +511,7 @@ switching scripts over to the `uc` commands is a good idea.
 | `uc new script`, `unit` | `uc-new-script`, `uc-new-unit` | `shole`, `mkunit` |
 | `uc secret server` | `uc-secret-server` | `secd` |
 | `uc agent api`, `mcp` | `uc-agent-api`, `uc-agent-mcp` | `usecode-agent-api`, `usecode-mcp` |
-| `uc agent usage` | built in | |
+| `uc agent usage` | built in (OpenRouter and Claude usage) | |
 | `uc terminal` | `uc-terminal-tm`, arguments and all | |
 
 For `uc terminal`, the dotfiles give you the shell alias `t`.

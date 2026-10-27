@@ -305,7 +305,7 @@ pub static AGENT: Group = Group {
         ),
         Sub {
             name: "usage",
-            summary: "the OpenRouter usage and credits of the agent's own key",
+            summary: "the OpenRouter usage and credits, and the Claude subscription usage, of the agent",
             run: Run::Builtin(agent_usage),
         },
         Sub {
@@ -359,17 +359,34 @@ fn agent_login(args: &[OsString]) -> ExitCode {
 }
 
 /// `uc agent usage`: the OpenRouter usage of `OPENROUTER_API_KEY`, the key
-/// the coding agent itself chats with.
+/// the coding agent itself chats with, and the Claude subscription usage of
+/// `CLAUDE_CODE_OAUTH_TOKEN`. Each is shown when its credential is set.
 fn agent_usage(args: &[OsString]) -> ExitCode {
+    const USAGE: &str = "usage: uc agent usage [--key KEY]";
     let mut args = args.iter().map(|arg| arg.to_string_lossy().into_owned());
-    let mut key = std::env::var("OPENROUTER_API_KEY")
-        .ok()
-        .filter(|k| !k.trim().is_empty())
-        .unwrap_or_default();
+    let set = |name: &str| {
+        std::env::var(name)
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+            .unwrap_or_default()
+    };
+    let mut key = set("OPENROUTER_API_KEY");
+    let token = set(crate::claude::TOKEN_VAR);
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "-h" | "--help" => {
-                println!("usage: uc agent usage [--key KEY]");
+                println!("{USAGE}\n");
+                println!(
+                    "Shows what the agent's own credentials have used. With OPENROUTER_API_KEY"
+                );
+                println!("(or --key) set: the key's spend, limits and credits. With");
+                println!(
+                    "CLAUDE_CODE_OAUTH_TOKEN set (uc agent login claude): how much of the Claude"
+                );
+                println!(
+                    "subscription's 5-hour and weekly windows is used. Both are shown if both"
+                );
+                println!("are set.");
                 return ExitCode::SUCCESS;
             }
             "--key" => {
@@ -377,13 +394,16 @@ fn agent_usage(args: &[OsString]) -> ExitCode {
             }
             other => {
                 eprintln!("uc agent usage: unknown argument '{other}'");
-                eprintln!("usage: uc agent usage [--key KEY]");
+                eprintln!("{USAGE}");
                 return ExitCode::from(2);
             }
         }
     }
-    if key.trim().is_empty() {
-        eprintln!("set OPENROUTER_API_KEY (https://openrouter.ai/keys), or pass --key KEY");
+    if key.trim().is_empty() && token.is_empty() {
+        eprintln!(
+            "set OPENROUTER_API_KEY (https://openrouter.ai/keys) or pass --key KEY, \
+             or log in to Claude with `uc agent login claude` (CLAUDE_CODE_OAUTH_TOKEN)"
+        );
         return ExitCode::from(2);
     }
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -391,16 +411,29 @@ fn agent_usage(args: &[OsString]) -> ExitCode {
         .enable_all()
         .build()
         .expect("tokio runtime");
-    let result = runtime.block_on(crate::openrouter::OpenRouter::new(key).usage());
-    match result {
-        Ok(usage) => {
-            print!("{}", usage.report());
-            ExitCode::SUCCESS
+    let mut reports = Vec::new();
+    let mut failed = false;
+    let mut fail = |err: anyhow::Error| {
+        eprintln!("uc agent usage: {err:#}");
+        failed = true;
+    };
+    if !key.trim().is_empty() {
+        match runtime.block_on(crate::openrouter::OpenRouter::new(key).usage()) {
+            Ok(usage) => reports.push(usage.report()),
+            Err(err) => fail(err),
         }
-        Err(err) => {
-            eprintln!("uc agent usage: {err:#}");
-            ExitCode::FAILURE
+    }
+    if !token.is_empty() {
+        match runtime.block_on(crate::claude::usage_report(&token)) {
+            Ok(usage) => reports.push(usage.report()),
+            Err(err) => fail(err),
         }
+    }
+    print!("{}", reports.join("\n"));
+    if failed {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
     }
 }
 

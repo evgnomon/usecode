@@ -26,7 +26,8 @@
 //! buckets and objects on the cluster's S3 object storage, and [`logs`] is
 //! `uc kube logs`, the container logs of the whole cluster, [`usage`] is
 //! `uc kube usage`, its CPU, memory, disk and network, [`openrouter`] is
-//! `uc agent usage`, the OpenRouter usage of the coding agent's own key, and
+//! `uc agent usage`, the OpenRouter usage of the coding agent's own key (and
+//! the Claude subscription's, see [`claude`]), and
 //! [`workspace`] is `uc workspace` (`uc ws`), dev containers on the cluster.
 
 pub mod backup;

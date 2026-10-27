@@ -426,6 +426,175 @@ async fn post(token: &str, request: &Value) -> Result<reqwest::Response> {
     }
 }
 
+/// The model the usage probe asks: the cheapest, and one token is all it says.
+const PROBE_MODEL: &str = "claude-haiku-4-5";
+
+/// One rate-limit window of the subscription, as the `anthropic-ratelimit-unified-*`
+/// headers describe it.
+#[derive(Debug, Default, PartialEq)]
+pub struct Window {
+    /// What the window is called: `5h` or `7d`.
+    pub name: &'static str,
+    /// How much of it is used, from 0 to 1.
+    pub utilization: Option<f64>,
+    /// When it resets, in seconds since the epoch.
+    pub resets_at: Option<i64>,
+    /// `allowed`, `allowed_warning` or `rejected`.
+    pub status: Option<String>,
+}
+
+/// The usage of a Claude subscription: its rate-limit windows.
+#[derive(Debug, Default, PartialEq)]
+pub struct Usage {
+    pub windows: Vec<Window>,
+    /// The window that counts against the request, as Claude names it.
+    pub representative: Option<String>,
+    /// Whether Claude turned the probe away for a limit that is hit.
+    pub limited: bool,
+}
+
+/// A header's text, if it is there and readable.
+fn header<'a>(headers: &'a reqwest::header::HeaderMap, name: &str) -> Option<&'a str> {
+    headers
+        .get(name)
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+}
+
+/// A reset as seconds since the epoch: Claude sends a unix time, but an
+/// RFC 3339 date is read too.
+fn reset_time(text: &str) -> Option<i64> {
+    if let Ok(n) = text.parse::<f64>() {
+        // Milliseconds, should they ever come.
+        return Some(if n > 1e11 {
+            (n / 1000.0) as i64
+        } else {
+            n as i64
+        });
+    }
+    chrono::DateTime::parse_from_rfc3339(text)
+        .ok()
+        .map(|t| t.timestamp())
+}
+
+impl Usage {
+    /// The usage the rate-limit headers of a reply tell. The headers are
+    /// not documented, so any of them may be missing.
+    pub fn from_headers(headers: &reqwest::header::HeaderMap, limited: bool) -> Usage {
+        let prefix = "anthropic-ratelimit-unified-";
+        let windows = [("5h", "5h"), ("7d", "7d")]
+            .into_iter()
+            .map(|(name, key)| Window {
+                name,
+                utilization: header(headers, &format!("{prefix}{key}-utilization"))
+                    .and_then(|v| v.parse().ok()),
+                resets_at: header(headers, &format!("{prefix}{key}-reset")).and_then(reset_time),
+                status: header(headers, &format!("{prefix}{key}-status")).map(str::to_string),
+            })
+            .filter(|w| w.utilization.is_some() || w.resets_at.is_some() || w.status.is_some())
+            .collect();
+        Usage {
+            windows,
+            representative: header(headers, &format!("{prefix}representative-claim"))
+                .map(str::to_string),
+            limited,
+        }
+    }
+
+    /// The plain text `uc agent usage` prints, as of now.
+    pub fn report(&self) -> String {
+        self.report_at(chrono::Utc::now().timestamp())
+    }
+
+    /// The report as of `now`, in seconds since the epoch.
+    pub fn report_at(&self, now: i64) -> String {
+        use std::fmt::Write;
+        let mut out = String::from("Claude subscription\n");
+        if self.windows.is_empty() {
+            out.push_str("  Claude sent no usage figures for this token\n");
+            return out;
+        }
+        for window in &self.windows {
+            let label = match window.name {
+                "5h" => "5-hour window:",
+                _ => "weekly window:",
+            };
+            let used = window.utilization.map_or("usage unknown".to_string(), |u| {
+                format!("{:.0}% used", u * 100.0)
+            });
+            let _ = write!(out, "  {label} {used}");
+            if let Some(at) = window.resets_at {
+                let _ = write!(out, ", resets {}", until(at - now));
+            }
+            match window.status.as_deref() {
+                Some("rejected") => out.push_str(" (limit reached)"),
+                Some("allowed_warning") => out.push_str(" (nearly there)"),
+                _ => {}
+            }
+            out.push('\n');
+        }
+        if self.limited {
+            out.push_str("  the limit is hit: Claude is not taking requests until it resets\n");
+        }
+        if let Some(claim) = &self.representative {
+            let _ = writeln!(out, "  counting against: {}", claim.replace('_', " "));
+        }
+        out
+    }
+}
+
+/// "in 2h 10m", "in 3d 4h", "now": the wait of `secs` seconds.
+fn until(secs: i64) -> String {
+    if secs <= 0 {
+        return "now".to_string();
+    }
+    let (d, h, m) = (secs / 86_400, secs % 86_400 / 3600, secs % 3600 / 60);
+    let wait = match (d, h, m) {
+        (0, 0, m) => format!("{}m", m.max(1)),
+        (0, h, m) => format!("{h}h {m}m"),
+        (d, h, _) => format!("{d}d {h}h"),
+    };
+    format!("in {wait}")
+}
+
+/// The usage of the subscription behind `token`. Claude has no endpoint for
+/// this that an inference-only token may call, so a one-token request is sent
+/// and the rate-limit headers of the reply are read. A 429 carries them too.
+pub async fn usage_report(token: &str) -> Result<Usage> {
+    let request = json!({
+        "model": PROBE_MODEL,
+        "max_tokens": 1,
+        "system": [{"type": "text", "text": IDENTITY}],
+        "messages": [{"role": "user", "content": [{"type": "text", "text": "hi"}]}],
+    });
+    let response = client()
+        .post(MESSAGES_URL)
+        .bearer_auth(token)
+        .header("anthropic-version", "2023-06-01")
+        .header("anthropic-beta", "oauth-2025-04-20,claude-code-20250219")
+        .header("user-agent", "claude-cli/1.0.0")
+        .header("x-app", "cli")
+        .json(&request)
+        .send()
+        .await
+        .context("calling Claude")?;
+    let status = response.status();
+    let limited = status.as_u16() == 429;
+    let usage = Usage::from_headers(response.headers(), limited);
+    if status.is_success() || (limited && !usage.windows.is_empty()) {
+        return Ok(usage);
+    }
+    let value: Value = response.json().await.unwrap_or(Value::Null);
+    let msg = value["error"]["message"].as_str().unwrap_or("no message");
+    let hint = if status.as_u16() == 401 {
+        format!(" (log in again: uc agent login claude; {TOKEN_VAR} must be set)")
+    } else {
+        String::new()
+    };
+    bail!("Claude: {status}: {msg}{hint}")
+}
+
 /// An OpenAI `usage` out of Anthropic's. Prompt tokens count the cached ones
 /// too, as OpenAI's do.
 fn usage(input: u64, cached: u64, written: u64, output: u64) -> Value {
@@ -585,6 +754,66 @@ pub async fn send(token: &str, body: &Value) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn headers(pairs: &[(&'static str, &'static str)]) -> reqwest::header::HeaderMap {
+        let mut map = reqwest::header::HeaderMap::new();
+        for (k, v) in pairs {
+            map.insert(*k, reqwest::header::HeaderValue::from_static(v));
+        }
+        map
+    }
+
+    const FULL: &[(&str, &str)] = &[
+        ("anthropic-ratelimit-unified-5h-utilization", "0.26"),
+        ("anthropic-ratelimit-unified-5h-reset", "17800"),
+        ("anthropic-ratelimit-unified-5h-status", "allowed"),
+        ("anthropic-ratelimit-unified-7d-utilization", "0.13"),
+        ("anthropic-ratelimit-unified-7d-reset", "360000"),
+        ("anthropic-ratelimit-unified-7d-status", "allowed"),
+        (
+            "anthropic-ratelimit-unified-representative-claim",
+            "five_hour",
+        ),
+    ];
+
+    #[test]
+    fn the_rate_limit_headers_make_the_report() {
+        let usage = Usage::from_headers(&headers(FULL), false);
+        assert_eq!(usage.windows.len(), 2);
+        assert_eq!(usage.windows[0].utilization, Some(0.26));
+        assert_eq!(usage.windows[1].resets_at, Some(360_000));
+        let report = usage.report_at(10_000);
+        assert!(report.starts_with("Claude subscription\n"));
+        assert!(report.contains("5-hour window: 26% used, resets in 2h 10m"));
+        assert!(report.contains("weekly window: 13% used, resets in 4d 1h"));
+        assert!(report.contains("counting against: five hour"));
+        assert!(!report.contains("limit is hit"));
+    }
+
+    #[test]
+    fn missing_headers_are_told_plainly_and_a_hit_limit_is_noted() {
+        let none = Usage::from_headers(&headers(&[]), false);
+        assert!(none.report_at(0).contains("no usage figures"));
+        let hit = Usage::from_headers(
+            &headers(&[
+                ("anthropic-ratelimit-unified-5h-utilization", "1"),
+                ("anthropic-ratelimit-unified-5h-status", "rejected"),
+            ]),
+            true,
+        );
+        let report = hit.report_at(0);
+        assert!(report.contains("100% used (limit reached)"));
+        assert!(report.contains("the limit is hit"));
+    }
+
+    #[test]
+    fn waits_read_well() {
+        assert_eq!(until(-5), "now");
+        assert_eq!(until(20), "in 1m");
+        assert_eq!(until(7800), "in 2h 10m");
+        assert_eq!(until(3 * 86_400 + 4 * 3600 + 99), "in 3d 4h");
+        assert_eq!(reset_time("2030-01-01T00:00:00Z"), Some(1_893_456_000));
+    }
 
     #[test]
     fn models_are_named_the_anthropic_way() {
