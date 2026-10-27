@@ -2994,18 +2994,9 @@ fn read_line(prompt: &str) -> Result<Option<String>> {
     }
 }
 
-/// How `/model` shows `choice`: its id, with the provider beside it when
-/// another provider in `pool` serves the same model.
-fn label(pool: &[Choice], choice: &Choice) -> String {
-    let name = common_name(&choice.model);
-    let shared = pool
-        .iter()
-        .any(|c| c.provider != choice.provider && common_name(&c.model) == name);
-    if shared {
-        format!("{} ({})", choice.model, choice.provider.name())
-    } else {
-        choice.model.clone()
-    }
+/// How `/model` shows `choice`: its id, with the provider beside it.
+fn label(_pool: &[Choice], choice: &Choice) -> String {
+    format!("{} ({})", choice.model, choice.provider.name())
 }
 
 /// The model `/model <name> [provider]` means: its number in `pool`, the one
@@ -3899,19 +3890,19 @@ mod tests {
     }
 
     #[test]
-    fn the_provider_is_shown_only_for_a_model_more_than_one_serves() {
+    fn the_provider_is_shown_beside_every_model() {
         let pool = every_pool();
-        assert_eq!(label(&pool, &pool[0]), "z-ai/glm-5.3-flash");
+        assert_eq!(label(&pool, &pool[0]), "z-ai/glm-5.3-flash (OpenRouter)");
         assert_eq!(
             label(&pool, &pool[5]),
             "anthropic/claude-opus-5.5 (OpenRouter)"
         );
         assert_eq!(label(&pool, &pool[8]), "anthropic/claude-opus-5.5 (Claude)");
-        assert_eq!(label(&pool, &pool[9]), "gpt-4.1");
+        assert_eq!(label(&pool, &pool[9]), "gpt-4.1 (Copilot)");
         assert_eq!(label(&pool, &pool[10]), "claude-opus-5-5 (Copilot)");
         assert_eq!(
             label(&openrouter_pool(), &pool[5]),
-            "anthropic/claude-opus-5.5"
+            "anthropic/claude-opus-5.5 (OpenRouter)"
         );
         assert_eq!(common_name("claude-opus-5-5"), "claude-opus-5.5");
         assert_eq!(common_name("openai/gpt-6-luna"), "gpt-6-luna");
@@ -4090,10 +4081,13 @@ mod tests {
         let listed = s.switch("");
         assert!(listed.contains("* 1 z-ai/glm-5.3-flash"), "{listed}");
         let switched = s.switch("haiku");
-        assert_eq!(switched, "· model anthropic/claude-haiku-5.5\n");
+        assert_eq!(
+            switched,
+            "· model anthropic/claude-haiku-5.5 (OpenRouter)\n"
+        );
         assert_eq!(s.model, "anthropic/claude-haiku-5.5");
         let named = s.switch("2");
-        assert_eq!(named, "· model anthropic/claude-haiku-5.5\n");
+        assert_eq!(named, "· model anthropic/claude-haiku-5.5 (OpenRouter)\n");
         let missing = s.switch("nope");
         assert!(missing.starts_with("· no model nope"), "{missing}");
     }
@@ -4111,7 +4105,7 @@ mod tests {
             listed.contains("anthropic/claude-opus-5.5 (Claude)"),
             "{listed}"
         );
-        assert!(listed.contains(" gpt-4.1\n"), "{listed}");
+        assert!(listed.contains(" gpt-4.1 (Copilot)\n"), "{listed}");
         let switched = s.switch("opus claude");
         assert_eq!(switched, "· model anthropic/claude-opus-5.5 (Claude)\n");
         assert_eq!(s.provider, Provider::Claude);
