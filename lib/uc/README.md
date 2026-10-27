@@ -112,6 +112,10 @@ name that fits several, like `/model claude`, opens fzf filtered by it. The
 new model gets the whole conversation and carries on from there, even on
 another provider. `UC_MODEL` sets the one to start on.
 
+The lists of models are kept in `~/.cache/usecode/models.json`, so starting
+`uc` does not wait on the providers. A new model not showing up? `/model-update`
+fetches the lists again.
+
 The model can do the same itself with the `chat` tool: `chat model
 <name>` switches, `chat model` lists, and `chat clear` clears the screen and
 the context; `chat exit` leaves uc. It only does this when you ask.

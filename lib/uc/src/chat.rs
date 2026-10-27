@@ -33,7 +33,10 @@
 //! the screen and the model's context with it. `/model` picks one of the
 //! models of every provider with a key in fzf (it lists them without fzf),
 //! `/model <number|name> [provider]` switches to one straight away; either
-//! way the lines after it go to that model, with the context kept. A model
+//! way the lines after it go to that model, with the context kept. The
+//! lists of models are kept in `~/.cache/usecode/models.json` so that
+//! starting uc does not wait on the providers; `/model-update` fetches them
+//! again. A model
 //! more than one provider serves is
 //! listed once for each, with the provider beside it. `/context`
 //! prints how much of the model's context the conversation has taken: the
@@ -320,21 +323,55 @@ fn common_name(model: &str) -> String {
 }
 
 /// The models of every provider with a key: OpenRouter's pool, the Claude
-/// subscription's three, and what Copilot offers the account.
-async fn pool(keys: &BTreeMap<Provider, String>) -> Vec<Choice> {
+/// subscription's three, and what Copilot offers the account. The lists
+/// come from the cache (see [`cache_path`]); a list that isn't there yet is
+/// fetched, and `refresh` fetches them all again.
+async fn pool(keys: &BTreeMap<Provider, String>, refresh: bool) -> Vec<Choice> {
     let mut pool = Vec::new();
     for (provider, key) in keys {
         match provider {
             Provider::OpenRouter => {
+                // The picks first, then everything else OpenRouter serves.
                 pool.extend(MODELS.iter().map(|m| Choice::new(*provider, m)));
+                let list = if refresh {
+                    refresh_models().await
+                } else {
+                    models().await
+                };
+                match list {
+                    Ok(list) => {
+                        for id in list.iter().filter_map(chat_model_id) {
+                            if !MODELS.contains(&id) {
+                                pool.push(Choice::new(*provider, id));
+                            }
+                        }
+                    }
+                    Err(err) => eprintln!("· OpenRouter's model list: {err:#}"),
+                }
             }
             Provider::Claude => {
                 pool.extend(CLAUDE_MODELS.iter().map(|m| Choice::new(*provider, m)));
             }
-            Provider::Copilot => match copilot::models(key).await {
-                Ok(models) => pool.extend(models.iter().map(|m| Choice::new(*provider, m))),
-                Err(err) => eprintln!("· Copilot's models: {err:#}"),
-            },
+            Provider::Copilot => {
+                let cached = (!refresh)
+                    .then(|| cache_get("copilot"))
+                    .flatten()
+                    .and_then(|v| serde_json::from_value::<Vec<String>>(v).ok());
+                let listed = match cached {
+                    Some(models) => Ok(models),
+                    None => match copilot::models(key).await {
+                        Ok(models) => {
+                            cache_set("copilot", json!(models));
+                            Ok(models)
+                        }
+                        Err(err) => Err(err),
+                    },
+                };
+                match listed {
+                    Ok(models) => pool.extend(models.iter().map(|m| Choice::new(*provider, m))),
+                    Err(err) => eprintln!("· Copilot's models: {err:#}"),
+                }
+            }
         }
     }
     pool
@@ -519,7 +556,7 @@ async fn run(
             .filter(|v| !v.trim().is_empty())
             .unwrap_or_else(|| default.to_string())
     };
-    let pool = pool(&keys).await;
+    let pool = pool(&keys, false).await;
     // Copilot's own default is the first it lists.
     let default = match provider {
         Provider::OpenRouter => DEFAULT_MODEL.to_string(),
@@ -588,13 +625,17 @@ async fn run(
         if !ai
             && matches!(
                 line.split_whitespace().next(),
-                Some("/model" | "/context" | "/compact")
+                Some("/model" | "/model-update" | "/context" | "/compact")
             )
         {
             eprintln!(
                 "· AI off: set OPENROUTER_API_KEY, or log in with `uc agent login claude` \
                  or `uc agent login copilot`, to turn it on"
             );
+            continue;
+        }
+        if line == "/model-update" {
+            session.update_models().await;
             continue;
         }
         if let Some(name) = line
@@ -1219,7 +1260,14 @@ if (( ${#COMPREPLY[@]} )); then printf '%s\n' "${COMPREPLY[@]}"; else compgen -f
 "#;
 
 /// The commands the prompt itself takes.
-const SLASH_COMMANDS: &[&str] = &["/compact", "/context", "/exit", "/model", "/quit"];
+const SLASH_COMMANDS: &[&str] = &[
+    "/compact",
+    "/context",
+    "/exit",
+    "/model",
+    "/model-update",
+    "/quit",
+];
 
 /// Tab at the prompt: `/` commands, a command line the way the user's bash
 /// completes it, with or without `!`, and file names in a line for the model.
@@ -1739,6 +1787,14 @@ impl Session {
         if let Some((number, _)) = String::from_utf8_lossy(&picked.stdout).split_once('\t') {
             self.switch(number);
         }
+    }
+
+    /// `/model-update`: fetches every provider's model list again, keeps it
+    /// in the cache and makes it the list `/model` offers.
+    async fn update_models(&mut self) {
+        eprintln!("· fetching the model lists");
+        self.pool = pool(&self.keys, true).await;
+        eprintln!("· {} models", self.pool.len());
     }
 
     /// `/model` and chat `model`: list with no name; otherwise switch to the
@@ -2992,6 +3048,22 @@ fn choice_named(pool: &[Choice], name: &str, prefer: Provider) -> Option<Choice>
     if names.len() == 1 {
         return best(found);
     }
+    // `opus` is the picked Opus, not every Opus OpenRouter has ever served.
+    let picked: Vec<&Choice> = found
+        .iter()
+        .copied()
+        .filter(|c| c.provider != Provider::OpenRouter || MODELS.contains(&c.model.as_str()))
+        .collect();
+    if picked.len() < found.len()
+        && picked
+            .iter()
+            .map(|c| common_name(&c.model))
+            .collect::<BTreeSet<_>>()
+            .len()
+            == 1
+    {
+        return best(picked);
+    }
     if name.contains('/') || (only.is_some() && found.is_empty() && !name.is_empty()) {
         return Some(Choice::new(only.unwrap_or(prefer), &name));
     }
@@ -3017,28 +3089,119 @@ fn content(message: &Value) -> Option<&str> {
     }
 }
 
-/// The models' context window and prices, read off OpenRouter's list once
-/// and kept for the session. `model_info` takes the field of the `model`
-/// whose `id` or `canonical_slug` matches, if it is in the list.
-async fn models() -> Result<&'static Vec<Value>> {
-    static MODELS: tokio::sync::OnceCell<Vec<Value>> = tokio::sync::OnceCell::const_new();
-    MODELS
-        .get_or_try_init(|| async {
-            let list: Value = client()
-                .get("https://openrouter.ai/api/v1/models")
-                .send()
-                .await?
-                .error_for_status()?
-                .json()
-                .await
-                .context("reading OpenRouter's model list")?;
-            let models = list["data"]
-                .as_array()
-                .cloned()
-                .ok_or_else(|| anyhow!("OpenRouter's model list came without models"))?;
-            Ok::<_, anyhow::Error>(models)
-        })
+/// Where the model lists are kept between runs, so starting `uc` does not
+/// wait on the providers: `$XDG_CACHE_HOME/usecode/models.json`, else
+/// `~/.cache/usecode/models.json`. `/model-update` fetches them again.
+fn cache_path() -> Option<PathBuf> {
+    let cache = std::env::var_os("XDG_CACHE_HOME")
+        .filter(|d| !d.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))?;
+    Some(cache.join("usecode/models.json"))
+}
+
+/// What the cache keeps under `key`, if it is there.
+fn cache_get(key: &str) -> Option<Value> {
+    let text = std::fs::read_to_string(cache_path()?).ok()?;
+    let mut cache: Value = serde_json::from_str(&text).ok()?;
+    match cache[key].take() {
+        Value::Null => None,
+        value => Some(value),
+    }
+}
+
+/// Keeps `value` in the cache under `key`, next to the rest. A cache that
+/// can't be written is no loss: the next run fetches again.
+fn cache_set(key: &str, value: Value) {
+    let Some(path) = cache_path() else { return };
+    let mut cache = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+        .filter(Value::is_object)
+        .unwrap_or_else(|| json!({}));
+    cache[key] = value;
+    let write = || -> std::io::Result<()> {
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        let tmp = path.with_extension("json.tmp");
+        std::fs::write(&tmp, cache.to_string())?;
+        std::fs::rename(&tmp, &path)
+    };
+    if let Err(err) = write() {
+        eprintln!("· can't write {}: {err}", path.display());
+    }
+}
+
+/// OpenRouter's model list as the session holds it.
+static OPENROUTER_LIST: Mutex<Option<Arc<Vec<Value>>>> = Mutex::new(None);
+
+/// The models' context window and prices, read off OpenRouter's list: from
+/// the cache if it has one, else fetched and cached. `model_info` takes the
+/// field of the `model` whose `id` or `canonical_slug` matches, if it is in
+/// the list.
+async fn models() -> Result<Arc<Vec<Value>>> {
+    if let Some(list) = OPENROUTER_LIST.lock().unwrap().clone() {
+        return Ok(list);
+    }
+    let cached = cache_get("openrouter").and_then(|v| match v {
+        Value::Array(list) if !list.is_empty() => Some(list),
+        _ => None,
+    });
+    match cached {
+        Some(list) => {
+            let list = Arc::new(list);
+            *OPENROUTER_LIST.lock().unwrap() = Some(list.clone());
+            Ok(list)
+        }
+        None => refresh_models().await,
+    }
+}
+
+/// Fetches OpenRouter's list again, and keeps it in the session and the
+/// cache. When the fetch fails, what was there stays.
+async fn refresh_models() -> Result<Arc<Vec<Value>>> {
+    let list: Value = client()
+        .get("https://openrouter.ai/api/v1/models")
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
         .await
+        .context("reading OpenRouter's model list")?;
+    // Only what the session reads of each, to keep the cache small.
+    let models: Vec<Value> = list["data"]
+        .as_array()
+        .ok_or_else(|| anyhow!("OpenRouter's model list came without models"))?
+        .iter()
+        .map(|m| {
+            json!({
+                "id": m["id"],
+                "canonical_slug": m["canonical_slug"],
+                "context_length": m["context_length"],
+                "pricing": {
+                    "prompt": m["pricing"]["prompt"],
+                    "completion": m["pricing"]["completion"],
+                },
+                "architecture": {"output_modalities": m["architecture"]["output_modalities"]},
+            })
+        })
+        .collect();
+    cache_set("openrouter", Value::Array(models.clone()));
+    let models = Arc::new(models);
+    *OPENROUTER_LIST.lock().unwrap() = Some(models.clone());
+    Ok(models)
+}
+
+/// The id of an entry of OpenRouter's list when the model answers in text
+/// (image and embedding models can't run a chat).
+fn chat_model_id(entry: &Value) -> Option<&str> {
+    let id = entry["id"].as_str()?;
+    let text = match entry["architecture"]["output_modalities"].as_array() {
+        Some(out) => out.iter().any(|m| m == "text"),
+        None => true,
+    };
+    text.then_some(id)
 }
 
 /// The `model`'s context window and price per million tokens, off the list
@@ -3636,7 +3799,10 @@ mod tests {
     #[test]
     fn tab_completes_like_bash() {
         let (start, words) = Completion::candidates("/mo");
-        assert_eq!((start, words), (0, vec!["/model ".to_string()]));
+        assert_eq!(
+            (start, words),
+            (0, vec!["/model ".to_string(), "/model-update ".to_string()])
+        );
         assert_eq!(Completion::candidates("/").1.len(), SLASH_COMMANDS.len());
         let (start, words) = Completion::candidates("!ech");
         assert_eq!(start, 1);
