@@ -2628,7 +2628,7 @@ fn prompt() -> String {
     let who = if unsafe { libc::geteuid() } == 0 {
         "1;91"
     } else {
-        "1;95"
+        "1;92"
     };
     let mark = if FAILED.load(Ordering::Relaxed) {
         "1;91"

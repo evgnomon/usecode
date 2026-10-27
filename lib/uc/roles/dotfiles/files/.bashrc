@@ -106,11 +106,11 @@ export LESS_TERMCAP_ue=$'\e[0m'        # reset underline
 
 
 # The prompt, in the terminal theme's own 16 colors so it reads well in both
-# Gruvbox dark and light: the user in bright purple (bright red for root), the
+# Gruvbox dark and light: the user in bright green (bright red for root), the
 # directory in bold bright blue, and the @, host and ₿ in the default text color,
 # the ₿ bright red after a failed command. `uc chat` draws the same.
 prompt_ps1() {
-  local status=$? who='\[\e[1;95m\]' mark='\[\e[0m\]'
+  local status=$? who='\[\e[1;92m\]' mark='\[\e[0m\]'
   [ "$EUID" -eq 0 ] && who='\[\e[1;91m\]'
   [ "$status" -ne 0 ] && mark='\[\e[1;91m\]'
   PS1="${who}\u\[\e[0m\]@\h \[\e[1;94m\]\W ${mark}₿\[\e[0m\] "
