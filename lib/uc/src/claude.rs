@@ -340,7 +340,12 @@ pub fn request(body: &Value, stream: bool) -> Value {
                 vec![json!({
                     "type": "tool_result",
                     "tool_use_id": message["tool_call_id"],
-                    "content": message["content"].as_str().unwrap_or_default(),
+                    // The chat marks its last message for the cache, which
+                    // turns a tool's output into parts.
+                    "content": blocks(&message["content"])
+                        .iter()
+                        .filter_map(|b| b["text"].as_str())
+                        .collect::<String>(),
                 })],
             ),
             _ => {}
@@ -909,6 +914,22 @@ mod tests {
         assert_eq!(m[2]["content"].as_array().unwrap().len(), 2);
         assert_eq!(m[2]["content"][0]["tool_use_id"], "t1");
         assert_eq!(m[2]["content"][1]["cache_control"]["type"], "ephemeral");
+    }
+
+    #[test]
+    fn a_tool_output_marked_for_the_cache_keeps_its_text() {
+        let body = json!({"model": "anthropic/claude-opus-5.5", "messages": [
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": null, "tool_calls": [
+                {"id": "a", "function": {"name": "bash", "arguments": "{}"}}]},
+            {"role": "tool", "tool_call_id": "a", "content": [
+                {"type": "text", "text": "the output", "cache_control": {"type": "ephemeral"}}]},
+        ]});
+        let r = request(&body, true);
+        let result = &r["messages"][2]["content"][0];
+        assert_eq!(result["type"], "tool_result");
+        assert_eq!(result["content"], "the output");
+        assert_eq!(result["cache_control"]["type"], "ephemeral");
     }
 
     #[test]

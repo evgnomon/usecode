@@ -23,44 +23,33 @@
 //! the user's bash aliases and functions work there too;
 //! `--no-shell` (or `UC_NO_SHELL=1`, or `no_shell: true` under `uc:` in the
 //! user config, see [`crate::flag`]) sends every line to the model. The model can drive the chat
-//! itself with the `chat` tool: `model` switches both models (`auto` lets
-//! TypeSafe pick again, no `model` lists them), `planner` switches only the
-//! planner (`planner` without a model lists them), `clear` clears the screen
+//! itself with the `chat` tool: `model` switches the model (no `model` lists
+//! them), `clear` clears the screen
 //! and the conversation context like Ctrl-L,
 //! and `exit` leaves uc. Esc or Ctrl-C stops the model,
 //! and the command it is waiting on, and goes back to the prompt; Ctrl-C at
 //! the prompt quits. Holding Space at an empty prompt records the microphone
 //! and sends what was said instead, see `voice`. Ctrl-L at the prompt clears
-//! the screen and the model's context with it. `/model` lists the models,
-//! `/model <number|name>` switches planner and doer to one for the lines after
-//! it, keeping the context, and `/model auto` goes back to letting TypeSafe
-//! pick both. `/planner` lists the models, `/planner <number|name>` switches
-//! just the planner, and the manual choice stays while TypeSafe routes the
-//! doer. `/context`
+//! the screen and the model's context with it. `/model` picks one of the
+//! models of every provider with a key in fzf (it lists them without fzf),
+//! `/model <number|name> [provider]` switches to one straight away; either
+//! way the lines after it go to that model, with the context kept. A model
+//! more than one provider serves is
+//! listed once for each, with the provider beside it. `/context`
 //! prints how much of the model's context the conversation has taken: the
 //! message count, an estimate before the first turn, the real token count of
 //! the last one, the model's window, and what the session has spent.
-//! What the model is told about all this is the main skill, `chat/main.md`, always in its system prompt. The key comes from
-//! `OPENROUTER_API_KEY`; without one the AI is off and every line runs in
+//! What the model is told about all this is the main skill, `chat/main.md`, always in its system prompt.
+//! The providers are OpenRouter (`OPENROUTER_API_KEY`), a Claude subscription
+//! (`CLAUDE_CODE_OAUTH_TOKEN`, see [`claude`]) and GitHub Copilot
+//! (`COPILOT_GITHUB_TOKEN`, see [`copilot`]); the session starts on the first
+//! of them with a key, or the one `UC_PROVIDER` names. Without any key the AI
+//! is off and every line runs in
 //! bash, like a plain shell with uc's history and confirmations. The model
-//! comes from `UC_MODEL`, the reasoning effort from `UC_EFFORT`. Without `UC_MODEL` but with `TYPESAFE_API_KEY`, a TypeSafe
-//! model (`TYPESAFE_MODEL`) reads each line and picks the OpenRouter model
-//! from `MODELS` that suits it best; otherwise it is GLM 5.3 Flash. GPT-6
-//! Luna joins the pool for short but hard thinking, cheap and punching above
-//! its weight, and Opus 5.5 as the strongest model for the hardest jobs; a
-//! per-line effort is not picked, so they run on the session's one.
-//!
-//! Every line goes to two models: a planner, then a doer. The planner reads
-//! the line and the code it is about without changing anything, and ends with
-//! a brief: what is asked, where to start and what to watch out for (see
-//! `chat/plan.md`). The doer gets the line with the brief and does it.
-//! TypeSafe also says whether a line is a coding feature: those are planned
-//! by Gemini 4 Argon and done by GLM 5.3; any other line has the model it
-//! picked as both. `/planner` can override only the planner; `/model` pins
-//! both to one model, and `/model auto` hands both back to TypeSafe.
-//! TypeSafe also says whether a line asks to push: then a `git push` (with
-//! the add and commit before it, no force) runs without asking, even with
-//! `--ask` or a pinned model.
+//! comes from `UC_MODEL`, else it is the provider's default (GLM 5.3 Flash
+//! on OpenRouter), and the reasoning effort from `UC_EFFORT`. The session
+//! keeps one model: each line is one request to it, and it changes only
+//! when `/model` or `chat model` says so.
 
 use anyhow::{Context, Result, anyhow, bail};
 use futures_util::StreamExt;
@@ -81,7 +70,7 @@ use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::task::JoinHandle;
 
-use crate::claude;
+use crate::{claude, copilot};
 
 mod voice;
 
@@ -90,70 +79,22 @@ const DEFAULT_MODEL: &str = "z-ai/glm-5.3-flash";
 /// The model on the Claude subscription unless `UC_MODEL` says otherwise.
 const DEFAULT_CLAUDE_MODEL: &str = "anthropic/claude-sonnet-5.5";
 const DEFAULT_EFFORT: &str = "high";
-const TYPESAFE: &str = "https://api.typesafe.ai/v1/systemone";
-const DEFAULT_ROUTER: &str = "jev-latest";
-/// Who plans a coding feature: it reads a lot of code well, and cheaply.
-const FEATURE_PLANNER: &str = "google/gemini-4-argon";
-/// Who does a coding feature once it is planned.
-const FEATURE_DOER: &str = "z-ai/glm-5.3";
-/// What TypeSafe picks from for a line, and when each is the one to use.
-const MODELS: &[(&str, &str)] = &[
-    (
-        DEFAULT_MODEL,
-        "Everyday work: a quick question, running or explaining a command, a small edit, \
-         looking around the code, anything simple or routine. Cheap on output, so the \
-         default for anything short",
-    ),
-    (
-        "anthropic/claude-haiku-5.5",
-        "Reading a lot: summarising long files, logs, documents or web pages, researching \
-         a topic on the web, checking a big diff or output for what matters. Cheap on \
-         input and reasons well over what it reads",
-    ),
-    (
-        "z-ai/glm-5.3",
-        "Fixing or changing code where the model reads much and writes little: a bug \
-         in a known place, a small patch, a review of a change, tracing how something \
-         works through several files. Strong at code and tools, cheap to read with, \
-         dear to write long answers",
-    ),
-    (
-        "meta/muse-spark-1.3",
-        "The hard part: implementing a feature, a refactor across many files, writing \
-         a lot of new code or tests, or anything the quick models would likely get \
-         wrong",
-    ),
-    (
-        "openai/gpt-6-luna",
-        "Thinking work in prose or code where the answer is short but hard: proofs and \
-         tricky reasoning, algorithm design or a puzzle-like bug, migrating code between \
-         languages or frameworks, a plan to review before acting on. Cheap per token \
-         and quick, and punches above its weight at high effort; not the strongest \
-         model, and wrong for long output, everyday lines or reading",
-    ),
-    (
-        "anthropic/claude-opus-5.5",
-        "The strongest model: the hardest coding over a large codebase, deep reasoning, \
-         architecture and design, a nasty bug nobody has found, multi-step changes \
-         where being right matters more than the price. Dear per token, so overkill \
-         for anything the others do well",
-    ),
+/// OpenRouter's models `/model` offers: everyday, reading, patches, features,
+/// short hard thinking and the strongest.
+const MODELS: &[&str] = &[
+    DEFAULT_MODEL,
+    "anthropic/claude-haiku-5.5",
+    "z-ai/glm-5.3",
+    "meta/muse-spark-1.3",
+    "openai/gpt-6-luna",
+    "anthropic/claude-opus-5.5",
 ];
 /// What the Claude subscription serves, in OpenRouter's names (see
-/// `claude::model_id`); there is no TypeSafe routing between them.
-const CLAUDE_MODELS: &[(&str, &str)] = &[
-    (
-        "anthropic/claude-haiku-5.5",
-        "Quick, cheap on the limits: everyday lines, reading a lot",
-    ),
-    (
-        DEFAULT_CLAUDE_MODEL,
-        "The all-rounder: coding, tools and reasoning for most work",
-    ),
-    (
-        "anthropic/claude-opus-5.5",
-        "The strongest: the hardest coding and reasoning",
-    ),
+/// `claude::model_id`).
+const CLAUDE_MODELS: &[&str] = &[
+    "anthropic/claude-haiku-5.5",
+    DEFAULT_CLAUDE_MODEL,
+    "anthropic/claude-opus-5.5",
 ];
 const DUCKDUCKGO: &str = "https://html.duckduckgo.com/html/";
 const EXA: &str = "https://api.exa.ai/search";
@@ -166,16 +107,10 @@ const MAX_OUTPUT: usize = 30_000;
 const DEFAULT_TIMEOUT: u64 = 120;
 /// The most of a job's output kept; a server can run for hours.
 const MAX_KEPT: usize = 1 << 20;
-/// The git subcommands a push the user asked for may come with.
-const PUSH_ALONG: &[&str] = &[
-    "push", "add", "commit", "status", "diff", "log", "fetch", "pull",
-];
 /// Commands that delete files: the user is always asked before these.
 const DELETES: &[&str] = &["rm", "rmdir", "unlink", "shred", "-delete"];
 /// Always in the system prompt: how commands run, jobs, what needs asking.
 const MAIN_SKILL: &str = include_str!("chat/main.md");
-/// Added to the planner's system prompt: understand, don't do, write a brief.
-const PLAN_SKILL: &str = include_str!("chat/plan.md");
 /// Builtins worth running when typed at the prompt; `cd` changes uc's own
 /// directory. Keywords like `if` and `for` are left out: they start sentences.
 const BUILTINS: &[&str] = &["cd", "echo", "printf", "pwd", "type", "command", "time"];
@@ -308,22 +243,112 @@ impl Engine {
     }
 }
 
-struct Session {
-    key: String,
-    /// The key is the Claude subscription's token, not OpenRouter's.
-    claude: bool,
-    /// The doer: the model that does what a line asks.
+/// Where a model runs; each takes its own key.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Provider {
+    OpenRouter,
+    Claude,
+    Copilot,
+}
+
+impl Provider {
+    /// In the order the session picks the first with a key.
+    const ALL: [Provider; 3] = [Provider::OpenRouter, Provider::Claude, Provider::Copilot];
+
+    fn name(self) -> &'static str {
+        match self {
+            Provider::OpenRouter => "OpenRouter",
+            Provider::Claude => "Claude",
+            Provider::Copilot => "Copilot",
+        }
+    }
+
+    /// The variable its key is in.
+    fn var(self) -> &'static str {
+        match self {
+            Provider::OpenRouter => "OPENROUTER_API_KEY",
+            Provider::Claude => claude::TOKEN_VAR,
+            Provider::Copilot => copilot::TOKEN_VAR,
+        }
+    }
+
+    /// `openrouter`, `claude` or `copilot`, in any case.
+    fn parse(name: &str) -> Option<Provider> {
+        Provider::ALL
+            .into_iter()
+            .find(|p| p.name().eq_ignore_ascii_case(name.trim()))
+    }
+}
+
+/// A model on a provider: what `/model` lists and switches to.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Choice {
+    provider: Provider,
+    /// The provider's id for it; the Claude subscription's are OpenRouter's.
     model: String,
-    /// The model that reads a line and the code first and briefs the doer.
-    planner: String,
-    /// The planner's conversation while it works on a line.
-    plan: Vec<Value>,
-    /// TypeSafe's key and model, to pick the models for each line.
-    router: Option<(String, String)>,
-    /// The doer from `/model` is pinned; `/model auto` gives it to TypeSafe.
-    pinned: bool,
-    /// A model picked with `/planner`: TypeSafe keeps routing the doer only.
-    planner_pinned: bool,
+}
+
+impl Choice {
+    fn new(provider: Provider, model: &str) -> Choice {
+        Choice {
+            provider,
+            model: model.to_string(),
+        }
+    }
+}
+
+/// The name a model goes by whoever serves it: `anthropic/claude-opus-5.5`
+/// and Copilot's `claude-opus-5-5` are both `claude-opus-5.5`.
+fn common_name(model: &str) -> String {
+    let name = model.rsplit('/').next().unwrap_or(model).to_lowercase();
+    let chars: Vec<char> = name.chars().collect();
+    chars
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            let digits = |j: Option<usize>| {
+                j.and_then(|j| chars.get(j))
+                    .is_some_and(char::is_ascii_digit)
+            };
+            if *c == '-' && digits(i.checked_sub(1)) && digits(Some(i + 1)) {
+                '.'
+            } else {
+                *c
+            }
+        })
+        .collect()
+}
+
+/// The models of every provider with a key: OpenRouter's pool, the Claude
+/// subscription's three, and what Copilot offers the account.
+async fn pool(keys: &BTreeMap<Provider, String>) -> Vec<Choice> {
+    let mut pool = Vec::new();
+    for (provider, key) in keys {
+        match provider {
+            Provider::OpenRouter => {
+                pool.extend(MODELS.iter().map(|m| Choice::new(*provider, m)));
+            }
+            Provider::Claude => {
+                pool.extend(CLAUDE_MODELS.iter().map(|m| Choice::new(*provider, m)));
+            }
+            Provider::Copilot => match copilot::models(key).await {
+                Ok(models) => pool.extend(models.iter().map(|m| Choice::new(*provider, m))),
+                Err(err) => eprintln!("· Copilot's models: {err:#}"),
+            },
+        }
+    }
+    pool
+}
+
+struct Session {
+    /// The key of each provider that has one.
+    keys: BTreeMap<Provider, String>,
+    /// Where `model` runs.
+    provider: Provider,
+    /// The model every line goes to.
+    model: String,
+    /// What `/model` lists and picks from.
+    pool: Vec<Choice>,
     ask: bool,
     /// OpenRouter's reasoning effort: low, medium or high.
     effort: String,
@@ -332,8 +357,6 @@ struct Session {
     allow_all: bool,
     /// The line ended in `-y`: run what this turn asks for without asking.
     allow_turn: bool,
-    /// TypeSafe says the line asks to push: its pushes run without asking.
-    allow_push: bool,
     /// Print what commands and jobs print, not only the model's replies.
     show_output: bool,
     /// Print the model's command lines, not the few words on what they do.
@@ -449,29 +472,6 @@ fn deletes(command: &str) -> bool {
         .any(|word| DELETES.contains(&word))
 }
 
-/// Whether a command line is a push and the git commands that go with one
-/// (`git add -A && git commit -m x && git push`), with no force: what a line
-/// asking to push may run without asking again.
-fn only_pushes(command: &str) -> bool {
-    let steps: Vec<Vec<&str>> = command
-        .split(['&', ';', '|', '\n'])
-        .map(|step| step.split_whitespace().collect())
-        .filter(|words: &Vec<&str>| !words.is_empty())
-        .collect();
-    let along = |words: &[&str]| {
-        words[0] == "git"
-            && words.get(1).is_some_and(|sub| PUSH_ALONG.contains(sub))
-            && !words
-                .iter()
-                .any(|w| w.starts_with("--force") || *w == "-f" || w.starts_with('+'))
-    };
-    // Nothing run or written from inside one, like `$(...)` in a message.
-    !deletes(command)
-        && !command.contains(['`', '$', '<', '>', '('])
-        && steps.iter().all(|words| along(words))
-        && steps.iter().any(|words| words[1] == "push")
-}
-
 /// Whether a command gets the terminal: only `ssh-add`, which asks for a key's
 /// passphrase.
 fn on_terminal(command: &str) -> bool {
@@ -486,22 +486,31 @@ async fn run(
     shell: bool,
     search: Option<Search>,
 ) -> Result<()> {
-    // Without a key the AI is off and every line runs in bash. OpenRouter's
-    // key wins unless `UC_PROVIDER=claude` asks for the Claude subscription,
-    // which is also the one used when only its token is set.
-    let provider = env("UC_PROVIDER").map(|p| p.to_lowercase());
-    let claude = match provider.as_deref() {
-        Some("claude") => true,
-        Some("openrouter") => false,
-        Some(other) => bail!("UC_PROVIDER is {other}; it is openrouter or claude"),
-        None => env("OPENROUTER_API_KEY").is_none() && env(claude::TOKEN_VAR).is_some(),
+    // Without a key the AI is off and every line runs in bash. The session
+    // starts on the provider `UC_PROVIDER` names, else the first with a key;
+    // the others' models are a `/model` away.
+    let keys: BTreeMap<Provider, String> = Provider::ALL
+        .into_iter()
+        .filter_map(|p| env(p.var()).map(|key| (p, key)))
+        .collect();
+    let wanted = match env("UC_PROVIDER") {
+        Some(name) => Some(Provider::parse(&name).ok_or_else(|| {
+            anyhow!("UC_PROVIDER is {name}; it is openrouter, claude or copilot")
+        })?),
+        None => None,
     };
-    let key = env(if claude {
-        claude::TOKEN_VAR
-    } else {
-        "OPENROUTER_API_KEY"
-    });
-    let ai = key.is_some();
+    let provider = wanted
+        .filter(|p| keys.contains_key(p))
+        .or_else(|| keys.keys().next().copied())
+        .unwrap_or(Provider::OpenRouter);
+    if let Some(wanted) = wanted.filter(|p| *p != provider) {
+        eprintln!(
+            "· UC_PROVIDER is {}, but {} is not set",
+            wanted.name(),
+            wanted.var()
+        );
+    }
+    let ai = !keys.is_empty();
     AI.store(ai, Ordering::Relaxed);
     SHELL.store(shell, Ordering::Relaxed);
     let env_or = |name: &str, default: &str| {
@@ -510,34 +519,29 @@ async fn run(
             .filter(|v| !v.trim().is_empty())
             .unwrap_or_else(|| default.to_string())
     };
-    let model = env_or(
-        "UC_MODEL",
-        if claude {
-            DEFAULT_CLAUDE_MODEL
-        } else {
-            DEFAULT_MODEL
-        },
-    );
+    let pool = pool(&keys).await;
+    // Copilot's own default is the first it lists.
+    let default = match provider {
+        Provider::OpenRouter => DEFAULT_MODEL.to_string(),
+        Provider::Claude => DEFAULT_CLAUDE_MODEL.to_string(),
+        Provider::Copilot => pool
+            .iter()
+            .find(|c| c.provider == Provider::Copilot)
+            .map(|c| c.model.clone())
+            .unwrap_or_default(),
+    };
+    let model = env_or("UC_MODEL", &default);
     let effort = env_or("UC_EFFORT", DEFAULT_EFFORT);
-    // A model asked for is the one used for every line.
-    let router = env("TYPESAFE_API_KEY")
-        .filter(|_| env("UC_MODEL").is_none() && !claude)
-        .map(|key| (key, env_or("TYPESAFE_MODEL", DEFAULT_ROUTER)));
     let mut session = Session {
-        key: key.unwrap_or_default().trim().to_string(),
-        claude,
         messages: vec![json!({"role": "system", "content": system_prompt(&model, ask, output)})],
-        planner: model.clone(),
-        plan: Vec::new(),
+        keys,
+        provider,
+        pool,
         model,
-        router,
-        pinned: false,
-        planner_pinned: false,
         ask,
         effort,
         allow_all: !ask,
         allow_turn: false,
-        allow_push: false,
         show_output: output,
         show_commands: commands,
         jobs: BTreeMap::new(),
@@ -584,11 +588,12 @@ async fn run(
         if !ai
             && matches!(
                 line.split_whitespace().next(),
-                Some("/model" | "/planner" | "/context" | "/compact")
+                Some("/model" | "/context" | "/compact")
             )
         {
             eprintln!(
-                "· AI off: set OPENROUTER_API_KEY, or log in with `uc agent login claude`, to turn it on"
+                "· AI off: set OPENROUTER_API_KEY, or log in with `uc agent login claude` \
+                 or `uc agent login copilot`, to turn it on"
             );
             continue;
         }
@@ -596,15 +601,14 @@ async fn run(
             .strip_prefix("/model")
             .filter(|r| r.is_empty() || r.starts_with(' '))
         {
-            session.switch(name.trim());
-            shown = Some(session.models());
-            continue;
-        }
-        if let Some(name) = line
-            .strip_prefix("/planner")
-            .filter(|r| r.is_empty() || r.starts_with(' '))
-        {
-            session.switch_planner(name.trim());
+            match name.trim() {
+                name if name.is_empty()
+                    || choice_named(&session.pool, name, session.provider).is_none() =>
+                {
+                    session.pick_model(name)
+                }
+                name => drop(session.switch(name)),
+            }
             shown = Some(session.models());
             continue;
         }
@@ -623,20 +627,16 @@ async fn run(
             continue;
         }
         session.allow_turn = approved;
-        // A typed command runs straight away, without the model: no routing,
-        // no `· models` print, and nothing about it in the next turn.
+        // A typed command runs straight away, without the model: no `· model`
+        // print, and nothing about it in the next turn.
         let command = direct_command(line);
         if command.is_none() && !ai {
             continue;
         }
-        if command.is_none() {
-            // The models the line goes to, printed on their own line when
-            // they are new or routing has changed them; the same again stays
-            // silent.
-            session.route(line).await;
-            if shown.as_deref() != Some(session.models().as_str()) {
-                eprintln!("· {}", session.models());
-            }
+        // The model the line goes to, printed when it is new; the same
+        // again stays silent.
+        if command.is_none() && shown.as_deref() != Some(session.models().as_str()) {
+            eprintln!("· {}", session.models());
         }
         let shown_after = async {
             match command {
@@ -667,7 +667,6 @@ async fn run(
             eprintln!("uc: {err:#}");
         }
         session.allow_turn = false;
-        session.allow_push = false;
         // A tool call may have switched the model or cleared the context
         // without the prompt loop seeing it; what the model last ran on is
         // what the next line starts from.
@@ -1064,11 +1063,11 @@ fn direct_command(line: &str) -> Option<&str> {
     }
 }
 
-/// `command` with its first word, the program, in bright green: what a line
+/// `command` with its first word, the program, in bright yellow: what a line
 /// that runs straight away looks like at the prompt.
 fn color_program(command: &str) -> String {
     let end = command.find(char::is_whitespace).unwrap_or(command.len());
-    format!("\x1b[1;92m{}\x1b[0m{}", &command[..end], &command[end..])
+    format!("\x1b[1;93m{}\x1b[0m{}", &command[..end], &command[end..])
 }
 
 /// The command line to run when what was typed is one rather than something for
@@ -1220,9 +1219,7 @@ if (( ${#COMPREPLY[@]} )); then printf '%s\n' "${COMPREPLY[@]}"; else compgen -f
 "#;
 
 /// The commands the prompt itself takes.
-const SLASH_COMMANDS: &[&str] = &[
-    "/compact", "/context", "/exit", "/model", "/planner", "/quit",
-];
+const SLASH_COMMANDS: &[&str] = &["/compact", "/context", "/exit", "/model", "/quit"];
 
 /// Tab at the prompt: `/` commands, a command line the way the user's bash
 /// completes it, with or without `!`, and file names in a line for the model.
@@ -1503,16 +1500,8 @@ fn system_prompt(model: &str, ask: bool, output: bool) -> String {
     )
 }
 
-/// The planner's system prompt: the doer's, then what planning is.
-fn planner_prompt(model: &str, ask: bool, output: bool) -> String {
-    format!("{}\n\n{PLAN_SKILL}", system_prompt(model, ask, output))
-}
-
-///
-/// The tools the model in a turn has: `refining` gives the planner its own,
-/// without the doer's `write_file`, `edit_file` and `chat`, so it never
-/// calls what it is refused.
-fn tools(refining: bool) -> Value {
+/// The tools the model has.
+fn tools() -> Value {
     let tool = |name: &str, description: &str, properties: Value, required: &[&str]| {
         json!({"type": "function", "function": {
             "name": name,
@@ -1523,7 +1512,7 @@ fn tools(refining: bool) -> Value {
     let string = |description: &str| json!({"type": "string", "description": description});
     let integer = |description: &str| json!({"type": "integer", "description": description});
     let boolean = |description: &str| json!({"type": "boolean", "description": description});
-    let tools = json!([
+    json!([
         tool(
             "bash",
             "Run a command with bash in the working directory, without a terminal and with stdin \
@@ -1647,212 +1636,139 @@ fn tools(refining: bool) -> Value {
         tool(
             "chat",
             "Drive the chat itself, not the machine, when the user asks for it: action model \
-             switches both planner and doer for the lines after it (model: a number from the \
-             list, part of a listed id, any OpenRouter id, or auto to let TypeSafe pick each \
-             line again; without it the models and routing are listed), action planner switches \
-             only the planner (without a model it lists them), action clear clears the screen \
-             and conversation context, action exit leaves uc.",
+             switches the model for the lines after it (model: a number from the list, part \
+             of a listed id or any id of the provider; without it the models of every \
+             provider are listed), \
+             action clear clears the screen and conversation context, action exit leaves uc.",
             json!({
-                "action": string("what to do: model, planner, clear or exit"),
-                "model": string("which model to switch to, for action model or planner: a number from \
-                                 the list, part of a listed id, or any OpenRouter id; auto is \
-                                 available only for model"),
+                "action": string("what to do: model, clear or exit"),
+                "model": string("which model to switch to, for action model: a number from \
+                                 the list, part of a listed id or any id of the provider"),
+                "provider": string("for action model, which provider runs it when more than \
+                                    one serves it: OpenRouter, Claude or Copilot"),
             }),
             &["action"],
         ),
-    ]);
-    let mut tools = tools;
-    if refining {
-        // The doer's tools: the planner is refused them, and an API rejects
-        // a call to a tool it wasn't given.
-        tools.as_array_mut().unwrap().retain(|t| {
-            t["function"]["name"] != "write_file"
-                && t["function"]["name"] != "edit_file"
-                && t["function"]["name"] != "chat"
-        });
-    }
-    tools
+    ])
 }
 
 impl Session {
-    /// Switches to the model TypeSafe picks for `line`, if it is routing; the
-    /// one before stays when it can't say. A pinned model stays too, but
-    /// TypeSafe still says whether the line asks to push.
-    async fn route(&mut self, line: &str) {
-        let Some((key, router)) = self.router.as_ref() else {
-            return;
-        };
-        let route = match pick_models(key, router, line).await {
-            Ok(route) => route,
-            Err(err) => {
-                eprintln!("· TypeSafe: {err:#}");
-                return;
-            }
-        };
-        self.allow_push = route.push;
-        if !self.pinned {
-            self.apply_route(route.planner, route.doer);
-        }
-    }
-
-    /// Applies TypeSafe's choice without overriding a manually selected planner.
-    fn apply_route(&mut self, planner: String, doer: String) {
-        if !self.planner_pinned {
-            self.planner = planner;
-        }
-        self.set_model(doer);
-    }
-
-    /// The one model doing both, or the planner and the doer.
+    /// The model, as the status line and `/model` say it.
     fn models(&self) -> String {
-        if self.planner == self.model {
-            format!("model {}", self.model)
-        } else {
-            format!("planner {}, doer {}", self.planner, self.model)
+        format!(
+            "model {}",
+            label(&self.pool, &Choice::new(self.provider, &self.model))
+        )
+    }
+
+    /// The key of the provider the model runs on.
+    fn key(&self) -> &str {
+        self.keys.get(&self.provider).map_or("", String::as_str)
+    }
+
+    /// Makes `choice` the model.
+    fn set_model(&mut self, choice: Choice) {
+        if choice.model != self.model || choice.provider != self.provider {
+            self.messages[0] = json!({"role": "system", "content": system_prompt(&choice.model, self.ask, self.show_output)});
+            self.model = choice.model;
+            self.provider = choice.provider;
         }
     }
 
-    /// The models `/model` lists: the Claude subscription's three, or OpenRouter's.
-    fn pool(&self) -> &'static [(&'static str, &'static str)] {
-        if self.claude { CLAUDE_MODELS } else { MODELS }
-    }
-
-    /// Makes `model` the doer.
-    fn set_model(&mut self, model: String) {
-        if model != self.model {
-            self.messages[0] = json!({"role": "system", "content": system_prompt(&model, self.ask, self.show_output)});
-            self.model = model;
+    /// The whole request posted to the provider; its reply is OpenAI's.
+    async fn send(&self, body: &Value) -> Result<Value> {
+        match self.provider {
+            Provider::OpenRouter => send(self.key(), body).await,
+            Provider::Claude => claude::send(self.key(), body).await,
+            Provider::Copilot => copilot::send(self.key(), body).await,
         }
     }
 
-    /// A line for the model: the planner briefs the doer on it, then the
-    /// doer does it. A planner that fails leaves the doer without a brief.
+    /// The request streamed: the reply comes as OpenAI's SSE chunks.
+    async fn stream(&self, body: &Value) -> Result<claude::Bytes> {
+        Ok(match self.provider {
+            Provider::OpenRouter => Box::pin(
+                open(self.key(), body)
+                    .await?
+                    .bytes_stream()
+                    .map(|bytes| bytes.map(|b| b.to_vec()).map_err(std::io::Error::other)),
+            ),
+            Provider::Claude => claude::stream(self.key(), body).await?,
+            Provider::Copilot => copilot::stream(self.key(), body).await?,
+        })
+    }
+
+    /// A line for the model: one turn, until it answers.
     async fn ask(&mut self, line: &str) -> Result<()> {
         self.messages.push(json!({"role": "user", "content": line}));
-        match self.refine().await {
-            Ok(brief) if !brief.trim().is_empty() => {
-                let last = self.messages.len() - 1;
-                self.messages[last]["content"] = json!(format!(
-                    "{line}\n\n<brief from=\"{}\">\n{}\n</brief>",
-                    self.planner,
-                    brief.trim()
-                ));
-            }
-            Ok(_) => {}
-            Err(err) if err.is::<Stopped>() => return Err(err),
-            Err(err) => eprintln!("· planner: {err:#}"),
-        }
-        // A tool call may have cleared the context meanwhile: the turn's
-        // messages go with it, once they have been answered.
-        if CLEARED.swap(false, Ordering::Relaxed) {
-            self.messages.retain(|m| m["role"] == "system");
-        }
-        self.turn(false).await.map(drop)
+        self.turn().await.map(drop)
     }
 
-    /// The planner's brief on the last line, written with the whole
-    /// conversation in front of it.
-    async fn refine(&mut self) -> Result<String> {
-        self.plan = vec![
-            json!({"role": "system", "content": planner_prompt(&self.planner, self.ask, self.show_output)}),
-        ];
-        self.plan.extend(self.messages.iter().skip(1).cloned());
-        let brief = self.turn(true).await;
-        self.plan.clear();
-        brief
+    /// `/model` without a name it knows: picks the model in fzf, starting
+    /// on the current one and filtered by `query`; one match is taken
+    /// straight away and Esc keeps the model. Without fzf it is `switch`.
+    fn pick_model(&mut self, query: &str) {
+        let current = Choice::new(self.provider, &self.model);
+        let mut order: Vec<usize> = (0..self.pool.len()).collect();
+        order.sort_by_key(|i| self.pool[*i] != current);
+        let lines: Vec<String> = order
+            .iter()
+            .map(|i| format!("{}\t{}", i + 1, label(&self.pool, &self.pool[*i])))
+            .collect();
+        let fzf = std::process::Command::new("fzf")
+            .args([
+                "--height=40%",
+                "--reverse",
+                "--select-1",
+                "--prompt=model> ",
+            ])
+            .args(["--delimiter=\t", "--with-nth=2..", "--query", query])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn();
+        let Ok(mut fzf) = fzf else {
+            self.switch(query);
+            return;
+        };
+        if let Some(mut stdin) = fzf.stdin.take() {
+            let _ = stdin.write_all(lines.join("\n").as_bytes());
+        }
+        let Ok(picked) = fzf.wait_with_output() else {
+            return;
+        };
+        if let Some((number, _)) = String::from_utf8_lossy(&picked.stdout).split_once('\t') {
+            self.switch(number);
+        }
     }
 
-    /// `/model` and chat `model`: list with no name; otherwise switch planner
-    /// and doer together to the named model, or let TypeSafe pick again with
-    /// `auto`. The same lines go to the terminal and back to whoever asked.
+    /// `/model` and chat `model`: list with no name; otherwise switch to the
+    /// named model, on the provider named after it if more than one serves
+    /// it. The same lines go to the terminal and back to whoever asked.
     fn switch(&mut self, name: &str) -> String {
+        let say = |line: String| {
+            eprint!("{line}");
+            line
+        };
         if name.is_empty() {
+            let current = Choice::new(self.provider, &self.model);
             let mut lines = String::new();
-            for (i, (model, _)) in self.pool().iter().enumerate() {
-                let mark = match (*model == self.model, *model == self.planner) {
-                    (true, true) => "*",
-                    (true, false) => "D",
-                    (false, true) => "P",
-                    (false, false) => " ",
-                };
-                let line = format!("{mark} {} {model}\n", i + 1);
-                eprint!("{line}");
-                lines.push_str(&line);
+            for (i, choice) in self.pool.iter().enumerate() {
+                let mark = if *choice == current { "*" } else { " " };
+                lines.push_str(&format!("{mark} {} {}\n", i + 1, label(&self.pool, choice)));
             }
-            let routing = if self.router.is_none() {
-                "off, no TYPESAFE_API_KEY"
-            } else if self.pinned {
-                "off, /model auto turns it on"
-            } else {
-                "on"
-            };
-            let line = "· * planner and doer; P planner only; D doer only\n";
-            eprint!("{line}");
-            lines.push_str(line);
-            let line = format!("· {}, TypeSafe picking {routing}\n", self.models());
-            eprint!("{line}");
-            lines.push_str(&line);
-            return lines;
+            return say(lines);
         }
-        if name == "auto" {
-            if self.router.is_none() {
-                let line = "· set TYPESAFE_API_KEY to have TypeSafe pick the model\n";
-                eprint!("{line}");
-                return line.to_string();
+        match choice_named(&self.pool, name, self.provider) {
+            Some(choice) if !self.keys.contains_key(&choice.provider) => say(format!(
+                "· {} is not set, so {} is off\n",
+                choice.provider.var(),
+                choice.provider.name()
+            )),
+            Some(choice) => {
+                self.set_model(choice);
+                say(format!("· {}\n", self.models()))
             }
-            self.pinned = false;
-            self.planner_pinned = false;
-            let line = "· TypeSafe picks the model for each line\n";
-            eprint!("{line}");
-            return line.to_string();
-        }
-        match model_named(self.pool(), name) {
-            Some(model) => {
-                self.planner = model.clone();
-                self.planner_pinned = false;
-                self.set_model(model);
-                self.pinned = true;
-                let line = format!("· {}\n", self.models());
-                eprint!("{line}");
-                line
-            }
-            None => {
-                let line = format!("· no model {name}; /model lists them\n");
-                eprint!("{line}");
-                line
-            }
-        }
-    }
-
-    /// `/planner` and chat `planner`: lists models, or selects a planner only.
-    /// TypeSafe continues to route the doer, while preserving this selection.
-    fn switch_planner(&mut self, name: &str) -> String {
-        if name.is_empty() {
-            let mut lines = String::new();
-            for (i, (model, _)) in self.pool().iter().enumerate() {
-                let mark = if *model == self.planner { "*" } else { " " };
-                let line = format!("{mark} {} {model}\n", i + 1);
-                eprint!("{line}");
-                lines.push_str(&line);
-            }
-            let line = format!("· planner {}\n", self.planner);
-            eprint!("{line}");
-            lines.push_str(&line);
-            return lines;
-        }
-        match model_named(self.pool(), name) {
-            Some(model) => {
-                self.planner = model.clone();
-                self.planner_pinned = true;
-                let line = format!("· planner {model}\n");
-                eprint!("{line}");
-                line
-            }
-            None => {
-                let line = format!("· no planner model {name}; /planner lists them\n");
-                eprint!("{line}");
-                line
-            }
+            None => say(format!("· no model {name}; /model lists them\n")),
         }
     }
 
@@ -1935,11 +1851,7 @@ impl Session {
         let _clock = std::io::stderr()
             .is_terminal()
             .then(|| Clock(tokio::spawn(spin("summarising the conversation".into()))));
-        let value = if self.claude {
-            claude::send(&self.key, &body).await?
-        } else {
-            send(&self.key, &body).await?
-        };
+        let value = self.send(&body).await?;
         if let Some(cost) = value["usage"]["cost"].as_f64() {
             self.spent += cost;
         }
@@ -2026,18 +1938,16 @@ impl Session {
         }
     }
 
-    /// Asks the doer, or the planner when `refining`, until it answers
-    /// without calling a tool; returns that answer. The planner's words are
-    /// shown dim: they are its notes, not the reply.
-    async fn turn(&mut self, refining: bool) -> Result<String> {
+    /// Asks the model until it answers without calling a tool; returns that
+    /// answer.
+    async fn turn(&mut self) -> Result<String> {
         loop {
-            if !refining
-                && self.near_window().await
+            if self.near_window().await
                 && let Err(err) = self.compact().await
             {
                 eprintln!("· could not compact the context: {err:#}");
             }
-            let message = self.complete(refining).await?;
+            let message = self.complete().await?;
             let text = message["content"]
                 .as_str()
                 .unwrap_or_default()
@@ -2047,7 +1957,7 @@ impl Session {
                 .as_array()
                 .cloned()
                 .unwrap_or_default();
-            self.history(refining).push(message);
+            self.messages.push(message);
             if calls.is_empty() {
                 return Ok(text);
             }
@@ -2058,7 +1968,7 @@ impl Session {
                 )
                 .await;
                 for (call, output) in calls.iter().zip(outputs) {
-                    self.history(refining).push(json!({
+                    self.messages.push(json!({
                         "role": "tool",
                         "tool_call_id": call["id"],
                         "content": truncate(output),
@@ -2067,13 +1977,8 @@ impl Session {
                 continue;
             }
             for call in calls {
-                let name = call["function"]["name"].as_str().unwrap_or_default();
-                let output = if refining && matches!(name, "write_file" | "edit_file" | "chat") {
-                    "error: you are the planner; leave the changes to the doer".to_string()
-                } else {
-                    self.call(&call).await
-                };
-                self.history(refining).push(json!({
+                let output = self.call(&call).await;
+                self.messages.push(json!({
                     "role": "tool",
                     "tool_call_id": call["id"],
                     "content": truncate(output),
@@ -2082,49 +1987,31 @@ impl Session {
         }
     }
 
-    /// The planner's conversation when `refining`, else the doer's.
-    fn history(&mut self, refining: bool) -> &mut Vec<Value> {
-        if refining {
-            &mut self.plan
-        } else {
-            &mut self.messages
-        }
-    }
-
     /// One request to the model; its text is printed as it arrives.
-    async fn complete(&mut self, refining: bool) -> Result<Value> {
-        let (model, messages) = if refining {
-            (&self.planner, &self.plan)
+    async fn complete(&mut self) -> Result<Value> {
+        let messages = &self.messages;
+        // Copilot takes plain messages; OpenRouter and Claude, breakpoints.
+        let messages = if self.provider == Provider::Copilot {
+            messages.clone()
         } else {
-            (&self.model, &self.messages)
+            cached(&self.model, messages)
         };
         let body = json!({
-            "model": model,
-            "messages": cached(model, messages),
-            "tools": tools(refining),
+            "model": self.model,
+            "messages": messages,
+            "tools": tools(),
             "reasoning": {"effort": self.effort},
             "stream": true,
             "usage": {"include": true},
         });
-        let words = if refining { &PONDERING } else { &DOING };
-        let what = format!("\x1b[38;2;97;175;239m{}\x1b[0m", any(words));
+        let what = format!("\x1b[94m{}\x1b[0m", any(&DOING));
         let mut clock = std::io::stderr()
             .is_terminal()
             .then(|| Clock(tokio::spawn(spin(what))));
-        let mut stream: claude::Bytes = if self.claude {
-            claude::stream(&self.key, &body).await?
-        } else {
-            Box::pin(
-                open(&self.key, &body)
-                    .await?
-                    .bytes_stream()
-                    .map(|bytes| bytes.map(|b| b.to_vec()).map_err(std::io::Error::other)),
-            )
-        };
+        let mut stream = self.stream(&body).await?;
         let mut pending = Vec::new();
         let mut reply = Reply::default();
         let mut shown = false;
-        let mut dim = None;
         'stream: while let Some(bytes) = stream.next().await {
             pending.extend_from_slice(&bytes.context("reading the model's reply")?);
             while let Some(end) = pending.iter().position(|b| *b == b'\n') {
@@ -2148,40 +2035,22 @@ impl Session {
                     continue;
                 }
                 clock = None;
-                if !shown {
-                    shown = true;
-                    if refining {
-                        eprint!("\x1b[2m");
-                        dim = Some(Undim);
-                    }
-                }
-                if refining {
-                    eprint!("{text}");
-                } else {
-                    print!("{text}");
-                    let _ = std::io::stdout().flush();
-                }
+                shown = true;
+                print!("{text}");
+                let _ = std::io::stdout().flush();
             }
         }
         drop(clock);
-        drop(dim);
         if shown {
-            if refining {
-                eprintln!("\n");
-            } else {
-                println!("\n");
-            }
+            println!("\n");
         }
         // What the last turn took: `cost` is what OpenRouter charged, the
-        // token counts what it says the messages came to. The counts are the
-        // doer's, whose context /context is about; both cost.
+        // token counts what it says the messages came to.
         if let Some(usage) = reply.usage.clone() {
             if let Some(cost) = usage["cost"].as_f64() {
                 self.spent += cost;
             }
-            if !refining {
-                self.last_usage = Some(usage);
-            }
+            self.last_usage = Some(usage);
         }
         let message = reply.message();
         if message["content"].is_null() && message.get("tool_calls").is_none() {
@@ -2226,13 +2095,11 @@ impl Session {
             "write_file" => self.write_file(&arg("path"), &arg("content")),
             "edit_file" => self.edit_file(&arg("path"), &arg("old_text"), &arg("new_text")),
             "chat" => match arg("action").trim() {
-                "model" => Ok(self.switch(&arg("model"))),
-                "planner" => Ok(self.switch_planner(&arg("model"))),
+                "model" => Ok(self.switch(format!("{} {}", arg("model"), arg("provider")).trim())),
                 "clear" => Ok(self.clear()),
                 "exit" => self.exit(),
                 other => Err(anyhow!(
-                    "there is no chat action '{other}'; \
-                                     model, planner, clear or exit"
+                    "there is no chat action '{other}'; model, clear or exit"
                 )),
             },
             other => Err(anyhow!("there is no tool called '{other}'")),
@@ -2248,19 +2115,14 @@ impl Session {
         background: bool,
         ask: bool,
     ) -> Result<String> {
-        // A push the user asked for runs without asking again, even with `--ask`.
-        let pushed = self.allow_push && only_pushes(command);
-        let ask = ask && !pushed;
-        let asks = ask || deletes(command) || !(self.allow_all || self.allow_turn || pushed);
+        let asks = ask || deletes(command) || !(self.allow_all || self.allow_turn);
         let title = title.trim();
         if self.show_commands || title.is_empty() || asks {
             eprintln!("{}{}", prompt(), color_program(command));
         } else {
             eprintln!("· {title}");
         }
-        if !pushed {
-            self.confirm("run it?", ask || deletes(command))?;
-        }
+        self.confirm("run it?", ask || deletes(command))?;
         if let Some(dir) = cd_target(command) {
             std::env::set_current_dir(&dir).with_context(|| format!("cd {}", dir.display()))?;
             let cwd = std::env::current_dir().unwrap_or(dir);
@@ -2378,7 +2240,7 @@ impl Session {
         }
         // Without its output on screen, a long wait would look like uc hung.
         let quiet = !job.echo.load(Ordering::Relaxed) && std::io::stderr().is_terminal();
-        let what = format!("\x1b[38;2;97;175;239m{}\x1b[0m", any(&RUNNING));
+        let what = format!("\x1b[94m{}\x1b[0m", any(&RUNNING));
         let clock = quiet.then(|| Clock(tokio::spawn(spin(what))));
         let waited = tokio::time::timeout(Duration::from_secs(secs), job.child.wait()).await;
         drop(clock);
@@ -2550,15 +2412,6 @@ impl Drop for Foreground {
     }
 }
 
-/// The planner's dim text ends when this is dropped, even if Esc cut it short.
-struct Undim;
-
-impl Drop for Undim {
-    fn drop(&mut self) {
-        eprint!("\x1b[0m");
-    }
-}
-
 /// The running clock of a wait, cleared away when dropped.
 struct Clock(JoinHandle<()>);
 
@@ -2714,18 +2567,7 @@ impl Drop for Lent {
 /// The braille dots the ₿ turns through while uc waits, a step every 100ms.
 const SPINNER: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
-/// What the spinner says while the planner works, one picked per request.
-const PONDERING: [&str; 7] = [
-    "fathoming",
-    "comprehending",
-    "deliberating",
-    "discerning",
-    "cogitating",
-    "grokking",
-    "ratiocinating",
-];
-
-/// What the spinner says while the doer works, one picked per request.
+/// What the spinner says while the model works, one picked per request.
 const DOING: [&str; 7] = [
     "crafting",
     "forging",
@@ -2786,14 +2628,14 @@ fn prompt() -> String {
     let who = if unsafe { libc::geteuid() } == 0 {
         "1;91"
     } else {
-        "1;96"
+        "1;95"
     };
     let mark = if FAILED.load(Ordering::Relaxed) {
         "1;91"
     } else {
         "0"
     };
-    format!("\x1b[{who}m{user}\x1b[0m@{host} \x1b[94m{dir} \x1b[{mark}m₿\x1b[0m ")
+    format!("\x1b[{who}m{user}\x1b[0m@{host} \x1b[1;94m{dir} \x1b[{mark}m₿\x1b[0m ")
 }
 
 /// The line editor every prompt reads through, so arrow keys edit the line.
@@ -3096,27 +2938,70 @@ fn read_line(prompt: &str) -> Result<Option<String>> {
     }
 }
 
-/// The model `/model <name>` means: its number in `pool`, the one listed
-/// there whose id has `name` in it, or `name` itself when it is an id.
-fn model_named(pool: &[(&str, &str)], name: &str) -> Option<String> {
+/// How `/model` shows `choice`: its id, with the provider beside it when
+/// another provider in `pool` serves the same model.
+fn label(pool: &[Choice], choice: &Choice) -> String {
+    let name = common_name(&choice.model);
+    let shared = pool
+        .iter()
+        .any(|c| c.provider != choice.provider && common_name(&c.model) == name);
+    if shared {
+        format!("{} ({})", choice.model, choice.provider.name())
+    } else {
+        choice.model.clone()
+    }
+}
+
+/// The model `/model <name> [provider]` means: its number in `pool`, the one
+/// listed there whose id has `name` in it, or `name` itself when it is an id
+/// (it has a `/`, or a provider is named). A model more than one provider
+/// serves is taken on the provider named, else on `prefer`, else on the
+/// first listed.
+fn choice_named(pool: &[Choice], name: &str, prefer: Provider) -> Option<Choice> {
+    // `opus copilot` and `opus (Copilot)`, as the list shows it, both name one.
+    let mut words: Vec<&str> = name.split_whitespace().collect();
+    let only = match words[..] {
+        [_, .., last] => Provider::parse(last.trim_matches(|c| c == '(' || c == ')')),
+        _ => None,
+    };
+    if only.is_some() {
+        words.pop();
+    }
+    let name = words.join(" ");
     if let Ok(n) = name.parse::<usize>() {
-        return pool.get(n.checked_sub(1)?).map(|(m, _)| m.to_string());
+        return pool.get(n.checked_sub(1)?).cloned();
     }
     let lower = name.to_lowercase();
-    let found: Vec<&str> = pool
+    let listed: Vec<&Choice> = pool
         .iter()
-        .map(|(m, _)| *m)
-        .filter(|m| m.contains(&lower))
+        .filter(|c| only.is_none_or(|p| c.provider == p))
         .collect();
-    match found[..] {
-        [one] => Some(one.to_string()),
-        _ if name.contains('/') => Some(name.to_string()),
-        // `glm` is GLM Flash and GLM 5.3: the exact name after the vendor wins.
-        _ => found
-            .into_iter()
-            .find(|m| m.rsplit('/').next() == Some(lower.as_str()))
-            .map(str::to_string),
+    let found: Vec<&Choice> = listed
+        .iter()
+        .copied()
+        .filter(|c| c.model.to_lowercase().contains(&lower))
+        .collect();
+    // One model on several providers is still one model.
+    let best = |of: Vec<&Choice>| {
+        of.iter()
+            .find(|c| c.provider == prefer)
+            .or(of.first())
+            .map(|c| (*c).clone())
+    };
+    let names: BTreeSet<String> = found.iter().map(|c| common_name(&c.model)).collect();
+    if names.len() == 1 {
+        return best(found);
     }
+    if name.contains('/') || (only.is_some() && found.is_empty() && !name.is_empty()) {
+        return Some(Choice::new(only.unwrap_or(prefer), &name));
+    }
+    // `glm` is GLM Flash and GLM 5.3: the exact name after the vendor wins.
+    best(
+        found
+            .into_iter()
+            .filter(|c| common_name(&c.model) == common_name(&lower))
+            .collect(),
+    )
 }
 
 /// The text of a message, be it a plain string or what OpenRouter sends as
@@ -3159,10 +3044,18 @@ async fn models() -> Result<&'static Vec<Value>> {
 /// The `model`'s context window and price per million tokens, off the list
 /// OpenRouter serves; None when the model isn't there.
 async fn model_info(model: &str) -> Result<Option<(Option<u64>, Option<(f64, f64)>)>> {
-    let Some(entry) = models()
-        .await?
+    let models = models().await?;
+    let Some(entry) = models
         .iter()
         .find(|m| m["id"] == model || m["canonical_slug"] == model)
+        // Copilot's ids have no vendor: `claude-opus-5.5` is Anthropic's.
+        .or_else(|| {
+            (!model.contains('/')).then(|| {
+                models
+                    .iter()
+                    .find(|m| m["id"].as_str().map(common_name) == Some(common_name(model)))
+            })?
+        })
     else {
         return Ok(None);
     };
@@ -3177,99 +3070,6 @@ async fn model_info(model: &str) -> Result<Option<(Option<u64>, Option<(f64, f64
         )
         .map(|(in_per, out_per)| (in_per * 1e6, out_per * 1e6));
     Ok(Some((window, price)))
-}
-
-/// What TypeSafe makes of a line.
-#[derive(Debug, PartialEq)]
-struct Route {
-    planner: String,
-    doer: String,
-    /// The line asks to push: `git push` needs no asking this turn.
-    push: bool,
-}
-
-/// The planner and the doer TypeSafe's `router` thinks suit `line` best: a
-/// coding feature is planned by `FEATURE_PLANNER` and done by `FEATURE_DOER`,
-/// anything else has the model in `MODELS` it picks as both. It also says
-/// whether the line asks to push.
-async fn pick_models(key: &str, router: &str, line: &str) -> Result<Route> {
-    let criteria: serde_json::Map<String, Value> = MODELS
-        .iter()
-        .map(|(model, when)| (model.to_string(), json!(when)))
-        .collect();
-    let body = json!({
-        "model": router,
-        "state": line,
-        "questions": {
-            "model": {
-                "type": "choice",
-                "instructions": "This is what a user asked a coding agent on their terminal. \
-                    Which model should do it? Pick the cheapest one that does it well: \
-                    a short answer or a command is for the everyday model; a long text to read \
-                    is for the reading model; a change that needs much reading but a small \
-                    patch is for the patch model; the strongest model, the dearest, is for \
-                    only the biggest or hardest jobs; a hard question with a short or \
-                    planned answer, like proofs, tricky reasoning or a migration, goes to \
-                    the cheap reasoning model, which is not the strongest but fits those.",
-                "criteria": criteria,
-            },
-            "kind": {
-                "type": "choice",
-                "instructions": "This is what a user asked a coding agent on their terminal. \
-                    Is it a coding feature: new or changed behaviour that means writing code \
-                    in a codebase?",
-                "criteria": {
-                    "feature": "Implementing, adding, changing or refactoring code: a new \
-                        feature, a fix that needs code written, a change across files",
-                    "other": "Everything else: a question, explaining, running or looking \
-                        something up, a command, writing prose, a review without changes",
-                },
-            },
-            "push": {
-                "type": "choice",
-                "instructions": "This is what a user asked a coding agent on their terminal. \
-                    Does it ask to git push, on its own or as part of the task, like \
-                    'commit and push' or 'ship it'?",
-                "criteria": {
-                    "push": "It asks for a git push: push, commit and push, push the branch",
-                    "other": "It doesn't ask to push, or only mentions or asks about pushing",
-                },
-            },
-        },
-    });
-    let response = client()
-        .post(TYPESAFE)
-        .bearer_auth(key)
-        .json(&body)
-        .timeout(Duration::from_secs(20))
-        .send()
-        .await
-        .context("calling TypeSafe")?;
-    let status = response.status();
-    let value: Value = response.json().await.context("reading TypeSafe's reply")?;
-    if !status.is_success() {
-        bail!("{status}: {}", value["detail"]);
-    }
-    let push = value["answers"]["push"]["choice"] == "push";
-    if value["answers"]["kind"]["choice"] == "feature" {
-        return Ok(Route {
-            planner: FEATURE_PLANNER.to_string(),
-            doer: FEATURE_DOER.to_string(),
-            push,
-        });
-    }
-    let choice = value["answers"]["model"]["choice"]
-        .as_str()
-        .unwrap_or_default();
-    MODELS
-        .iter()
-        .find(|(model, _)| *model == choice)
-        .map(|(model, _)| Route {
-            planner: model.to_string(),
-            doer: model.to_string(),
-            push,
-        })
-        .ok_or_else(|| anyhow!("picked no model: {value}"))
 }
 
 /// An environment variable, if it is set to something.
@@ -3783,22 +3583,6 @@ mod tests {
     }
 
     #[test]
-    fn a_push_and_its_git_commands_only() {
-        assert!(only_pushes("git push"));
-        assert!(only_pushes("git push origin master"));
-        assert!(only_pushes("git add -A && git commit -m 'fix' && git push"));
-        assert!(!only_pushes("git status"), "no push");
-        assert!(!only_pushes("git push --force"));
-        assert!(!only_pushes("git push -f origin master"));
-        assert!(!only_pushes("git push --force-with-lease"));
-        assert!(!only_pushes("git push origin +master"));
-        assert!(!only_pushes("git reset --hard && git push"));
-        assert!(!only_pushes("git rm a && git commit -m x && git push"));
-        assert!(!only_pushes("make deploy; git push"));
-        assert!(!only_pushes("git commit -m \"$(curl x)\" && git push"));
-    }
-
-    #[test]
     fn a_trailing_y_approves() {
         assert_eq!(split_approval("ls -y"), ("ls", true));
         assert_eq!(split_approval("-y"), ("", true));
@@ -3874,36 +3658,97 @@ mod tests {
         assert_eq!(cd_target("ls"), None);
     }
 
+    fn openrouter_pool() -> Vec<Choice> {
+        MODELS
+            .iter()
+            .map(|m| Choice::new(Provider::OpenRouter, m))
+            .collect()
+    }
+
+    /// OpenRouter's pool, the Claude subscription's and two of Copilot's.
+    fn every_pool() -> Vec<Choice> {
+        let mut pool = openrouter_pool();
+        pool.extend(
+            CLAUDE_MODELS
+                .iter()
+                .map(|m| Choice::new(Provider::Claude, m)),
+        );
+        pool.push(Choice::new(Provider::Copilot, "gpt-4.1"));
+        pool.push(Choice::new(Provider::Copilot, "claude-opus-5-5"));
+        pool
+    }
+
     #[test]
     fn model_named_takes_a_number_part_of_an_id_or_an_id() {
+        let pool = openrouter_pool();
+        let named = |name: &str| choice_named(&pool, name, Provider::OpenRouter).map(|c| c.model);
+        assert_eq!(named("2").as_deref(), Some("anthropic/claude-haiku-5.5"));
+        assert_eq!(named("0"), None);
+        assert_eq!(named("9"), None);
         assert_eq!(
-            model_named(MODELS, "2").as_deref(),
+            named("haiku").as_deref(),
             Some("anthropic/claude-haiku-5.5")
         );
-        assert_eq!(model_named(MODELS, "0"), None);
-        assert_eq!(model_named(MODELS, "9"), None);
+        assert_eq!(named("glm-5.3").as_deref(), Some("z-ai/glm-5.3"));
+        assert_eq!(named("glm"), None);
+        assert_eq!(named("opus").as_deref(), Some("anthropic/claude-opus-5.5"));
+        assert_eq!(named("luna").as_deref(), Some("openai/gpt-6-luna"));
+        assert_eq!(named("openai/gpt-5").as_deref(), Some("openai/gpt-5"));
+        assert_eq!(named("nope"), None);
+    }
+
+    #[test]
+    fn a_model_on_several_providers_is_taken_on_the_one_named_or_preferred() {
+        let pool = every_pool();
+        let named = |name: &str, prefer| choice_named(&pool, name, prefer);
+        let opus = |provider, model: &str| Some(Choice::new(provider, model));
         assert_eq!(
-            model_named(MODELS, "haiku").as_deref(),
-            Some("anthropic/claude-haiku-5.5")
+            named("opus", Provider::OpenRouter),
+            opus(Provider::OpenRouter, "anthropic/claude-opus-5.5")
         );
         assert_eq!(
-            model_named(MODELS, "glm-5.3").as_deref(),
-            Some("z-ai/glm-5.3")
-        );
-        assert_eq!(model_named(MODELS, "glm"), None);
-        assert_eq!(
-            model_named(MODELS, "opus").as_deref(),
-            Some("anthropic/claude-opus-5.5")
+            named("opus", Provider::Claude),
+            opus(Provider::Claude, "anthropic/claude-opus-5.5")
         );
         assert_eq!(
-            model_named(MODELS, "luna").as_deref(),
-            Some("openai/gpt-6-luna")
+            named("opus copilot", Provider::Claude),
+            opus(Provider::Copilot, "claude-opus-5-5")
         );
         assert_eq!(
-            model_named(MODELS, "openai/gpt-5").as_deref(),
-            Some("openai/gpt-5")
+            named("anthropic/claude-opus-5.5 (Claude)", Provider::OpenRouter),
+            opus(Provider::Claude, "anthropic/claude-opus-5.5")
         );
-        assert_eq!(model_named(MODELS, "nope"), None);
+        assert_eq!(
+            named("gpt-4.1", Provider::OpenRouter),
+            opus(Provider::Copilot, "gpt-4.1")
+        );
+        assert_eq!(
+            named("o3 copilot", Provider::OpenRouter),
+            opus(Provider::Copilot, "o3")
+        );
+        assert_eq!(
+            named("8", Provider::OpenRouter),
+            opus(Provider::Claude, DEFAULT_CLAUDE_MODEL)
+        );
+    }
+
+    #[test]
+    fn the_provider_is_shown_only_for_a_model_more_than_one_serves() {
+        let pool = every_pool();
+        assert_eq!(label(&pool, &pool[0]), "z-ai/glm-5.3-flash");
+        assert_eq!(
+            label(&pool, &pool[5]),
+            "anthropic/claude-opus-5.5 (OpenRouter)"
+        );
+        assert_eq!(label(&pool, &pool[8]), "anthropic/claude-opus-5.5 (Claude)");
+        assert_eq!(label(&pool, &pool[9]), "gpt-4.1");
+        assert_eq!(label(&pool, &pool[10]), "claude-opus-5-5 (Copilot)");
+        assert_eq!(
+            label(&openrouter_pool(), &pool[5]),
+            "anthropic/claude-opus-5.5"
+        );
+        assert_eq!(common_name("claude-opus-5-5"), "claude-opus-5.5");
+        assert_eq!(common_name("openai/gpt-6-luna"), "gpt-6-luna");
     }
 
     #[test]
@@ -3956,20 +3801,15 @@ mod tests {
 
     fn session() -> Session {
         Session {
-            key: String::new(),
-            claude: false,
+            keys: BTreeMap::from([(Provider::OpenRouter, String::new())]),
+            provider: Provider::OpenRouter,
             model: String::new(),
-            planner: String::new(),
-            plan: Vec::new(),
-            router: None,
-            pinned: false,
-            planner_pinned: false,
+            pool: openrouter_pool(),
             ask: false,
             effort: String::new(),
             messages: Vec::new(),
             allow_all: true,
             allow_turn: false,
-            allow_push: false,
             show_output: false,
             show_commands: false,
             jobs: BTreeMap::new(),
@@ -4057,7 +3897,7 @@ mod tests {
 
     #[test]
     fn every_tool_has_a_name_and_parameters() {
-        for tool in tools(false).as_array().unwrap() {
+        for tool in tools().as_array().unwrap() {
             assert!(tool["function"]["name"].is_string());
             assert_eq!(tool["function"]["parameters"]["type"], "object");
         }
@@ -4065,7 +3905,7 @@ mod tests {
 
     #[test]
     fn chat_is_a_tool() {
-        let tools = tools(false);
+        let tools = tools();
         let tool = tools
             .as_array()
             .unwrap()
@@ -4077,79 +3917,56 @@ mod tests {
     }
 
     #[test]
-    fn the_planner_is_not_offered_the_doer_tools() {
-        let read = |refining: bool| {
-            tools(refining)
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|t| {
-                    t["function"]["name"]
-                        .as_str()
-                        .unwrap_or_default()
-                        .to_string()
-                })
-                .collect::<Vec<String>>()
-        };
-        assert!(
-            read(true)
-                .iter()
-                .all(|name| !matches!(name.as_str(), "write_file" | "edit_file" | "chat"))
-        );
-        for name in ["write_file", "edit_file", "chat"] {
-            assert!(
-                read(false).contains(&name.to_string()),
-                "the doer keeps {name}"
-            );
-        }
-        assert_eq!(read(true).len() + 3, read(false).len());
-    }
-
-    #[test]
     fn chat_model_lists_switches_and_fails() {
         let mut s = session();
         s.model = "z-ai/glm-5.3-flash".into();
-        s.planner = s.model.clone();
         s.messages = vec![json!({"role": "system", "content": "you are uc"})];
         let listed = s.switch("");
-        assert!(listed.contains("1 z-ai/glm-5.3-flash"), "{listed}");
-        assert!(listed.contains("TypeSafe picking"), "{listed}");
+        assert!(listed.contains("* 1 z-ai/glm-5.3-flash"), "{listed}");
         let switched = s.switch("haiku");
         assert_eq!(switched, "· model anthropic/claude-haiku-5.5\n");
         assert_eq!(s.model, "anthropic/claude-haiku-5.5");
-        assert_eq!(s.planner, s.model);
-        assert!(!s.planner_pinned);
-        assert!(s.pinned);
-        let auto = s.switch("auto");
-        assert_eq!(
-            auto,
-            "· set TYPESAFE_API_KEY to have TypeSafe pick the model\n"
-        );
-        assert!(s.pinned, "no TypeSafe to hand it back to");
         let named = s.switch("2");
         assert_eq!(named, "· model anthropic/claude-haiku-5.5\n");
         let missing = s.switch("nope");
         assert!(missing.starts_with("· no model nope"), "{missing}");
+    }
 
-        s.planner = s.model.clone();
-        s.pinned = false;
-        let planner_listing = s.switch_planner("");
-        assert!(planner_listing.contains("* 2 anthropic/claude-haiku-5.5"));
-        let planner = s.switch_planner("5");
-        assert_eq!(planner, "· planner openai/gpt-6-luna\n");
-        assert_eq!(s.model, "anthropic/claude-haiku-5.5", "planner-only switch");
-        assert!(s.planner_pinned);
-        s.apply_route("google/gemini-4-argon".into(), "z-ai/glm-5.3".into());
-        assert_eq!(
-            s.planner, "openai/gpt-6-luna",
-            "manual planner survives route"
+    #[test]
+    fn chat_model_switches_between_providers() {
+        let mut s = session();
+        s.keys.insert(Provider::Claude, String::new());
+        s.keys.insert(Provider::Copilot, String::new());
+        s.pool = every_pool();
+        s.model = "z-ai/glm-5.3-flash".into();
+        s.messages = vec![json!({"role": "system", "content": "you are uc"})];
+        let listed = s.switch("");
+        assert!(
+            listed.contains("anthropic/claude-opus-5.5 (Claude)"),
+            "{listed}"
         );
-        assert_eq!(s.model, "z-ai/glm-5.3", "doer still routes");
-        let reset = s.switch("haiku");
-        assert_eq!(reset, "· model anthropic/claude-haiku-5.5\n");
-        assert_eq!(s.planner, s.model, "/model resets both to same model");
-        assert!(!s.planner_pinned, "/model clears planner pin");
-        assert!(s.pinned, "/model pins both against routing");
+        assert!(listed.contains(" gpt-4.1\n"), "{listed}");
+        let switched = s.switch("opus claude");
+        assert_eq!(switched, "· model anthropic/claude-opus-5.5 (Claude)\n");
+        assert_eq!(s.provider, Provider::Claude);
+        assert!(
+            s.messages[0]["content"]
+                .as_str()
+                .unwrap()
+                .contains("claude-opus-5.5")
+        );
+        // Opus again stays on the provider the session is on.
+        s.switch("opus");
+        assert_eq!(s.provider, Provider::Claude);
+        s.switch("gpt-4.1");
+        assert_eq!(
+            (s.provider, s.model.as_str()),
+            (Provider::Copilot, "gpt-4.1")
+        );
+        s.keys.remove(&Provider::Claude);
+        let off = s.switch("opus claude");
+        assert!(off.contains("CLAUDE_CODE_OAUTH_TOKEN is not set"), "{off}");
+        assert_eq!(s.provider, Provider::Copilot);
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -4187,24 +4004,27 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn chat_is_dispatched_like_a_tool_call() {
         let mut s = session();
+        s.keys.insert(Provider::Claude, String::new());
+        s.pool = every_pool();
         s.model = "z-ai/glm-5.3-flash".into();
-        s.planner = s.model.clone();
         s.messages = vec![json!({"role": "system", "content": "you are uc"})];
         let model = json!({"id": "a", "function": {"name": "chat", "arguments":
             r#"{"action": "model", "model": "haiku"}"#}});
         let out = s.call(&model).await;
-        assert_eq!(out, "· model anthropic/claude-haiku-5.5\n");
+        assert_eq!(out, "· model anthropic/claude-haiku-5.5 (OpenRouter)\n");
         assert_eq!(s.model, "anthropic/claude-haiku-5.5");
-        let planner = json!({"id": "p", "function": {"name": "chat", "arguments":
-            r#"{"action": "planner", "model": "5"}"#}});
-        let out = s.call(&planner).await;
-        assert_eq!(out, "· planner openai/gpt-6-luna\n");
-        assert_eq!(s.model, "anthropic/claude-haiku-5.5");
-        assert_eq!(s.planner, "openai/gpt-6-luna");
+        let on = json!({"id": "p", "function": {"name": "chat", "arguments":
+            r#"{"action": "model", "model": "haiku", "provider": "Claude"}"#}});
+        let out = s.call(&on).await;
+        assert_eq!(out, "· model anthropic/claude-haiku-5.5 (Claude)\n");
+        assert_eq!(s.provider, Provider::Claude);
         let listed = json!({"id": "b", "function": {"name": "chat", "arguments":
             r#"{"action": "model"}"#}});
         let out = s.call(&listed).await;
-        assert!(out.contains("TypeSafe picking"), "{out}");
+        assert!(
+            out.contains("* 7 anthropic/claude-haiku-5.5 (Claude)"),
+            "{out}"
+        );
         let unknown = json!({"id": "c", "function": {"name": "chat", "arguments":
             r#"{"action": "nope"}"#}});
         let out = s.call(&unknown).await;

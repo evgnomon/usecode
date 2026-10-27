@@ -310,46 +310,57 @@ pub static AGENT: Group = Group {
         },
         Sub {
             name: "login",
-            summary: "log in with a Claude subscription and save its token for the chat",
+            summary: "log in with a Claude subscription or GitHub Copilot and save the token for the chat",
             run: Run::Builtin(agent_login),
         },
     ],
     fallback: None,
 };
 
-/// `uc agent login claude [--print]`: the Claude subscription's token, saved
-/// as `CLAUDE_CODE_OAUTH_TOKEN` in `~/.bashrc.d/claude.sh`.
+/// `uc agent login claude|copilot [--print]`: the Claude subscription's
+/// token, saved as `CLAUDE_CODE_OAUTH_TOKEN` in `~/.bashrc.d/claude.sh`, or a
+/// GitHub token for Copilot, saved as `COPILOT_GITHUB_TOKEN` in
+/// `~/.bashrc.d/copilot.sh`.
 fn agent_login(args: &[OsString]) -> ExitCode {
     let args: Vec<String> = args
         .iter()
         .map(|a| a.to_string_lossy().into_owned())
         .collect();
-    let usage = "usage: uc agent login claude [--print]";
-    match args.iter().map(String::as_str).collect::<Vec<_>>()[..] {
+    let usage = "usage: uc agent login claude|copilot [--print]";
+    let copilot = match args.iter().map(String::as_str).collect::<Vec<_>>()[..] {
         ["-h" | "--help"] => {
+            println!("{usage}\n");
             println!(
-                "{usage}\n\nLogs in with your Claude subscription (Pro or Max) and saves the token as"
+                "claude: logs in with your Claude subscription (Pro or Max) and saves the token"
             );
+            println!("as CLAUDE_CODE_OAUTH_TOKEN in ~/.bashrc.d/claude.sh.");
+            println!("copilot: logs in to GitHub with a device code and saves the token as");
+            println!("COPILOT_GITHUB_TOKEN in ~/.bashrc.d/copilot.sh; the account needs Copilot.");
             println!(
-                "CLAUDE_CODE_OAUTH_TOKEN in ~/.bashrc.d/claude.sh. `uc` then chats through the"
+                "`uc` then offers that provider's models in /model, next to the others with a key;"
             );
-            println!(
-                "subscription when OPENROUTER_API_KEY is not set, or with UC_PROVIDER=claude."
-            );
+            println!("UC_PROVIDER=openrouter, claude or copilot picks the one it starts on.");
             println!("--print shows the export line instead of saving it.");
             return ExitCode::SUCCESS;
         }
-        ["claude"] | ["claude", "--print"] => {}
+        ["claude"] | ["claude", "--print"] => false,
+        ["copilot"] | ["copilot", "--print"] => true,
         _ => {
             eprintln!("{usage}");
             return ExitCode::from(2);
         }
-    }
+    };
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .expect("tokio runtime");
-    match runtime.block_on(crate::claude::login(args.len() == 2)) {
+    let print = args.len() == 2;
+    let done = if copilot {
+        runtime.block_on(crate::copilot::login(print))
+    } else {
+        runtime.block_on(crate::claude::login(print))
+    };
+    match done {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("uc agent login: {err:#}");

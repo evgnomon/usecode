@@ -72,12 +72,20 @@ UC_EFFORT=medium uc                           # low, medium or high reasoning
 Have a Claude Pro or Max subscription instead? `uc agent login claude` opens
 Claude's login, takes the code the page shows, and saves a year-long,
 inference-only token as `CLAUDE_CODE_OAUTH_TOKEN` in `~/.bashrc.d/claude.sh`
-(`--print` shows the export line instead). With that set and no
-`OPENROUTER_API_KEY`, `uc` chats through the subscription, with Haiku, Sonnet
-(the default) and Opus in `/model`; `UC_PROVIDER=claude` or `UC_PROVIDER=openrouter`
-picks one when both keys are set. TypeSafe routing, reasoning effort and the
-cost line are OpenRouter's and do not apply there. `uc agent usage` shows how
-much of the subscription's 5-hour and weekly windows you have used, next to the
+(`--print` shows the export line instead). Got GitHub Copilot? `uc agent login
+copilot` shows a short code to type on github.com and saves the token as
+`COPILOT_GITHUB_TOKEN` in `~/.bashrc.d/copilot.sh`; `uc` then lists the chat
+models your Copilot plan offers.
+
+Set as many of these as you like: `/model` shows the models of every provider
+you have a key for, all in one list, and you can switch between them in the
+middle of a conversation. When a model is on more than one, say Opus on both
+OpenRouter and your Claude subscription, each gets its own line with the
+provider beside it, and `/model opus claude` (or the number) picks the one you
+want. `uc` starts on OpenRouter, then Claude, then Copilot, whichever has a key
+first; `UC_PROVIDER=claude` (or `openrouter`, `copilot`) picks another. The
+cost line is OpenRouter's. `uc agent usage` shows how much of
+the subscription's 5-hour and weekly windows you have used, next to the
 OpenRouter spend when both keys are set.
 
 Every flag can be set three ways, so you can make your favourite the
@@ -97,44 +105,16 @@ uc:
 ```
 
 It runs on GLM 5.3 Flash, which is quick, cheap and good at everyday
-work. Got a [TypeSafe](https://console.typesafe.ai) key too? Then each line
-you type gets the model that suits it: a quick question stays on GLM Flash,
-reading a pile of logs or pages goes to Claude Haiku 5.5, a patch that needs
-a lot of reading to GLM 5.3, a real feature or a hard bug to Muse Spark
-1.3, short but hard thinking to GPT-6 Luna, and the hardest jobs of all to
-Claude Opus 5.5, the strongest of the pool. A small TypeSafe model reads
-the line
-and picks, so you only pay for the bigger models when the work needs them, and
-`uc` tells you when it switches:
+work, and stays on one model for the whole session: each line is a single
+request, so replies start fast. Want another? Type `/model` and pick one in
+fzf (Esc keeps what you have), or go straight to one with `/model opus`. A
+name that fits several, like `/model claude`, opens fzf filtered by it. The
+new model gets the whole conversation and carries on from there, even on
+another provider. `UC_MODEL` sets the one to start on.
 
-```sh
-export TYPESAFE_API_KEY=...                   # https://console.typesafe.ai
-TYPESAFE_MODEL=jev-preview uc                 # the model that picks, jev-latest if unset
-```
-
-`UC_MODEL` still wins: set it and every line goes to that model.
-
-Each line actually gets two passes: a planner first, then a doer. The planner
-reads your line and looks around the code, changing nothing, and writes the
-doer a short brief: what you're after, the files and functions to start at,
-and what to watch out for. You see that brief dimmed, and then the doer gets
-going with a head start instead of searching from scratch. When TypeSafe sees
-a coding feature, Gemini 4 Argon plans it (it reads a lot of code well, and
-cheaply) and GLM 5.3 writes it, and `uc` prints `· planner ..., doer ...`.
-Anything else is planned and done by the same model.
-
-Not happy with the model it picked? `uc` prints `· model ...` before it starts,
-so you can press Esc right away, type `/model haiku` (or a number from `/model`,
-or any OpenRouter id), then `continue`. This switches both planner and doer;
-the new model gets the whole conversation and carries on from there. It stays
-on that model until you type `/model auto`, which hands both choices back to
-TypeSafe. To change only the planner, use `/planner haiku` (or a number, name,
-or OpenRouter id); TypeSafe continues routing the doer, but keeps your planner
-choice. `/planner` lists models and marks the selected planner. The model can
-do the same itself with the `chat` tool: `chat model <name>` switches both,
-`chat planner <name>` switches only the planner, each bare command lists, and
-`chat clear` clears the screen and the context; `chat exit` leaves uc. It only
-does this when you ask.
+The model can do the same itself with the `chat` tool: `chat model
+<name>` switches, `chat model` lists, and `chat clear` clears the screen and
+the context; `chat exit` leaves uc. It only does this when you ask.
 
 Wondering how much of the model's context the conversation has taken? Type
 `/context` and it says how many messages there are, about how many tokens
