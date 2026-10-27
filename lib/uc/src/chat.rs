@@ -43,7 +43,9 @@
 //! starting uc does not wait on the providers; `uc agent model-update` fetches them
 //! again. A model
 //! more than one provider serves is
-//! listed once for each, with the provider beside it. `/context`
+//! listed once for each, with the provider beside it. `uc agent exit` (or
+//! `quit`) leaves uc, `uc agent compact` sums up the earlier conversation,
+//! and `uc agent context`
 //! prints how much of the model's context the conversation has taken: the
 //! message count, an estimate before the first turn, the real token count of
 //! the last one, the model's window, and what the session has spent.
@@ -627,16 +629,11 @@ async fn run(
             eprintln!("· context cleared");
         }
         let line = line.trim();
-        if matches!(line, "/exit" | "/quit" | "exit") {
+        let agent = agent_command(line);
+        if line == "exit" || matches!(agent, Some("exit" | "quit")) {
             return Ok(());
         }
-        if !ai
-            && (agent_model_line(line).is_some()
-                || matches!(
-                    line.split_whitespace().next(),
-                    Some("/context" | "/compact")
-                ))
-        {
+        if !ai && (agent_model_line(line).is_some() || agent.is_some()) {
             eprintln!(
                 "· AI off: set OPENROUTER_API_KEY, or log in with `uc agent login claude` \
                  or `uc agent login copilot`, to turn it on"
@@ -657,11 +654,11 @@ async fn run(
             shown = Some(session.models());
             continue;
         }
-        if line == "/context" {
+        if agent == Some("context") {
             session.context().await;
             continue;
         }
-        if line == "/compact" {
+        if agent == Some("compact") {
             if let Err(err) = session.compact().await {
                 eprintln!("· {err:#}");
             }
@@ -1120,6 +1117,14 @@ fn agent_model_line(line: &str) -> Option<&str> {
         .filter(|rest| rest.is_empty() || rest.starts_with(' '))
 }
 
+/// `uc agent compact`, `context`, `exit` or `quit` typed at the prompt: the
+/// session's own commands, which it takes instead of running them in bash;
+/// the word after `uc agent`. `!uc agent context` still runs in bash.
+fn agent_command(line: &str) -> Option<&'static str> {
+    let rest = line.strip_prefix("uc agent ")?.trim();
+    AGENT_COMMANDS.iter().find(|c| **c == rest).copied()
+}
+
 /// `command` with its first word, the program, in bright yellow: what a line
 /// that runs straight away looks like at the prompt.
 fn color_program(command: &str) -> String {
@@ -1275,10 +1280,10 @@ done
 if (( ${#COMPREPLY[@]} )); then printf '%s\n' "${COMPREPLY[@]}"; else compgen -f -- "$_uc_cur"; fi
 "#;
 
-/// The commands the prompt itself takes.
-const SLASH_COMMANDS: &[&str] = &["/compact", "/context", "/exit", "/quit"];
+/// The `uc agent` commands the prompt itself takes, besides `model`.
+const AGENT_COMMANDS: &[&str] = &["compact", "context", "exit", "quit"];
 
-/// Tab at the prompt: `/` commands, a command line the way the user's bash
+/// Tab at the prompt: a command line the way the user's bash
 /// completes it, with or without `!`, and file names in a line for the model.
 struct Completion;
 
@@ -1288,10 +1293,6 @@ impl Completion {
         let word_start = before.rfind(char::is_whitespace).map_or(0, |i| {
             i + before[i..].chars().next().map_or(1, char::len_utf8)
         });
-        if word_start == 0 && before.starts_with('/') {
-            let words = SLASH_COMMANDS.iter().filter(|c| c.starts_with(before));
-            return (0, words.map(|c| format!("{c} ")).collect());
-        }
         let (offset, command) = match before.strip_prefix('!') {
             Some(command) => (1, Some(command)),
             None if word_start == 0 => (0, Some(before)),
@@ -1347,8 +1348,8 @@ impl rustyline::hint::Hinter for Completion {
 /// typed, so it shows before Enter whether the line goes to bash or the model.
 impl rustyline::highlight::Highlighter for Completion {
     fn highlight<'l>(&self, line: &'l str, _: usize) -> std::borrow::Cow<'l, str> {
-        // The chat takes `uc agent model` itself; it is not a bash line.
-        if agent_model_line(line).is_some() {
+        // The chat takes `uc agent model` and the like itself; not bash lines.
+        if agent_model_line(line).is_some() || agent_command(line).is_some() {
             return std::borrow::Cow::Borrowed(line);
         }
         let Some(command) = direct_command(line) else {
@@ -1885,7 +1886,7 @@ impl Session {
         prompt as f64 >= COMPACT_AT * window as f64
     }
 
-    /// `/compact`: cuts old tool output, then, if the conversation has earlier
+    /// `uc agent compact`: cuts old tool output, then, if the conversation has earlier
     /// turns, replaces them with a summary. The latest turn stays as it is.
     async fn compact(&mut self) -> Result<()> {
         let before = self.messages.len();
@@ -1939,7 +1940,7 @@ impl Session {
             .ok_or_else(|| anyhow!("the model wrote no summary"))
     }
 
-    /// `/context`: how much of the model's context the conversation has
+    /// `uc agent context`: how much of the model's context the conversation has
     /// taken. The real count is from the last reply's `usage`, an estimate
     /// from the bytes before that, and the window is the model's
     /// `context_length` on OpenRouter.
@@ -3948,12 +3949,6 @@ mod tests {
 
     #[test]
     fn tab_completes_like_bash() {
-        let (start, words) = Completion::candidates("/co");
-        assert_eq!(
-            (start, words),
-            (0, vec!["/compact ".to_string(), "/context ".to_string()])
-        );
-        assert_eq!(Completion::candidates("/").1.len(), SLASH_COMMANDS.len());
         let (start, words) = Completion::candidates("!ech");
         assert_eq!(start, 1);
         assert!(words.iter().any(|w| w.trim_end() == "echo"), "{words:?}");
@@ -4268,6 +4263,18 @@ mod tests {
         );
         assert_eq!(env_name(Provider::OpenRouter), "openrouter");
         assert_eq!(env_name(Provider::Copilot), "copilot");
+    }
+
+    #[test]
+    fn uc_agent_commands_are_taken_by_the_chat() {
+        assert_eq!(agent_command("uc agent compact"), Some("compact"));
+        assert_eq!(agent_command("uc agent context"), Some("context"));
+        assert_eq!(agent_command("uc agent exit"), Some("exit"));
+        assert_eq!(agent_command("uc agent quit"), Some("quit"));
+        assert_eq!(agent_command("uc agent usage"), None);
+        assert_eq!(agent_command("uc agent contexts"), None);
+        assert_eq!(agent_command("!uc agent exit"), None);
+        assert_eq!(agent_command("/context"), None);
     }
 
     #[test]

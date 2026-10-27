@@ -323,6 +323,26 @@ pub static AGENT: Group = Group {
             summary: "fetch every provider's model list again, for uc agent model and the chat",
             run: Run::Builtin(agent_model_update),
         },
+        Sub {
+            name: "compact",
+            summary: "at a uc prompt: cut old tool output and summarize the earlier conversation",
+            run: Run::Builtin(agent_compact),
+        },
+        Sub {
+            name: "context",
+            summary: "at a uc prompt: how much of the model's context the conversation has taken",
+            run: Run::Builtin(agent_context),
+        },
+        Sub {
+            name: "exit",
+            summary: "at a uc prompt: leave uc",
+            run: Run::Builtin(agent_exit),
+        },
+        Sub {
+            name: "quit",
+            summary: "at a uc prompt: leave uc, like exit",
+            run: Run::Builtin(agent_quit),
+        },
     ],
     fallback: None,
 };
@@ -377,6 +397,38 @@ fn agent_login(args: &[OsString]) -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// `uc agent compact|context|exit|quit`: the chat's own commands, which a
+/// session takes at its prompt; typed in a shell there is no session to act on.
+fn session_only(name: &str, args: &[OsString]) -> ExitCode {
+    let help = args.iter().any(|arg| arg == "-h" || arg == "--help");
+    let say = format!(
+        "uc agent {name}: type it at a uc session's prompt; \
+         in a shell there is no session to act on"
+    );
+    if help {
+        println!("usage: uc agent {name}\n\n{say}");
+        return ExitCode::SUCCESS;
+    }
+    eprintln!("{say}");
+    ExitCode::from(2)
+}
+
+fn agent_compact(args: &[OsString]) -> ExitCode {
+    session_only("compact", args)
+}
+
+fn agent_context(args: &[OsString]) -> ExitCode {
+    session_only("context", args)
+}
+
+fn agent_exit(args: &[OsString]) -> ExitCode {
+    session_only("exit", args)
+}
+
+fn agent_quit(args: &[OsString]) -> ExitCode {
+    session_only("quit", args)
 }
 
 /// `uc agent model-update`: fetches every provider's model list again into

@@ -60,7 +60,7 @@ the model is there next time.
 
 ```sh
 export OPENROUTER_API_KEY=sk-or-...           # https://openrouter.ai/keys
-uc                                            # Ctrl-D or /exit to leave
+uc                                            # Ctrl-D or uc agent exit to leave
 uc --ask                                      # confirm each command and change
 uc --output                                   # also show what the commands print
 uc --commands                                 # show command lines, not their titles
@@ -130,11 +130,13 @@ The model can do the same itself with the `chat` tool: `chat model
 the context; `chat exit` leaves uc. It only does this when you ask.
 
 Wondering how much of the model's context the conversation has taken? Type
-`/context` and it says how many messages there are, about how many tokens
+`uc agent context` and it says how many messages there are, about how many tokens
 they make (an estimate until the model has counted them), what the last
 turn took in tokens — how many went in, how many were cached, how many
 came out — how full the model's context window is, and what the session
 has spent so far, at the model's price per million tokens.
+`uc agent compact` cuts old tool output and sums up the earlier
+conversation, and `uc agent exit` (or `uc agent quit`) leaves uc.
 
 Rather talk than type? Hold Space at an empty prompt and say it: it
 listens while you hold, and when you let go what you said is written out and
