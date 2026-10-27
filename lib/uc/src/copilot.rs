@@ -14,6 +14,10 @@
 //! Copilot speaks OpenAI's chat completions, like OpenRouter, so the chat's
 //! request goes almost as it is: [`request`] only drops what is OpenRouter's
 //! own (`reasoning`, `usage`, the reasoning handed back on each message).
+//! Some models (OpenAI's newest) are only served through the Responses API:
+//! when `/chat/completions` turns one away, the request goes to `/responses`
+//! instead ([`responses_request`]) and the reply is turned back into the
+//! chunks the chat reads ([`Translator`]).
 
 use anyhow::{Context, Result, anyhow, bail};
 use futures_util::StreamExt;
@@ -340,14 +344,14 @@ pub fn request(body: &Value) -> Value {
 /// How many times a request is tried, as for OpenRouter.
 const ATTEMPTS: u32 = 4;
 
-/// Posts the request, trying again after a pause on a network error, 429 or
-/// 5xx.
-async fn post(github: &str, request: &Value) -> Result<reqwest::Response> {
+/// Posts the request to `path`, trying again after a pause on a network
+/// error, 429 or 5xx. `None` is Copilot saying the model isn't served there.
+async fn post(github: &str, path: &str, request: &Value) -> Result<Option<reqwest::Response>> {
     let mut attempt = 1;
     loop {
         let session = token(github).await?;
         let sent = client()
-            .post(format!("{}/chat/completions", session.api))
+            .post(format!("{}{path}", session.api))
             .bearer_auth(&session.token)
             .headers(headers())
             .json(request)
@@ -355,11 +359,14 @@ async fn post(github: &str, request: &Value) -> Result<reqwest::Response> {
             .await;
         let (retry, error) = match sent {
             Err(e) => (true, anyhow::Error::new(e).context("calling Copilot")),
-            Ok(response) if response.status().is_success() => return Ok(response),
+            Ok(response) if response.status().is_success() => return Ok(Some(response)),
             Ok(response) => {
                 let status = response.status();
                 let text = response.text().await.unwrap_or_default();
                 let value: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
+                if value["error"]["code"] == "unsupported_api_for_model" {
+                    return Ok(None);
+                }
                 let msg = value["error"]["message"]
                     .as_str()
                     .map(str::to_string)
@@ -377,22 +384,232 @@ async fn post(github: &str, request: &Value) -> Result<reqwest::Response> {
     }
 }
 
-/// Posts the chat's streaming request; the reply is already the SSE chunks
-/// the chat reads.
+/// The models Copilot only serves through `/responses`, learnt the first
+/// time `/chat/completions` turns one away.
+static RESPONSES_ONLY: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+/// Where the request goes: the chat's own request to `/chat/completions`,
+/// or, for a model that is only served there (OpenAI's newest), its
+/// Responses form to `/responses`. The flag tells which one answered.
+async fn open(github: &str, body: &Value) -> Result<(reqwest::Response, bool)> {
+    let model = body["model"].as_str().unwrap_or_default().to_string();
+    let known = RESPONSES_ONLY.lock().unwrap().contains(&model);
+    if !known {
+        if let Some(response) = post(github, "/chat/completions", &request(body)).await? {
+            return Ok((response, false));
+        }
+        RESPONSES_ONLY.lock().unwrap().push(model.clone());
+    }
+    match post(github, "/responses", &responses_request(body)).await? {
+        Some(response) => Ok((response, true)),
+        None => bail!("Copilot serves {model} through neither /chat/completions nor /responses"),
+    }
+}
+
+/// Posts the chat's streaming request; the reply is the SSE chunks the chat
+/// reads, as they come from `/chat/completions` or turned into them.
 pub async fn stream(github: &str, body: &Value) -> Result<Bytes> {
-    let response = post(github, &request(body)).await?;
-    Ok(Box::pin(response.bytes_stream().map(|bytes| {
-        bytes.map(|b| b.to_vec()).map_err(std::io::Error::other)
+    let (response, responses) = open(github, body).await?;
+    if !responses {
+        return Ok(Box::pin(response.bytes_stream().map(|bytes| {
+            bytes.map(|b| b.to_vec()).map_err(std::io::Error::other)
+        })));
+    }
+    let mut upstream = response.bytes_stream();
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<std::io::Result<Vec<u8>>>();
+    tokio::spawn(async move {
+        let mut translator = Translator::default();
+        let mut pending: Vec<u8> = Vec::new();
+        while let Some(bytes) = upstream.next().await {
+            let bytes = match bytes {
+                Ok(bytes) => bytes,
+                Err(err) => {
+                    let _ = tx.send(Err(std::io::Error::other(err)));
+                    return;
+                }
+            };
+            pending.extend_from_slice(&bytes);
+            while let Some(end) = pending.iter().position(|b| *b == b'\n') {
+                let line: Vec<u8> = pending.drain(..=end).collect();
+                let line = String::from_utf8_lossy(&line);
+                let Some(data) = line.trim().strip_prefix("data:").map(str::trim) else {
+                    continue;
+                };
+                let Ok(event) = serde_json::from_str::<Value>(data) else {
+                    continue;
+                };
+                for chunk in translator.event(&event) {
+                    if tx
+                        .send(Ok(format!("data: {chunk}\n").into_bytes()))
+                        .is_err()
+                    {
+                        return;
+                    }
+                }
+            }
+        }
+        let _ = tx.send(Ok(b"data: [DONE]\n".to_vec()));
+    });
+    Ok(Box::pin(futures_util::stream::unfold(rx, |mut rx| async {
+        rx.recv().await.map(|item| (item, rx))
     })))
 }
 
 /// Posts a request that doesn't stream; the reply is OpenAI's.
 pub async fn send(github: &str, body: &Value) -> Result<Value> {
-    post(github, &request(body))
-        .await?
-        .json()
-        .await
-        .context("reading Copilot's reply")
+    let mut body = body.clone();
+    body["stream"] = json!(false);
+    let (response, responses) = open(github, &body).await?;
+    let value: Value = response.json().await.context("reading Copilot's reply")?;
+    if !responses {
+        return Ok(value);
+    }
+    let text: String = value["output"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|item| item["type"] == "message")
+        .flat_map(|item| item["content"].as_array().into_iter().flatten())
+        .filter_map(|part| part["text"].as_str())
+        .collect();
+    Ok(json!({
+        "choices": [{"message": {"role": "assistant", "content": text}}],
+        "usage": usage(&value["usage"]),
+    }))
+}
+
+// ------------------------------------------------------------ responses ----
+
+/// The text of a message's content, be it a string or a list of parts.
+fn text(content: &Value) -> String {
+    match content {
+        Value::String(text) => text.clone(),
+        Value::Array(parts) => parts.iter().filter_map(|p| p["text"].as_str()).collect(),
+        _ => String::new(),
+    }
+}
+
+/// The chat's request in the form of OpenAI's Responses API, which is all
+/// Copilot serves some models through: the messages become `input` items,
+/// tool calls and their results items of their own.
+fn responses_request(body: &Value) -> Value {
+    let mut input: Vec<Value> = Vec::new();
+    for message in body["messages"].as_array().into_iter().flatten() {
+        let content = text(&message["content"]);
+        match message["role"].as_str().unwrap_or_default() {
+            role @ ("system" | "user") => input.push(json!({"role": role, "content": content})),
+            "assistant" => {
+                if !content.trim().is_empty() {
+                    input.push(json!({"role": "assistant", "content": content}));
+                }
+                for call in message["tool_calls"].as_array().into_iter().flatten() {
+                    input.push(json!({
+                        "type": "function_call",
+                        "call_id": call["id"],
+                        "name": call["function"]["name"],
+                        "arguments": call["function"]["arguments"].as_str().unwrap_or("{}"),
+                    }));
+                }
+            }
+            "tool" => input.push(json!({
+                "type": "function_call_output",
+                "call_id": message["tool_call_id"],
+                "output": content,
+            })),
+            _ => {}
+        }
+    }
+    let mut request = json!({
+        "model": body["model"],
+        "input": input,
+        "stream": body["stream"] == true,
+        "store": false,
+    });
+    if let Some(effort) = body["reasoning"]["effort"].as_str() {
+        request["reasoning"] = json!({"effort": effort});
+    }
+    let tools: Vec<Value> = body["tools"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|t| {
+            json!({
+                "type": "function",
+                "name": t["function"]["name"],
+                "description": t["function"]["description"],
+                "parameters": t["function"]["parameters"],
+            })
+        })
+        .collect();
+    if !tools.is_empty() {
+        request["tools"] = json!(tools);
+    }
+    request
+}
+
+/// An OpenAI chat `usage` out of a Responses one.
+fn usage(u: &Value) -> Value {
+    let input = u["input_tokens"].as_u64().unwrap_or_default();
+    let output = u["output_tokens"].as_u64().unwrap_or_default();
+    json!({
+        "prompt_tokens": input,
+        "completion_tokens": output,
+        "total_tokens": input + output,
+        "prompt_tokens_details": {
+            "cached_tokens": u["input_tokens_details"]["cached_tokens"].as_u64().unwrap_or_default(),
+        },
+    })
+}
+
+/// A Responses stream, event by event, as the chunks of a chat one.
+#[derive(Default)]
+struct Translator {
+    /// The tool calls so far, by the output index of the item they are.
+    calls: Vec<u64>,
+}
+
+impl Translator {
+    /// The chunks one event adds.
+    fn event(&mut self, event: &Value) -> Vec<Value> {
+        let chunk = |delta: Value| json!({"choices": [{"index": 0, "delta": delta}]});
+        match event["type"].as_str().unwrap_or_default() {
+            "response.output_text.delta" => vec![chunk(json!({"content": event["delta"]}))],
+            "response.output_item.added" if event["item"]["type"] == "function_call" => {
+                self.calls
+                    .push(event["output_index"].as_u64().unwrap_or_default());
+                vec![chunk(json!({"tool_calls": [{
+                    "index": self.calls.len() - 1,
+                    "id": event["item"]["call_id"],
+                    "type": "function",
+                    "function": {"name": event["item"]["name"], "arguments": ""},
+                }]}))]
+            }
+            "response.function_call_arguments.delta" => {
+                let index = event["output_index"].as_u64().unwrap_or_default();
+                match self.calls.iter().position(|c| *c == index) {
+                    Some(i) => vec![chunk(json!({"tool_calls": [{
+                        "index": i,
+                        "function": {"arguments": event["delta"]},
+                    }]}))],
+                    None => Vec::new(),
+                }
+            }
+            "response.completed" | "response.incomplete" => vec![json!({
+                "choices": [],
+                "usage": usage(&event["response"]["usage"]),
+            })],
+            "response.failed" => vec![json!({"error": {
+                "message": event["response"]["error"]["message"].as_str().unwrap_or("the response failed"),
+            }})],
+            "error" => vec![json!({"error": {
+                "message": event["message"]
+                    .as_str()
+                    .or(event["error"]["message"].as_str())
+                    .unwrap_or("no message"),
+            }})],
+            _ => Vec::new(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -456,5 +673,73 @@ mod tests {
             chat_models(&list),
             ["gpt-5-mini", "gpt-4.1", "claude-opus-5.5"]
         );
+    }
+
+    #[test]
+    fn a_responses_request_has_items_for_the_calls() {
+        let body = json!({
+            "model": "gpt-6-luna",
+            "messages": [
+                {"role": "system", "content": "be uc"},
+                {"role": "user", "content": "list"},
+                {"role": "assistant", "content": null, "tool_calls": [
+                    {"id": "c1", "type": "function",
+                     "function": {"name": "bash", "arguments": "{\"command\":\"ls\"}"}}]},
+                {"role": "tool", "tool_call_id": "c1", "content": [{"type": "text", "text": "a b"}]},
+            ],
+            "tools": [{"type": "function", "function": {
+                "name": "bash", "description": "run", "parameters": {"type": "object"}}}],
+            "reasoning": {"effort": "high"},
+            "usage": {"include": true},
+            "stream": true,
+        });
+        let r = responses_request(&body);
+        assert_eq!(r["stream"], true);
+        assert_eq!(r["store"], false);
+        assert_eq!(r["reasoning"]["effort"], "high");
+        assert!(r.get("usage").is_none());
+        assert_eq!(r["tools"][0]["name"], "bash");
+        assert_eq!(r["tools"][0]["parameters"]["type"], "object");
+        let input = r["input"].as_array().unwrap();
+        assert_eq!(input.len(), 4);
+        assert_eq!(input[0]["role"], "system");
+        assert_eq!(input[2]["type"], "function_call");
+        assert_eq!(input[2]["call_id"], "c1");
+        assert_eq!(input[2]["arguments"], "{\"command\":\"ls\"}");
+        assert_eq!(input[3]["type"], "function_call_output");
+        assert_eq!(input[3]["output"], "a b");
+    }
+
+    #[test]
+    fn a_responses_stream_becomes_chat_chunks() {
+        let mut t = Translator::default();
+        let events = [
+            json!({"type": "response.created"}),
+            json!({"type": "response.output_text.delta", "output_index": 0, "delta": "hi"}),
+            json!({"type": "response.output_item.added", "output_index": 1,
+                   "item": {"type": "function_call", "call_id": "c1", "name": "bash"}}),
+            json!({"type": "response.function_call_arguments.delta", "output_index": 1,
+                   "delta": "{\"command\":\"ls\"}"}),
+            json!({"type": "response.completed", "response": {"usage": {
+                "input_tokens": 100, "input_tokens_details": {"cached_tokens": 90},
+                "output_tokens": 7}}}),
+        ];
+        let chunks: Vec<Value> = events.iter().flat_map(|e| t.event(e)).collect();
+        assert_eq!(chunks[0]["choices"][0]["delta"]["content"], "hi");
+        let start = &chunks[1]["choices"][0]["delta"]["tool_calls"][0];
+        assert_eq!(start["index"], 0);
+        assert_eq!(start["id"], "c1");
+        assert_eq!(start["function"]["name"], "bash");
+        assert_eq!(
+            chunks[2]["choices"][0]["delta"]["tool_calls"][0]["function"]["arguments"],
+            "{\"command\":\"ls\"}"
+        );
+        let usage = &chunks[3]["usage"];
+        assert_eq!(usage["prompt_tokens"], 100);
+        assert_eq!(usage["total_tokens"], 107);
+        assert_eq!(usage["prompt_tokens_details"]["cached_tokens"], 90);
+        let failed = t.event(&json!({"type": "response.failed",
+            "response": {"error": {"message": "boom"}}}));
+        assert_eq!(failed[0]["error"]["message"], "boom");
     }
 }
