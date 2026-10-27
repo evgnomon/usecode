@@ -63,6 +63,7 @@
 //! `--ask` or a pinned model.
 
 use anyhow::{Context, Result, anyhow, bail};
+use futures_util::StreamExt;
 use rustyline::error::ReadlineError;
 use rustyline::history::{DefaultHistory, SearchDirection};
 use rustyline::{
@@ -540,7 +541,7 @@ async fn run(
         if !ai
             && matches!(
                 line.split_whitespace().next(),
-                Some("/model" | "/planner" | "/context")
+                Some("/model" | "/planner" | "/context" | "/compact")
             )
         {
             eprintln!("· AI off: set OPENROUTER_API_KEY to turn it on");
@@ -564,6 +565,12 @@ async fn run(
         }
         if line == "/context" {
             session.context().await;
+            continue;
+        }
+        if line == "/compact" {
+            if let Err(err) = session.compact().await {
+                eprintln!("· {err:#}");
+            }
             continue;
         }
         let (line, approved) = split_approval(line);
@@ -629,6 +636,381 @@ async fn run(
 
 /// The command line a typed line runs straight away, without the model: with
 /// the AI off every line does, with it on only one that reads like a command.
+/// Models that cache a prompt only up to a `cache_control` breakpoint; the
+/// others (OpenAI, DeepSeek, GLM, ...) cache a repeated prefix by themselves.
+fn caches_on_request(model: &str) -> bool {
+    model.starts_with("anthropic/") || model.starts_with("google/")
+}
+
+/// `messages` for a request: for a model that needs it, the system prompt and
+/// the last message carry a cache breakpoint, so each turn reads the earlier
+/// ones from the cache. The history itself stays as it is.
+fn cached(model: &str, messages: &[Value]) -> Vec<Value> {
+    let mut messages = messages.to_vec();
+    if !caches_on_request(model) {
+        return messages;
+    }
+    let last = messages.len().saturating_sub(1);
+    for (i, message) in messages.iter_mut().enumerate() {
+        if i != 0 && i != last {
+            continue;
+        }
+        // A tool call with no text has no content to mark.
+        if let Some(text) = message["content"].as_str().filter(|t| !t.is_empty()) {
+            message["content"] = json!([
+                {"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}
+            ]);
+        }
+    }
+    messages
+}
+
+/// How many times a request is tried: a rate limit or a server hiccup is
+/// worth a pause, not the end of the user's turn.
+const ATTEMPTS: u32 = 4;
+
+/// Posts `body` to OpenRouter and returns the response once it is a success,
+/// trying again after a pause on a network error, 429 or 5xx.
+async fn open(key: &str, body: &Value) -> Result<reqwest::Response> {
+    let mut attempt = 1;
+    loop {
+        let sent = client()
+            .post(API)
+            .bearer_auth(key)
+            .header("X-Title", "usecode")
+            .json(body)
+            .send()
+            .await;
+        let (retry, error) = match sent {
+            Err(e) => (true, anyhow::Error::new(e).context("calling OpenRouter")),
+            Ok(response) if response.status().is_success() => return Ok(response),
+            Ok(response) => {
+                let status = response.status();
+                let value: Value = response.json().await.unwrap_or(Value::Null);
+                let msg = value["error"]["message"].as_str().unwrap_or("no message");
+                let retry = status.as_u16() == 429 || status.is_server_error();
+                (retry, anyhow::anyhow!("OpenRouter: {status}: {msg}"))
+            }
+        };
+        if !retry || attempt == ATTEMPTS {
+            return Err(error);
+        }
+        eprintln!("\x1b[2m· {error:#}; trying again\x1b[0m");
+        tokio::time::sleep(Duration::from_secs(1 << attempt)).await;
+        attempt += 1;
+    }
+}
+
+/// Posts `body` and returns the whole reply, for requests that don't stream.
+async fn send(key: &str, body: &Value) -> Result<Value> {
+    let value: Value = open(key, body)
+        .await?
+        .json()
+        .await
+        .context("reading OpenRouter's reply")?;
+    if let Some(error) = value.get("error") {
+        bail!(
+            "OpenRouter: {}",
+            error["message"].as_str().unwrap_or("no message")
+        );
+    }
+    Ok(value)
+}
+
+/// A reply as its chunks come in.
+#[derive(Default)]
+struct Reply {
+    text: String,
+    /// The tool calls by their index in the reply: id, name, arguments so far.
+    calls: Vec<(String, String, String)>,
+    /// Reasoning to hand back with the tool calls, merged by `index`.
+    details: Vec<Value>,
+    usage: Option<Value>,
+}
+
+impl Reply {
+    /// Takes one chunk of the stream; returns the text it adds.
+    fn add(&mut self, chunk: &Value) -> Result<String> {
+        if let Some(error) = chunk.get("error") {
+            bail!(
+                "OpenRouter: {}",
+                error["message"].as_str().unwrap_or("no message")
+            );
+        }
+        if let Some(usage) = chunk.get("usage").filter(|u| !u.is_null()) {
+            self.usage = Some(usage.clone());
+        }
+        let delta = &chunk["choices"][0]["delta"];
+        for call in delta["tool_calls"].as_array().into_iter().flatten() {
+            let i = call["index"].as_u64().unwrap_or(0) as usize;
+            while self.calls.len() <= i {
+                self.calls.push(Default::default());
+            }
+            let slot = &mut self.calls[i];
+            if let Some(id) = call["id"].as_str() {
+                slot.0 = id.into();
+            }
+            if let Some(name) = call["function"]["name"].as_str() {
+                slot.1.push_str(name);
+            }
+            if let Some(args) = call["function"]["arguments"].as_str() {
+                slot.2.push_str(args);
+            }
+        }
+        for part in delta["reasoning_details"].as_array().into_iter().flatten() {
+            let same = |d: &&mut Value| d["index"] == part["index"] && d["type"] == part["type"];
+            match self.details.iter_mut().find(same) {
+                Some(have) => {
+                    for (k, v) in part.as_object().into_iter().flatten() {
+                        match (have[k].as_str(), v.as_str()) {
+                            // Text and encrypted data arrive in pieces; the rest is whole.
+                            (Some(a), Some(b))
+                                if matches!(k.as_str(), "text" | "summary" | "data") =>
+                            {
+                                have[k] = json!(format!("{a}{b}"));
+                            }
+                            _ => have[k] = v.clone(),
+                        }
+                    }
+                }
+                None => self.details.push(part.clone()),
+            }
+        }
+        let text = delta["content"].as_str().unwrap_or_default();
+        self.text.push_str(text);
+        Ok(text.to_string())
+    }
+
+    /// The reply as a message for the history.
+    fn message(self) -> Value {
+        let mut message = json!({
+            "role": "assistant",
+            "content": if self.text.trim().is_empty() { Value::Null } else { json!(self.text.trim()) },
+        });
+        let calls: Vec<Value> = self
+            .calls
+            .into_iter()
+            .filter(|c| !c.1.is_empty())
+            .map(|(id, name, arguments)| {
+                json!({"id": id, "type": "function", "function": {"name": name, "arguments": arguments}})
+            })
+            .collect();
+        if !calls.is_empty() {
+            message["tool_calls"] = json!(calls);
+        }
+        if !self.details.is_empty() {
+            message["reasoning_details"] = json!(self.details);
+        }
+        message
+    }
+}
+
+/// The most lines `read_file` returns, and the longest a line may be.
+const MAX_LINES: usize = 2000;
+const MAX_LINE: usize = 2000;
+/// The most paths `glob` returns, and the most matches `grep` can be asked for.
+const MAX_PATHS: usize = 500;
+const MAX_MATCHES: usize = 500;
+
+/// Lines `offset` (from 1) onward, numbered, at most `limit` of them.
+fn read_file(path: &str, offset: Option<u64>, limit: Option<u64>) -> Result<String> {
+    let text = std::fs::read_to_string(path).context("reading the file")?;
+    let start = offset.unwrap_or(1).max(1) as usize - 1;
+    let limit = (limit.unwrap_or(MAX_LINES as u64) as usize).clamp(1, MAX_LINES);
+    let total = text.lines().count();
+    let mut out = String::new();
+    for (i, line) in text.lines().enumerate().skip(start).take(limit) {
+        let line = match line.char_indices().nth(MAX_LINE) {
+            Some((end, _)) => format!("{}… [line cut]", &line[..end]),
+            None => line.to_string(),
+        };
+        out.push_str(&format!("{:>6}\t{line}\n", i + 1));
+    }
+    if start + limit < total {
+        out.push_str(&format!(
+            "[{} more lines; read from offset {}]\n",
+            total - start - limit,
+            start + limit + 1
+        ));
+    } else if start >= total && total > 0 {
+        out.push_str(&format!("[the file has {total} lines]\n"));
+    }
+    Ok(out)
+}
+
+/// The files under `root` that .gitignore leaves in, matching `glob` if given.
+/// (The walker's own override globs would win over .gitignore, so the glob is
+/// a filter of its own.)
+fn walk(root: &str, glob: &str) -> Result<impl Iterator<Item = ignore::DirEntry>> {
+    let root = if root.is_empty() { "." } else { root };
+    let mut builder = ignore::WalkBuilder::new(root);
+    builder.sort_by_file_path(|a, b| a.cmp(b));
+    let mut matcher = ignore::gitignore::GitignoreBuilder::new(root);
+    if !glob.is_empty() {
+        matcher.add_line(None, glob).context("reading the glob")?;
+    }
+    let matcher = matcher.build().context("reading the glob")?;
+    let all = glob.is_empty();
+    Ok(builder.build().flatten().filter(move |e| {
+        e.file_type().is_some_and(|t| t.is_file())
+            && (all || matcher.matched(e.path(), false).is_ignore())
+    }))
+}
+
+fn grep(pattern: &str, path: &str, glob: &str, limit: Option<u64>) -> Result<String> {
+    let re = regex::Regex::new(pattern).context("reading the pattern")?;
+    let limit = (limit.unwrap_or(100) as usize).clamp(1, MAX_MATCHES);
+    let mut out = String::new();
+    let mut found = 0;
+    'files: for entry in walk(path, glob)? {
+        // Binary files and unreadable ones are not text to search.
+        let Ok(text) = std::fs::read_to_string(entry.path()) else {
+            continue;
+        };
+        for (i, line) in text.lines().enumerate() {
+            if !re.is_match(line) {
+                continue;
+            }
+            let line = match line.char_indices().nth(300) {
+                Some((end, _)) => format!("{}…", &line[..end]),
+                None => line.to_string(),
+            };
+            out.push_str(&format!("{}:{}:{line}\n", entry.path().display(), i + 1));
+            found += 1;
+            if found == limit {
+                out.push_str(&format!("[stopped at {limit} matches]\n"));
+                break 'files;
+            }
+        }
+    }
+    Ok(if out.is_empty() {
+        "no matches\n".into()
+    } else {
+        out
+    })
+}
+
+fn glob(pattern: &str, path: &str) -> Result<String> {
+    let mut out = String::new();
+    for (found, entry) in walk(path, pattern)?.enumerate() {
+        if found == MAX_PATHS {
+            out.push_str(&format!("[stopped at {MAX_PATHS} files]\n"));
+            break;
+        }
+        out.push_str(&format!("{}\n", entry.path().display()));
+    }
+    Ok(if out.is_empty() {
+        "no files\n".into()
+    } else {
+        out
+    })
+}
+
+/// The share of the model's window the doer may fill before uc compacts.
+const COMPACT_AT: f64 = 0.7;
+/// A tool's output older than the last `KEEP_RECENT` messages is cut to this.
+const PRUNED: usize = 500;
+const KEEP_RECENT: usize = 8;
+const SUMMARY_PROMPT: &str = "You summarise a conversation between a user and a coding agent \
+    so the agent can carry on from the summary alone. Write a few short paragraphs or a list: \
+    what the user wants, what has been done and found (file paths, commands, decisions, errors \
+    and how they were fixed), what is still to do, and anything the user said to keep in mind. \
+    Keep names, paths and numbers exact. Leave out pleasantries and raw output.";
+
+/// Cuts the output of tools in all but the latest messages to its start.
+fn prune_tool_output(messages: &mut [Value]) {
+    let end = messages.len().saturating_sub(KEEP_RECENT);
+    for message in &mut messages[..end] {
+        let Some(text) = message["content"].as_str().filter(|t| t.len() > PRUNED) else {
+            continue;
+        };
+        if message["role"] != "tool" {
+            continue;
+        }
+        let mut cut = PRUNED;
+        while !text.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        message["content"] = json!(format!(
+            "{}\n[older output cut to save context]",
+            &text[..cut]
+        ));
+    }
+}
+
+/// `messages` as text for the model to summarise.
+fn transcript(messages: &[Value]) -> String {
+    let mut out = String::new();
+    for message in messages {
+        let role = message["role"].as_str().unwrap_or_default();
+        if let Some(text) = content(message).filter(|t| !t.is_empty()) {
+            let text: String = text.chars().take(4000).collect();
+            out.push_str(&format!("[{role}] {text}\n"));
+        }
+        for call in message["tool_calls"].as_array().into_iter().flatten() {
+            let args: String = call["function"]["arguments"]
+                .as_str()
+                .unwrap_or_default()
+                .chars()
+                .take(500)
+                .collect();
+            out.push_str(&format!(
+                "[tool call] {} {args}\n",
+                call["function"]["name"].as_str().unwrap_or_default()
+            ));
+        }
+    }
+    out
+}
+
+fn name_of(call: &Value) -> String {
+    call["function"]["name"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string()
+}
+
+/// The tools that only look: they can run side by side.
+fn is_reading(name: &str) -> bool {
+    matches!(
+        name,
+        "web_search" | "fetch_url" | "src" | "read_file" | "grep" | "glob"
+    )
+}
+
+/// Runs one of the looking tools; failures go back to the model as its output.
+async fn read_only(search: &Engine, call: &Value) -> String {
+    let name = name_of(call);
+    let args: Value = call["function"]["arguments"]
+        .as_str()
+        .and_then(|a| serde_json::from_str(a).ok())
+        .unwrap_or(Value::Null);
+    let arg = |k: &str| args[k].as_str().unwrap_or_default().to_string();
+    let number = |k: &str| args[k].as_u64();
+    let result = match name.as_str() {
+        "web_search" => {
+            let count = number("count").unwrap_or(10).clamp(1, 10);
+            web_search(search, &arg("query"), count).await
+        }
+        "fetch_url" => fetch_url(&arg("url")).await,
+        "src" => src(&arg("prefix")),
+        "read_file" => {
+            eprintln!("· read {}", arg("path"));
+            read_file(&arg("path"), number("offset"), number("limit"))
+        }
+        "grep" => {
+            eprintln!("· search for {}", arg("pattern"));
+            grep(&arg("pattern"), &arg("path"), &arg("glob"), number("limit"))
+        }
+        "glob" => {
+            eprintln!("· find {}", arg("pattern"));
+            glob(&arg("pattern"), &arg("path"))
+        }
+        other => Err(anyhow!("there is no tool called '{other}'")),
+    };
+    result.unwrap_or_else(|err| format!("error: {err:#}"))
+}
+
 fn direct_command(line: &str) -> Option<&str> {
     if AI.load(Ordering::Relaxed) {
         typed_command(line).filter(|_| SHELL.load(Ordering::Relaxed))
@@ -793,7 +1175,9 @@ if (( ${#COMPREPLY[@]} )); then printf '%s\n' "${COMPREPLY[@]}"; else compgen -f
 "#;
 
 /// The commands the prompt itself takes.
-const SLASH_COMMANDS: &[&str] = &["/context", "/exit", "/model", "/planner", "/quit"];
+const SLASH_COMMANDS: &[&str] = &[
+    "/compact", "/context", "/exit", "/model", "/planner", "/quit",
+];
 
 /// Tab at the prompt: `/` commands, a command line the way the user's bash
 /// completes it, with or without `!`, and file names in a line for the model.
@@ -1168,9 +1552,36 @@ fn tools(refining: bool) -> Value {
         ),
         tool(
             "read_file",
-            "Read a text file.",
-            json!({"path": string("the file's path")}),
+            "Read a text file; returns its lines numbered. Long files come in pieces: read the \
+             next with offset, or find what you need with grep first.",
+            json!({
+                "path": string("the file's path"),
+                "offset": integer("the line to start at, 1 for the first; 1 if left out"),
+                "limit": integer("how many lines, up to 2000; 2000 if left out"),
+            }),
             &["path"],
+        ),
+        tool(
+            "grep",
+            "Search file contents with a regular expression, skipping what .gitignore ignores; \
+             returns path:line:text for each match.",
+            json!({
+                "pattern": string("the regular expression"),
+                "path": string("the directory or file to search; the working directory if left out"),
+                "glob": string("only files whose path matches, like '*.rs' or 'src/**/*.md'"),
+                "limit": integer("how many matches, up to 500; 100 if left out"),
+            }),
+            &["pattern"],
+        ),
+        tool(
+            "glob",
+            "Find files by name with a glob pattern, skipping what .gitignore ignores; returns \
+             one path per line.",
+            json!({
+                "pattern": string("the pattern, like '**/*.rs' or 'src/*/mod.rs'"),
+                "path": string("the directory to look under; the working directory if left out"),
+            }),
+            &["pattern"],
         ),
         tool(
             "write_file",
@@ -1416,6 +1827,76 @@ impl Session {
         std::process::exit(0);
     }
 
+    /// The doer's last request filled `COMPACT_AT` of its window.
+    async fn near_window(&self) -> bool {
+        let Some(prompt) = self
+            .last_usage
+            .as_ref()
+            .and_then(|u| u["prompt_tokens"].as_u64())
+        else {
+            return false;
+        };
+        let window = match model_info(&self.model).await {
+            Ok(Some((Some(window), _))) => window,
+            _ => return false,
+        };
+        prompt as f64 >= COMPACT_AT * window as f64
+    }
+
+    /// `/compact`: cuts old tool output, then, if the conversation has earlier
+    /// turns, replaces them with a summary. The latest turn stays as it is.
+    async fn compact(&mut self) -> Result<()> {
+        let before = self.messages.len();
+        prune_tool_output(&mut self.messages);
+        // The turns before the last line the user typed; a tool call and its
+        // answers are never split.
+        let last_user = self.messages.iter().rposition(|m| m["role"] == "user");
+        if let Some(last_user) = last_user.filter(|i| *i > 1) {
+            let older: Vec<Value> = self.messages[1..last_user].to_vec();
+            let summary = self.summarize(&older).await?;
+            let tail = self.messages.split_off(last_user);
+            self.messages.truncate(1);
+            self.messages.push(json!({
+                "role": "user",
+                "content": format!("Summary of our conversation so far, written to carry on from:\n\n{summary}"),
+            }));
+            self.messages.push(json!({"role": "assistant", "content": "Understood, carrying on from the summary."}));
+            self.messages.extend(tail);
+        }
+        // The count was of the longer conversation.
+        self.last_usage = None;
+        eprintln!(
+            "· compacted the context: {} messages, was {before}",
+            self.messages.len()
+        );
+        Ok(())
+    }
+
+    /// What the model makes of `messages`, in a few paragraphs.
+    async fn summarize(&mut self, messages: &[Value]) -> Result<String> {
+        let body = json!({
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": SUMMARY_PROMPT},
+                {"role": "user", "content": transcript(messages)},
+            ],
+            "reasoning": {"effort": "low"},
+        });
+        let _clock = std::io::stderr()
+            .is_terminal()
+            .then(|| Clock(tokio::spawn(spin("summarising the conversation".into()))));
+        let value = send(&self.key, &body).await?;
+        if let Some(cost) = value["usage"]["cost"].as_f64() {
+            self.spent += cost;
+        }
+        value["choices"][0]["message"]["content"]
+            .as_str()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .ok_or_else(|| anyhow!("the model wrote no summary"))
+    }
+
     /// `/context`: how much of the model's context the conversation has
     /// taken. The real count is from the last reply's `usage`, an estimate
     /// from the bytes before that, and the window is the model's
@@ -1496,17 +1977,18 @@ impl Session {
     /// shown dim: they are its notes, not the reply.
     async fn turn(&mut self, refining: bool) -> Result<String> {
         loop {
+            if !refining
+                && self.near_window().await
+                && let Err(err) = self.compact().await
+            {
+                eprintln!("· could not compact the context: {err:#}");
+            }
             let message = self.complete(refining).await?;
             let text = message["content"]
                 .as_str()
                 .unwrap_or_default()
                 .trim()
                 .to_string();
-            if !text.is_empty() && refining {
-                eprintln!("\x1b[2m{text}\x1b[0m\n");
-            } else if !text.is_empty() {
-                println!("{text}\n");
-            }
             let calls = message["tool_calls"]
                 .as_array()
                 .cloned()
@@ -1514,6 +1996,21 @@ impl Session {
             self.history(refining).push(message);
             if calls.is_empty() {
                 return Ok(text);
+            }
+            // Looking around changes nothing, so a batch of it runs at once.
+            if calls.len() > 1 && calls.iter().all(|c| is_reading(&name_of(c))) {
+                let outputs = futures_util::future::join_all(
+                    calls.iter().map(|call| read_only(&self.search, call)),
+                )
+                .await;
+                for (call, output) in calls.iter().zip(outputs) {
+                    self.history(refining).push(json!({
+                        "role": "tool",
+                        "tool_call_id": call["id"],
+                        "content": truncate(output),
+                    }));
+                }
+                continue;
             }
             for call in calls {
                 let name = call["function"]["name"].as_str().unwrap_or_default();
@@ -1540,6 +2037,7 @@ impl Session {
         }
     }
 
+    /// One request to the model; its text is printed as it arrives.
     async fn complete(&mut self, refining: bool) -> Result<Value> {
         let (model, messages) = if refining {
             (&self.planner, &self.plan)
@@ -1548,51 +2046,84 @@ impl Session {
         };
         let body = json!({
             "model": model,
-            "messages": messages,
+            "messages": cached(model, messages),
             "tools": tools(refining),
             "reasoning": {"effort": self.effort},
+            "stream": true,
+            "usage": {"include": true},
         });
         let words = if refining { &PONDERING } else { &DOING };
         let what = format!("\x1b[38;2;97;175;239m{}\x1b[0m", any(words));
-        let _clock = std::io::stderr()
+        let mut clock = std::io::stderr()
             .is_terminal()
             .then(|| Clock(tokio::spawn(spin(what))));
-        let response = client()
-            .post(API)
-            .bearer_auth(&self.key)
-            .header("X-Title", "usecode")
-            .json(&body)
-            .send()
-            .await
-            .context("calling OpenRouter")?;
-        let status = response.status();
-        let value: Value = response
-            .json()
-            .await
-            .context("reading OpenRouter's reply")?;
-        if !status.is_success() || value.get("error").is_some() {
-            let msg = value["error"]["message"].as_str().unwrap_or("no message");
-            bail!("OpenRouter: {status}: {msg}");
+        let response = open(&self.key, &body).await?;
+        let mut stream = response.bytes_stream();
+        let mut pending = Vec::new();
+        let mut reply = Reply::default();
+        let mut shown = false;
+        let mut dim = None;
+        'stream: while let Some(bytes) = stream.next().await {
+            pending.extend_from_slice(&bytes.context("reading OpenRouter's reply")?);
+            while let Some(end) = pending.iter().position(|b| *b == b'\n') {
+                let line: Vec<u8> = pending.drain(..=end).collect();
+                let line = String::from_utf8_lossy(&line);
+                // Comments (": OPENROUTER PROCESSING") keep the connection alive.
+                let Some(data) = line.trim().strip_prefix("data:").map(str::trim) else {
+                    continue;
+                };
+                if data == "[DONE]" {
+                    break 'stream;
+                }
+                let Ok(chunk) = serde_json::from_str::<Value>(data) else {
+                    continue;
+                };
+                let mut text = reply.add(&chunk)?;
+                if !shown {
+                    text = text.trim_start().to_string();
+                }
+                if text.is_empty() {
+                    continue;
+                }
+                clock = None;
+                if !shown {
+                    shown = true;
+                    if refining {
+                        eprint!("\x1b[2m");
+                        dim = Some(Undim);
+                    }
+                }
+                if refining {
+                    eprint!("{text}");
+                } else {
+                    print!("{text}");
+                    let _ = std::io::stdout().flush();
+                }
+            }
         }
-        let mut message = value["choices"][0]["message"].clone();
-        if !message.is_object() {
-            bail!("OpenRouter sent no message");
+        drop(clock);
+        drop(dim);
+        if shown {
+            if refining {
+                eprintln!("\n");
+            } else {
+                println!("\n");
+            }
         }
         // What the last turn took: `cost` is what OpenRouter charged, the
         // token counts what it says the messages came to. The counts are the
         // doer's, whose context /context is about; both cost.
-        if let Some(usage) = value.get("usage").filter(|u| !u.is_null()) {
-            if !refining {
-                self.last_usage = Some(usage.clone());
-            }
+        if let Some(usage) = reply.usage.clone() {
             if let Some(cost) = usage["cost"].as_f64() {
                 self.spent += cost;
             }
+            if !refining {
+                self.last_usage = Some(usage);
+            }
         }
-        // Only what the next request needs goes back into the history.
-        let keep = ["role", "content", "tool_calls"];
-        if let Some(map) = message.as_object_mut() {
-            map.retain(|k, _| keep.contains(&k.as_str()));
+        let message = reply.message();
+        if message["content"].is_null() && message.get("tool_calls").is_none() {
+            bail!("OpenRouter sent no message");
         }
         Ok(message)
     }
@@ -1627,15 +2158,8 @@ impl Session {
                     .collect();
                 ask_user(&arg("question"), &options)
             }
-            "web_search" => {
-                let count = number("count").unwrap_or(10).clamp(1, 10);
-                web_search(&self.search, &arg("query"), count).await
-            }
-            "fetch_url" => fetch_url(&arg("url")).await,
-            "src" => src(&arg("prefix")),
-            "read_file" => {
-                eprintln!("· read {}", arg("path"));
-                std::fs::read_to_string(arg("path")).context("reading the file")
+            "web_search" | "fetch_url" | "src" | "read_file" | "grep" | "glob" => {
+                return read_only(&self.search, call).await;
             }
             "write_file" => self.write_file(&arg("path"), &arg("content")),
             "edit_file" => self.edit_file(&arg("path"), &arg("old_text"), &arg("new_text")),
@@ -1961,6 +2485,15 @@ impl Foreground {
 impl Drop for Foreground {
     fn drop(&mut self) {
         FOREGROUND.store(false, Ordering::Relaxed);
+    }
+}
+
+/// The planner's dim text ends when this is dropped, even if Esc cut it short.
+struct Undim;
+
+impl Drop for Undim {
+    fn drop(&mut self) {
+        eprint!("\x1b[0m");
     }
 }
 
@@ -3004,6 +3537,108 @@ mod tests {
         std::fs::remove_dir_all(&root).unwrap();
         let lines: Vec<&str> = listed.lines().skip(1).collect();
         assert_eq!(lines, ["a/one", "b/three"]);
+    }
+
+    #[test]
+    fn reads_a_file_in_numbered_pieces() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("f.txt");
+        std::fs::write(&file, "a\nb\nc\nd\n").unwrap();
+        let path = file.to_str().unwrap();
+        assert_eq!(
+            read_file(path, None, None).unwrap(),
+            "     1\ta\n     2\tb\n     3\tc\n     4\td\n"
+        );
+        let piece = read_file(path, Some(2), Some(2)).unwrap();
+        assert!(piece.starts_with("     2\tb\n     3\tc\n"));
+        assert!(piece.contains("[1 more lines; read from offset 4]"));
+    }
+
+    #[test]
+    fn greps_and_globs_skip_what_gitignore_ignores() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir(root.join(".git")).unwrap();
+        std::fs::write(root.join(".gitignore"), "skip.rs\n").unwrap();
+        std::fs::write(root.join("a.rs"), "fn main() {}\n").unwrap();
+        std::fs::write(root.join("skip.rs"), "fn main() {}\n").unwrap();
+        std::fs::write(root.join("b.md"), "fn main\n").unwrap();
+        let path = root.to_str().unwrap();
+        let hits = grep("fn main", path, "*.rs", None).unwrap();
+        assert!(hits.contains("a.rs:1:") && !hits.contains("skip.rs") && !hits.contains("b.md"));
+        assert_eq!(grep("zzz", path, "", None).unwrap(), "no matches\n");
+        let files = glob("*.md", path).unwrap();
+        assert!(files.contains("b.md") && !files.contains("a.rs"));
+    }
+
+    #[test]
+    fn prune_cuts_old_tool_output_only() {
+        let long = "x".repeat(PRUNED * 3);
+        let mut messages: Vec<Value> = vec![json!({"role": "tool", "content": long.clone()})];
+        messages.extend((0..KEEP_RECENT).map(|_| json!({"role": "tool", "content": long.clone()})));
+        prune_tool_output(&mut messages);
+        assert!(messages[0]["content"].as_str().unwrap().len() < PRUNED + 60);
+        assert_eq!(messages[1]["content"].as_str().unwrap().len(), long.len());
+    }
+
+    #[test]
+    fn transcript_shows_text_and_tool_calls() {
+        let messages = vec![
+            json!({"role": "user", "content": "build it"}),
+            json!({"role": "assistant", "content": null, "tool_calls": [
+                {"function": {"name": "bash", "arguments": "{\"command\":\"make\"}"}}]}),
+        ];
+        let text = transcript(&messages);
+        assert!(text.contains("[user] build it") && text.contains("[tool call] bash"));
+    }
+
+    #[test]
+    fn a_streamed_reply_becomes_a_message() {
+        let mut reply = Reply::default();
+        let chunks = [
+            json!({"choices": [{"delta": {"content": "Hel"}}]}),
+            json!({"choices": [{"delta": {"content": "lo", "reasoning_details": [
+                {"index": 0, "type": "reasoning.text", "text": "th"}]}}]}),
+            json!({"choices": [{"delta": {"reasoning_details": [
+                {"index": 0, "type": "reasoning.text", "text": "ink", "signature": "s"}],
+                "tool_calls": [{"index": 0, "id": "c1", "function": {"name": "bash", "arguments": "{\"co"}}]}}]}),
+            json!({"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {"arguments": "mmand\":\"ls\"}"}}]}}]}),
+            json!({"choices": [], "usage": {"prompt_tokens": 7}}),
+        ];
+        let text: String = chunks.iter().map(|c| reply.add(c).unwrap()).collect();
+        assert_eq!(text, "Hello");
+        assert_eq!(reply.usage.as_ref().unwrap()["prompt_tokens"], 7);
+        let message = reply.message();
+        assert_eq!(message["content"], "Hello");
+        assert_eq!(message["tool_calls"][0]["id"], "c1");
+        assert_eq!(
+            message["tool_calls"][0]["function"]["arguments"],
+            "{\"command\":\"ls\"}"
+        );
+        assert_eq!(message["reasoning_details"][0]["text"], "think");
+        assert_eq!(message["reasoning_details"][0]["signature"], "s");
+        assert!(
+            Reply::default()
+                .add(&json!({"error": {"message": "no"}}))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn cache_breakpoints_go_on_the_system_prompt_and_last_message() {
+        let messages = vec![
+            json!({"role": "system", "content": "s"}),
+            json!({"role": "user", "content": "u"}),
+            json!({"role": "user", "content": "last"}),
+        ];
+        let marked = cached("anthropic/claude-haiku-5.5", &messages);
+        assert_eq!(
+            marked[0]["content"][0]["cache_control"]["type"],
+            "ephemeral"
+        );
+        assert_eq!(marked[1]["content"], "u");
+        assert_eq!(marked[2]["content"][0]["text"], "last");
+        assert_eq!(cached("z-ai/glm-5.3", &messages), messages);
     }
 
     #[test]

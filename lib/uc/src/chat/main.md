@@ -25,9 +25,12 @@
   call ask_user. Never run a command that waits for them. When the answer is
   one of a few, pass them as `options` instead of an either/or question: the
   user picks a number or types their own.
-- Search code with `rg` or `git grep`, never `grep -r`: they skip `target/`,
-  `node_modules` and other ignored paths, which can hold many gigabytes.
-  Piping into `grep -v` hides those lines but still searches all of it.
+- Look around with the grep, glob and read_file tools, not cat or `grep -r`:
+  they skip `target/`, `node_modules` and other ignored paths, which can hold
+  many gigabytes. read_file takes offset and limit, so read a big file in
+  pieces, or grep for what you need. Ask for several at once when you can.
+  In bash, use `rg` or `git grep`; piping into `grep -v` hides lines but still
+  searches all of it.
 - The user can run commands on their terminal themselves by typing them at
   the prompt; you are told when they did, but not what it printed.
 - The user may speak instead of typing: a line can be a speech transcript,
