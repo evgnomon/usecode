@@ -30,12 +30,17 @@
 //! and the command it is waiting on, and goes back to the prompt; Ctrl-C at
 //! the prompt quits. Holding Space at an empty prompt records the microphone
 //! and sends what was said instead, see `voice`. Ctrl-L at the prompt clears
-//! the screen and the model's context with it. `/model` picks one of the
-//! models of every provider with a key in fzf (it lists them without fzf),
-//! `/model <number|name> [provider]` switches to one straight away; either
-//! way the lines after it go to that model, with the context kept. The
+//! the screen and the model's context with it. `uc agent model` picks one of
+//! the models of every provider with a key in the picker (it lists them without
+//! a terminal),
+//! `uc agent model <number|name> [provider]` switches to one straight away; either
+//! way the lines after it go to that model, with the context kept. The same
+//! words typed in a shell save the choice for the new sessions instead
+//! (`~/.bashrc.d/model.sh`), and the sessions a switch is typed in save it too:
+//! the other `uc` processes running keep their model, the ones started after
+//! follow. The
 //! lists of models are kept in `~/.cache/usecode/models.json` so that
-//! starting uc does not wait on the providers; `/model-update` fetches them
+//! starting uc does not wait on the providers; `uc agent model-update` fetches them
 //! again. A model
 //! more than one provider serves is
 //! listed once for each, with the provider beside it. `/context`
@@ -52,7 +57,7 @@
 //! comes from `UC_MODEL`, else it is the provider's default (GLM 5.3 Flash
 //! on OpenRouter), and the reasoning effort from `UC_EFFORT`. The session
 //! keeps one model: each line is one request to it, and it changes only
-//! when `/model` or `chat model` says so.
+//! when `uc agent model` or `chat model` says so.
 
 use anyhow::{Context, Result, anyhow, bail};
 use futures_util::StreamExt;
@@ -64,8 +69,9 @@ use rustyline::{
 };
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
+use std::ffi::OsString;
 use std::io::{IsTerminal, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{ExitCode, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -75,6 +81,7 @@ use tokio::task::JoinHandle;
 
 use crate::{claude, copilot};
 
+mod diff;
 mod voice;
 
 const API: &str = "https://openrouter.ai/api/v1/chat/completions";
@@ -82,7 +89,7 @@ const DEFAULT_MODEL: &str = "z-ai/glm-5.3-flash";
 /// The model on the Claude subscription unless `UC_MODEL` says otherwise.
 const DEFAULT_CLAUDE_MODEL: &str = "anthropic/claude-sonnet-5.5";
 const DEFAULT_EFFORT: &str = "high";
-/// OpenRouter's models `/model` offers: everyday, reading, patches, features,
+/// OpenRouter's models `uc agent model` offers: everyday, reading, patches, features,
 /// short hard thinking and the strongest.
 const MODELS: &[&str] = &[
     DEFAULT_MODEL,
@@ -248,7 +255,7 @@ impl Engine {
 
 /// Where a model runs; each takes its own key.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum Provider {
+pub(crate) enum Provider {
     OpenRouter,
     Claude,
     Copilot,
@@ -256,9 +263,10 @@ enum Provider {
 
 impl Provider {
     /// In the order the session picks the first with a key.
-    const ALL: [Provider; 3] = [Provider::OpenRouter, Provider::Claude, Provider::Copilot];
+    pub(crate) const ALL: [Provider; 3] =
+        [Provider::OpenRouter, Provider::Claude, Provider::Copilot];
 
-    fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             Provider::OpenRouter => "OpenRouter",
             Provider::Claude => "Claude",
@@ -267,7 +275,7 @@ impl Provider {
     }
 
     /// The variable its key is in.
-    fn var(self) -> &'static str {
+    pub(crate) fn var(self) -> &'static str {
         match self {
             Provider::OpenRouter => "OPENROUTER_API_KEY",
             Provider::Claude => claude::TOKEN_VAR,
@@ -276,23 +284,23 @@ impl Provider {
     }
 
     /// `openrouter`, `claude` or `copilot`, in any case.
-    fn parse(name: &str) -> Option<Provider> {
+    pub(crate) fn parse(name: &str) -> Option<Provider> {
         Provider::ALL
             .into_iter()
             .find(|p| p.name().eq_ignore_ascii_case(name.trim()))
     }
 }
 
-/// A model on a provider: what `/model` lists and switches to.
+/// A model on a provider: what `uc agent model` lists and switches to.
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct Choice {
-    provider: Provider,
+pub(crate) struct Choice {
+    pub(crate) provider: Provider,
     /// The provider's id for it; the Claude subscription's are OpenRouter's.
-    model: String,
+    pub(crate) model: String,
 }
 
 impl Choice {
-    fn new(provider: Provider, model: &str) -> Choice {
+    pub(crate) fn new(provider: Provider, model: &str) -> Choice {
         Choice {
             provider,
             model: model.to_string(),
@@ -326,7 +334,7 @@ fn common_name(model: &str) -> String {
 /// subscription's three, and what Copilot offers the account. The lists
 /// come from the cache (see [`cache_path`]); a list that isn't there yet is
 /// fetched, and `refresh` fetches them all again.
-async fn pool(keys: &BTreeMap<Provider, String>, refresh: bool) -> Vec<Choice> {
+pub(crate) async fn pool(keys: &BTreeMap<Provider, String>, refresh: bool) -> Vec<Choice> {
     let mut pool = Vec::new();
     for (provider, key) in keys {
         match provider {
@@ -384,7 +392,7 @@ struct Session {
     provider: Provider,
     /// The model every line goes to.
     model: String,
-    /// What `/model` lists and picks from.
+    /// What `uc agent model` lists and picks from.
     pool: Vec<Choice>,
     ask: bool,
     /// OpenRouter's reasoning effort: low, medium or high.
@@ -525,7 +533,7 @@ async fn run(
 ) -> Result<()> {
     // Without a key the AI is off and every line runs in bash. The session
     // starts on the provider `UC_PROVIDER` names, else the first with a key;
-    // the others' models are a `/model` away.
+    // the others' models are a `uc agent model` away.
     let keys: BTreeMap<Provider, String> = Provider::ALL
         .into_iter()
         .filter_map(|p| env(p.var()).map(|key| (p, key)))
@@ -623,10 +631,11 @@ async fn run(
             return Ok(());
         }
         if !ai
-            && matches!(
-                line.split_whitespace().next(),
-                Some("/model" | "/model-update" | "/context" | "/compact")
-            )
+            && (agent_model_line(line).is_some()
+                || matches!(
+                    line.split_whitespace().next(),
+                    Some("/context" | "/compact")
+                ))
         {
             eprintln!(
                 "· AI off: set OPENROUTER_API_KEY, or log in with `uc agent login claude` \
@@ -634,21 +643,16 @@ async fn run(
             );
             continue;
         }
-        if line == "/model-update" {
+        if line == "uc agent model-update" {
             session.update_models().await;
             continue;
         }
-        if let Some(name) = line
-            .strip_prefix("/model")
-            .filter(|r| r.is_empty() || r.starts_with(' '))
-        {
-            match name.trim() {
-                name if name.is_empty()
-                    || choice_named(&session.pool, name, session.provider).is_none() =>
-                {
-                    session.pick_model(name)
-                }
-                name => drop(session.switch(name)),
+        if let Some(rest) = agent_model_line(line) {
+            let name = rest.trim();
+            if name.is_empty() || choice_named(&session.pool, name, session.provider).is_none() {
+                session.pick_model(name)
+            } else {
+                session.switch_and_save(name);
             }
             shown = Some(session.models());
             continue;
@@ -1104,6 +1108,18 @@ fn direct_command(line: &str) -> Option<&str> {
     }
 }
 
+/// A typed `uc agent model ...` line, which the chat takes itself instead of
+/// running in bash: the rest of the line after `uc agent model`, or `Some("")`
+/// for `uc agent model-update`. `!uc agent model` still runs in bash, where
+/// the same words save the model for the sessions to come.
+fn agent_model_line(line: &str) -> Option<&str> {
+    if line == "uc agent model-update" {
+        return Some("");
+    }
+    line.strip_prefix("uc agent model")
+        .filter(|rest| rest.is_empty() || rest.starts_with(' '))
+}
+
 /// `command` with its first word, the program, in bright yellow: what a line
 /// that runs straight away looks like at the prompt.
 fn color_program(command: &str) -> String {
@@ -1260,14 +1276,7 @@ if (( ${#COMPREPLY[@]} )); then printf '%s\n' "${COMPREPLY[@]}"; else compgen -f
 "#;
 
 /// The commands the prompt itself takes.
-const SLASH_COMMANDS: &[&str] = &[
-    "/compact",
-    "/context",
-    "/exit",
-    "/model",
-    "/model-update",
-    "/quit",
-];
+const SLASH_COMMANDS: &[&str] = &["/compact", "/context", "/exit", "/quit"];
 
 /// Tab at the prompt: `/` commands, a command line the way the user's bash
 /// completes it, with or without `!`, and file names in a line for the model.
@@ -1338,6 +1347,10 @@ impl rustyline::hint::Hinter for Completion {
 /// typed, so it shows before Enter whether the line goes to bash or the model.
 impl rustyline::highlight::Highlighter for Completion {
     fn highlight<'l>(&self, line: &'l str, _: usize) -> std::borrow::Cow<'l, str> {
+        // The chat takes `uc agent model` itself; it is not a bash line.
+        if agent_model_line(line).is_some() {
+            return std::borrow::Cow::Borrowed(line);
+        }
         let Some(command) = direct_command(line) else {
             return std::borrow::Cow::Borrowed(line);
         };
@@ -1701,7 +1714,7 @@ fn tools() -> Value {
 }
 
 impl Session {
-    /// The model, as the status line and `/model` say it.
+    /// The model, as the status line and `uc agent model` say it.
     fn models(&self) -> String {
         format!(
             "model {}",
@@ -1752,52 +1765,40 @@ impl Session {
         self.turn().await.map(drop)
     }
 
-    /// `/model` without a name it knows: picks the model in fzf, starting
+    /// `uc agent model` without a name it knows: picks the model with the picker, starting
     /// on the current one and filtered by `query`; one match is taken
-    /// straight away and Esc keeps the model. Without fzf it is `switch`.
+    /// straight away and Esc keeps the model. Without a terminal it is `switch`.
     fn pick_model(&mut self, query: &str) {
         let current = Choice::new(self.provider, &self.model);
         let mut order: Vec<usize> = (0..self.pool.len()).collect();
         order.sort_by_key(|i| self.pool[*i] != current);
-        let lines: Vec<String> = order
+        let items: Vec<picker::Item> = order
             .iter()
-            .map(|i| format!("{}\t{}", i + 1, label(&self.pool, &self.pool[*i])))
+            .map(|i| picker::Item::new(label(&self.pool, &self.pool[*i]), (i + 1).to_string()))
             .collect();
-        let fzf = std::process::Command::new("fzf")
-            .args([
-                "--height=40%",
-                "--reverse",
-                "--select-1",
-                "--prompt=model> ",
-            ])
-            .args(["--delimiter=\t", "--with-nth=2..", "--query", query])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn();
-        let Ok(mut fzf) = fzf else {
+        if !picker::available() {
             self.switch(query);
             return;
-        };
-        if let Some(mut stdin) = fzf.stdin.take() {
-            let _ = stdin.write_all(lines.join("\n").as_bytes());
         }
-        let Ok(picked) = fzf.wait_with_output() else {
-            return;
-        };
-        if let Some((number, _)) = String::from_utf8_lossy(&picked.stdout).split_once('\t') {
-            self.switch(number);
+        let picked = picker::Picker::new("model> ")
+            .reverse()
+            .select_one()
+            .query(query)
+            .pick(items);
+        if let Some(number) = picked.and_then(|p| p.values.into_iter().next()) {
+            self.switch(&number);
         }
     }
 
-    /// `/model-update`: fetches every provider's model list again, keeps it
-    /// in the cache and makes it the list `/model` offers.
+    /// `uc agent model-update`: fetches every provider's model list again, keeps it
+    /// in the cache and makes it the list `uc agent model` offers.
     async fn update_models(&mut self) {
         eprintln!("· fetching the model lists");
         self.pool = pool(&self.keys, true).await;
         eprintln!("· {} models", self.pool.len());
     }
 
-    /// `/model` and chat `model`: list with no name; otherwise switch to the
+    /// `uc agent model` and chat `model`: list with no name; otherwise switch to the
     /// named model, on the provider named after it if more than one serves
     /// it. The same lines go to the terminal and back to whoever asked.
     fn switch(&mut self, name: &str) -> String {
@@ -1824,7 +1825,26 @@ impl Session {
                 self.set_model(choice);
                 say(format!("· {}\n", self.models()))
             }
-            None => say(format!("· no model {name}; /model lists them\n")),
+            None => say(format!("· no model {name}; `uc agent model` lists them\n")),
+        }
+    }
+
+    /// `uc agent model <name>` typed at the prompt: switch to the named
+    /// model, and save it as the one new `uc` sessions start on, so the
+    /// sessions on the machine follow the one choice. A model on a provider
+    /// with no key switches nowhere and saves nothing.
+    fn switch_and_save(&mut self, name: &str) {
+        let saved = choice_named(&self.pool, name, self.provider)
+            .filter(|c| self.keys.contains_key(&c.provider));
+        drop(self.switch(name));
+        let Some(choice) = saved else {
+            return;
+        };
+        match model_env_dir().and_then(|dir| save_model_choice(&choice, &dir)) {
+            Ok(path) => {
+                eprintln!("· saved in {} for new `uc` sessions", path.display());
+            }
+            Err(err) => eprintln!("· not saved: {err:#}"),
         }
     }
 
@@ -2362,6 +2382,10 @@ impl Session {
 
     fn write_file(&mut self, path: &str, content: &str) -> Result<String> {
         eprintln!("· write {path} ({} lines)", content.lines().count());
+        // Over a file that is there, what changes is worth seeing.
+        if let Ok(before) = std::fs::read_to_string(path) {
+            eprint!("{}", diff::render(&before, content, diff::color()));
+        }
         self.confirm("write it?", false)?;
         if let Some(dir) = std::path::Path::new(path).parent()
             && !dir.as_os_str().is_empty()
@@ -2379,15 +2403,11 @@ impl Session {
             0 => bail!("old_text is not in {path}"),
             n => bail!("old_text occurs {n} times in {path}; give more context"),
         }
+        let edited = text.replacen(old, new, 1);
         eprintln!("· edit {path}");
-        for line in old.lines() {
-            eprintln!("  - {line}");
-        }
-        for line in new.lines() {
-            eprintln!("  + {line}");
-        }
+        eprint!("{}", diff::render(&text, &edited, diff::color()));
         self.confirm("apply it?", false)?;
-        std::fs::write(path, text.replacen(old, new, 1)).context("writing the file")?;
+        std::fs::write(path, edited).context("writing the file")?;
         Ok(format!("edited {path}"))
     }
 
@@ -2802,11 +2822,12 @@ fn read_prompt(prompt: &str) -> Result<Option<String>> {
     Ok(line)
 }
 
-/// Ctrl-R picks an earlier line with fzf, newest first, like it does in bash.
-/// Without fzf it is the usual reverse search.
-struct FzfHistory;
+/// Ctrl-R picks an earlier line with the picker, newest first, like fzf does
+/// in bash.
+/// Without a terminal it is the usual reverse search.
+struct PickHistory;
 
-impl ConditionalEventHandler for FzfHistory {
+impl ConditionalEventHandler for PickHistory {
     fn handle(&self, _: &Event, _: RepeatCount, _: bool, ctx: &EventContext) -> Option<Cmd> {
         let mut seen = BTreeSet::new();
         let mut lines = Vec::new();
@@ -2815,21 +2836,15 @@ impl ConditionalEventHandler for FzfHistory {
                 lines.push(line);
             }
         }
-        let mut fzf = std::process::Command::new("fzf")
-            .args(["--height=40%", "--scheme=history", "--read0", "--print0"])
-            .args(["--bind=ctrl-r:toggle-sort", "--query", ctx.line()])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()
-            .ok()?;
-        if let Some(mut stdin) = fzf.stdin.take() {
-            let _ = stdin.write_all(lines.join("\0").as_bytes());
+        if !picker::available() {
+            return None;
         }
-        let picked = fzf.wait_with_output().ok()?;
-        let picked = String::from_utf8_lossy(&picked.stdout);
-        match picked.trim_end_matches('\0') {
-            "" => Some(Cmd::Repaint),
-            line => Some(Cmd::Replace(Movement::WholeBuffer, Some(line.to_string()))),
+        let picked = picker::Picker::new("> ")
+            .query(ctx.line())
+            .pick(lines.into_iter().map(picker::Item::line).collect());
+        match picked.and_then(|p| p.values.into_iter().next()) {
+            None => Some(Cmd::Repaint),
+            Some(line) => Some(Cmd::Replace(Movement::WholeBuffer, Some(line))),
         }
     }
 }
@@ -2950,7 +2965,7 @@ fn read_line(prompt: &str) -> Result<Option<String>> {
         drop(typed);
         new.bind_sequence(
             KeyEvent::ctrl('R'),
-            EventHandler::Conditional(Box::new(FzfHistory)),
+            EventHandler::Conditional(Box::new(PickHistory)),
         );
         new.bind_sequence(
             KeyEvent(KeyCode::Up, Modifiers::NONE),
@@ -2994,17 +3009,17 @@ fn read_line(prompt: &str) -> Result<Option<String>> {
     }
 }
 
-/// How `/model` shows `choice`: its id, with the provider beside it.
-fn label(_pool: &[Choice], choice: &Choice) -> String {
+/// How `uc agent model` shows `choice`: its id, with the provider beside it.
+pub(crate) fn label(_pool: &[Choice], choice: &Choice) -> String {
     format!("{} ({})", choice.model, choice.provider.name())
 }
 
-/// The model `/model <name> [provider]` means: its number in `pool`, the one
+/// The model `uc agent model <name> [provider]` means: its number in `pool`, the one
 /// listed there whose id has `name` in it, or `name` itself when it is an id
 /// (it has a `/`, or a provider is named). A model more than one provider
 /// serves is taken on the provider named, else on `prefer`, else on the
 /// first listed.
-fn choice_named(pool: &[Choice], name: &str, prefer: Provider) -> Option<Choice> {
+pub(crate) fn choice_named(pool: &[Choice], name: &str, prefer: Provider) -> Option<Choice> {
     // `opus copilot` and `opus (Copilot)`, as the list shows it, both name one.
     let mut words: Vec<&str> = name.split_whitespace().collect();
     let only = match words[..] {
@@ -3082,7 +3097,7 @@ fn content(message: &Value) -> Option<&str> {
 
 /// Where the model lists are kept between runs, so starting `uc` does not
 /// wait on the providers: `$XDG_CACHE_HOME/usecode/models.json`, else
-/// `~/.cache/usecode/models.json`. `/model-update` fetches them again.
+/// `~/.cache/usecode/models.json`. `uc agent model-update` fetches them again.
 fn cache_path() -> Option<PathBuf> {
     let cache = std::env::var_os("XDG_CACHE_HOME")
         .filter(|d| !d.is_empty())
@@ -3534,6 +3549,150 @@ fn truncate(mut output: String) -> String {
     output
 }
 
+// ------------------------------------------------------- uc agent model ----
+
+/// Where `uc agent model` saves the model new `uc` sessions start on: the
+/// directory with the keys `uc agent login` writes.
+fn model_env_dir() -> Result<PathBuf> {
+    let home = std::env::var_os("HOME").ok_or_else(|| anyhow!("HOME is not set"))?;
+    Ok(PathBuf::from(home).join(".bashrc.d"))
+}
+
+/// Writes the `export` lines that make new `uc` sessions start on `choice`,
+/// into `dir` (`~/.bashrc.d`), and returns the file's path.
+fn save_model_choice(choice: &Choice, dir: &Path) -> Result<PathBuf> {
+    std::fs::create_dir_all(dir)?;
+    let path = dir.join("model.sh");
+    std::fs::write(
+        &path,
+        format!(
+            "# The model the `uc` coding agent starts on (uc agent model)\n\
+             export UC_MODEL={}\nexport UC_PROVIDER={}\n",
+            choice.model,
+            env_name(choice.provider)
+        ),
+    )
+    .with_context(|| format!("writing {}", path.display()))?;
+    Ok(path)
+}
+
+/// The provider's name as `UC_PROVIDER` takes it: `openrouter`, `claude` or
+/// `copilot`.
+fn env_name(provider: Provider) -> &'static str {
+    match provider {
+        Provider::OpenRouter => "openrouter",
+        Provider::Claude => "claude",
+        Provider::Copilot => "copilot",
+    }
+}
+
+/// `uc agent model` in a shell, when a session is not there to take it:
+/// with no model named it lists the models of every provider with a key,
+/// marking the one a new `uc` starts on; with one named (`uc agent model
+/// opus claude`) it makes that the one new sessions start on, saved as
+/// `UC_MODEL` and `UC_PROVIDER` in `~/.bashrc.d/model.sh`. Typed at the
+/// prompt of a running session the same words switch that session too; the
+/// other sessions running keep theirs.
+pub(crate) async fn agent_model(args: &[OsString]) -> Result<()> {
+    let args: Vec<String> = args
+        .iter()
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect();
+    if args.iter().any(|arg| arg == "-h" || arg == "--help") {
+        println!("usage: uc agent model [<number|name|id> [provider]]\n");
+        println!("With no model named: the models of every provider with a key, the");
+        println!("current one marked, as typing `uc agent model` in the chat lists them.");
+        println!("With one named: makes it the model new `uc` sessions start on, saved");
+        println!("as UC_MODEL and UC_PROVIDER in ~/.bashrc.d/model.sh, and prints the");
+        println!("export line to run in this shell. The name is a number from the list, part of");
+        println!("a listed id or any id of the provider. A session already running keeps");
+        println!("its model: type `uc agent model` at that session's prompt to switch it.");
+        return Ok(());
+    }
+    let keys: BTreeMap<Provider, String> = Provider::ALL
+        .into_iter()
+        .filter_map(|p| env(p.var()).map(|key| (p, key)))
+        .collect();
+    if keys.is_empty() {
+        bail!(
+            "no key is set: OPENROUTER_API_KEY, or `uc agent login claude` \
+             or `uc agent login copilot`"
+        );
+    }
+    let wanted = env("UC_PROVIDER")
+        .map(|name| {
+            Provider::parse(&name).ok_or_else(|| {
+                anyhow!("UC_PROVIDER is {name}; it is openrouter, claude or copilot")
+            })
+        })
+        .transpose()?;
+    let start = wanted
+        .filter(|p| keys.contains_key(p))
+        .or_else(|| keys.keys().next().copied())
+        .unwrap_or(Provider::OpenRouter);
+    let pool = pool(&keys, false).await;
+    let default = match start {
+        Provider::OpenRouter => DEFAULT_MODEL.to_string(),
+        Provider::Claude => DEFAULT_CLAUDE_MODEL.to_string(),
+        Provider::Copilot => pool
+            .iter()
+            .find(|c| c.provider == Provider::Copilot)
+            .map(|c| c.model.clone())
+            .unwrap_or_default(),
+    };
+    let current = Choice::new(start, &env("UC_MODEL").unwrap_or(default));
+    let name = args.join(" ");
+    if name.is_empty() {
+        for (i, choice) in pool.iter().enumerate() {
+            let mark = if *choice == current { "*" } else { " " };
+            println!("{mark} {} {}", i + 1, label(&pool, choice));
+        }
+        return Ok(());
+    }
+    let choice = choice_named(&pool, &name, start)
+        .ok_or_else(|| anyhow!("no model {name}; `uc agent model` lists them"))?;
+    if !keys.contains_key(&choice.provider) {
+        bail!(
+            "{} is not set, so {} is off",
+            choice.provider.var(),
+            choice.provider.name()
+        );
+    }
+    let path = save_model_choice(&choice, &model_env_dir()?)?;
+    println!(
+        "· {} on {}, saved in {} for new `uc` sessions",
+        choice.model,
+        choice.provider.name(),
+        path.display()
+    );
+    println!(
+        "this shell: export UC_MODEL={} UC_PROVIDER={}",
+        choice.model,
+        env_name(choice.provider)
+    );
+    Ok(())
+}
+
+/// `uc agent model-update` in a shell: fetches every provider's model list
+/// again and keeps it in the cache, what `uc agent model-update` typed at a
+/// session's prompt does for that session.
+pub(crate) async fn agent_model_update() -> Result<()> {
+    let keys: BTreeMap<Provider, String> = Provider::ALL
+        .into_iter()
+        .filter_map(|p| env(p.var()).map(|key| (p, key)))
+        .collect();
+    if keys.is_empty() {
+        bail!(
+            "no key is set: OPENROUTER_API_KEY, or `uc agent login claude` \
+             or `uc agent login copilot`"
+        );
+    }
+    eprintln!("· fetching the model lists");
+    let pool = pool(&keys, true).await;
+    eprintln!("· {} models", pool.len());
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3789,10 +3948,10 @@ mod tests {
 
     #[test]
     fn tab_completes_like_bash() {
-        let (start, words) = Completion::candidates("/mo");
+        let (start, words) = Completion::candidates("/co");
         assert_eq!(
             (start, words),
-            (0, vec!["/model ".to_string(), "/model-update ".to_string()])
+            (0, vec!["/compact ".to_string(), "/context ".to_string()])
         );
         assert_eq!(Completion::candidates("/").1.len(), SLASH_COMMANDS.len());
         let (start, words) = Completion::candidates("!ech");
@@ -4090,6 +4249,40 @@ mod tests {
         assert_eq!(named, "· model anthropic/claude-haiku-5.5 (OpenRouter)\n");
         let missing = s.switch("nope");
         assert!(missing.starts_with("· no model nope"), "{missing}");
+    }
+
+    #[test]
+    fn agent_model_saves_the_export_lines() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = save_model_choice(
+            &Choice::new(Provider::Claude, "anthropic/claude-opus-5.5"),
+            dir.path(),
+        )
+        .unwrap();
+        let saved = std::fs::read_to_string(path).unwrap();
+        assert_eq!(
+            saved,
+            "# The model the `uc` coding agent starts on (uc agent model)\n\
+             export UC_MODEL=anthropic/claude-opus-5.5\n\
+             export UC_PROVIDER=claude\n"
+        );
+        assert_eq!(env_name(Provider::OpenRouter), "openrouter");
+        assert_eq!(env_name(Provider::Copilot), "copilot");
+    }
+
+    #[test]
+    fn uc_agent_model_lines_are_taken_by_the_chat() {
+        assert_eq!(agent_model_line("uc agent model"), Some(""));
+        assert_eq!(
+            agent_model_line("uc agent model opus claude"),
+            Some(" opus claude")
+        );
+        assert_eq!(agent_model_line("uc agent model-update"), Some(""));
+        assert_eq!(agent_model_line("uc agent modelxyz"), None);
+        assert_eq!(agent_model_line("uc agent models"), None);
+        assert_eq!(agent_model_line("uc agent login claude"), None);
+        assert_eq!(agent_model_line("!uc agent model opus"), None);
+        assert_eq!(agent_model_line("please uc agent model"), None);
     }
 
     #[test]

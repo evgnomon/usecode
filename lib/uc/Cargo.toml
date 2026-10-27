@@ -177,7 +177,7 @@ zeroize = "1"
 rustyline = { version = "19.0.0", default-features = false, features = ["custom-bindings", "with-file-history"] }
 html2text = "0.17.3"
 pulseaudio = "0.3.2"
-skim = { version = "0.20", default-features = false }
+picker = { path = "../picker" }
 async-imap = { version = "0.12", default-features = false, features = ["runtime-tokio"] }
 mail-parser = { version = "0.11", default-features = false }
 tokio-rustls = { version = "0.26", default-features = false }

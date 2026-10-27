@@ -291,7 +291,7 @@ pub static NEW: Group = Group {
 
 pub static AGENT: Group = Group {
     path: "uc agent",
-    summary: "the usecode agent's HTTP backend and MCP server",
+    summary: "log in, pick the model and run the HTTP backend and MCP server of the agent",
     commands: &[
         exec(
             "api",
@@ -312,6 +312,16 @@ pub static AGENT: Group = Group {
             name: "login",
             summary: "log in with a Claude subscription or GitHub Copilot and save the token for the chat",
             run: Run::Builtin(agent_login),
+        },
+        Sub {
+            name: "model",
+            summary: "the models the agent can chat with: lists them, or makes the named one the one new uc sessions start on",
+            run: Run::Builtin(agent_model),
+        },
+        Sub {
+            name: "model-update",
+            summary: "fetch every provider's model list again, for uc agent model and the chat",
+            run: Run::Builtin(agent_model_update),
         },
     ],
     fallback: None,
@@ -337,7 +347,7 @@ fn agent_login(args: &[OsString]) -> ExitCode {
             println!("copilot: logs in to GitHub with a device code and saves the token as");
             println!("COPILOT_GITHUB_TOKEN in ~/.bashrc.d/copilot.sh; the account needs Copilot.");
             println!(
-                "`uc` then offers that provider's models in /model, next to the others with a key;"
+                "`uc` then offers that provider's models in `uc agent model`, next to the others with a key;"
             );
             println!("UC_PROVIDER=openrouter, claude or copilot picks the one it starts on.");
             println!("--print shows the export line instead of saving it.");
@@ -364,6 +374,44 @@ fn agent_login(args: &[OsString]) -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("uc agent login: {err:#}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// `uc agent model-update`: fetches every provider's model list again into
+/// the cache; see [`crate::chat::agent_model_update`].
+fn agent_model_update(args: &[OsString]) -> ExitCode {
+    if args.iter().any(|arg| arg == "-h" || arg == "--help") {
+        println!("usage: uc agent model-update\n");
+        println!("Fetches every provider's model list again and keeps it in the cache, what");
+        println!("typing `uc agent model-update` at a session's prompt does for that session.");
+        return ExitCode::SUCCESS;
+    }
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    match runtime.block_on(crate::chat::agent_model_update()) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(err) => {
+            eprintln!("uc agent model-update: {err:#}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// `uc agent model [<number|name|id> [provider]]`: see
+/// [`crate::chat::agent_model`].
+fn agent_model(args: &[OsString]) -> ExitCode {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    match runtime.block_on(crate::chat::agent_model(args)) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(err) => {
+            eprintln!("uc agent model: {err:#}");
             ExitCode::FAILURE
         }
     }

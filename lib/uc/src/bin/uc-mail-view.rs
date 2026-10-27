@@ -14,7 +14,7 @@ use uc::mail::inbox::{self, Config, Entry};
 
 /// Read the mail `uc mail pull` fetched, the newest first, and reply to it.
 ///
-/// On a terminal it lists the mail in skim: type to narrow it down, read
+/// On a terminal it lists the mail in the picker: type to narrow it down, read
 /// the one under the cursor below, Tab to pick more. Enter opens them in
 /// $EDITOR to read, Ctrl-R replies to the one picked.
 /// With -n, --full, --json, ids, or without a terminal it only prints.
@@ -59,7 +59,7 @@ struct Cli {
 
 const EXAMPLES: &str = "\
 Examples:
-  uc mail view                       pick with skim: Enter reads, Ctrl-R replies
+  uc mail view                       pick with the picker: Enter reads, Ctrl-R replies
   uc mail view -p                    pull the new mail first, then pick
   uc mail view -n 10                 the 10 newest, one line each
   uc mail view -n 10 --full          the 10 newest, whole
@@ -132,7 +132,7 @@ fn run(cli: Cli) -> Result<()> {
     }
 }
 
-/// The mail picked with skim and whether to reply to it, `None` when none
+/// The mail picked with the picker and whether to reply to it, `None` when none
 /// was.
 fn pick(cli: &Cli) -> Result<Option<(Vec<String>, bool)>> {
     let entries = inbox::entries(cli.compose.account.as_deref())?;

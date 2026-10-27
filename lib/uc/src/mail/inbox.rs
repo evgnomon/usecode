@@ -555,55 +555,26 @@ pub struct Picked {
     pub reply: bool,
 }
 
-/// Pick messages with skim, reading each in the preview: Enter to read
-/// them, Ctrl-R to reply.
+/// Pick messages with the picker, reading each in the preview: Enter to
+/// read them, Ctrl-R to reply.
 pub fn pick(entries: Vec<Entry>) -> Picked {
-    use skim::prelude::*;
-
-    struct Item(Entry, String);
-
-    impl SkimItem for Item {
-        fn text(&self) -> Cow<'_, str> {
-            Cow::Borrowed(&self.1)
-        }
-
-        fn preview(&self, _context: PreviewContext) -> ItemPreview {
-            ItemPreview::Text(render(&self.0.id).unwrap_or_else(|err| format!("{err:#}")))
-        }
-
-        fn output(&self) -> Cow<'_, str> {
-            Cow::Borrowed(&self.0.id)
-        }
-    }
-
-    let options = SkimOptionsBuilder::default()
-        .multi(true)
-        .tiebreak(vec![RankCriteria::Score, RankCriteria::Index])
-        .preview(Some(String::new()))
-        .preview_window("down:60%:wrap".to_string())
-        .prompt("mail> ".to_string())
-        .header(Some(
-            "Enter: read, Ctrl-R: reply, Tab: pick more".to_string(),
-        ))
-        .expect(vec![REPLY_KEY.to_string()])
-        .build()
-        .expect("skim options");
-    let (tx, rx): (SkimItemSender, SkimItemReceiver) = unbounded();
-    for entry in entries {
-        let line = line(&entry);
-        let _ = tx.send(Arc::new(Item(entry, line)));
-    }
-    drop(tx);
-    match Skim::run_with(&options, Some(rx)) {
-        Some(out) if !out.is_abort => Picked {
-            ids: out
-                .selected_items
-                .iter()
-                .map(|item| item.output().into_owned())
-                .collect(),
-            reply: matches!(&out.final_event, Event::EvActAccept(Some(key)) if key == REPLY_KEY),
+    let items = entries
+        .iter()
+        .map(|entry| picker::Item::new(line(entry), entry.id.clone()))
+        .collect();
+    let picked = picker::Picker::new("mail> ")
+        .height("100%")
+        .multi()
+        .header("Enter: read, Ctrl-R: reply, Tab: pick more")
+        .key(REPLY_KEY)
+        .preview(|id| render(id).unwrap_or_else(|err| format!("{err:#}")))
+        .pick(items);
+    match picked {
+        Some(picked) => Picked {
+            reply: picked.key.as_deref() == Some(REPLY_KEY),
+            ids: picked.values,
         },
-        _ => Picked::default(),
+        None => Picked::default(),
     }
 }
 

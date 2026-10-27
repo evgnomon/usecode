@@ -1,0 +1,17 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
+[package]
+name = "picker"
+version = "0.1.0"
+edition.workspace = true
+description = "Pick lines in the terminal, fuzzy and in colour, like fzf"
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+skim = { version = "0.20", default-features = false }

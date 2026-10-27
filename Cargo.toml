@@ -22,6 +22,7 @@ members = [
     "lib/mkpod",
     "lib/mkunit",
     "lib/pg",
+    "lib/picker",
     "lib/pubdeb",
     "lib/repofqn",
     "lib/secd",

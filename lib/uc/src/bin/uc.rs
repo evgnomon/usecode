@@ -87,9 +87,10 @@ fn print_usage() {
     println!("With no command, uc is a coding agent: talk to it and it runs commands and");
     println!("edits files for you, through OpenRouter (OPENROUTER_API_KEY, UC_MODEL,");
     println!("UC_EFFORT), a Claude subscription (`uc agent login claude`) or GitHub Copilot");
-    println!("(`uc agent login copilot`); /model lists the models of each one with a key, and");
+    println!("(`uc agent login copilot`); `uc agent model` lists the models of each one with a");
     println!(
-        "UC_PROVIDER picks the one it starts on. It runs them straight away; `uc --ask` confirms each one first."
+        "key, and UC_PROVIDER picks the one it starts on; naming a model there or in the \
+         chat makes it stick. It runs them straight away; `uc --ask` confirms each one first."
     );
     println!("You see its answers; `uc --output` also shows what the commands print.");
     println!("Each command it runs shows as a few words on what it does, like");

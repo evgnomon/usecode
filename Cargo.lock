@@ -3127,6 +3127,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "picker"
+version = "0.1.0"
+dependencies = [
+ "skim",
+]
+
+[[package]]
 name = "pin-project"
 version = "1.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5301,6 +5308,7 @@ dependencies = [
  "minijinja",
  "minijinja-contrib",
  "pbkdf2 0.13.0",
+ "picker",
  "pulseaudio",
  "regex",
  "repofqn",
@@ -5315,7 +5323,6 @@ dependencies = [
  "serde_yaml",
  "sha1",
  "sha2 0.11.0",
- "skim",
  "tar",
  "tempfile",
  "tokio",

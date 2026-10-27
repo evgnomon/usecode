@@ -51,7 +51,7 @@ the same confirmations; a line that reads like a sentence goes to the model,
 and `!` in front makes anything a command. Rather talk to the model every
 time? `uc --no-shell` (or `UC_NO_SHELL=1`) sends every line to it.
 Up and Down bring back what you typed before, in uc or in bash, even in an earlier session,
-and Ctrl-R finds it with fzf, just like in bash. Changed your mind while it
+and Ctrl-R finds it in a colourful fuzzy picker, just like fzf in bash. Changed your mind while it
 works? Esc or Ctrl-C stops it, and whatever it was running, and you're back at
 the prompt; Ctrl-C at the prompt leaves uc.
 No OpenRouter key yet? No problem: `uc` starts anyway with the AI off, and
@@ -77,16 +77,25 @@ copilot` shows a short code to type on github.com and saves the token as
 `COPILOT_GITHUB_TOKEN` in `~/.bashrc.d/copilot.sh`; `uc` then lists the chat
 models your Copilot plan offers.
 
-Set as many of these as you like: `/model` shows the models of every provider
+Set as many of these as you like: `uc agent model` shows the models of every provider
 you have a key for, all in one list, and you can switch between them in the
 middle of a conversation. When a model is on more than one, say Opus on both
 OpenRouter and your Claude subscription, each gets its own line with the
-provider beside it, and `/model opus claude` (or the number) picks the one you
+provider beside it, and `uc agent model opus claude` (or the number) picks the one you
 want. `uc` starts on OpenRouter, then Claude, then Copilot, whichever has a key
 first; `UC_PROVIDER=claude` (or `openrouter`, `copilot`) picks another. The
 cost line is OpenRouter's. `uc agent usage` shows how much of
 the subscription's 5-hour and weekly windows you have used, next to the
 OpenRouter spend when both keys are set.
+
+One command everywhere: `uc agent model`. Typed at a session's prompt it
+switches that session — `uc agent model` picks one in the picker, `uc agent
+model opus claude` goes straight to it — and saves the choice as `UC_MODEL`
+and `UC_PROVIDER` in `~/.bashrc.d/model.sh`, so the sessions you start after
+follow it. The other `uc` processes running on the machine keep their model
+until you say so in them. Typed in a shell instead, with no model named it
+lists the models, marking the one a new `uc` starts on, and naming one saves
+it and prints the `export` line to run in that shell.
 
 Every flag can be set three ways, so you can make your favourite the
 default: on the command line, as a `UC_` environment variable, or under
@@ -106,14 +115,14 @@ uc:
 
 It runs on GLM 5.3 Flash, which is quick, cheap and good at everyday
 work, and stays on one model for the whole session: each line is a single
-request, so replies start fast. Want another? Type `/model` and pick one in
-fzf (Esc keeps what you have), or go straight to one with `/model opus`. A
-name that fits several, like `/model claude`, opens fzf filtered by it. The
+request, so replies start fast. Want another? Type `uc agent model` and pick one in
+the picker (Esc keeps what you have), or go straight to one with `uc agent model opus`. A
+name that fits several, like `uc agent model claude`, opens the picker filtered by it. The
 new model gets the whole conversation and carries on from there, even on
 another provider. `UC_MODEL` sets the one to start on.
 
 The lists of models are kept in `~/.cache/usecode/models.json`, so starting
-`uc` does not wait on the providers. A new model not showing up? `/model-update`
+`uc` does not wait on the providers. A new model not showing up? `uc agent model-update`
 fetches the lists again.
 
 The model can do the same itself with the `chat` tool: `chat model
