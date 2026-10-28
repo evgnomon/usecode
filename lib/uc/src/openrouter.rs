@@ -6,7 +6,7 @@
 //! OpenRouter knows two accounts: the user's, the credits purchased and spent
 //! across all their keys (`GET /api/v1/credits`, a management key), and the
 //! one key doing the talking (`GET /api/v1/key`). Here the key is the one
-//! `OPENROUTER_API_KEY` or `--key` gives, the same one the coding agent uses.
+//! `openrouter` provider in `agent.yaml` or `--key` gives, the same one the coding agent uses.
 //!
 //! The key's own view is shown first: the credits it spent today, this week,
 //! this month and all time, its BYOK usage, its credit limit and remaining,
@@ -20,7 +20,7 @@ use std::fmt::Write as _;
 use std::sync::OnceLock;
 use std::time::Duration;
 
-/// The OpenRouter key the usage is read for: `OPENROUTER_API_KEY`, else the
+/// The OpenRouter key the usage is read for: the `openrouter` provider's in `agent.yaml`, else the
 /// one `--key` gives. The coding agent itself takes the same key, so this
 /// shows what `uc` is spending.
 pub struct OpenRouter {

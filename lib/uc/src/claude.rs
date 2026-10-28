@@ -7,8 +7,8 @@
 //! The login is the OAuth flow Claude Code itself uses (`claude setup-token`):
 //! authorization code with PKCE, the user pastes the code the browser shows,
 //! and the token that comes back, good for a year and for inference only, is
-//! written to `~/.bashrc.d/claude.sh` as `CLAUDE_CODE_OAUTH_TOKEN`, the way
-//! `OPENROUTER_API_KEY` sits in `~/.bashrc.d/openrouter.sh`.
+//! written as the `api_key` of the `claude` provider in `agent.yaml`, next to
+//! the other providers' keys (see [`crate::providers`]).
 //!
 //! The chat speaks OpenAI's chat completions, which is what OpenRouter
 //! takes. Anthropic's Messages API is not that, so [`stream`] and [`send`]
@@ -25,13 +25,12 @@ use futures_util::{Stream, StreamExt};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::io::{BufRead, IsTerminal, Write};
-use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::OnceLock;
 use std::time::Duration;
 
-/// The variable the token lives in; Claude Code reads the same one.
-pub const TOKEN_VAR: &str = "CLAUDE_CODE_OAUTH_TOKEN";
+/// What a login is saved as in `agent.yaml`, and how a 401 says to fix it.
+const RELOGIN: &str = " (log in again: uc agent login claude)";
 
 const CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 const AUTHORIZE_URL: &str = "https://claude.com/cai/oauth/authorize";
@@ -201,37 +200,10 @@ fn token_from(value: &Value) -> Result<Token> {
     })
 }
 
-/// Where the token is saved: next to the other keys.
-pub fn env_file() -> Result<PathBuf> {
-    let home = std::env::var_os("HOME").ok_or_else(|| anyhow!("HOME is not set"))?;
-    Ok(PathBuf::from(home).join(".bashrc.d/claude.sh"))
-}
-
-/// Writes the token as an `export` the shell sources, readable by the user
-/// only.
-pub fn save(token: &str) -> Result<PathBuf> {
-    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-    let path = env_file()?;
-    std::fs::create_dir_all(path.parent().expect("a parent"))?;
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(&path)
-        .with_context(|| format!("writing {}", path.display()))?;
-    // `mode` only applies to a file that is new.
-    file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
-    writeln!(
-        file,
-        "# Claude subscription token for `uc` chat (uc agent login claude)\nexport {TOKEN_VAR}={token}"
-    )?;
-    Ok(path)
-}
-
 /// `uc agent login claude`: log in with the Claude subscription and save the
-/// token. `--print` shows the token instead of saving it.
-pub async fn login(print_only: bool) -> Result<()> {
+/// token as the key of the provider `name` (`claude`). `--print` shows the
+/// token instead of saving it.
+pub async fn login(name: &str, print_only: bool) -> Result<()> {
     if !std::io::stdin().is_terminal() {
         bail!("the login needs a terminal to paste the code into");
     }
@@ -254,22 +226,19 @@ pub async fn login(print_only: bool) -> Result<()> {
     eprintln!("Exchanging the code for a token...");
     let token = exchange(&verifier, &input).await?;
     if print_only {
-        println!("export {TOKEN_VAR}={}", token.access);
+        println!("{}", token.access);
         return Ok(());
     }
-    let path = save(&token.access)?;
+    let path = crate::providers::save_key(name, crate::providers::Kind::Claude, &token.access)?;
     let days = token.expires_in / 86_400;
-    eprintln!("Saved {TOKEN_VAR} to {}", path.display());
+    eprintln!("Saved the token as provider {name} in {}", path.display());
     if token.expires_in > 0 && days < 30 {
         eprintln!(
             "Note: this token lasts only {} hours, not a year; log in again when it stops working.",
             token.expires_in / 3600
         );
     }
-    eprintln!(
-        "Open a new shell, or `source {}`, and run `uc`.",
-        path.display()
-    );
+    eprintln!("Run `uc` to chat on it.");
     Ok(())
 }
 
@@ -415,7 +384,7 @@ async fn post(token: &str, request: &Value) -> Result<reqwest::Response> {
                 let msg = value["error"]["message"].as_str().unwrap_or("no message");
                 let retry = matches!(status.as_u16(), 429 | 529) || status.is_server_error();
                 let hint = if status.as_u16() == 401 {
-                    format!(" (log in again: uc agent login claude; {TOKEN_VAR} must be set)")
+                    RELOGIN.to_string()
                 } else {
                     String::new()
                 };
@@ -593,7 +562,7 @@ pub async fn usage_report(token: &str) -> Result<Usage> {
     let value: Value = response.json().await.unwrap_or(Value::Null);
     let msg = value["error"]["message"].as_str().unwrap_or("no message");
     let hint = if status.as_u16() == 401 {
-        format!(" (log in again: uc agent login claude; {TOKEN_VAR} must be set)")
+        RELOGIN.to_string()
     } else {
         String::new()
     };

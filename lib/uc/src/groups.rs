@@ -347,48 +347,57 @@ pub static AGENT: Group = Group {
     fallback: None,
 };
 
-/// `uc agent login claude|copilot [--print]`: the Claude subscription's
-/// token, saved as `CLAUDE_CODE_OAUTH_TOKEN` in `~/.bashrc.d/claude.sh`, or a
-/// GitHub token for Copilot, saved as `COPILOT_GITHUB_TOKEN` in
-/// `~/.bashrc.d/copilot.sh`.
+/// `uc agent login claude|copilot [--name NAME] [--print]`: the Claude
+/// subscription's token, or a GitHub token for Copilot, saved as the key of
+/// the provider of that name (`claude`, `copilot`) in `agent.yaml`.
 fn agent_login(args: &[OsString]) -> ExitCode {
-    let args: Vec<String> = args
-        .iter()
-        .map(|a| a.to_string_lossy().into_owned())
-        .collect();
-    let usage = "usage: uc agent login claude|copilot [--print]";
-    let copilot = match args.iter().map(String::as_str).collect::<Vec<_>>()[..] {
-        ["-h" | "--help"] => {
-            println!("{usage}\n");
-            println!(
-                "claude: logs in with your Claude subscription (Pro or Max) and saves the token"
-            );
-            println!("as CLAUDE_CODE_OAUTH_TOKEN in ~/.bashrc.d/claude.sh.");
-            println!("copilot: logs in to GitHub with a device code and saves the token as");
-            println!("COPILOT_GITHUB_TOKEN in ~/.bashrc.d/copilot.sh; the account needs Copilot.");
-            println!(
-                "`uc` then offers that provider's models in `uc agent model`, next to the others with a key;"
-            );
-            println!("UC_PROVIDER=openrouter, claude or copilot picks the one it starts on.");
-            println!("--print shows the export line instead of saving it.");
-            return ExitCode::SUCCESS;
+    let usage = "usage: uc agent login claude|copilot [--name NAME] [--print]";
+    let mut args = args.iter().map(|a| a.to_string_lossy().into_owned());
+    let (mut kind, mut name, mut print) = (None, None, false);
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "-h" | "--help" => {
+                println!("{usage}\n");
+                println!("claude: logs in with your Claude subscription (Pro or Max).");
+                println!(
+                    "copilot: logs in to GitHub with a device code; the account needs Copilot."
+                );
+                println!(
+                    "The token is saved as the api_key of the provider of that name in {},",
+                    crate::providers::path().display()
+                );
+                println!(
+                    "or of NAME with --name, for a second account. `uc` then offers its models"
+                );
+                println!(
+                    "in `uc agent model`, next to the other providers there; provider: there names"
+                );
+                println!("the one it starts on. --print shows the token instead of saving it.");
+                return ExitCode::SUCCESS;
+            }
+            "--print" => print = true,
+            "--name" => name = args.next(),
+            "claude" if kind.is_none() => kind = Some(crate::providers::Kind::Claude),
+            "copilot" if kind.is_none() => kind = Some(crate::providers::Kind::Copilot),
+            _ => {
+                eprintln!("{usage}");
+                return ExitCode::from(2);
+            }
         }
-        ["claude"] | ["claude", "--print"] => false,
-        ["copilot"] | ["copilot", "--print"] => true,
-        _ => {
-            eprintln!("{usage}");
-            return ExitCode::from(2);
-        }
+    }
+    let Some(kind) = kind.filter(|_| name.as_deref() != Some("")) else {
+        eprintln!("{usage}");
+        return ExitCode::from(2);
     };
+    let name = name.unwrap_or_else(|| kind.as_str().to_string());
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .expect("tokio runtime");
-    let print = args.len() == 2;
-    let done = if copilot {
-        runtime.block_on(crate::copilot::login(print))
+    let done = if kind == crate::providers::Kind::Copilot {
+        runtime.block_on(crate::copilot::login(&name, print))
     } else {
-        runtime.block_on(crate::claude::login(print))
+        runtime.block_on(crate::claude::login(&name, print))
     };
     match done {
         Ok(()) => ExitCode::SUCCESS,
@@ -469,35 +478,32 @@ fn agent_model(args: &[OsString]) -> ExitCode {
     }
 }
 
-/// `uc agent usage`: the OpenRouter usage of `OPENROUTER_API_KEY`, the key
-/// the coding agent itself chats with, and the Claude subscription usage of
-/// `CLAUDE_CODE_OAUTH_TOKEN`. Each is shown when its credential is set.
+/// `uc agent usage`: the OpenRouter usage of the `openrouter` provider's
+/// key in `agent.yaml`, the key the coding agent itself chats with, and the
+/// Claude subscription usage of the `claude` provider's token. Each is shown
+/// when the provider has a key.
 fn agent_usage(args: &[OsString]) -> ExitCode {
+    use crate::providers::{Kind, first};
     const USAGE: &str = "usage: uc agent usage [--key KEY]";
     let mut args = args.iter().map(|arg| arg.to_string_lossy().into_owned());
-    let set = |name: &str| {
-        std::env::var(name)
-            .ok()
-            .filter(|v| !v.trim().is_empty())
-            .unwrap_or_default()
-    };
-    let mut key = set("OPENROUTER_API_KEY");
-    let token = set(crate::claude::TOKEN_VAR);
+    let mut key = first(Kind::OpenRouter).map(|p| p.key).unwrap_or_default();
+    let token = first(Kind::Claude).map(|p| p.key).unwrap_or_default();
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "-h" | "--help" => {
                 println!("{USAGE}\n");
+                println!("Shows what the agent's own credentials have used, from the providers in");
                 println!(
-                    "Shows what the agent's own credentials have used. With OPENROUTER_API_KEY"
-                );
-                println!("(or --key) set: the key's spend, limits and credits. With");
-                println!(
-                    "CLAUDE_CODE_OAUTH_TOKEN set (uc agent login claude): how much of the Claude"
+                    "{}. With an OpenRouter key (or --key): the",
+                    crate::providers::path().display()
                 );
                 println!(
-                    "subscription's 5-hour and weekly windows is used. Both are shown if both"
+                    "key's spend, limits and credits. With a Claude subscription (uc agent login"
                 );
-                println!("are set.");
+                println!(
+                    "claude): how much of its 5-hour and weekly windows is used. Both are shown"
+                );
+                println!("if both are there.");
                 return ExitCode::SUCCESS;
             }
             "--key" => {
@@ -512,8 +518,9 @@ fn agent_usage(args: &[OsString]) -> ExitCode {
     }
     if key.trim().is_empty() && token.is_empty() {
         eprintln!(
-            "set OPENROUTER_API_KEY (https://openrouter.ai/keys) or pass --key KEY, \
-             or log in to Claude with `uc agent login claude` (CLAUDE_CODE_OAUTH_TOKEN)"
+            "add an openrouter provider with its api_key (https://openrouter.ai/keys) to {}, \
+             or pass --key KEY, or log in to Claude with `uc agent login claude`",
+            crate::providers::path().display()
         );
         return ExitCode::from(2);
     }

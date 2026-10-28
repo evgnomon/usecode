@@ -85,13 +85,13 @@ fn print_usage() {
         "Usage: uc [--ask] [--output] [--commands] [--no-shell] [--parallel|--exa|--duckduckgo] | <command> [<args>]\n"
     );
     println!("With no command, uc is a coding agent: talk to it and it runs commands and");
-    println!("edits files for you, through OpenRouter (OPENROUTER_API_KEY, UC_MODEL,");
-    println!("UC_EFFORT), a Claude subscription (`uc agent login claude`) or GitHub Copilot");
-    println!("(`uc agent login copilot`); `uc agent model` lists the models of each one with a");
-    println!(
-        "key, and UC_PROVIDER picks the one it starts on; naming a model there or in the \
-         chat makes it stick. It runs them straight away; `uc --ask` confirms each one first."
-    );
+    println!("edits files for you, through the providers in ~/.config/usecode/agent.yaml:");
+    println!("OpenRouter, any OpenAI-compatible API, a Claude subscription (`uc agent login");
+    println!("claude`) or GitHub Copilot (`uc agent login copilot`). `uc agent model` lists");
+    println!("the models of each one with a key; provider:, model: and effort: in the same");
+    println!("file (or UC_PROVIDER, UC_MODEL, UC_EFFORT) pick what it starts on, and naming");
+    println!("a model there or in the chat saves it. It runs them straight away; `uc --ask`");
+    println!("confirms each one first.");
     println!("You see its answers; `uc --output` also shows what the commands print.");
     println!("Each command it runs shows as a few words on what it does, like");
     println!("`· list the rust files`; `uc --commands` shows the command line instead.");
@@ -99,8 +99,8 @@ fn print_usage() {
     println!("away; `uc --no-shell` sends every line to the model instead.");
     println!("Every flag can also be set as UC_<FLAG> (UC_NO_SHELL=1) or under `uc:` in");
     println!("config.yaml (no_shell: true); the command line wins, then the environment.");
-    println!("It searches the web with Parallel (PARALLEL_API_KEY), else Exa (EXA_API_KEY),");
-    println!("else DuckDuckGo; `uc --exa` or `uc --duckduckgo` picks one.\n");
+    println!("It searches the web with Parallel, else Exa (their keys under search: in");
+    println!("agent.yaml), else DuckDuckGo; `uc --exa` or `uc --duckduckgo` picks one.\n");
     let commands = discover();
     if commands.is_empty() {
         println!("No uc commands found on PATH.");

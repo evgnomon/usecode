@@ -51,6 +51,7 @@ pub mod mail;
 pub mod openrouter;
 pub mod password;
 pub mod profile;
+pub mod providers;
 pub mod registry;
 pub mod secret;
 pub mod usage;

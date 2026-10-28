@@ -80,7 +80,7 @@
   the user has a key for, and the routing; `chat model <number|name|id|auto>`
   switches the model for the lines after it, keeping the context. A model
   more than one provider serves is listed once for each, with the provider
-  beside it; pass `provider` (OpenRouter, Claude or Copilot) to pick which.
+  beside it; pass `provider` (the name shown beside it) to pick which.
   `chat clear` clears the screen and the context. `chat exit` leaves uc.
 - Switching the model is yours to do, never something to hand back. When the
   user asks for a stronger, cheaper or faster model without naming one, pick

@@ -3,12 +3,13 @@
 
 //! `uc` with no command: a coding agent on the terminal.
 //!
-//! Each line typed goes to a model on OpenRouter, which answers or asks to
+//! Each line typed goes to a model, which answers or asks to
 //! run a shell command, read, write or edit a file in the current directory,
-//! search the web (Parallel when `PARALLEL_API_KEY` is set, else Exa when
-//! `EXA_API_KEY` is, else DuckDuckGo's HTML page, no key; `--parallel`, `--exa`
-//! or `--duckduckgo` picks one) or read a page (rendered by
-//! Cloudflare when `CLOUDFLARE_ACCOUNT_ID` is set, else fetched as is).
+//! search the web (Parallel when `agent.yaml` has its key under `search:`,
+//! else Exa when it has that one, else DuckDuckGo's HTML page, no key;
+//! `--parallel`, `--exa` or `--duckduckgo` picks one) or read a page
+//! (rendered by Cloudflare when it has an account under `fetch:`, else
+//! fetched as is).
 //! Commands, writes and edits are shown and run straight away; with `--ask`
 //! they are confirmed first (`a` allows the rest of the session, a line ending
 //! in `-y` allows what its answer does). Deleting files is always confirmed.
@@ -36,7 +37,7 @@
 //! `uc agent model <number|name> [provider]` switches to one straight away; either
 //! way the lines after it go to that model, with the context kept. The same
 //! words typed in a shell save the choice for the new sessions instead
-//! (`~/.bashrc.d/model.sh`), and the sessions a switch is typed in save it too:
+//! (`provider:` and `model:` in `agent.yaml`), and the sessions a switch is typed in save it too:
 //! the other `uc` processes running keep their model, the ones started after
 //! follow. The
 //! lists of models are kept in `~/.cache/usecode/models.json` so that
@@ -50,14 +51,16 @@
 //! message count, an estimate before the first turn, the real token count of
 //! the last one, the model's window, and what the session has spent.
 //! What the model is told about all this is the main skill, `chat/main.md`, always in its system prompt.
-//! The providers are OpenRouter (`OPENROUTER_API_KEY`), a Claude subscription
-//! (`CLAUDE_CODE_OAUTH_TOKEN`, see [`claude`]) and GitHub Copilot
-//! (`COPILOT_GITHUB_TOKEN`, see [`copilot`]); the session starts on the first
-//! of them with a key, or the one `UC_PROVIDER` names. Without any key the AI
+//! The providers and their keys are in `agent.yaml` in the user config, see
+//! [`providers`]: OpenRouter, a Claude subscription (see [`claude`]), GitHub
+//! Copilot (see [`copilot`]) and any server that speaks OpenAI's chat
+//! completions; the session starts on the first of them with a key, or the
+//! one `provider:` there (or `UC_PROVIDER`) names. Without any the AI
 //! is off and every line runs in
 //! bash, like a plain shell with uc's history and confirmations. The model
-//! comes from `UC_MODEL`, else it is the provider's default (GLM 5.3 Flash
-//! on OpenRouter), and the reasoning effort from `UC_EFFORT`. The session
+//! is `model:` in `agent.yaml` (or `UC_MODEL`), else the provider's default
+//! (GLM 5.3 Flash on OpenRouter), and the reasoning effort `effort:` (or
+//! `UC_EFFORT`). The session
 //! keeps one model: each line is one request to it, and it changes only
 //! when `uc agent model` or `chat model` says so.
 
@@ -73,7 +76,7 @@ use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::io::{IsTerminal, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{ExitCode, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -81,12 +84,11 @@ use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::task::JoinHandle;
 
-use crate::{claude, copilot};
+use crate::{claude, copilot, providers};
 
 mod diff;
 mod voice;
 
-const API: &str = "https://openrouter.ai/api/v1/chat/completions";
 const DEFAULT_MODEL: &str = "z-ai/glm-5.3-flash";
 /// The model on the Claude subscription unless `UC_MODEL` says otherwise.
 const DEFAULT_CLAUDE_MODEL: &str = "anthropic/claude-sonnet-5.5";
@@ -238,74 +240,67 @@ impl Engine {
     /// The one asked for, else Parallel, then Exa, whichever has a key, else
     /// DuckDuckGo.
     fn pick(search: Option<Search>) -> Result<Engine> {
-        let key = |name: &str, site: &str| {
-            env(name).ok_or_else(|| anyhow!("set {name} ({site}) to search with it"))
+        let settings = providers::settings();
+        let (parallel, exa) = (settings.parallel_key.clone(), settings.exa_key.clone());
+        let key = |key: Option<String>, name: &str, site: &str| {
+            key.ok_or_else(|| {
+                anyhow!(
+                    "add search: {name}: api_key: ({site}) to {} to search with it",
+                    providers::path().display()
+                )
+            })
         };
         Ok(match search {
             Some(Search::Parallel) => {
-                Engine::Parallel(key("PARALLEL_API_KEY", "https://parallel.ai")?)
+                Engine::Parallel(key(parallel, "parallel", "https://parallel.ai")?)
             }
-            Some(Search::Exa) => Engine::Exa(key("EXA_API_KEY", "https://exa.ai")?),
+            Some(Search::Exa) => Engine::Exa(key(exa, "exa", "https://exa.ai")?),
             Some(Search::DuckDuckGo) => Engine::DuckDuckGo,
-            None => env("PARALLEL_API_KEY")
+            None => parallel
                 .map(Engine::Parallel)
-                .or_else(|| env("EXA_API_KEY").map(Engine::Exa))
+                .or_else(|| exa.map(Engine::Exa))
                 .unwrap_or(Engine::DuckDuckGo),
         })
     }
 }
 
-/// Where a model runs; each takes its own key.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) enum Provider {
-    OpenRouter,
-    Claude,
-    Copilot,
-}
-
-impl Provider {
-    /// In the order the session picks the first with a key.
-    pub(crate) const ALL: [Provider; 3] =
-        [Provider::OpenRouter, Provider::Claude, Provider::Copilot];
-
-    pub(crate) fn name(self) -> &'static str {
-        match self {
-            Provider::OpenRouter => "OpenRouter",
-            Provider::Claude => "Claude",
-            Provider::Copilot => "Copilot",
-        }
-    }
-
-    /// The variable its key is in.
-    pub(crate) fn var(self) -> &'static str {
-        match self {
-            Provider::OpenRouter => "OPENROUTER_API_KEY",
-            Provider::Claude => claude::TOKEN_VAR,
-            Provider::Copilot => copilot::TOKEN_VAR,
-        }
-    }
-
-    /// `openrouter`, `claude` or `copilot`, in any case.
-    pub(crate) fn parse(name: &str) -> Option<Provider> {
-        Provider::ALL
-            .into_iter()
-            .find(|p| p.name().eq_ignore_ascii_case(name.trim()))
-    }
-}
+/// The providers a session can talk to, from `agent.yaml`; see
+/// [`crate::providers`].
+pub(crate) use crate::providers::{Kind, Provider};
 
 /// A model on a provider: what `uc agent model` lists and switches to.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub(crate) struct Choice {
-    pub(crate) provider: Provider,
+    /// The provider's name in `agent.yaml`.
+    pub(crate) provider: String,
     /// The provider's id for it; the Claude subscription's are OpenRouter's.
     pub(crate) model: String,
+    /// From the provider's whole list, not the few it offers first: `opus`
+    /// means the picked Opus, not every Opus OpenRouter ever served.
+    pub(crate) extra: bool,
 }
 
+impl PartialEq for Choice {
+    fn eq(&self, other: &Choice) -> bool {
+        self.provider == other.provider && self.model == other.model
+    }
+}
+
+impl Eq for Choice {}
+
 impl Choice {
-    pub(crate) fn new(provider: Provider, model: &str) -> Choice {
+    pub(crate) fn new(provider: &str, model: &str) -> Choice {
         Choice {
-            provider,
+            provider: provider.to_string(),
             model: model.to_string(),
+            extra: false,
+        }
+    }
+
+    fn extra(provider: &str, model: &str) -> Choice {
+        Choice {
+            extra: true,
+            ..Choice::new(provider, model)
         }
     }
 }
@@ -332,66 +327,194 @@ fn common_name(model: &str) -> String {
         .collect()
 }
 
-/// The models of every provider with a key: OpenRouter's pool, the Claude
-/// subscription's three, and what Copilot offers the account. The lists
-/// come from the cache (see [`cache_path`]); a list that isn't there yet is
+/// A model list from the cache under `key`, unless `refresh`; else from
+/// `fetch`, and kept in the cache.
+async fn cached_list<F>(key: &str, refresh: bool, fetch: F) -> Result<Vec<String>>
+where
+    F: std::future::Future<Output = Result<Vec<String>>>,
+{
+    let cached = (!refresh)
+        .then(|| cache_get(key))
+        .flatten()
+        .and_then(|v| serde_json::from_value::<Vec<String>>(v).ok());
+    if let Some(models) = cached {
+        return Ok(models);
+    }
+    let models = fetch.await?;
+    cache_set(key, json!(models));
+    Ok(models)
+}
+
+/// The models of every provider that can be talked to: the ones each
+/// offers first (`models:` in the file, else uc's picks for OpenRouter and
+/// the Claude subscription), then the rest of what it lists. The lists come
+/// from the cache (see [`cache_path`]); a list that isn't there yet is
 /// fetched, and `refresh` fetches them all again.
-pub(crate) async fn pool(keys: &BTreeMap<Provider, String>, refresh: bool) -> Vec<Choice> {
+pub(crate) async fn pool(providers: &[Provider], refresh: bool) -> Vec<Choice> {
     let mut pool = Vec::new();
-    for (provider, key) in keys {
-        match provider {
-            Provider::OpenRouter => {
-                // The picks first, then everything else OpenRouter serves.
-                pool.extend(MODELS.iter().map(|m| Choice::new(*provider, m)));
+    for provider in providers {
+        let name = provider.name.as_str();
+        let picks: Vec<String> = if !provider.models.is_empty() {
+            provider.models.clone()
+        } else {
+            match provider.kind {
+                Kind::OpenRouter => MODELS.iter().map(|m| m.to_string()).collect(),
+                Kind::Claude => CLAUDE_MODELS.iter().map(|m| m.to_string()).collect(),
+                Kind::OpenAi | Kind::Copilot => Vec::new(),
+            }
+        };
+        pool.extend(picks.iter().map(|m| Choice::new(name, m)));
+        if !provider.list_models {
+            continue;
+        }
+        let listed: Result<Vec<String>> = match provider.kind {
+            Kind::OpenRouter => {
                 let list = if refresh {
                     refresh_models().await
                 } else {
                     models().await
                 };
-                match list {
-                    Ok(list) => {
-                        for id in list.iter().filter_map(chat_model_id) {
-                            if !MODELS.contains(&id) {
-                                pool.push(Choice::new(*provider, id));
-                            }
-                        }
-                    }
-                    Err(err) => eprintln!("· OpenRouter's model list: {err:#}"),
+                list.map(|list| {
+                    list.iter()
+                        .filter_map(chat_model_id)
+                        .map(String::from)
+                        .collect()
+                })
+            }
+            // The subscription has no list to ask for.
+            Kind::Claude => Ok(Vec::new()),
+            Kind::Copilot => {
+                cached_list(
+                    &format!("copilot:{name}"),
+                    refresh,
+                    copilot::models(&provider.key),
+                )
+                .await
+            }
+            Kind::OpenAi => {
+                cached_list(&format!("openai:{name}"), refresh, openai_models(provider)).await
+            }
+        };
+        match listed {
+            Ok(models) => {
+                // Copilot's list is what the account may pick: all of it is
+                // offered, none of it extra.
+                let extra = provider.kind != Kind::Copilot;
+                for model in models.iter().filter(|m| !picks.contains(m)) {
+                    pool.push(if extra {
+                        Choice::extra(name, model)
+                    } else {
+                        Choice::new(name, model)
+                    });
                 }
             }
-            Provider::Claude => {
-                pool.extend(CLAUDE_MODELS.iter().map(|m| Choice::new(*provider, m)));
-            }
-            Provider::Copilot => {
-                let cached = (!refresh)
-                    .then(|| cache_get("copilot"))
-                    .flatten()
-                    .and_then(|v| serde_json::from_value::<Vec<String>>(v).ok());
-                let listed = match cached {
-                    Some(models) => Ok(models),
-                    None => match copilot::models(key).await {
-                        Ok(models) => {
-                            cache_set("copilot", json!(models));
-                            Ok(models)
-                        }
-                        Err(err) => Err(err),
-                    },
-                };
-                match listed {
-                    Ok(models) => pool.extend(models.iter().map(|m| Choice::new(*provider, m))),
-                    Err(err) => eprintln!("· Copilot's models: {err:#}"),
-                }
-            }
+            Err(err) => eprintln!("· {}'s models: {err:#}", provider.label()),
         }
     }
     pool
 }
 
+/// The ids an OpenAI-style provider's `/models` lists.
+async fn openai_models(provider: &Provider) -> Result<Vec<String>> {
+    let mut request = client()
+        .get(format!("{}/models", provider.base_url))
+        .timeout(Duration::from_secs(20));
+    if !provider.key.is_empty() {
+        request = request.bearer_auth(&provider.key);
+    }
+    for (name, value) in &provider.headers {
+        request = request.header(name, value);
+    }
+    let list: Value = request
+        .send()
+        .await
+        .with_context(|| format!("calling {}", provider.label()))?
+        .error_for_status()?
+        .json()
+        .await
+        .context("reading the model list")?;
+    let mut ids: Vec<String> = list["data"]
+        .as_array()
+        .ok_or_else(|| anyhow!("the model list came without data"))?
+        .iter()
+        .filter_map(|m| m["id"].as_str().map(String::from))
+        .collect();
+    ids.sort();
+    ids.dedup();
+    Ok(ids)
+}
+
+/// The model a session on `provider` starts on: the one the file names,
+/// else uc's default for OpenRouter and the Claude subscription, else the
+/// first it lists.
+fn default_model(provider: &Provider, pool: &[Choice]) -> String {
+    if let Some(model) = &provider.default_model {
+        return model.clone();
+    }
+    match provider.kind {
+        Kind::OpenRouter if provider.models.is_empty() => DEFAULT_MODEL.to_string(),
+        Kind::Claude if provider.models.is_empty() => DEFAULT_CLAUDE_MODEL.to_string(),
+        _ => pool
+            .iter()
+            .find(|c| c.provider == provider.name)
+            .map(|c| c.model.clone())
+            .unwrap_or_default(),
+    }
+}
+
+/// The provider named `name`, in any case.
+fn named<'a>(providers: &'a [Provider], name: &str) -> Option<&'a Provider> {
+    providers
+        .iter()
+        .find(|p| p.name.eq_ignore_ascii_case(name.trim()))
+}
+
+/// The provider a session starts on: the one `UC_PROVIDER` names, else
+/// `provider:` in `agent.yaml`, when it can be talked to; else the first in
+/// the file that can.
+fn start_provider(providers: &[Provider]) -> Option<&Provider> {
+    let wanted = env("UC_PROVIDER").or_else(|| providers::settings().provider.clone());
+    let found = wanted.as_deref().and_then(|name| named(providers, name));
+    if let (Some(name), None) = (&wanted, found) {
+        eprintln!(
+            "· the provider to start on is {name}, but {} has no usable provider {name}",
+            providers::path().display()
+        );
+    }
+    found.or(providers.first())
+}
+
+/// The model a session on `start` starts on: `UC_MODEL`, else `model:` in
+/// `agent.yaml` when it was saved for that provider, else the provider's
+/// default.
+fn start_model(start: &Provider, pool: &[Choice]) -> String {
+    let settings = providers::settings();
+    env("UC_MODEL")
+        .or_else(|| {
+            settings.model.clone().filter(|_| {
+                settings
+                    .provider
+                    .as_deref()
+                    .is_none_or(|p| p.eq_ignore_ascii_case(&start.name))
+            })
+        })
+        .unwrap_or_else(|| default_model(start, pool))
+}
+
+/// What to say when no provider can be talked to.
+fn no_provider() -> String {
+    format!(
+        "no provider has a key: add one under providers: in {}, or log in with \
+         `uc agent login claude` or `uc agent login copilot`",
+        providers::path().display()
+    )
+}
+
 struct Session {
-    /// The key of each provider that has one.
-    keys: BTreeMap<Provider, String>,
-    /// Where `model` runs.
-    provider: Provider,
+    /// The providers that can be talked to, from `agent.yaml`.
+    providers: Vec<Provider>,
+    /// The name of the one `model` runs on.
+    provider: String,
     /// The model every line goes to.
     model: String,
     /// What `uc agent model` lists and picks from.
@@ -533,56 +656,26 @@ async fn run(
     shell: bool,
     search: Option<Search>,
 ) -> Result<()> {
-    // Without a key the AI is off and every line runs in bash. The session
-    // starts on the provider `UC_PROVIDER` names, else the first with a key;
-    // the others' models are a `uc agent model` away.
-    let keys: BTreeMap<Provider, String> = Provider::ALL
-        .into_iter()
-        .filter_map(|p| env(p.var()).map(|key| (p, key)))
-        .collect();
-    let wanted = match env("UC_PROVIDER") {
-        Some(name) => Some(Provider::parse(&name).ok_or_else(|| {
-            anyhow!("UC_PROVIDER is {name}; it is openrouter, claude or copilot")
-        })?),
-        None => None,
-    };
-    let provider = wanted
-        .filter(|p| keys.contains_key(p))
-        .or_else(|| keys.keys().next().copied())
-        .unwrap_or(Provider::OpenRouter);
-    if let Some(wanted) = wanted.filter(|p| *p != provider) {
-        eprintln!(
-            "· UC_PROVIDER is {}, but {} is not set",
-            wanted.name(),
-            wanted.var()
-        );
-    }
-    let ai = !keys.is_empty();
+    // Without a provider the AI is off and every line runs in bash. The
+    // session starts on the one `UC_PROVIDER` names, else the first in
+    // `agent.yaml`; the others' models are a `uc agent model` away.
+    let providers = providers::usable();
+    let start = start_provider(&providers).cloned();
+    let ai = start.is_some();
     AI.store(ai, Ordering::Relaxed);
     SHELL.store(shell, Ordering::Relaxed);
-    let env_or = |name: &str, default: &str| {
-        std::env::var(name)
-            .ok()
-            .filter(|v| !v.trim().is_empty())
-            .unwrap_or_else(|| default.to_string())
-    };
-    let pool = pool(&keys, false).await;
-    // Copilot's own default is the first it lists.
-    let default = match provider {
-        Provider::OpenRouter => DEFAULT_MODEL.to_string(),
-        Provider::Claude => DEFAULT_CLAUDE_MODEL.to_string(),
-        Provider::Copilot => pool
-            .iter()
-            .find(|c| c.provider == Provider::Copilot)
-            .map(|c| c.model.clone())
-            .unwrap_or_default(),
-    };
-    let model = env_or("UC_MODEL", &default);
-    let effort = env_or("UC_EFFORT", DEFAULT_EFFORT);
+    let pool = pool(&providers, false).await;
+    let model = start
+        .as_ref()
+        .map(|p| start_model(p, &pool))
+        .unwrap_or_default();
+    let effort = env("UC_EFFORT")
+        .or_else(|| providers::settings().effort.clone())
+        .unwrap_or_else(|| DEFAULT_EFFORT.to_string());
     let mut session = Session {
         messages: vec![json!({"role": "system", "content": system_prompt(&model, ask, output)})],
-        keys,
-        provider,
+        providers,
+        provider: start.map(|p| p.name).unwrap_or_default(),
         pool,
         model,
         ask,
@@ -634,10 +727,7 @@ async fn run(
             return Ok(());
         }
         if !ai && (agent_model_line(line).is_some() || agent.is_some()) {
-            eprintln!(
-                "· AI off: set OPENROUTER_API_KEY, or log in with `uc agent login claude` \
-                 or `uc agent login copilot`, to turn it on"
-            );
+            eprintln!("· AI off: {}, to turn it on", no_provider());
             continue;
         }
         if line == "uc agent model-update" {
@@ -646,7 +736,7 @@ async fn run(
         }
         if let Some(rest) = agent_model_line(line) {
             let name = rest.trim();
-            if name.is_empty() || choice_named(&session.pool, name, session.provider).is_none() {
+            if name.is_empty() || choice_named(&session.pool, name, &session.provider).is_none() {
                 session.pick_model(name)
             } else {
                 session.switch_and_save(name);
@@ -755,27 +845,38 @@ fn cached(model: &str, messages: &[Value]) -> Vec<Value> {
 /// worth a pause, not the end of the user's turn.
 const ATTEMPTS: u32 = 4;
 
-/// Posts `body` to OpenRouter and returns the response once it is a success,
+/// Posts `body` to the chat completions of an OpenAI-style `provider`
+/// (OpenRouter is one) and returns the response once it is a success,
 /// trying again after a pause on a network error, 429 or 5xx.
-async fn open(key: &str, body: &Value) -> Result<reqwest::Response> {
+async fn open(provider: &Provider, body: &Value) -> Result<reqwest::Response> {
+    let name = provider.label();
     let mut attempt = 1;
     loop {
-        let sent = client()
-            .post(API)
-            .bearer_auth(key)
-            .header("X-Title", "usecode")
-            .json(body)
-            .send()
-            .await;
-        let (retry, error) = match sent {
-            Err(e) => (true, anyhow::Error::new(e).context("calling OpenRouter")),
+        let mut request = client()
+            .post(format!("{}/chat/completions", provider.base_url))
+            .json(body);
+        if !provider.key.is_empty() {
+            request = request.bearer_auth(&provider.key);
+        }
+        for (header, value) in &provider.headers {
+            request = request.header(header, value);
+        }
+        let (retry, error) = match request.send().await {
+            Err(e) => (
+                true,
+                anyhow::Error::new(e).context(format!("calling {name}")),
+            ),
             Ok(response) if response.status().is_success() => return Ok(response),
             Ok(response) => {
                 let status = response.status();
-                let value: Value = response.json().await.unwrap_or(Value::Null);
-                let msg = value["error"]["message"].as_str().unwrap_or("no message");
+                let text = response.text().await.unwrap_or_default();
+                let value: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
+                let msg = value["error"]["message"]
+                    .as_str()
+                    .map(str::to_string)
+                    .unwrap_or_else(|| text.trim().chars().take(300).collect());
                 let retry = status.as_u16() == 429 || status.is_server_error();
-                (retry, anyhow::anyhow!("OpenRouter: {status}: {msg}"))
+                (retry, anyhow::anyhow!("{name}: {status}: {msg}"))
             }
         };
         if !retry || attempt == ATTEMPTS {
@@ -788,19 +889,26 @@ async fn open(key: &str, body: &Value) -> Result<reqwest::Response> {
 }
 
 /// Posts `body` and returns the whole reply, for requests that don't stream.
-async fn send(key: &str, body: &Value) -> Result<Value> {
-    let value: Value = open(key, body)
+async fn send(provider: &Provider, body: &Value) -> Result<Value> {
+    let value: Value = open(provider, body)
         .await?
         .json()
         .await
-        .context("reading OpenRouter's reply")?;
+        .with_context(|| format!("reading {}'s reply", provider.label()))?;
     if let Some(error) = value.get("error") {
         bail!(
-            "OpenRouter: {}",
+            "{}: {}",
+            provider.label(),
             error["message"].as_str().unwrap_or("no message")
         );
     }
     Ok(value)
+}
+
+/// The chat's request as a plain OpenAI-style API takes it: without
+/// OpenRouter's own fields, asking for the usage at the end of a stream.
+fn plain_request(body: &Value) -> Value {
+    copilot::request(body)
 }
 
 /// A reply as its chunks come in.
@@ -819,7 +927,7 @@ impl Reply {
     fn add(&mut self, chunk: &Value) -> Result<String> {
         if let Some(error) = chunk.get("error") {
             bail!(
-                "OpenRouter: {}",
+                "the model: {}",
                 error["message"].as_str().unwrap_or("no message")
             );
         }
@@ -1707,7 +1815,7 @@ fn tools() -> Value {
                 "model": string("which model to switch to, for action model: a number from \
                                  the list, part of a listed id or any id of the provider"),
                 "provider": string("for action model, which provider runs it when more than \
-                                    one serves it: OpenRouter, Claude or Copilot"),
+                                    one serves it, by the name the list shows beside it"),
             }),
             &["action"],
         ),
@@ -1719,13 +1827,18 @@ impl Session {
     fn models(&self) -> String {
         format!(
             "model {}",
-            label(&self.pool, &Choice::new(self.provider, &self.model))
+            label(&self.pool, &Choice::new(&self.provider, &self.model))
         )
     }
 
-    /// The key of the provider the model runs on.
-    fn key(&self) -> &str {
-        self.keys.get(&self.provider).map_or("", String::as_str)
+    /// The provider the model runs on.
+    fn current(&self) -> Result<&Provider> {
+        named(&self.providers, &self.provider).ok_or_else(|| anyhow!("{}", no_provider()))
+    }
+
+    /// The kind of provider the model runs on.
+    fn kind(&self) -> Option<Kind> {
+        self.current().ok().map(|p| p.kind)
     }
 
     /// Makes `choice` the model.
@@ -1739,24 +1852,30 @@ impl Session {
 
     /// The whole request posted to the provider; its reply is OpenAI's.
     async fn send(&self, body: &Value) -> Result<Value> {
-        match self.provider {
-            Provider::OpenRouter => send(self.key(), body).await,
-            Provider::Claude => claude::send(self.key(), body).await,
-            Provider::Copilot => copilot::send(self.key(), body).await,
+        let provider = self.current()?;
+        match provider.kind {
+            Kind::OpenRouter => send(provider, body).await,
+            Kind::OpenAi => send(provider, &plain_request(body)).await,
+            Kind::Claude => claude::send(&provider.key, body).await,
+            Kind::Copilot => copilot::send(&provider.key, body).await,
         }
     }
 
     /// The request streamed: the reply comes as OpenAI's SSE chunks.
     async fn stream(&self, body: &Value) -> Result<claude::Bytes> {
-        Ok(match self.provider {
-            Provider::OpenRouter => Box::pin(
-                open(self.key(), body)
-                    .await?
+        let provider = self.current()?;
+        let bytes = |response: reqwest::Response| -> claude::Bytes {
+            Box::pin(
+                response
                     .bytes_stream()
                     .map(|bytes| bytes.map(|b| b.to_vec()).map_err(std::io::Error::other)),
-            ),
-            Provider::Claude => claude::stream(self.key(), body).await?,
-            Provider::Copilot => copilot::stream(self.key(), body).await?,
+            )
+        };
+        Ok(match provider.kind {
+            Kind::OpenRouter => bytes(open(provider, body).await?),
+            Kind::OpenAi => bytes(open(provider, &plain_request(body)).await?),
+            Kind::Claude => claude::stream(&provider.key, body).await?,
+            Kind::Copilot => copilot::stream(&provider.key, body).await?,
         })
     }
 
@@ -1770,7 +1889,7 @@ impl Session {
     /// on the current one and filtered by `query`; one match is taken
     /// straight away and Esc keeps the model. Without a terminal it is `switch`.
     fn pick_model(&mut self, query: &str) {
-        let current = Choice::new(self.provider, &self.model);
+        let current = Choice::new(&self.provider, &self.model);
         let mut order: Vec<usize> = (0..self.pool.len()).collect();
         order.sort_by_key(|i| self.pool[*i] != current);
         let items: Vec<picker::Item> = order
@@ -1795,7 +1914,7 @@ impl Session {
     /// in the cache and makes it the list `uc agent model` offers.
     async fn update_models(&mut self) {
         eprintln!("· fetching the model lists");
-        self.pool = pool(&self.keys, true).await;
+        self.pool = pool(&self.providers, true).await;
         eprintln!("· {} models", self.pool.len());
     }
 
@@ -1808,7 +1927,7 @@ impl Session {
             line
         };
         if name.is_empty() {
-            let current = Choice::new(self.provider, &self.model);
+            let current = Choice::new(&self.provider, &self.model);
             let mut lines = String::new();
             for (i, choice) in self.pool.iter().enumerate() {
                 let mark = if *choice == current { "*" } else { " " };
@@ -1816,11 +1935,12 @@ impl Session {
             }
             return say(lines);
         }
-        match choice_named(&self.pool, name, self.provider) {
-            Some(choice) if !self.keys.contains_key(&choice.provider) => say(format!(
-                "· {} is not set, so {} is off\n",
-                choice.provider.var(),
-                choice.provider.name()
+        match choice_named(&self.pool, name, &self.provider) {
+            Some(choice) if named(&self.providers, &choice.provider).is_none() => say(format!(
+                "· {} has no key for {} in {}, so it is off\n",
+                choice.provider,
+                providers::label(&choice.provider),
+                providers::path().display()
             )),
             Some(choice) => {
                 self.set_model(choice);
@@ -1835,13 +1955,13 @@ impl Session {
     /// sessions on the machine follow the one choice. A model on a provider
     /// with no key switches nowhere and saves nothing.
     fn switch_and_save(&mut self, name: &str) {
-        let saved = choice_named(&self.pool, name, self.provider)
-            .filter(|c| self.keys.contains_key(&c.provider));
+        let saved = choice_named(&self.pool, name, &self.provider)
+            .filter(|c| named(&self.providers, &c.provider).is_some());
         drop(self.switch(name));
         let Some(choice) = saved else {
             return;
         };
-        match model_env_dir().and_then(|dir| save_model_choice(&choice, &dir)) {
+        match save_model_choice(&choice) {
             Ok(path) => {
                 eprintln!("· saved in {} for new `uc` sessions", path.display());
             }
@@ -2067,8 +2187,9 @@ impl Session {
     /// One request to the model; its text is printed as it arrives.
     async fn complete(&mut self) -> Result<Value> {
         let messages = &self.messages;
-        // Copilot takes plain messages; OpenRouter and Claude, breakpoints.
-        let messages = if self.provider == Provider::Copilot {
+        // OpenRouter and Claude take cache breakpoints; the others, plain
+        // messages.
+        let messages = if !matches!(self.kind(), Some(Kind::OpenRouter | Kind::Claude)) {
             messages.clone()
         } else {
             cached(&self.model, messages)
@@ -2131,7 +2252,7 @@ impl Session {
         }
         let message = reply.message();
         if message["content"].is_null() && message.get("tool_calls").is_none() {
-            bail!("OpenRouter sent no message");
+            bail!("{} sent no message", providers::label(&self.provider));
         }
         Ok(message)
     }
@@ -3012,7 +3133,7 @@ fn read_line(prompt: &str) -> Result<Option<String>> {
 
 /// How `uc agent model` shows `choice`: its id, with the provider beside it.
 pub(crate) fn label(_pool: &[Choice], choice: &Choice) -> String {
-    format!("{} ({})", choice.model, choice.provider.name())
+    format!("{} ({})", choice.model, providers::label(&choice.provider))
 }
 
 /// The model `uc agent model <name> [provider]` means: its number in `pool`, the one
@@ -3020,11 +3141,17 @@ pub(crate) fn label(_pool: &[Choice], choice: &Choice) -> String {
 /// (it has a `/`, or a provider is named). A model more than one provider
 /// serves is taken on the provider named, else on `prefer`, else on the
 /// first listed.
-pub(crate) fn choice_named(pool: &[Choice], name: &str, prefer: Provider) -> Option<Choice> {
+pub(crate) fn choice_named(pool: &[Choice], name: &str, prefer: &str) -> Option<Choice> {
     // `opus copilot` and `opus (Copilot)`, as the list shows it, both name one.
     let mut words: Vec<&str> = name.split_whitespace().collect();
-    let only = match words[..] {
-        [_, .., last] => Provider::parse(last.trim_matches(|c| c == '(' || c == ')')),
+    let only: Option<String> = match words[..] {
+        [_, .., last] => {
+            let last = last.trim_matches(|c| c == '(' || c == ')');
+            pool.iter()
+                .map(|c| c.provider.as_str())
+                .find(|p| p.eq_ignore_ascii_case(last) || providers::label(p) == last)
+                .map(String::from)
+        }
         _ => None,
     };
     if only.is_some() {
@@ -3037,7 +3164,7 @@ pub(crate) fn choice_named(pool: &[Choice], name: &str, prefer: Provider) -> Opt
     let lower = name.to_lowercase();
     let listed: Vec<&Choice> = pool
         .iter()
-        .filter(|c| only.is_none_or(|p| c.provider == p))
+        .filter(|c| only.as_ref().is_none_or(|p| c.provider == *p))
         .collect();
     let found: Vec<&Choice> = listed
         .iter()
@@ -3047,7 +3174,7 @@ pub(crate) fn choice_named(pool: &[Choice], name: &str, prefer: Provider) -> Opt
     // One model on several providers is still one model.
     let best = |of: Vec<&Choice>| {
         of.iter()
-            .find(|c| c.provider == prefer)
+            .find(|c| c.provider.eq_ignore_ascii_case(prefer))
             .or(of.first())
             .map(|c| (*c).clone())
     };
@@ -3056,11 +3183,7 @@ pub(crate) fn choice_named(pool: &[Choice], name: &str, prefer: Provider) -> Opt
         return best(found);
     }
     // `opus` is the picked Opus, not every Opus OpenRouter has ever served.
-    let picked: Vec<&Choice> = found
-        .iter()
-        .copied()
-        .filter(|c| c.provider != Provider::OpenRouter || MODELS.contains(&c.model.as_str()))
-        .collect();
+    let picked: Vec<&Choice> = found.iter().copied().filter(|c| !c.extra).collect();
     if picked.len() < found.len()
         && picked
             .iter()
@@ -3072,7 +3195,7 @@ pub(crate) fn choice_named(pool: &[Choice], name: &str, prefer: Provider) -> Opt
         return best(picked);
     }
     if name.contains('/') || (only.is_some() && found.is_empty() && !name.is_empty()) {
-        return Some(Choice::new(only.unwrap_or(prefer), &name));
+        return Some(Choice::new(only.as_deref().unwrap_or(prefer), &name));
     }
     // `glm` is GLM Flash and GLM 5.3: the exact name after the vendor wins.
     best(
@@ -3421,8 +3544,8 @@ fn html_text(html: &str) -> String {
         .join(" ")
 }
 
-/// The page as markdown from Cloudflare's headless browser when
-/// `CLOUDFLARE_ACCOUNT_ID` and a token are set, else fetched and turned into
+/// The page as markdown from Cloudflare's headless browser when `fetch:
+/// cloudflare:` in `agent.yaml` has an account and a token, else fetched and turned into
 /// text here, without running its JavaScript.
 async fn fetch_url(url: &str) -> Result<String> {
     eprintln!("· fetch {url}");
@@ -3430,11 +3553,12 @@ async fn fetch_url(url: &str) -> Result<String> {
         bail!("only http and https URLs can be fetched");
     }
     let mut note = String::new();
+    let settings = providers::settings();
     if let (Some(account), Some(token)) = (
-        env("CLOUDFLARE_ACCOUNT_ID"),
-        env("CLOUDFLARE_BROWSER_TOKEN").or_else(|| env("CLOUDFLARE_API_TOKEN")),
+        settings.cloudflare_account.as_deref(),
+        settings.cloudflare_token.as_deref(),
     ) {
-        match render(url, &account, &token).await {
+        match render(url, account, token).await {
             Ok(markdown) => return Ok(markdown),
             Err(err) => note = format!("[not rendered, {err:#}; fetched without JavaScript]\n\n"),
         }
@@ -3552,46 +3676,24 @@ fn truncate(mut output: String) -> String {
 
 // ------------------------------------------------------- uc agent model ----
 
-/// Where `uc agent model` saves the model new `uc` sessions start on: the
-/// directory with the keys `uc agent login` writes.
-fn model_env_dir() -> Result<PathBuf> {
-    let home = std::env::var_os("HOME").ok_or_else(|| anyhow!("HOME is not set"))?;
-    Ok(PathBuf::from(home).join(".bashrc.d"))
-}
-
-/// Writes the `export` lines that make new `uc` sessions start on `choice`,
-/// into `dir` (`~/.bashrc.d`), and returns the file's path.
-fn save_model_choice(choice: &Choice, dir: &Path) -> Result<PathBuf> {
-    std::fs::create_dir_all(dir)?;
-    let path = dir.join("model.sh");
-    std::fs::write(
-        &path,
-        format!(
-            "# The model the `uc` coding agent starts on (uc agent model)\n\
-             export UC_MODEL={}\nexport UC_PROVIDER={}\n",
-            choice.model,
-            env_name(choice.provider)
-        ),
-    )
-    .with_context(|| format!("writing {}", path.display()))?;
-    Ok(path)
-}
-
-/// The provider's name as `UC_PROVIDER` takes it: `openrouter`, `claude` or
-/// `copilot`.
-fn env_name(provider: Provider) -> &'static str {
-    match provider {
-        Provider::OpenRouter => "openrouter",
-        Provider::Claude => "claude",
-        Provider::Copilot => "copilot",
+/// Saves `choice` as `provider:` and `model:` in `agent.yaml`, the model new
+/// `uc` sessions start on, and returns the file's path. `UC_PROVIDER` and
+/// `UC_MODEL` still win over it where they are set.
+fn save_model_choice(choice: &Choice) -> Result<PathBuf> {
+    let path = providers::save_choice(&choice.provider, &choice.model)?;
+    if env("UC_MODEL").is_some() || env("UC_PROVIDER").is_some() {
+        eprintln!(
+            "· UC_MODEL or UC_PROVIDER is set in this environment and wins over it; unset them"
+        );
     }
+    Ok(path)
 }
 
 /// `uc agent model` in a shell, when a session is not there to take it:
 /// with no model named it lists the models of every provider with a key,
 /// marking the one a new `uc` starts on; with one named (`uc agent model
 /// opus claude`) it makes that the one new sessions start on, saved as
-/// `UC_MODEL` and `UC_PROVIDER` in `~/.bashrc.d/model.sh`. Typed at the
+/// `provider:` and `model:` in `agent.yaml`. Typed at the
 /// prompt of a running session the same words switch that session too; the
 /// other sessions running keep theirs.
 pub(crate) async fn agent_model(args: &[OsString]) -> Result<()> {
@@ -3604,44 +3706,20 @@ pub(crate) async fn agent_model(args: &[OsString]) -> Result<()> {
         println!("With no model named: the models of every provider with a key, the");
         println!("current one marked, as typing `uc agent model` in the chat lists them.");
         println!("With one named: makes it the model new `uc` sessions start on, saved");
-        println!("as UC_MODEL and UC_PROVIDER in ~/.bashrc.d/model.sh, and prints the");
-        println!("export line to run in this shell. The name is a number from the list, part of");
+        println!(
+            "as provider: and model: in {}. The name is a number from the list, part of",
+            providers::path().display()
+        );
         println!("a listed id or any id of the provider. A session already running keeps");
         println!("its model: type `uc agent model` at that session's prompt to switch it.");
         return Ok(());
     }
-    let keys: BTreeMap<Provider, String> = Provider::ALL
-        .into_iter()
-        .filter_map(|p| env(p.var()).map(|key| (p, key)))
-        .collect();
-    if keys.is_empty() {
-        bail!(
-            "no key is set: OPENROUTER_API_KEY, or `uc agent login claude` \
-             or `uc agent login copilot`"
-        );
-    }
-    let wanted = env("UC_PROVIDER")
-        .map(|name| {
-            Provider::parse(&name).ok_or_else(|| {
-                anyhow!("UC_PROVIDER is {name}; it is openrouter, claude or copilot")
-            })
-        })
-        .transpose()?;
-    let start = wanted
-        .filter(|p| keys.contains_key(p))
-        .or_else(|| keys.keys().next().copied())
-        .unwrap_or(Provider::OpenRouter);
-    let pool = pool(&keys, false).await;
-    let default = match start {
-        Provider::OpenRouter => DEFAULT_MODEL.to_string(),
-        Provider::Claude => DEFAULT_CLAUDE_MODEL.to_string(),
-        Provider::Copilot => pool
-            .iter()
-            .find(|c| c.provider == Provider::Copilot)
-            .map(|c| c.model.clone())
-            .unwrap_or_default(),
+    let providers = providers::usable();
+    let Some(start) = start_provider(&providers) else {
+        bail!("{}", no_provider());
     };
-    let current = Choice::new(start, &env("UC_MODEL").unwrap_or(default));
+    let pool = pool(&providers, false).await;
+    let current = Choice::new(&start.name, &start_model(start, &pool));
     let name = args.join(" ");
     if name.is_empty() {
         for (i, choice) in pool.iter().enumerate() {
@@ -3650,26 +3728,22 @@ pub(crate) async fn agent_model(args: &[OsString]) -> Result<()> {
         }
         return Ok(());
     }
-    let choice = choice_named(&pool, &name, start)
+    let choice = choice_named(&pool, &name, &start.name)
         .ok_or_else(|| anyhow!("no model {name}; `uc agent model` lists them"))?;
-    if !keys.contains_key(&choice.provider) {
+    if named(&providers, &choice.provider).is_none() {
         bail!(
-            "{} is not set, so {} is off",
-            choice.provider.var(),
-            choice.provider.name()
+            "{} has no key for {} in {}, so it is off",
+            choice.provider,
+            providers::label(&choice.provider),
+            providers::path().display()
         );
     }
-    let path = save_model_choice(&choice, &model_env_dir()?)?;
+    let path = save_model_choice(&choice)?;
     println!(
         "· {} on {}, saved in {} for new `uc` sessions",
         choice.model,
-        choice.provider.name(),
+        providers::label(&choice.provider),
         path.display()
-    );
-    println!(
-        "this shell: export UC_MODEL={} UC_PROVIDER={}",
-        choice.model,
-        env_name(choice.provider)
     );
     Ok(())
 }
@@ -3678,18 +3752,12 @@ pub(crate) async fn agent_model(args: &[OsString]) -> Result<()> {
 /// again and keeps it in the cache, what `uc agent model-update` typed at a
 /// session's prompt does for that session.
 pub(crate) async fn agent_model_update() -> Result<()> {
-    let keys: BTreeMap<Provider, String> = Provider::ALL
-        .into_iter()
-        .filter_map(|p| env(p.var()).map(|key| (p, key)))
-        .collect();
-    if keys.is_empty() {
-        bail!(
-            "no key is set: OPENROUTER_API_KEY, or `uc agent login claude` \
-             or `uc agent login copilot`"
-        );
+    let providers = providers::usable();
+    if providers.is_empty() {
+        bail!("{}", no_provider());
     }
     eprintln!("· fetching the model lists");
-    let pool = pool(&keys, true).await;
+    let pool = pool(&providers, true).await;
     eprintln!("· {} models", pool.len());
     Ok(())
 }
@@ -3972,27 +4040,23 @@ mod tests {
     fn openrouter_pool() -> Vec<Choice> {
         MODELS
             .iter()
-            .map(|m| Choice::new(Provider::OpenRouter, m))
+            .map(|m| Choice::new("openrouter", m))
             .collect()
     }
 
     /// OpenRouter's pool, the Claude subscription's and two of Copilot's.
     fn every_pool() -> Vec<Choice> {
         let mut pool = openrouter_pool();
-        pool.extend(
-            CLAUDE_MODELS
-                .iter()
-                .map(|m| Choice::new(Provider::Claude, m)),
-        );
-        pool.push(Choice::new(Provider::Copilot, "gpt-4.1"));
-        pool.push(Choice::new(Provider::Copilot, "claude-opus-5-5"));
+        pool.extend(CLAUDE_MODELS.iter().map(|m| Choice::new("claude", m)));
+        pool.push(Choice::new("copilot", "gpt-4.1"));
+        pool.push(Choice::new("copilot", "claude-opus-5-5"));
         pool
     }
 
     #[test]
     fn model_named_takes_a_number_part_of_an_id_or_an_id() {
         let pool = openrouter_pool();
-        let named = |name: &str| choice_named(&pool, name, Provider::OpenRouter).map(|c| c.model);
+        let named = |name: &str| choice_named(&pool, name, "openrouter").map(|c| c.model);
         assert_eq!(named("2").as_deref(), Some("anthropic/claude-haiku-5.5"));
         assert_eq!(named("0"), None);
         assert_eq!(named("9"), None);
@@ -4014,32 +4078,26 @@ mod tests {
         let named = |name: &str, prefer| choice_named(&pool, name, prefer);
         let opus = |provider, model: &str| Some(Choice::new(provider, model));
         assert_eq!(
-            named("opus", Provider::OpenRouter),
-            opus(Provider::OpenRouter, "anthropic/claude-opus-5.5")
+            named("opus", "openrouter"),
+            opus("openrouter", "anthropic/claude-opus-5.5")
         );
         assert_eq!(
-            named("opus", Provider::Claude),
-            opus(Provider::Claude, "anthropic/claude-opus-5.5")
+            named("opus", "claude"),
+            opus("claude", "anthropic/claude-opus-5.5")
         );
         assert_eq!(
-            named("opus copilot", Provider::Claude),
-            opus(Provider::Copilot, "claude-opus-5-5")
+            named("opus copilot", "claude"),
+            opus("copilot", "claude-opus-5-5")
         );
         assert_eq!(
-            named("anthropic/claude-opus-5.5 (Claude)", Provider::OpenRouter),
-            opus(Provider::Claude, "anthropic/claude-opus-5.5")
+            named("anthropic/claude-opus-5.5 (Claude)", "openrouter"),
+            opus("claude", "anthropic/claude-opus-5.5")
         );
+        assert_eq!(named("gpt-4.1", "openrouter"), opus("copilot", "gpt-4.1"));
+        assert_eq!(named("o3 copilot", "openrouter"), opus("copilot", "o3"));
         assert_eq!(
-            named("gpt-4.1", Provider::OpenRouter),
-            opus(Provider::Copilot, "gpt-4.1")
-        );
-        assert_eq!(
-            named("o3 copilot", Provider::OpenRouter),
-            opus(Provider::Copilot, "o3")
-        );
-        assert_eq!(
-            named("8", Provider::OpenRouter),
-            opus(Provider::Claude, DEFAULT_CLAUDE_MODEL)
+            named("8", "openrouter"),
+            opus("claude", DEFAULT_CLAUDE_MODEL)
         );
     }
 
@@ -4110,10 +4168,20 @@ mod tests {
         assert_eq!(output.since(seen).0, "");
     }
 
+    fn provider(name: &str) -> Provider {
+        let kind = match name {
+            "openrouter" => Kind::OpenRouter,
+            "claude" => Kind::Claude,
+            "copilot" => Kind::Copilot,
+            _ => Kind::OpenAi,
+        };
+        Provider::new(name, kind)
+    }
+
     fn session() -> Session {
         Session {
-            keys: BTreeMap::from([(Provider::OpenRouter, String::new())]),
-            provider: Provider::OpenRouter,
+            providers: vec![provider("openrouter")],
+            provider: "openrouter".into(),
             model: String::new(),
             pool: openrouter_pool(),
             ask: false,
@@ -4247,25 +4315,6 @@ mod tests {
     }
 
     #[test]
-    fn agent_model_saves_the_export_lines() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = save_model_choice(
-            &Choice::new(Provider::Claude, "anthropic/claude-opus-5.5"),
-            dir.path(),
-        )
-        .unwrap();
-        let saved = std::fs::read_to_string(path).unwrap();
-        assert_eq!(
-            saved,
-            "# The model the `uc` coding agent starts on (uc agent model)\n\
-             export UC_MODEL=anthropic/claude-opus-5.5\n\
-             export UC_PROVIDER=claude\n"
-        );
-        assert_eq!(env_name(Provider::OpenRouter), "openrouter");
-        assert_eq!(env_name(Provider::Copilot), "copilot");
-    }
-
-    #[test]
     fn uc_agent_commands_are_taken_by_the_chat() {
         assert_eq!(agent_command("uc agent compact"), Some("compact"));
         assert_eq!(agent_command("uc agent context"), Some("context"));
@@ -4295,8 +4344,8 @@ mod tests {
     #[test]
     fn chat_model_switches_between_providers() {
         let mut s = session();
-        s.keys.insert(Provider::Claude, String::new());
-        s.keys.insert(Provider::Copilot, String::new());
+        s.providers.push(provider("claude"));
+        s.providers.push(provider("copilot"));
         s.pool = every_pool();
         s.model = "z-ai/glm-5.3-flash".into();
         s.messages = vec![json!({"role": "system", "content": "you are uc"})];
@@ -4308,7 +4357,7 @@ mod tests {
         assert!(listed.contains(" gpt-4.1 (Copilot)\n"), "{listed}");
         let switched = s.switch("opus claude");
         assert_eq!(switched, "· model anthropic/claude-opus-5.5 (Claude)\n");
-        assert_eq!(s.provider, Provider::Claude);
+        assert_eq!(s.provider, "claude");
         assert!(
             s.messages[0]["content"]
                 .as_str()
@@ -4317,16 +4366,16 @@ mod tests {
         );
         // Opus again stays on the provider the session is on.
         s.switch("opus");
-        assert_eq!(s.provider, Provider::Claude);
+        assert_eq!(s.provider, "claude");
         s.switch("gpt-4.1");
         assert_eq!(
-            (s.provider, s.model.as_str()),
-            (Provider::Copilot, "gpt-4.1")
+            (s.provider.as_str(), s.model.as_str()),
+            ("copilot", "gpt-4.1")
         );
-        s.keys.remove(&Provider::Claude);
+        s.providers.retain(|p| p.name != "claude");
         let off = s.switch("opus claude");
-        assert!(off.contains("CLAUDE_CODE_OAUTH_TOKEN is not set"), "{off}");
-        assert_eq!(s.provider, Provider::Copilot);
+        assert!(off.contains("claude has no key for Claude"), "{off}");
+        assert_eq!(s.provider, "copilot");
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -4364,7 +4413,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn chat_is_dispatched_like_a_tool_call() {
         let mut s = session();
-        s.keys.insert(Provider::Claude, String::new());
+        s.providers.push(provider("claude"));
         s.pool = every_pool();
         s.model = "z-ai/glm-5.3-flash".into();
         s.messages = vec![json!({"role": "system", "content": "you are uc"})];
@@ -4377,7 +4426,7 @@ mod tests {
             r#"{"action": "model", "model": "haiku", "provider": "Claude"}"#}});
         let out = s.call(&on).await;
         assert_eq!(out, "· model anthropic/claude-haiku-5.5 (Claude)\n");
-        assert_eq!(s.provider, Provider::Claude);
+        assert_eq!(s.provider, "claude");
         let listed = json!({"id": "b", "function": {"name": "chat", "arguments":
             r#"{"action": "model"}"#}});
         let out = s.call(&listed).await;

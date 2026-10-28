@@ -58,44 +58,78 @@ No OpenRouter key yet? No problem: `uc` starts anyway with the AI off, and
 every line you type just runs in bash. Set the key whenever you like and
 the model is there next time.
 
+The providers and their keys live in `~/.config/usecode/agent.yaml`, not in
+the environment:
+
+```yaml
+# ~/.config/usecode/agent.yaml
+providers:
+  openrouter:
+    api_key: sk-or-...                        # https://openrouter.ai/keys
+  groq:                                       # any OpenAI-compatible API
+    base_url: https://api.groq.com/openai/v1
+    api_key: gsk_...
+    models: [llama-3.3-70b-versatile]         # offered first; optional
+  local:
+    base_url: http://localhost:11434/v1       # no key needed
+```
+
+Each entry is one provider, named by its key. Anything that speaks OpenAI's
+chat completions is one entry away: give it a `base_url` (and an `api_key`
+unless it takes none), and `uc` sends to `<base_url>/chat/completions` and
+lists `<base_url>/models`. `kind` says how to talk to it when the name
+doesn't: `openai` (the default), `openrouter`, `claude` or `copilot`, so a
+second OpenRouter key is `work: {kind: openrouter, api_key: ...}`. The rest
+is optional: `models` puts some first, `default_model` is the one to start
+on, `list_models: false` offers only `models`, and `headers` adds HTTP
+headers. The file holds keys: keep it out of a public repository.
+
 ```sh
-export OPENROUTER_API_KEY=sk-or-...           # https://openrouter.ai/keys
 uc                                            # Ctrl-D or uc agent exit to leave
 uc --ask                                      # confirm each command and change
 uc --output                                   # also show what the commands print
 uc --commands                                 # show command lines, not their titles
 uc --no-shell                                 # every line goes to the model
-UC_MODEL=openai/gpt-5 uc                      # any OpenRouter model
-UC_EFFORT=medium uc                           # low, medium or high reasoning
+UC_MODEL=openai/gpt-5 uc                      # another model, just this once
+```
+
+Which provider and model a session starts on, and how hard it thinks, sit
+beside `providers:` in the same file; `UC_PROVIDER`, `UC_MODEL` and
+`UC_EFFORT` override them for one run:
+
+```yaml
+provider: openrouter                          # else the first with a key
+model: z-ai/glm-5.3-flash                     # uc agent model sets these two
+effort: medium                                # low, medium or high reasoning
 ```
 
 Have a Claude Pro or Max subscription instead? `uc agent login claude` opens
 Claude's login, takes the code the page shows, and saves a year-long,
-inference-only token as `CLAUDE_CODE_OAUTH_TOKEN` in `~/.bashrc.d/claude.sh`
-(`--print` shows the export line instead). Got GitHub Copilot? `uc agent login
-copilot` shows a short code to type on github.com and saves the token as
-`COPILOT_GITHUB_TOKEN` in `~/.bashrc.d/copilot.sh`; `uc` then lists the chat
-models your Copilot plan offers.
+inference-only token as the `claude` provider's `api_key` in `agent.yaml`
+(`--print` shows the token instead, `--name work` saves it under another
+name). Got GitHub Copilot? `uc agent login copilot` shows a short code to
+type on github.com and saves the token as the `copilot` provider's; `uc`
+then lists the chat models your Copilot plan offers.
 
 Set as many of these as you like: `uc agent model` shows the models of every provider
 you have a key for, all in one list, and you can switch between them in the
 middle of a conversation. When a model is on more than one, say Opus on both
 OpenRouter and your Claude subscription, each gets its own line with the
 provider beside it, and `uc agent model opus claude` (or the number) picks the one you
-want. `uc` starts on OpenRouter, then Claude, then Copilot, whichever has a key
-first; `UC_PROVIDER=claude` (or `openrouter`, `copilot`) picks another. The
+want. `uc` starts on the first provider in the file that has a key;
+`provider: claude` (or any provider's name) picks another. The
 cost line is OpenRouter's. `uc agent usage` shows how much of
 the subscription's 5-hour and weekly windows you have used, next to the
 OpenRouter spend when both keys are set.
 
 One command everywhere: `uc agent model`. Typed at a session's prompt it
 switches that session — `uc agent model` picks one in the picker, `uc agent
-model opus claude` goes straight to it — and saves the choice as `UC_MODEL`
-and `UC_PROVIDER` in `~/.bashrc.d/model.sh`, so the sessions you start after
+model opus claude` goes straight to it — and saves the choice as `provider:`
+and `model:` in `agent.yaml`, so the sessions you start after
 follow it. The other `uc` processes running on the machine keep their model
 until you say so in them. Typed in a shell instead, with no model named it
 lists the models, marking the one a new `uc` starts on, and naming one saves
-it and prints the `export` line to run in that shell.
+it.
 
 Every flag can be set three ways, so you can make your favourite the
 default: on the command line, as a `UC_` environment variable, or under
@@ -119,7 +153,7 @@ request, so replies start fast. Want another? Type `uc agent model` and pick one
 the picker (Esc keeps what you have), or go straight to one with `uc agent model opus`. A
 name that fits several, like `uc agent model claude`, opens the picker filtered by it. The
 new model gets the whole conversation and carries on from there, even on
-another provider. `UC_MODEL` sets the one to start on.
+another provider. `model:` in `agent.yaml` sets the one to start on.
 
 The lists of models are kept in `~/.cache/usecode/models.json`, so starting
 `uc` does not wait on the providers. A new model not showing up? `uc agent model-update`
@@ -150,11 +184,13 @@ repositories and commands along as words to expect, so `kubectl`, `fzf` and
 engine is unsure of, or a recording that was only a knock, is dropped instead
 of sent:
 
-```sh
-UC_VOICE_MODEL=openai/gpt-transcribe uc       # MAI-Transcribe 2 unless you pick another
-UC_VOICE_LANGUAGE=de uc                       # the language your locale is in, if unset
-UC_VOICE_TERMS="idempotent, nexus, syllabub"  # words to expect, on top of the ones it finds
-UC_VOICE_TERMS=0 uc                           # send none of them
+```yaml
+# ~/.config/usecode/agent.yaml
+voice:
+  model: openai/gpt-transcribe                # MAI-Transcribe 2 unless you pick another
+  language: de                                # the language your locale is in, if unset
+  terms: [idempotent, nexus, syllabub]        # words to expect, on top of the ones it finds
+  # terms: false                              # send none of them
 ```
 
 It can look things up on the web too, so it isn't stuck with what the model
@@ -165,11 +201,15 @@ model to read (Parallel first when both are there; `uc --exa` or
 rendered in a real browser, so pages built by JavaScript come through as
 clean markdown instead of an empty shell:
 
-```sh
-export PARALLEL_API_KEY=...                    # optional: search with Parallel (https://parallel.ai)
-export EXA_API_KEY=...                         # optional: search with Exa (https://exa.ai)
-export CLOUDFLARE_ACCOUNT_ID=...               # optional: render pages first
-export CLOUDFLARE_BROWSER_TOKEN=...            # Browser Rendering: Edit; else CLOUDFLARE_API_TOKEN
+```yaml
+# ~/.config/usecode/agent.yaml, all optional
+search:
+  parallel: {api_key: ...}                    # https://parallel.ai
+  exa: {api_key: ...}                         # https://exa.ai
+fetch:
+  cloudflare:                                 # render pages first
+    account_id: ...
+    api_token: ...                            # with Browser Rendering: Edit
 ```
 
 `uc -h` (or `uc help`) lists the commands.

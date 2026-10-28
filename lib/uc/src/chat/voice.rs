@@ -11,12 +11,13 @@
 //! microphone is the default source of PulseAudio, or of PipeWire through its
 //! pulse server, spoken to natively.
 //!
-//! The model is `UC_VOICE_MODEL`, by default MAI-Transcribe 2, which is
-//! accurate and cheap and takes a list of words to expect; the language is
-//! `UC_VOICE_LANGUAGE`, else the one the user's locale is in (auto-detection
-//! is poor on a two-second recording); and the repository names under `~/src`,
-//! the commands on PATH and `UC_VOICE_TERMS` are sent along as words to expect
-//! (`UC_VOICE_TERMS=0` turns that off), under every engine's own name for them,
+//! The settings are under `voice:` in `agent.yaml` (see
+//! [`crate::providers`]). The model is `model:`, by default MAI-Transcribe 2,
+//! which is accurate and cheap and takes a list of words to expect; the
+//! language is `language:`, else the one the user's locale is in
+//! (auto-detection is poor on a two-second recording); and the repository
+//! names under `~/src`, the commands on PATH and `terms:` are sent along as
+//! words to expect (`terms: false` turns that off), under every engine's own name for them,
 //! so `kubectl` and `usecode` come out right. The reply is asked for word by
 //! word, and one of silence or of a word too short to be one is dropped.
 
@@ -218,8 +219,19 @@ async fn transcribe(pcm: Vec<u8>) -> Result<String> {
     if voiced(&pcm) < MIN_VOICE {
         bail!("no voice in that; is the microphone muted or turned down?");
     }
-    let key = env("OPENROUTER_API_KEY").context("set OPENROUTER_API_KEY")?;
-    let model = env("UC_VOICE_MODEL").unwrap_or_else(|| DEFAULT_MODEL.to_string());
+    let key = crate::providers::first(crate::providers::Kind::OpenRouter)
+        .map(|p| p.key)
+        .filter(|k| !k.is_empty())
+        .with_context(|| {
+            format!(
+                "speech to text is OpenRouter's: add an openrouter provider to {}",
+                crate::providers::path().display()
+            )
+        })?;
+    let model = crate::providers::settings()
+        .voice_model
+        .clone()
+        .unwrap_or_else(|| DEFAULT_MODEL.to_string());
     let mut body = json!({
         "model": model,
         // Lower is steadier, and there is nothing to be creative about here.
@@ -359,14 +371,17 @@ fn voiced(pcm: &[u8]) -> Duration {
 }
 
 /// The language to tell the engine, which guesses poorly from a couple of
-/// seconds of speech: `UC_VOICE_LANGUAGE`, else the language the user's
-/// locale is in.
+/// seconds of speech: `voice: language:` in `agent.yaml`, else the language
+/// the user's locale is in.
 fn language() -> Option<String> {
-    env("UC_VOICE_LANGUAGE").or_else(|| {
-        ["LC_ALL", "LC_MESSAGES", "LANG"]
-            .into_iter()
-            .find_map(|name| locale_language(env(name).as_deref()))
-    })
+    crate::providers::settings()
+        .voice_language
+        .clone()
+        .or_else(|| {
+            ["LC_ALL", "LC_MESSAGES", "LANG"]
+                .into_iter()
+                .find_map(|name| locale_language(env(name).as_deref()))
+        })
 }
 
 /// The language of a locale: `nl_NL.UTF-8` and `de_DE@euro` are `nl` and
@@ -377,12 +392,11 @@ fn locale_language(locale: Option<&str>) -> Option<String> {
 }
 
 /// The words to expect, under every engine's own name for them; engines
-/// offering none ignore the rest. Up to `MAX_TERMS` of `UC_VOICE_TERMS`,
-/// the repositories under `~/src` and the commands on PATH.
+/// offering none ignore the rest. Up to `MAX_TERMS` of `voice: terms:` in
+/// `agent.yaml`, the repositories under `~/src` and the commands on PATH;
+/// `terms: false` sends none.
 fn terms() -> Option<Value> {
-    if env("UC_VOICE_TERMS").is_some_and(|off| off == "0") {
-        return None;
-    }
+    let given = crate::providers::settings().voice_terms.as_ref()?;
     let mut seen = BTreeSet::new();
     let mut words = Vec::new();
     let mut keep = |word: &str| {
@@ -392,10 +406,7 @@ fn terms() -> Option<Value> {
             words.push(word.to_string());
         }
     };
-    for term in env("UC_VOICE_TERMS")
-        .unwrap_or_default()
-        .split([',', ' ', '\n'])
-    {
+    for term in given {
         keep(term);
     }
     if let Some(src) = std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join("src")) {
@@ -612,7 +623,7 @@ mod live {
     /// Transcribes a real WAV against OpenRouter, when given one and a key:
     /// `UC_VOICE_TEST_WAV=rec.wav cargo test -p uc live_voice -- --ignored --nocapture`.
     #[tokio::test(flavor = "multi_thread")]
-    #[ignore = "needs OPENROUTER_API_KEY and a WAV recording"]
+    #[ignore = "needs an OpenRouter key in agent.yaml and a WAV recording"]
     async fn live_voice() {
         let wav = std::env::var("UC_VOICE_TEST_WAV").unwrap();
         let bytes = std::fs::read(wav).unwrap();

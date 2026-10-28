@@ -6,8 +6,8 @@
 //!
 //! The login is GitHub's device flow with the client id Copilot's editor
 //! plugins use: the user types a short code on github.com, and the GitHub
-//! token that comes back is written to `~/.bashrc.d/copilot.sh` as
-//! `COPILOT_GITHUB_TOKEN`. That token is not what the chat sends: it is
+//! token that comes back is written as the `api_key` of the `copilot`
+//! provider in `agent.yaml` (see [`crate::providers`]). That token is not what the chat sends: it is
 //! traded for a Copilot token that lasts about half an hour, kept here and
 //! traded again before it runs out (see [`token`]).
 //!
@@ -22,15 +22,10 @@
 use anyhow::{Context, Result, anyhow, bail};
 use futures_util::StreamExt;
 use serde_json::{Value, json};
-use std::io::Write;
-use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::claude::Bytes;
-
-/// The variable the GitHub token lives in.
-pub const TOKEN_VAR: &str = "COPILOT_GITHUB_TOKEN";
 
 /// The OAuth app of Copilot's editor plugins: its tokens are the ones the
 /// Copilot token endpoint takes.
@@ -70,34 +65,6 @@ fn now() -> u64 {
 
 // ---------------------------------------------------------------- login ----
 
-/// Where the token is saved: next to the other keys.
-pub fn env_file() -> Result<PathBuf> {
-    let home = std::env::var_os("HOME").ok_or_else(|| anyhow!("HOME is not set"))?;
-    Ok(PathBuf::from(home).join(".bashrc.d/copilot.sh"))
-}
-
-/// Writes the token as an `export` the shell sources, readable by the user
-/// only.
-pub fn save(token: &str) -> Result<PathBuf> {
-    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-    let path = env_file()?;
-    std::fs::create_dir_all(path.parent().expect("a parent"))?;
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(&path)
-        .with_context(|| format!("writing {}", path.display()))?;
-    // `mode` only applies to a file that is new.
-    file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
-    writeln!(
-        file,
-        "# GitHub token for Copilot in `uc` chat (uc agent login copilot)\nexport {TOKEN_VAR}={token}"
-    )?;
-    Ok(path)
-}
-
 /// `fields` as a URL-encoded form.
 fn encode(fields: &[(&str, &str)]) -> String {
     let part = |s: &str| {
@@ -134,9 +101,10 @@ async fn form(url: &str, fields: &[(&str, &str)]) -> Result<Value> {
         .context("reading GitHub's reply")
 }
 
-/// `uc agent login copilot`: GitHub's device flow, then the token saved.
-/// `--print` shows the token instead of saving it.
-pub async fn login(print_only: bool) -> Result<()> {
+/// `uc agent login copilot`: GitHub's device flow, then the token saved as
+/// the key of the provider `name` (`copilot`). `--print` shows the token
+/// instead of saving it.
+pub async fn login(name: &str, print_only: bool) -> Result<()> {
     let device = form(
         DEVICE_URL,
         &[("client_id", CLIENT_ID), ("scope", "read:user")],
@@ -192,15 +160,12 @@ pub async fn login(print_only: bool) -> Result<()> {
         .await
         .context("the login worked, but this GitHub account has no Copilot")?;
     if print_only {
-        println!("export {TOKEN_VAR}={token}");
+        println!("{token}");
         return Ok(());
     }
-    let path = save(&token)?;
-    eprintln!("Saved {TOKEN_VAR} to {}", path.display());
-    eprintln!(
-        "Open a new shell, or `source {}`, and run `uc`.",
-        path.display()
-    );
+    let path = crate::providers::save_key(name, crate::providers::Kind::Copilot, &token)?;
+    eprintln!("Saved the token as provider {name} in {}", path.display());
+    eprintln!("Run `uc` to chat on it.");
     Ok(())
 }
 
@@ -318,8 +283,9 @@ fn chat_models(list: &Value) -> Vec<String> {
     ids
 }
 
-/// The chat's OpenRouter request as Copilot takes it: without OpenRouter's
-/// own fields, and asking for the usage at the end of a stream.
+/// The chat's OpenRouter request as Copilot, and any plain OpenAI-style
+/// API, takes it: without OpenRouter's own fields, and asking for the usage
+/// at the end of a stream.
 pub fn request(body: &Value) -> Value {
     let mut request = body.clone();
     let object = request.as_object_mut().expect("a request is an object");
