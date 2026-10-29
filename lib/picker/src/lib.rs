@@ -178,7 +178,15 @@ impl Picker {
             }));
         }
         drop(tx);
-        let out = Skim::run_with(&options, Some(rx))?;
+        let out = Skim::run_with(&options, Some(rx));
+        // skim erases its lines with the colours of the last cell it drew
+        // still on, often the current line's grey, and leaves them on: the
+        // terminal's background-colour erase painted the rest of the screen
+        // grey, and everything printed after. Reset them and erase again.
+        if !full && let Ok(mut tty) = OpenOptions::new().write(true).open("/dev/tty") {
+            let _ = tty.write_all(b"\x1b[0m\x1b[J");
+        }
+        let out = out?;
         if out.is_abort {
             return None;
         }
