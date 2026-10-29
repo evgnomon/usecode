@@ -6,43 +6,48 @@
 export const REPO_URL = "https://github.com/evgnomon/usecode";
 export const CONTACT = "mailto:hg@evgnomon.org";
 
-// What a seat on a team costs; the Stripe price behind it is STRIPE_PRICE_ID.
-export const TEAM_PRICE = {
+// What the hosted plan costs; the Stripe price behind it is STRIPE_PRICE_ID.
+export const HOSTED_PRICE = {
   amount: "$10",
   period: "per user a month",
 };
+
+// The line the paid plans are sold on.
+export const PROMISE = "We make sure it doesn't break.";
 
 export const PLANS = {
   individual: {
     name: "Individual",
     price: "Free",
-    note: "For you and your agents, however many nodes you add.",
+    note: "All of usecode, on your own nodes, run by you and your agents.",
     points: [
+      "Every feature, open source",
       "Unlimited nodes, edge or Kubernetes",
-      "Around-the-clock supervision that puts drift right",
       "A private WireGuard mesh between your nodes",
       "API access for your agents",
     ],
   },
-  team: {
-    name: "Team",
-    price: TEAM_PRICE.amount,
-    note: "Everything in Individual, for everyone on your team.",
+  hosted: {
+    name: "Hosted",
+    price: HOSTED_PRICE.amount,
+    note: "The same usecode, with the heavy parts run by us, outside your cluster.",
     points: [
-      "Everything in Individual",
-      "Pay only for the people, never for the nodes",
-      "Upgrades and our uptime are on us",
-      "Cancel any time from your account",
+      "Monitoring and alerts, watched from outside your nodes",
+      "An audit log of what changed, kept where no one can rewrite it",
+      "Backups stored off your nodes",
+      "Upgrades and uptime of what we host are on us",
     ],
   },
   enterprise: {
     name: "Enterprise",
     price: "Let's talk",
-    note: "For bigger setups that need more than a card on file.",
+    note: PROMISE,
     points: [
-      "Everything in Team",
-      "Help setting it up and running it, yours or ours",
-      "Invoicing and terms that fit your company",
+      "Everything in Hosted",
+      "We review what your agents plan to change in production",
+      "We keep it working through upgrades and changes upstream",
+      "Someone who knows your setup answers when it breaks",
+      "A contract, invoicing and terms that fit your company",
     ],
   },
 };
@@ -202,16 +207,17 @@ export const FEATURES = [
     tag: "watch",
     title: "Looked after around the clock",
     body:
-      "usecode.dev keeps an eye on your nodes. When something drifts or a " +
-      "service stops, it puts things back the right way, so you don't have " +
-      "to notice first.",
+      "Each node's daemon puts drift right on its own. On Hosted, usecode.dev " +
+      "also watches your nodes from outside, so when a whole cluster goes " +
+      "quiet, someone hears about it before your users do.",
   },
   {
     tag: "open",
     title: "Open source, no node meter",
     body:
       "usecode is open source and freely distributed. Your own account is " +
-      "free with two nodes or two hundred; teams pay per person, never per node.",
+      "free with two nodes or two hundred. You pay only for what we host or " +
+      "look after for you, never per node.",
   },
 ];
 
@@ -225,9 +231,10 @@ export const FAQS = [
   {
     q: "Is it really free?",
     a:
-      "For your own account, yes, however many nodes you add. Teams pay " +
-      TEAM_PRICE.amount + " per user a month, and for an enterprise setup we " +
-      "work it out together.",
+      "Yes. Every feature is open source and free, however many nodes you " +
+      "add. You pay only if you'd like us to host the heavy parts, " +
+      HOSTED_PRICE.amount + " " + HOSTED_PRICE.period + ", or to make sure " +
+      "it doesn't break, which we work out together.",
   },
   {
     q: "What counts as a node?",
@@ -238,14 +245,15 @@ export const FAQS = [
   {
     q: "What happens to my nodes if I cancel?",
     a:
-      "Your team's nodes keep running exactly as they are. Once the period " +
-      "you paid for ends, your account goes back to Individual.",
+      "Your nodes keep running exactly as they are; they never depended on " +
+      "us. Once the period you paid for ends, we stop hosting the monitoring, " +
+      "audit log and backups, and your account goes back to Individual.",
   },
   {
     q: "Can I run it all myself instead?",
     a:
-      "Sure, usecode is open source. Running it yourself is on your own time; if " +
-      "you'd like a hand setting it up for your team, that's a paid " +
-      "engagement and we're happy to talk.",
+      "Sure, usecode is open source, and everything we host you can run " +
+      "yourself. It just takes machines, storage and someone watching them. " +
+      "If you'd rather we make sure it doesn't break, we're happy to talk.",
   },
 ];

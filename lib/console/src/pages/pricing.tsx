@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { KeyLegend } from "@/components/kbd";
 import { ErrorNote, Notice, PageHead, Section } from "@/components/layout";
-import { CONTACT, PLANS, REPO_URL, TEAM_PRICE } from "@/content";
+import { CONTACT, HOSTED_PRICE, PLANS, PROMISE, REPO_URL } from "@/content";
 import { goTo, useMe } from "@/lib/api";
 import { Link } from "@/lib/router";
 import { Faqs } from "./home";
@@ -57,7 +57,7 @@ function IndividualAction() {
   );
 }
 
-function TeamAction() {
+function HostedAction() {
   const { me } = useMe();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -77,7 +77,7 @@ function TeamAction() {
       {!me ? null : me.subscribed ? (
         <Button asChild variant="outline" className="w-full" aria-keyshortcuts="a">
           <Link href="/account">
-            You're on Team, see your account
+            You're on Hosted, see your account
             <KeyLegend k="a" />
           </Link>
         </Button>
@@ -90,10 +90,10 @@ function TeamAction() {
         </Button>
       ) : me.billing ? (
         <Button className="w-full" disabled={busy} onClick={subscribe}>
-          Start Team for {TEAM_PRICE.amount}/user a month
+          Start Hosted for {HOSTED_PRICE.amount}/user a month
         </Button>
       ) : (
-        <Notice>Team opens very soon. We'll let you know by email.</Notice>
+        <Notice>Hosted opens very soon. We'll let you know by email.</Notice>
       )}
     </>
   );
@@ -102,17 +102,18 @@ function TeamAction() {
 export function Pricing() {
   return (
     <>
-      <PageHead title="Free for you, simple for teams">
-        Your own account is free, however many nodes you add. A team pays {TEAM_PRICE.amount} a month per person, never
-        per node. For an enterprise setup, get in touch and we'll work it out together.
+      <PageHead title={PROMISE}>
+        Every feature is free and open source, however many nodes you add. Hosted runs the heavy parts for you, like
+        monitoring, the audit log and backups, for {HOSTED_PRICE.amount} {HOSTED_PRICE.period}. Enterprise is us
+        making sure your setup doesn't break; get in touch and we'll work it out together.
       </PageHead>
       <Section>
         <div className="wrap grid gap-4 md:grid-cols-3">
           <PlanCard plan={PLANS.individual}>
             <IndividualAction />
           </PlanCard>
-          <PlanCard plan={PLANS.team} period={TEAM_PRICE.period}>
-            <TeamAction />
+          <PlanCard plan={PLANS.hosted} period={HOSTED_PRICE.period}>
+            <HostedAction />
           </PlanCard>
           <PlanCard plan={PLANS.enterprise}>
             <Button asChild variant="outline" className="w-full">
@@ -128,7 +129,7 @@ export function Pricing() {
             <a href={REPO_URL} className="text-primary hover:underline">
               GitHub
             </a>
-            . If you'd like help setting it up for your team, that's a paid engagement and we're happy to{" "}
+            . Everything we host, you can run yourself. If you'd rather we make sure it doesn't break, we're happy to{" "}
             <a href={CONTACT} className="text-primary hover:underline">
               talk
             </a>

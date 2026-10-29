@@ -37,9 +37,12 @@ Ubuntu box, put the `uc` and `uc-sync` binaries on your PATH, then:
   uc sync -t usecode -d
 
 It clones this repository, installs what the build needs, then builds and
-installs the rest of the tools. Then run `uc help`. Self-hosting is on your own time; if you'd like help
-setting it up or running it for your team, that's a paid engagement and
-we're happy to talk: https://usecode.dev
+installs the rest of the tools. Then run `uc help`.
+
+Everything usecode.dev hosts, like monitoring, the audit log and backups,
+you can run yourself too; it just takes machines and someone watching them.
+If you'd rather we make sure it doesn't break, we're happy to talk:
+https://usecode.dev
 
 
 Contributing

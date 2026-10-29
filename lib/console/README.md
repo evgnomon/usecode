@@ -6,7 +6,7 @@ Copyright (C) The Usecode Authors (see AUTHORS)
 # console
 
 The usecode.dev you land on: the landing page, the pricing, and signing up
-and logging in. An individual account is free, Team is $10 a month per
+and logging in. An individual account is free, Hosted is $10 a month per
 user, and Enterprise is a conversation. Either way usecode.dev looks after
 all your nodes, edge or Kubernetes, however many you add.
 
@@ -36,7 +36,7 @@ make test-db-stop
 | `DATABASE_URL`          | A `postgres://` URL; else `PGHOST`, `PGUSER`, ... are used   |
 | `PORT`                  | Default `8080`                                               |
 | `STRIPE_SECRET_KEY`     | Billing is on once all three Stripe settings are set         |
-| `STRIPE_PRICE_ID`       | The Team plan's $10/month per user recurring price          |
+| `STRIPE_PRICE_ID`       | The Hosted plan's $10/month per user recurring price          |
 | `STRIPE_WEBHOOK_SECRET` | The signing secret of the webhook endpoint                   |
 
 Migrations in `migrations/` run on start, once, even with several replicas.

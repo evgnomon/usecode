@@ -1,7 +1,7 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-// The Team plan: $10 a month per user, any number of nodes. Individual
+// The Hosted plan: $10 a month per user, any number of nodes. Individual
 // accounts are free and never come here.
 // Stripe holds the truth; Checkout takes the payment, the customer portal
 // handles card changes and cancelling, and the webhook copies the

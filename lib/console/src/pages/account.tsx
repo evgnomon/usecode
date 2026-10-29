@@ -7,7 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { EmptyNodes, Pill } from "@/components/console";
 import { KeyLegend } from "@/components/kbd";
 import { ErrorNote, Notice, Section } from "@/components/layout";
-import { PLANS, TEAM_PRICE } from "@/content";
+import { HOSTED_PRICE, PLANS } from "@/content";
 import { goTo, useMe, type Me } from "@/lib/api";
 import { Link, navigate, useLocation } from "@/lib/router";
 
@@ -25,8 +25,8 @@ function Subscription({ me }: { me: Me }) {
           {PLANS.individual.name}
         </p>
         <p className="mb-3 text-muted-foreground">
-          usecode.dev supervises all your nodes, edge or Kubernetes, for free. Working with others? Team is{" "}
-          {TEAM_PRICE.amount} {TEAM_PRICE.period}.
+          Every feature is yours, on all your nodes, for free. Want us to host the monitoring, audit log and backups?
+          Hosted is {HOSTED_PRICE.amount} {HOSTED_PRICE.period}.
         </p>
         <Button asChild variant="outline" aria-keyshortcuts="p">
           <Link href="/pricing">
@@ -45,9 +45,9 @@ function Subscription({ me }: { me: Me }) {
         <Pill state={pastDue ? "drift" : "settled"} className="capitalize">
           {sub.status.replace("_", " ")}
         </Pill>
-        {PLANS.team.name}, {TEAM_PRICE.amount} {TEAM_PRICE.period}
+        {PLANS.hosted.name}, {HOSTED_PRICE.amount} {HOSTED_PRICE.period}
       </p>
-      {pastDue ? <Notice>Your last payment didn't go through. Update your card to keep your team on.</Notice> : null}
+      {pastDue ? <Notice>Your last payment didn't go through. Update your card to keep Hosted on.</Notice> : null}
       {sub.currentPeriodEnd ? (
         <p className="mb-3 text-muted-foreground">
           {sub.cancelAtPeriodEnd ? "Ends on" : "Renews on"} {date(sub.currentPeriodEnd)}
