@@ -14,7 +14,39 @@
 
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "@fontsource-variable/geist-mono";
+
+/* Cascadia Mono Nerd Font (CaskaydiaMono NF Mono, SIL OFL, see
+   fonts/OFL.txt). The letters are split from the Nerd Font icons, so a
+   page only fetches the ~1 MB of icons when it shows one. Cascadia Mono has
+   no medium, so font-medium is the regular weight. */
+@font-face {
+  font-family: "CaskaydiaMono NF";
+  src: url("./fonts/CaskaydiaMonoNF-Regular.woff2") format("woff2");
+  font-weight: 100 500;
+  font-display: swap;
+  unicode-range: U+0000-DFFF, U+F900-FFFF;
+}
+@font-face {
+  font-family: "CaskaydiaMono NF";
+  src: url("./fonts/CaskaydiaMonoNF-SemiBold.woff2") format("woff2");
+  font-weight: 600;
+  font-display: swap;
+  unicode-range: U+0000-DFFF, U+F900-FFFF;
+}
+@font-face {
+  font-family: "CaskaydiaMono NF";
+  src: url("./fonts/CaskaydiaMonoNF-Bold.woff2") format("woff2");
+  font-weight: 700 900;
+  font-display: swap;
+  unicode-range: U+0000-DFFF, U+F900-FFFF;
+}
+@font-face {
+  font-family: "CaskaydiaMono NF";
+  src: url("./fonts/CaskaydiaMonoNF-icons.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+  unicode-range: U+E000-F8FF, U+F0000-FFFFD;
+}
 
 @custom-variant dark (&:is(.dark *):not(.light *));
 
@@ -83,10 +115,10 @@
 }
 
 @theme inline {
-  /* Geist Mono everywhere: the site reads like a terminal,
+  /* Cascadia Mono Nerd Font everywhere: the site reads like a terminal,
      matching the uc chat box in the hero. */
-  --font-sans: "Geist Mono Variable", "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  --font-mono: "Geist Mono Variable", "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --font-sans: "CaskaydiaMono NF", "Cascadia Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --font-mono: "CaskaydiaMono NF", "Cascadia Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
   --radius-sm: var(--radius);
   --radius-md: var(--radius);
