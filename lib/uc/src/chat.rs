@@ -87,7 +87,16 @@ use tokio::task::JoinHandle;
 use crate::{claude, copilot, providers};
 
 mod diff;
+mod out;
+pub mod serve;
 mod voice;
+
+/// A status line, `· text` on the terminal; see [`out::note`].
+macro_rules! note {
+    ($($arg:tt)*) => {
+        out::note(&format!($($arg)*))
+    };
+}
 
 const DEFAULT_MODEL: &str = "z-ai/glm-5.3-flash";
 /// The model on the Claude subscription unless `UC_MODEL` says otherwise.
@@ -408,7 +417,7 @@ pub(crate) async fn pool(providers: &[Provider], refresh: bool) -> Vec<Choice> {
                     });
                 }
             }
-            Err(err) => eprintln!("· {}'s models: {err:#}", provider.label()),
+            Err(err) => note!("{}'s models: {err:#}", provider.label()),
         }
     }
     pool
@@ -476,8 +485,8 @@ fn start_provider(providers: &[Provider]) -> Option<&Provider> {
     let wanted = env("UC_PROVIDER").or_else(|| providers::settings().provider.clone());
     let found = wanted.as_deref().and_then(|name| named(providers, name));
     if let (Some(name), None) = (&wanted, found) {
-        eprintln!(
-            "· the provider to start on is {name}, but {} has no usable provider {name}",
+        note!(
+            "the provider to start on is {name}, but {} has no usable provider {name}",
             providers::path().display()
         );
     }
@@ -588,6 +597,7 @@ impl Output {
 
 /// Copies one of a job's pipes into its output until it closes.
 fn pump<R: AsyncRead + Unpin + Send + 'static>(
+    job: usize,
     from: Option<R>,
     output: Arc<Mutex<Output>>,
     echo: Arc<AtomicBool>,
@@ -597,9 +607,7 @@ fn pump<R: AsyncRead + Unpin + Send + 'static>(
         let mut buf = [0; 8192];
         while let Ok(n @ 1..) = from.read(&mut buf).await {
             if echo.load(Ordering::Relaxed) {
-                let mut err = std::io::stderr().lock();
-                let _ = err.write_all(&buf[..n]);
-                let _ = err.flush();
+                out::output(job, &buf[..n]);
             }
             output.lock().unwrap().push(&buf[..n]);
         }
@@ -656,41 +664,9 @@ async fn run(
     shell: bool,
     search: Option<Search>,
 ) -> Result<()> {
-    // Without a provider the AI is off and every line runs in bash. The
-    // session starts on the one `UC_PROVIDER` names, else the first in
-    // `agent.yaml`; the others' models are a `uc agent model` away.
-    let providers = providers::usable();
-    let start = start_provider(&providers).cloned();
-    let ai = start.is_some();
-    AI.store(ai, Ordering::Relaxed);
     SHELL.store(shell, Ordering::Relaxed);
-    let pool = pool(&providers, false).await;
-    let model = start
-        .as_ref()
-        .map(|p| start_model(p, &pool))
-        .unwrap_or_default();
-    let effort = env("UC_EFFORT")
-        .or_else(|| providers::settings().effort.clone())
-        .unwrap_or_else(|| DEFAULT_EFFORT.to_string());
-    let mut session = Session {
-        messages: vec![json!({"role": "system", "content": system_prompt(&model, ask, output)})],
-        providers,
-        provider: start.map(|p| p.name).unwrap_or_default(),
-        pool,
-        model,
-        ask,
-        effort,
-        allow_all: !ask,
-        allow_turn: false,
-        show_output: output,
-        show_commands: commands,
-        jobs: BTreeMap::new(),
-        next_job: 1,
-        search: Engine::pick(search)?,
-        waiting: None,
-        last_usage: None,
-        spent: 0.0,
-    };
+    let mut session = Session::new(ask, output, commands, search).await?;
+    let ai = AI.load(Ordering::Relaxed);
     if shell || !ai {
         // Read the user's aliases while they type, not when the first line comes.
         std::thread::spawn(user_shell);
@@ -750,7 +726,7 @@ async fn run(
         }
         if agent == Some("compact") {
             if let Err(err) = session.compact().await {
-                eprintln!("· {err:#}");
+                note!("{err:#}");
             }
             continue;
         }
@@ -768,7 +744,7 @@ async fn run(
         // The model the line goes to, printed when it is new; the same
         // again stays silent.
         if command.is_none() && shown.as_deref() != Some(session.models().as_str()) {
-            eprintln!("· {}", session.models());
+            note!("{}", session.models());
         }
         let shown_after = async {
             match command {
@@ -1189,15 +1165,15 @@ async fn read_only(search: &Engine, call: &Value) -> String {
         "fetch_url" => fetch_url(&arg("url")).await,
         "src" => src(&arg("prefix")),
         "read_file" => {
-            eprintln!("· read {}", arg("path"));
+            note!("read {}", arg("path"));
             read_file(&arg("path"), number("offset"), number("limit"))
         }
         "grep" => {
-            eprintln!("· search for {}", arg("pattern"));
+            note!("search for {}", arg("pattern"));
             grep(&arg("pattern"), &arg("path"), &arg("glob"), number("limit"))
         }
         "glob" => {
-            eprintln!("· find {}", arg("pattern"));
+            note!("find {}", arg("pattern"));
             glob(&arg("pattern"), &arg("path"))
         }
         other => Err(anyhow!("there is no tool called '{other}'")),
@@ -1823,6 +1799,46 @@ fn tools() -> Value {
 }
 
 impl Session {
+    /// A new session on the provider and model the user config and the
+    /// environment pick. Without a provider the AI is off (`AI` says so):
+    /// on the terminal every line then runs in bash. The session starts on
+    /// the one `UC_PROVIDER` names, else the first in `agent.yaml`; the
+    /// others' models are a `uc agent model` away.
+    async fn new(ask: bool, output: bool, commands: bool, search: Option<Search>) -> Result<Self> {
+        let providers = providers::usable();
+        let start = start_provider(&providers).cloned();
+        AI.store(start.is_some(), Ordering::Relaxed);
+        let pool = pool(&providers, false).await;
+        let model = start
+            .as_ref()
+            .map(|p| start_model(p, &pool))
+            .unwrap_or_default();
+        let effort = env("UC_EFFORT")
+            .or_else(|| providers::settings().effort.clone())
+            .unwrap_or_else(|| DEFAULT_EFFORT.to_string());
+        Ok(Session {
+            messages: vec![
+                json!({"role": "system", "content": system_prompt(&model, ask, output)}),
+            ],
+            providers,
+            provider: start.map(|p| p.name).unwrap_or_default(),
+            pool,
+            model,
+            ask,
+            effort,
+            allow_all: !ask,
+            allow_turn: false,
+            show_output: output,
+            show_commands: commands,
+            jobs: BTreeMap::new(),
+            next_job: 1,
+            search: Engine::pick(search)?,
+            waiting: None,
+            last_usage: None,
+            spent: 0.0,
+        })
+    }
+
     /// The model, as the status line and `uc agent model` say it.
     fn models(&self) -> String {
         format!(
@@ -1913,9 +1929,9 @@ impl Session {
     /// `uc agent model-update`: fetches every provider's model list again, keeps it
     /// in the cache and makes it the list `uc agent model` offers.
     async fn update_models(&mut self) {
-        eprintln!("· fetching the model lists");
+        note!("fetching the model lists");
         self.pool = pool(&self.providers, true).await;
-        eprintln!("· {} models", self.pool.len());
+        note!("{} models", self.pool.len());
     }
 
     /// `uc agent model` and chat `model`: list with no name; otherwise switch to the
@@ -1923,7 +1939,7 @@ impl Session {
     /// it. The same lines go to the terminal and back to whoever asked.
     fn switch(&mut self, name: &str) -> String {
         let say = |line: String| {
-            eprint!("{line}");
+            out::raw(&line);
             line
         };
         if name.is_empty() {
@@ -1963,9 +1979,9 @@ impl Session {
         };
         match save_model_choice(&choice) {
             Ok(path) => {
-                eprintln!("· saved in {} for new `uc` sessions", path.display());
+                note!("saved in {} for new `uc` sessions", path.display());
             }
-            Err(err) => eprintln!("· not saved: {err:#}"),
+            Err(err) => note!("not saved: {err:#}"),
         }
     }
 
@@ -1975,18 +1991,17 @@ impl Session {
     /// its tool calls have to be answered in the same context — and then the
     /// prompt loop drops them, as CLEARED says.
     fn clear(&mut self) -> String {
-        print!("\x1b[H\x1b[2J\x1b[3J");
-        let _ = std::io::stdout().flush();
+        out::clear();
         CLEARED.store(true, Ordering::Relaxed);
-        eprintln!("· context cleared");
+        note!("context cleared");
         "context cleared".into()
     }
 
     /// Leaves uc: stops the jobs, puts the terminal back as it was and exits.
-    fn exit(&mut self) -> ! {
+    fn exit(&mut self) -> Result<String> {
         stop_jobs();
         restore_terminal(&mut saved());
-        eprintln!("· leaving uc");
+        note!("leaving uc");
         std::process::exit(0);
     }
 
@@ -2028,8 +2043,8 @@ impl Session {
         }
         // The count was of the longer conversation.
         self.last_usage = None;
-        eprintln!(
-            "· compacted the context: {} messages, was {before}",
+        note!(
+            "compacted the context: {} messages, was {before}",
             self.messages.len()
         );
         Ok(())
@@ -2045,9 +2060,8 @@ impl Session {
             ],
             "reasoning": {"effort": "low"},
         });
-        let _clock = std::io::stderr()
-            .is_terminal()
-            .then(|| Clock(tokio::spawn(spin("summarising the conversation".into()))));
+        let _clock =
+            out::tty().then(|| Clock(tokio::spawn(spin("summarising the conversation".into()))));
         let value = self.send(&body).await?;
         if let Some(cost) = value["usage"]["cost"].as_f64() {
             self.spent += cost;
@@ -2072,8 +2086,8 @@ impl Session {
             .iter()
             .map(|m| content(m).map(str::len).unwrap_or_default())
             .sum();
-        eprintln!(
-            "· {} messages, about {} tokens",
+        note!(
+            "{} messages, about {} tokens",
             self.messages.len(),
             bytes / 4
         );
@@ -2082,56 +2096,51 @@ impl Session {
             .as_ref()
             .and_then(|u| u["total_tokens"].as_u64());
         if let Some(total) = tokens {
-            eprint!("· last turn {total} tokens");
-            if let Some(prompt) = self
-                .last_usage
-                .as_ref()
-                .and_then(|u| u["prompt_tokens"].as_u64())
-            {
-                eprint!(" ({prompt} in");
-                if let Some(cached) = self
-                    .last_usage
-                    .as_ref()
+            let usage = self.last_usage.as_ref();
+            let mut line = format!("last turn {total} tokens");
+            if let Some(prompt) = usage.and_then(|u| u["prompt_tokens"].as_u64()) {
+                line += &format!(" ({prompt} in");
+                if let Some(cached) = usage
                     .and_then(|u| u["prompt_tokens_details"]["cached_tokens"].as_u64())
                     .filter(|c| *c > 0)
                 {
-                    eprint!(", {cached} cached");
+                    line += &format!(", {cached} cached");
                 }
-                eprint!(")");
+                line += ")";
             }
-            match self
-                .last_usage
-                .as_ref()
-                .and_then(|u| u["completion_tokens"].as_u64())
-            {
-                Some(completion) => eprintln!(", {completion} out"),
-                None => eprintln!(),
+            if let Some(completion) = usage.and_then(|u| u["completion_tokens"].as_u64()) {
+                line += &format!(", {completion} out");
             }
+            note!("{line}");
         } else {
-            eprintln!("· no turn yet, so no token count; that comes with the first reply");
+            note!("no turn yet, so no token count; that comes with the first reply");
         }
         match model_info(&self.model).await {
             Ok(Some((window, per_million))) => {
                 if let (Some(window), Some(total)) = (window, tokens) {
                     let pct = 100.0 * total as f64 / window as f64;
-                    eprintln!(
-                        "· model {}'s window is {} tokens, {:.1}% of it used",
-                        self.model, window, pct
+                    note!(
+                        "model {}'s window is {} tokens, {:.1}% of it used",
+                        self.model,
+                        window,
+                        pct
                     );
                 }
                 if self.spent > 0.0 {
                     let per_million = per_million.unwrap_or_default();
-                    eprintln!(
-                        "· spent about ${:.4} this session, input ${:.2} and output ${:.2} per million tokens",
-                        self.spent, per_million.0, per_million.1
+                    note!(
+                        "spent about ${:.4} this session, input ${:.2} and output ${:.2} per million tokens",
+                        self.spent,
+                        per_million.0,
+                        per_million.1
                     );
                 }
             }
-            Ok(None) => eprintln!(
-                "· model {}'s window and price aren't on OpenRouter's list",
+            Ok(None) => note!(
+                "model {}'s window and price aren't on OpenRouter's list",
                 self.model
             ),
-            Err(err) => eprintln!("· OpenRouter's model list: {err:#}"),
+            Err(err) => note!("OpenRouter's model list: {err:#}"),
         }
     }
 
@@ -2142,7 +2151,7 @@ impl Session {
             if self.near_window().await
                 && let Err(err) = self.compact().await
             {
-                eprintln!("· could not compact the context: {err:#}");
+                note!("could not compact the context: {err:#}");
             }
             let message = self.complete().await?;
             let text = message["content"]
@@ -2203,9 +2212,7 @@ impl Session {
             "usage": {"include": true},
         });
         let what = format!("\x1b[94m{}\x1b[0m", any(&DOING));
-        let mut clock = std::io::stderr()
-            .is_terminal()
-            .then(|| Clock(tokio::spawn(spin(what))));
+        let mut clock = out::tty().then(|| Clock(tokio::spawn(spin(what))));
         let mut stream = self.stream(&body).await?;
         let mut pending = Vec::new();
         let mut reply = Reply::default();
@@ -2234,13 +2241,12 @@ impl Session {
                 }
                 clock = None;
                 shown = true;
-                print!("{text}");
-                let _ = std::io::stdout().flush();
+                out::text(&text);
             }
         }
         drop(clock);
         if shown {
-            println!("\n");
+            out::reply_end();
         }
         // What the last turn took: `cost` is what OpenRouter charged, the
         // token counts what it says the messages came to.
@@ -2318,7 +2324,7 @@ impl Session {
         if self.show_commands || title.is_empty() || asks {
             eprintln!("{}{}", prompt(), color_program(command));
         } else {
-            eprintln!("· {title}");
+            note!("{title}");
         }
         self.confirm("run it?", ask || deletes(command))?;
         if let Some(dir) = cd_target(command) {
@@ -2331,7 +2337,7 @@ impl Session {
         }
         let id = self.start(command, !background && self.show_output)?;
         if background {
-            eprintln!("· job {id} started");
+            note!("job {id} started");
             return Ok(format!("started job {id}"));
         }
         self.waiting = Some(id);
@@ -2340,7 +2346,7 @@ impl Session {
         let job = &self.jobs[&id];
         job.echo.store(false, Ordering::Relaxed);
         if job.status.is_none() {
-            eprintln!("· still running after {timeout}s, as job {id}");
+            note!("still running after {timeout}s, as job {id}");
         }
         let (status, text) = self.take(id);
         Ok(format!("{status}\noutput:\n{text}"))
@@ -2377,7 +2383,7 @@ impl Session {
                 let status = on_terminal_status(&shell.script(command)).await?;
                 FAILED.store(!status.success(), Ordering::Relaxed);
                 if !status.success() {
-                    eprintln!("· {status}");
+                    note!("{status}");
                 }
             }
         };
@@ -2407,12 +2413,12 @@ impl Session {
         GROUPS.lock().unwrap().insert(group);
         let output = Arc::new(Mutex::new(Output::default()));
         let echo = Arc::new(AtomicBool::new(echo));
-        let readers = vec![
-            pump(child.stdout.take(), output.clone(), echo.clone()),
-            pump(child.stderr.take(), output.clone(), echo.clone()),
-        ];
         let id = self.next_job;
         self.next_job += 1;
+        let readers = vec![
+            pump(id, child.stdout.take(), output.clone(), echo.clone()),
+            pump(id, child.stderr.take(), output.clone(), echo.clone()),
+        ];
         self.jobs.insert(
             id,
             Job {
@@ -2437,7 +2443,7 @@ impl Session {
             return;
         }
         // Without its output on screen, a long wait would look like uc hung.
-        let quiet = !job.echo.load(Ordering::Relaxed) && std::io::stderr().is_terminal();
+        let quiet = !job.echo.load(Ordering::Relaxed) && out::tty();
         let what = format!("\x1b[94m{}\x1b[0m", any(&RUNNING));
         let clock = quiet.then(|| Clock(tokio::spawn(spin(what))));
         let waited = tokio::time::timeout(Duration::from_secs(secs), job.child.wait()).await;
@@ -2477,9 +2483,9 @@ impl Session {
         self.wait(id, wait).await;
         let (status, text) = self.take(id);
         if self.show_output {
-            eprint!("{text}");
+            out::output(id, text.as_bytes());
         }
-        eprintln!("· job {id}: {status}");
+        note!("job {id}: {status}");
         Ok(format!("{status}\noutput:\n{text}"))
     }
 
@@ -2497,16 +2503,16 @@ impl Session {
                 break;
             }
         }
-        eprintln!("· job {id} stopped");
+        note!("job {id} stopped");
         let (status, text) = self.take(id);
         Ok(format!("{status}\noutput:\n{text}"))
     }
 
     fn write_file(&mut self, path: &str, content: &str) -> Result<String> {
-        eprintln!("· write {path} ({} lines)", content.lines().count());
+        note!("write {path} ({} lines)", content.lines().count());
         // Over a file that is there, what changes is worth seeing.
         if let Ok(before) = std::fs::read_to_string(path) {
-            eprint!("{}", diff::render(&before, content, diff::color()));
+            out::diff(path, &before, content);
         }
         self.confirm("write it?", false)?;
         if let Some(dir) = std::path::Path::new(path).parent()
@@ -2526,8 +2532,8 @@ impl Session {
             n => bail!("old_text occurs {n} times in {path}; give more context"),
         }
         let edited = text.replacen(old, new, 1);
-        eprintln!("· edit {path}");
-        eprint!("{}", diff::render(&text, &edited, diff::color()));
+        note!("edit {path}");
+        out::diff(path, &text, &edited);
         self.confirm("apply it?", false)?;
         std::fs::write(path, edited).context("writing the file")?;
         Ok(format!("edited {path}"))
@@ -3259,7 +3265,7 @@ fn cache_set(key: &str, value: Value) {
         std::fs::rename(&tmp, &path)
     };
     if let Err(err) = write() {
-        eprintln!("· can't write {}: {err}", path.display());
+        note!("can't write {}: {err}", path.display());
     }
 }
 
@@ -3377,7 +3383,7 @@ fn env(name: &str) -> Option<String> {
 /// the other fails, read off its HTML page: no key needed, up to 10 results,
 /// the first page.
 async fn web_search(engine: &Engine, query: &str, count: u64) -> Result<String> {
-    eprintln!("· search {query}");
+    note!("search {query}");
     let searched = match engine {
         Engine::Parallel(key) => Some(("Parallel", parallel_search(query, count, key).await)),
         Engine::Exa(key) => Some(("Exa", exa_search(query, count, key).await)),
@@ -3548,7 +3554,7 @@ fn html_text(html: &str) -> String {
 /// cloudflare:` in `agent.yaml` has an account and a token, else fetched and turned into
 /// text here, without running its JavaScript.
 async fn fetch_url(url: &str) -> Result<String> {
-    eprintln!("· fetch {url}");
+    note!("fetch {url}");
     if !url.starts_with("http://") && !url.starts_with("https://") {
         bail!("only http and https URLs can be fetched");
     }
@@ -3629,7 +3635,7 @@ fn src(prefix: &str) -> Result<String> {
             None => PathBuf::from(p),
         },
     };
-    eprintln!("· src {}", prefix.display());
+    note!("src {}", prefix.display());
     let prefix = prefix
         .canonicalize()
         .with_context(|| format!("reading {}", prefix.display()))?;
@@ -3682,9 +3688,7 @@ fn truncate(mut output: String) -> String {
 fn save_model_choice(choice: &Choice) -> Result<PathBuf> {
     let path = providers::save_choice(&choice.provider, &choice.model)?;
     if env("UC_MODEL").is_some() || env("UC_PROVIDER").is_some() {
-        eprintln!(
-            "· UC_MODEL or UC_PROVIDER is set in this environment and wins over it; unset them"
-        );
+        note!("UC_MODEL or UC_PROVIDER is set in this environment and wins over it; unset them");
     }
     Ok(path)
 }

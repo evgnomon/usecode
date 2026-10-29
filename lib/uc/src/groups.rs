@@ -319,6 +319,11 @@ pub static AGENT: Group = Group {
             run: Run::Builtin(agent_model),
         },
         Sub {
+            name: "serve",
+            summary: "the coding agent in a web page: uc on a terminal of its own, drawn by restty",
+            run: Run::Builtin(crate::chat::serve::main),
+        },
+        Sub {
             name: "model-update",
             summary: "fetch every provider's model list again, for uc agent model and the chat",
             run: Run::Builtin(agent_model_update),

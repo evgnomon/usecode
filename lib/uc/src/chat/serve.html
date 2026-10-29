@@ -1,0 +1,130 @@
+<!doctype html>
+<!-- License-Identifier: HGL
+     Copyright (C) The Usecode Authors (see AUTHORS) -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
+<title>uc</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #282828; overflow: hidden; }
+  #terminal { position: fixed; inset: 0; padding: 6px; box-sizing: border-box; }
+  #status { position: fixed; right: 10px; bottom: 8px; z-index: 10; pointer-events: none;
+            font: 12px/1.4 "Cascadia Mono", ui-monospace, Menlo, Consolas, monospace; color: #a89984;
+            background: #1d2021cc; padding: 2px 8px; border-radius: 4px; }
+  #status:empty { display: none; }
+</style>
+</head>
+<body>
+<div id="terminal" aria-label="uc"></div>
+<div id="status">loading the terminal…</div>
+<script type="module">
+// restty (https://github.com/wiedymi/restty): libghostty-vt in WebAssembly,
+// drawn with WebGPU or WebGL2. Pinned, and checked against its hash.
+const RESTTY = "https://cdn.jsdelivr.net/npm/restty@0.3.0/dist/restty.esm.js";
+const RESTTY_SRI = "sha384-lTQWNiJf+H4v21xLAXBVaBeBjpmbWP0qa/aWJnYNuxUkiA69KvOcg570ID0vVbFY";
+
+const status = document.getElementById("status");
+
+async function load() {
+  const res = await fetch(RESTTY, { integrity: RESTTY_SRI, mode: "cors" });
+  if (!res.ok) throw new Error(`restty: ${res.status}`);
+  const url = URL.createObjectURL(new Blob([await res.text()], { type: "text/javascript" }));
+  try {
+    return await import(url);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+const { Restty, getBuiltinTheme, createWebSocketPtyTransport } = await load().catch(err => {
+  status.textContent = `the terminal didn't load: ${err.message}`;
+  throw err;
+});
+
+const token = new URLSearchParams(location.search).get("token");
+const ws = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws" +
+  (token ? "?token=" + encodeURIComponent(token) : "");
+
+// The pane's own transport, so its state tells when the socket dropped.
+const base = createWebSocketPtyTransport();
+let retry = 0, timer = 0, wanted = true;
+const transport = {
+  ...base,
+  connect(options) {
+    const callbacks = options.callbacks;
+    return base.connect({
+      ...options,
+      callbacks: {
+        ...callbacks,
+        onConnect() {
+          retry = 0;
+          status.textContent = "";
+          callbacks.onConnect?.();
+        },
+        onDisconnect() {
+          callbacks.onDisconnect?.();
+          if (!wanted) return;
+          status.textContent = "disconnected, trying again…";
+          clearTimeout(timer);
+          timer = setTimeout(reconnect, Math.min(500 * 2 ** retry++, 10000));
+        },
+      },
+    });
+  },
+};
+
+// Cascadia Mono Nerd Font, from uc itself: the letters, then the Nerd Font
+// icons, then restty's own fallbacks for what neither has (emoji, CJK).
+// The URLs carry a hash of the fonts: restty keeps fonts by URL for a week,
+// so new fonts need new URLs to be fetched at all.
+const FONTS_VERSION = "{{FONTS_VERSION}}";
+const font = (file, name, weight) => ({
+  url: new URL("fonts/" + file + "?v=" + FONTS_VERSION, location.href).href, name, weight,
+});
+const fonts = [
+  font("CaskaydiaMonoNF-Regular.woff2", "CaskaydiaMono NF Regular", 400),
+  font("CaskaydiaMonoNF-Bold.woff2", "CaskaydiaMono NF Bold", 700),
+  font("CaskaydiaMonoNF-SemiBold.woff2", "CaskaydiaMono NF SemiBold", 600),
+  font("CaskaydiaMonoNF-icons.woff2", "CaskaydiaMono NF Icons", 400),
+  "https://cdn.jsdelivr.net/gh/notofonts/noto-fonts@main/unhinted/ttf/NotoSansSymbols2/NotoSansSymbols2-Regular.ttf",
+  "https://cdn.jsdelivr.net/gh/hfg-gmuend/openmoji@master/font/OpenMoji-black-glyf/OpenMoji-black-glyf.ttf",
+  "https://cdn.jsdelivr.net/gh/notofonts/noto-cjk@main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf",
+];
+
+const theme = getBuiltinTheme("Gruvbox Dark");
+const restty = new Restty({
+  root: document.getElementById("terminal"),
+  surface: {
+    createInitialPane: { focus: true },
+    // One uc, one pane: no splits.
+    shortcuts: false,
+    searchUi: true,
+    defaultContextMenu: true,
+  },
+  terminal: {
+    renderer: "auto",
+    fontSize: 15,
+    fonts,
+    // Cascadia Mono has no ligatures; Cascadia Code is the one with them.
+    ligatures: false,
+    theme: theme ?? undefined,
+    maxScrollbackBytes: 10_000_000,
+  },
+  services: { ptyTransport: transport },
+});
+
+function reconnect() {
+  if (restty.isPtyConnected()) return;
+  // The server sends everything since uc started: start from a clean screen.
+  restty.clearScreen();
+  restty.connectPty(ws);
+}
+
+status.textContent = "connecting…";
+restty.connectPty(ws);
+addEventListener("pagehide", () => { wanted = false; });
+addEventListener("focus", () => restty.focus());
+</script>
+</body>
+</html>

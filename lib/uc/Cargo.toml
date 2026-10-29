@@ -188,3 +188,4 @@ rustls-platform-verifier = "0.7"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 mail-send = { version = "0.6", default-features = false, features = ["builder", "tls12"] }
 mime_guess = "2"
+axum = { workspace = true, default-features = false, features = ["http1", "tokio", "ws", "query"] }
