@@ -161,15 +161,6 @@ export GEM_HOME="$HOME/.gem"
 export CODE_HOME="$HOME/src"
 export PATH="$GEM_HOME/bin:$PATH"
 
-# Set CDPATH
-unset CDPATH
-export CDPATH=""
-for f in ~/src/*/; do
-    if [[ -d "$f" ]]; then
-        CDPATH="$CDPATH:$f"
-    fi
-done
-
 export PATH="$HOME/.cargo/bin:$PATH"
 export PATH="$HOME/go/bin:$PATH"
 export PATH="$HOME/bin:$PATH"
@@ -183,7 +174,6 @@ if command -v sk &>/dev/null; then
     eval "$(sk --shell bash --shell-bindings)"
 fi
 
-CDPATH="$CDPATH:/media/$USER"
 export LIBVIRT_DEFAULT_URI="qemu:///system"
 
 # One ssh-agent for all shells: keep a reachable one (inherited or forwarded),
