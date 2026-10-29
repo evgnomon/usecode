@@ -223,7 +223,7 @@ export const FEATURES = [
 
 export const STEPS = [
   { title: "Make an account", body: "An email and a password. Takes a few seconds, and it's free." },
-  { title: "Hand your agent a key", body: "One line in Claude Code, Cursor, Codex or whatever you use." },
+  { title: "Put an agent to work", body: "uc comes with its own agent. Or hand a key to Claude Code, Cursor, Codex or whatever you already use." },
   { title: "Add your nodes", body: "Edge boxes or Kubernetes nodes. usecode.dev takes it from there." },
 ];
 
