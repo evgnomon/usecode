@@ -14,6 +14,8 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import * as auth from "./auth.js";
 import * as billing from "./billing.js";
+import * as mail from "./mail.js";
+import * as otp from "./otp.js";
 import type { Config } from "./config.js";
 import type { Sql } from "./db.js";
 
@@ -21,6 +23,9 @@ type Env = { Variables: { user: auth.User | null } };
 
 /** The pages the app in src/ has; any other path gets it with a 404. */
 export const PAGES = ["/", "/pricing", "/login", "/signup", "/account"];
+
+/** The cookie holding the token of the code waiting to be typed in. */
+export const OTP_COOKIE = "uc_otp";
 
 /** Failed logins per email, so a password can't be guessed at speed. */
 export class Limiter {
@@ -62,9 +67,11 @@ async function credentials(c: Context<Env>): Promise<{ email: string; password: 
  * `clientDir` holds the built pages: index.html, assets/, public/'s files,
  * and pages/ with the ones src/prerender.tsx rendered ahead of time.
  */
-export function createApp(sql: Sql, config: Config, clientDir: string): Hono<Env> {
+export function createApp(sql: Sql, config: Config, clientDir: string, mailer: mail.Mailer = mail.fromConfig(config)): Hono<Env> {
   const app = new Hono<Env>();
   const limiter = new Limiter();
+  // Codes mailed per address, so nobody's inbox gets flooded.
+  const mailed = new Limiter(5, 15 * 60_000);
   const files = new Map<string, Promise<string>>();
   const file = (name: string) => {
     if (!files.has(name)) files.set(name, readFile(join(clientDir, name), "utf8"));
@@ -137,29 +144,79 @@ export function createApp(sql: Sql, config: Config, clientDir: string): Hono<Env
     });
   });
 
+  const tooMany = (c: Context<Env>) =>
+    c.json({ error: "Too many tries. Take a break and try again in a few minutes." }, 429);
+
+  // Mails a code for `pending` and keeps its token in a cookie; the browser
+  // then posts the code to /api/verify.
+  const challenge = async (c: Context<Env>, pending: otp.Pending) => {
+    if (mailed.blocked(pending.email)) {
+      return c.json({ error: "We've sent a few codes already. Check your inbox, or try again in a few minutes." }, 429);
+    }
+    const { token, code } = await otp.start(sql, pending);
+    const { subject, text } = otp.message(pending.purpose, code);
+    try {
+      await mailer.send(pending.email, subject, text);
+    } catch (err) {
+      console.error(`mailing a code to ${pending.email}: ${(err as Error).message}`);
+      return c.json({ error: "We couldn't send you the code just now. Please try again in a moment." }, 503);
+    }
+    mailed.fail(pending.email);
+    setCookie(c, OTP_COOKIE, token, {
+      httpOnly: true,
+      secure: config.secureCookies,
+      sameSite: "Strict",
+      path: "/api/verify",
+      maxAge: otp.CODE_MINUTES * 60,
+    });
+    return c.json({ code: true, email: pending.email }, 202);
+  };
+
+  // Step one of each: the email and password, then a code goes out.
   app.post("/api/signup", async (c) => {
     const { email, password } = await credentials(c);
     const problem = auth.signupProblem(email, password);
     if (problem) return c.json({ error: problem }, 422);
-    const user = await auth.createUser(sql, email, password);
-    if (!user) return c.json({ error: "That email already has an account. Try logging in." }, 409);
-    login(c, await auth.startSession(sql, user.id));
-    return c.json({ email: user.email }, 201);
+    if (await auth.emailTaken(sql, email)) {
+      return c.json({ error: "That email already has an account. Try logging in." }, 409);
+    }
+    const passwordHash = await auth.hashPassword(password);
+    return challenge(c, { purpose: "signup", email, userId: null, passwordHash });
   });
 
   app.post("/api/login", async (c) => {
     const { email, password } = await credentials(c);
-    if (limiter.blocked(email)) {
-      return c.json({ error: "Too many tries. Take a break and try again in a few minutes." }, 429);
-    }
+    if (limiter.blocked(email)) return tooMany(c);
     const user = await auth.checkLogin(sql, email, password);
     if (!user) {
       limiter.fail(email);
       return c.json({ error: "That email and password don't match." }, 401);
     }
-    limiter.clear(email);
+    return challenge(c, { purpose: "login", email: user.email, userId: user.id, passwordHash: null });
+  });
+
+  // Step two: the code from the mail.
+  app.post("/api/verify", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const checked = await otp.check(sql, getCookie(c, OTP_COOKIE) ?? "", String(body.code ?? ""));
+    if (!checked.ok) {
+      if (checked.why === "wrong") return c.json({ error: "That code isn't right. Check the mail and try again." }, 401);
+      deleteCookie(c, OTP_COOKIE, { path: "/api/verify" });
+      return c.json({ error: "That code has run out. Go back and we'll send you a new one." }, 410);
+    }
+    deleteCookie(c, OTP_COOKIE, { path: "/api/verify" });
+    const p = checked.pending;
+    let user: auth.User | null;
+    if (p.purpose === "signup") {
+      user = await auth.insertUser(sql, p.email, p.passwordHash!);
+      if (!user) return c.json({ error: "That email already has an account. Try logging in." }, 409);
+    } else {
+      user = { id: p.userId!, email: p.email };
+      limiter.clear(p.email);
+    }
+    mailed.clear(p.email);
     login(c, await auth.startSession(sql, user.id));
-    return c.json({ email: user.email });
+    return c.json({ email: user.email }, p.purpose === "signup" ? 201 : 200);
   });
 
   app.post("/api/logout", async (c) => {

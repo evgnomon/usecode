@@ -8,6 +8,7 @@ import { hashPassword, normalizeEmail, signupProblem, verifyPassword } from "../
 import { isLive, verifySignature } from "../server/billing.js";
 import { Limiter } from "../server/app.js";
 import { load } from "../server/config.js";
+import { cleanCode, message, newCode } from "../server/otp.js";
 import { safeNext } from "../src/lib/safe-next.js";
 
 test("a password checks against its own hash only", async () => {
@@ -73,4 +74,24 @@ test("billing is on only with all three Stripe settings", () => {
   assert.equal(cfg.publicUrl, "https://usecode.dev");
   assert.equal(cfg.secureCookies, true);
   assert.deepEqual(cfg.stripe, { secretKey: "sk", priceId: "price", webhookSecret: "whsec" });
+});
+
+test("a code is six digits, typed in however", () => {
+  for (let i = 0; i < 200; i++) assert.match(newCode(), /^\d{6}$/);
+  assert.equal(cleanCode(" 012 345 "), "012345");
+  assert.equal(cleanCode("012-345"), "012345");
+  assert.match(message("login", "012345").text, /012345/);
+  assert.match(message("signup", "012345").subject, /^012345 /);
+});
+
+test("mail goes through clusterlean.net as no-reply@usecode.dev once there's a password", () => {
+  assert.equal(load({}).smtp, null);
+  assert.deepEqual(load({ SMTP_PASSWORD: "pw" }).smtp, {
+    host: "mail.clusterlean.net",
+    port: 465,
+    user: "no-reply@usecode.dev",
+    password: "pw",
+    from: "usecode.dev <no-reply@usecode.dev>",
+  });
+  assert.equal(load({ SMTP_PASSWORD: "pw", SMTP_PORT: "587" }).smtp?.port, 587);
 });

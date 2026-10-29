@@ -24,7 +24,7 @@ card changes and cancelling.
 make test-db      # a throwaway Postgres in podman, on 127.0.0.1:55432
 make serve        # http://localhost:8080
 make dev          # the pages with hot reload on :5173, next to `make serve`
-make test         # unit tests, plus the sign up and billing flow against test-db
+make test         # unit tests, plus the sign up, code and billing flow against test-db
 make test-db-stop
 ```
 
@@ -38,6 +38,17 @@ make test-db-stop
 | `STRIPE_SECRET_KEY`     | Billing is on once all three Stripe settings are set         |
 | `STRIPE_PRICE_ID`       | The Hosted plan's $10/month per user recurring price          |
 | `STRIPE_WEBHOOK_SECRET` | The signing secret of the webhook endpoint                   |
+| `SMTP_PASSWORD`         | The mail account's password; the login codes go out with it |
+| `SMTP_HOST`             | Default `mail.clusterlean.net`                              |
+| `SMTP_PORT`             | Default `465` (TLS); any other port uses STARTTLS           |
+| `SMTP_USER`             | Default `no-reply@usecode.dev`                              |
+| `SMTP_FROM`             | Default `usecode.dev <no-reply@usecode.dev>`                |
+
+Signing up and logging in both take the password and then a six digit code
+mailed to the address, good for 10 minutes and five guesses. The account is
+only made once the code is right. Without `SMTP_PASSWORD` the codes are
+printed to the log on `http://localhost`, and can't go out at all on an
+`https://` console, so nobody can log in there until it's set.
 
 Migrations in `migrations/` run on start, once, even with several replicas.
 

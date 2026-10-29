@@ -61,13 +61,21 @@ export interface User {
 
 /** The new user, or null when the email already has an account. */
 export async function createUser(sql: Sql, email: string, password: string): Promise<User | null> {
-  const hash = await hashPassword(password);
+  return insertUser(sql, email, await hashPassword(password));
+}
+
+/** As createUser, with the password hashed already. */
+export async function insertUser(sql: Sql, email: string, hash: string): Promise<User | null> {
   const rows = await sql<{ id: string; email: string }[]>`
     INSERT INTO users (email, password_hash) VALUES (${email}, ${hash})
     ON CONFLICT (email) DO NOTHING
     RETURNING id, email`;
   const row = rows[0];
   return row ? { id: Number(row.id), email: row.email } : null;
+}
+
+export async function emailTaken(sql: Sql, email: string): Promise<boolean> {
+  return (await sql`SELECT 1 FROM users WHERE email = ${email}`).length > 0;
 }
 
 export async function checkLogin(sql: Sql, email: string, password: string): Promise<User | null> {

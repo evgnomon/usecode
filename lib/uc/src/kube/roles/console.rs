@@ -41,6 +41,13 @@
 //! Runs without them leave the secret as it is. Stripe's webhook endpoint is
 //! `https://<console_host>/stripe/webhook`.
 //!
+//! Sign ups and logins are finished with a code mailed from
+//! `console_smtp_user` (default `no-reply@usecode.dev`) through
+//! `console_smtp_host` (default `mail_host`, else `mail.clusterlean.net`) on
+//! `console_smtp_port` (default 465). The account's password comes from
+//! `SMTP_PASSWORD` in the environment of a run, kept like the Stripe keys,
+//! in console/console-smtp. Until it is there nobody can sign up or log in.
+//!
 //! The database password is made once, at random, and kept in
 //! console/console-db: the secret is the source of truth.
 
@@ -67,6 +74,11 @@ const DB_USER: &str = "console";
 const CLAIM: &str = "console-db-data";
 const DB_SECRET: &str = "console-db";
 const STRIPE_SECRET: &str = "console-stripe";
+const SMTP_SECRET: &str = "console-smtp";
+/// The environment variable with the mail account's password.
+const SMTP_PASSWORD: &str = "SMTP_PASSWORD";
+/// The annotation on console-smtp and the pods that says which password they have.
+const SMTP_FINGERPRINT: &str = "usecode.dev/smtp-fingerprint";
 /// The login to `registry_host` the pods pull the console's image with.
 const PULL_SECRET: &str = "registry";
 /// The annotation on console-stripe and the pods that says which keys they have.
@@ -97,6 +109,12 @@ pub struct Settings {
     pub dns_zone: String,
     /// The Stripe settings from this run's environment, when all are there.
     pub stripe: Option<Vec<(String, String)>>,
+    /// Where the login codes are mailed from.
+    pub smtp_host: String,
+    pub smtp_port: u16,
+    pub smtp_user: String,
+    /// `SMTP_PASSWORD` from this run's environment.
+    pub smtp_password: Option<String>,
 }
 
 impl Settings {
@@ -140,6 +158,15 @@ impl Settings {
             dns_target,
             dns_zone,
             stripe: stripe_env(|k| std::env::var(k).ok()),
+            smtp_host: name(var(vars, "console_smtp_host")?)
+                .or(name(var(vars, "mail_host")?))
+                .unwrap_or_else(|| "mail.clusterlean.net".into()),
+            smtp_port: var(vars, "console_smtp_port")?.unwrap_or(465),
+            smtp_user: name(var(vars, "console_smtp_user")?)
+                .unwrap_or_else(|| "no-reply@usecode.dev".into()),
+            smtp_password: std::env::var(SMTP_PASSWORD)
+                .ok()
+                .filter(|p| !p.trim().is_empty()),
         })
     }
 
@@ -152,27 +179,30 @@ impl Settings {
 
     /// The fingerprint of the Stripe settings, when this run has them.
     pub fn fingerprint(&self) -> Option<String> {
-        let stripe = self.stripe.as_ref()?;
-        let mut hash = Sha256::new();
-        for (k, v) in stripe {
-            hash.update(k.as_bytes());
-            hash.update([0]);
-            hash.update(v.as_bytes());
-            hash.update([0]);
-        }
-        Some(
-            hash.finalize()
-                .iter()
-                .take(16)
-                .map(|b| format!("{b:02x}"))
-                .collect(),
-        )
+        fingerprint(self.stripe.as_ref()?)
+    }
+
+    /// The SMTP password as console/console-smtp keeps it, when this run has it.
+    pub fn smtp(&self) -> Option<Vec<(String, String)>> {
+        let password = self.smtp_password.clone()?;
+        Some(vec![(SMTP_PASSWORD.to_string(), password)])
+    }
+
+    /// The fingerprint of the SMTP password, when this run has it.
+    pub fn smtp_fingerprint(&self) -> Option<String> {
+        fingerprint(&self.smtp()?)
     }
 
     /// Everything the console is, as one kubectl `List`, with the database
-    /// claim at `size`. `fingerprint` is that of the Stripe keys in
-    /// console/console-stripe, so a change to them restarts the console.
-    pub fn manifest(&self, size: &str, fingerprint: Option<&str>) -> Value {
+    /// claim at `size`. `fingerprint` and `smtp_fingerprint` are those of
+    /// console/console-stripe and console/console-smtp, so a change to them
+    /// restarts the console.
+    pub fn manifest(
+        &self,
+        size: &str,
+        fingerprint: Option<&str>,
+        smtp_fingerprint: Option<&str>,
+    ) -> Value {
         let host = self.host.as_deref().unwrap_or_default();
         let meta = |name: &str| json!({"name": name, "namespace": NAMESPACE});
         let db_password = json!({"secretKeyRef": {"name": DB_SECRET, "key": "password"}});
@@ -257,6 +287,14 @@ impl Settings {
             json!({"name": "PGPASSWORD", "valueFrom": db_password}),
         ];
         env.extend(stripe_env);
+        env.extend([
+            json!({"name": "SMTP_HOST", "value": self.smtp_host}),
+            json!({"name": "SMTP_PORT", "value": self.smtp_port.to_string()}),
+            json!({"name": "SMTP_USER", "value": self.smtp_user}),
+            json!({"name": SMTP_PASSWORD, "valueFrom": {"secretKeyRef": {
+                "name": SMTP_SECRET, "key": SMTP_PASSWORD, "optional": true,
+            }}}),
+        ]);
         let mut console = json!({
             "apiVersion": "apps/v1",
             "kind": "Deployment",
@@ -267,7 +305,10 @@ impl Settings {
                 "template": {
                     "metadata": {
                         "labels": {"app": NAME},
-                        "annotations": {FINGERPRINT: fingerprint.unwrap_or("none")},
+                        "annotations": {
+                            FINGERPRINT: fingerprint.unwrap_or("none"),
+                            SMTP_FINGERPRINT: smtp_fingerprint.unwrap_or("none"),
+                        },
                     },
                     "spec": {
                         "affinity": workers(false),
@@ -358,6 +399,25 @@ impl Settings {
     }
 }
 
+/// A short hash of a secret's keys and values, for the annotation that says
+/// which ones the secret and the pods have, without the values themselves.
+fn fingerprint(keys: &[(String, String)]) -> Option<String> {
+    let mut hash = Sha256::new();
+    for (k, v) in keys {
+        hash.update(k.as_bytes());
+        hash.update([0]);
+        hash.update(v.as_bytes());
+        hash.update([0]);
+    }
+    Some(
+        hash.finalize()
+            .iter()
+            .take(16)
+            .map(|b| format!("{b:02x}"))
+            .collect(),
+    )
+}
+
 /// The Stripe settings, when `get` has all of them.
 fn stripe_env(get: impl Fn(&str) -> Option<String>) -> Option<Vec<(String, String)>> {
     STRIPE_ENV
@@ -429,6 +489,26 @@ pub fn tasks(plan: &mut Plan, cluster: &Arc<Cluster>, vars: &Vars) -> Result<()>
     let (c, s) = (cluster.clone(), settings.clone());
     plan.add(
         Task::new(
+            "console/smtp",
+            "Keep the password of the mail account the codes come from in console/console-smtp",
+        )
+        .tags(&["console"])
+        .after(["console/namespace"])
+        .when(
+            settings.smtp_password.is_some(),
+            "SMTP_PASSWORD is not set; the mail password stays as it is",
+        )
+        .run(move |ctx| async move {
+            let (Some(keys), Some(want)) = (s.smtp(), s.smtp_fingerprint()) else {
+                return Ok(Outcome::Ok);
+            };
+            keep_secret(&ctx, &c, SMTP_SECRET, SMTP_FINGERPRINT, &keys, &want).await
+        }),
+    );
+
+    let (c, s) = (cluster.clone(), settings.clone());
+    plan.add(
+        Task::new(
             "console/pull-secret",
             "Keep the login to the cluster's registry in console/registry",
         )
@@ -467,6 +547,7 @@ pub fn tasks(plan: &mut Plan, cluster: &Arc<Cluster>, vars: &Vars) -> Result<()>
         .after([
             "console/db-secret",
             "console/stripe",
+            "console/smtp",
             "console/pull-secret",
             // cert-manager asks Let's Encrypt as soon as the Ingress is
             // there, so the name has to resolve by then.
@@ -501,6 +582,17 @@ async fn report(ctx: &Ctx, cluster: &Cluster, s: &Settings) -> Result<Outcome> {
     ctx.note(&format!(
         "https://{host}: {} x{}, Postgres on {} of {} (claim {NAMESPACE}/{CLAIM})",
         s.image, s.replicas, s.size, s.class
+    ));
+    ctx.note(&format!(
+        "login codes: from {} through {}:{}{}",
+        s.smtp_user,
+        s.smtp_host,
+        s.smtp_port,
+        if s.smtp_password.is_some() {
+            ", with SMTP_PASSWORD from this run's environment"
+        } else {
+            "; no SMTP_PASSWORD in this run's environment, console-smtp stays as it is"
+        }
     ));
     ctx.note(if s.stripe.is_some() {
         "billing: Stripe keys from this run's environment"
@@ -662,20 +754,35 @@ async fn secret_field(cluster: &Cluster, namespace: &str, name: &str, key: &str)
 }
 
 /// The fingerprint console/console-stripe was written with, if it exists.
-/// Only the annotation is read: what kubectl prints is logged.
 async fn stripe_fingerprint(ctx: &Ctx, cluster: &Cluster) -> Result<Option<String>> {
+    secret_fingerprint(ctx, cluster, STRIPE_SECRET, FINGERPRINT).await
+}
+
+/// The fingerprint console/console-smtp was written with, if it exists.
+async fn smtp_fingerprint(ctx: &Ctx, cluster: &Cluster) -> Result<Option<String>> {
+    secret_fingerprint(ctx, cluster, SMTP_SECRET, SMTP_FINGERPRINT).await
+}
+
+/// The `annotation` a secret was written with, if it exists. Only the
+/// annotation is read: what kubectl prints is logged.
+async fn secret_fingerprint(
+    ctx: &Ctx,
+    cluster: &Cluster,
+    secret: &str,
+    annotation: &str,
+) -> Result<Option<String>> {
     let out = kubectl(ctx, cluster)
         .args([
             "-n",
             NAMESPACE,
             "get",
             "secret",
-            STRIPE_SECRET,
+            secret,
             "--ignore-not-found",
         ])
         .arg(format!(
             "-o=jsonpath={{.metadata.annotations.{}}}",
-            FINGERPRINT.replace('.', "\\.")
+            annotation.replace('.', "\\.")
         ))
         .read_only()
         .output()
@@ -688,8 +795,21 @@ async fn stripe(ctx: &Ctx, cluster: &Cluster, s: &Settings) -> Result<Outcome> {
     let (Some(keys), Some(want)) = (&s.stripe, s.fingerprint()) else {
         return Ok(Outcome::Ok);
     };
-    let have = stripe_fingerprint(ctx, cluster).await?;
-    if have.as_deref() == Some(want.as_str()) {
+    keep_secret(ctx, cluster, STRIPE_SECRET, FINGERPRINT, keys, &want).await
+}
+
+/// Writes `keys` to the secret `name`, with `want`, their fingerprint, in
+/// `annotation`, unless it has them already.
+async fn keep_secret(
+    ctx: &Ctx,
+    cluster: &Cluster,
+    name: &str,
+    annotation: &str,
+    keys: &[(String, String)],
+    want: &str,
+) -> Result<Outcome> {
+    let have = secret_fingerprint(ctx, cluster, name, annotation).await?;
+    if have.as_deref() == Some(want) {
         return Ok(Outcome::Ok);
     }
     if ctx.check() {
@@ -703,9 +823,9 @@ async fn stripe(ctx: &Ctx, cluster: &Cluster, s: &Settings) -> Result<Outcome> {
         "apiVersion": "v1",
         "kind": "Secret",
         "metadata": {
-            "name": STRIPE_SECRET,
+            "name": name,
             "namespace": NAMESPACE,
-            "annotations": {FINGERPRINT: want},
+            "annotations": {annotation: want},
         },
         "stringData": data,
     });
@@ -745,10 +865,15 @@ async fn install(ctx: &Ctx, cluster: &Cluster, s: &Settings) -> Result<Outcome> 
         Some(fp) => Some(fp),
         None => stripe_fingerprint(ctx, cluster).await?,
     };
+    let smtp = match s.smtp_fingerprint() {
+        Some(fp) => Some(fp),
+        None => smtp_fingerprint(ctx, cluster).await?,
+    };
     let outcome = apply(
         ctx,
         cluster,
-        &s.manifest(size, fingerprint.as_deref()).to_string(),
+        &s.manifest(size, fingerprint.as_deref(), smtp.as_deref())
+            .to_string(),
     )
     .await?;
     if ctx.check() || outcome == Outcome::Ok {
@@ -944,6 +1069,13 @@ async fn verify(ctx: &Ctx, cluster: &Cluster, s: &Settings) -> Result<Outcome> {
         bail!("{}\n\n{}", problems.join("\n"), logs(ctx, cluster).await);
     }
     ctx.log(&format!("https://{host} is up"));
+    if smtp_fingerprint(ctx, cluster).await?.is_none() {
+        ctx.note(&format!(
+            "nobody can sign up or log in yet: the codes can't be mailed. Run again with \
+             SMTP_PASSWORD set to the password of {}",
+            s.smtp_user
+        ));
+    }
     if stripe_fingerprint(ctx, cluster).await?.is_none() {
         ctx.note(&format!(
             "billing is off: run again with STRIPE_SECRET_KEY, STRIPE_PRICE_ID and \
@@ -968,6 +1100,10 @@ mod tests {
             dns_target: None,
             dns_zone: "usecode.dev".into(),
             stripe: None,
+            smtp_host: "mail.clusterlean.net".into(),
+            smtp_port: 465,
+            smtp_user: "no-reply@usecode.dev".into(),
+            smtp_password: None,
         }
     }
 
@@ -983,7 +1119,7 @@ mod tests {
     #[test]
     fn keeps_the_database_on_a_hetzner_volume() {
         let s = settings();
-        let m = s.manifest(&s.size, None);
+        let m = s.manifest(&s.size, None, None);
         let claim = item(&m, "PersistentVolumeClaim", CLAIM);
         assert_eq!(claim["spec"]["storageClassName"], "hcloud-volumes");
         assert_eq!(claim["spec"]["resources"]["requests"]["storage"], "10Gi");
@@ -998,11 +1134,12 @@ mod tests {
 
     #[test]
     fn the_console_finds_its_database_and_its_keys() {
-        let m = settings().manifest("10Gi", Some("abc"));
+        let m = settings().manifest("10Gi", Some("abc"), Some("def"));
         let console = item(&m, "Deployment", NAME);
         assert_eq!(console["spec"]["replicas"], 2);
         let pod = &console["spec"]["template"];
         assert_eq!(pod["metadata"]["annotations"][FINGERPRINT], "abc");
+        assert_eq!(pod["metadata"]["annotations"][SMTP_FINGERPRINT], "def");
         let container = &pod["spec"]["containers"][0];
         assert_eq!(container["imagePullPolicy"], "IfNotPresent");
         let env = container["env"].as_array().unwrap();
@@ -1017,6 +1154,13 @@ mod tests {
             get("STRIPE_SECRET_KEY")["valueFrom"]["secretKeyRef"]["optional"],
             true
         );
+        assert_eq!(get("SMTP_HOST")["value"], "mail.clusterlean.net");
+        assert_eq!(get("SMTP_PORT")["value"], "465");
+        assert_eq!(get("SMTP_USER")["value"], "no-reply@usecode.dev");
+        assert_eq!(
+            get(SMTP_PASSWORD)["valueFrom"]["secretKeyRef"]["name"],
+            SMTP_SECRET
+        );
     }
 
     #[test]
@@ -1025,7 +1169,7 @@ mod tests {
             image: "ghcr.io/evgnomon/usecode-console:latest".into(),
             ..settings()
         };
-        let m = s.manifest("10Gi", None);
+        let m = s.manifest("10Gi", None, None);
         let c = &item(&m, "Deployment", NAME)["spec"]["template"]["spec"]["containers"][0];
         assert_eq!(c["imagePullPolicy"], "Always");
     }
@@ -1033,7 +1177,7 @@ mod tests {
     #[test]
     fn pulls_from_the_cluster_registry_with_its_login() {
         let pull_secrets = |s: &Settings| {
-            let m = s.manifest("10Gi", None);
+            let m = s.manifest("10Gi", None, None);
             item(&m, "Deployment", NAME)["spec"]["template"]["spec"]["imagePullSecrets"].clone()
         };
         let ours = Settings {
@@ -1053,7 +1197,7 @@ mod tests {
 
     #[test]
     fn serves_https_on_the_host() {
-        let m = settings().manifest("10Gi", None);
+        let m = settings().manifest("10Gi", None, None);
         let ingress = item(&m, "Ingress", NAME);
         assert_eq!(ingress["spec"]["rules"][0]["host"], "usecode.dev");
         assert_eq!(ingress["spec"]["tls"][0]["secretName"], TLS_SECRET);
@@ -1079,5 +1223,11 @@ mod tests {
         assert_eq!(with("a").fingerprint(), with("a").fingerprint());
         assert_ne!(with("a").fingerprint(), with("b").fingerprint());
         assert_eq!(with("a").fingerprint().unwrap().len(), 32);
+        let smtp = |p: &str| Settings {
+            smtp_password: Some(p.into()),
+            ..settings()
+        };
+        assert_eq!(settings().smtp_fingerprint(), None);
+        assert_ne!(smtp("a").smtp_fingerprint(), smtp("b").smtp_fingerprint());
     }
 }
