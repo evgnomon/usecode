@@ -14,6 +14,7 @@
 //! ```
 
 use std::fs::OpenOptions;
+use std::io::Write;
 use std::sync::Arc;
 
 use skim::prelude::*;
@@ -135,6 +136,7 @@ impl Picker {
         if !available() {
             return None;
         }
+        let full = full_screen(&self.height);
         let mut options = SkimOptionsBuilder::default();
         options
             .prompt(self.prompt)
@@ -147,6 +149,18 @@ impl Picker {
             .tiebreak(vec![RankCriteria::Score, RankCriteria::Index])
             .bind(vec!["ctrl-s:toggle-sort".to_string()])
             .color(Some(COLORS.to_string()));
+        // Below the prompt, not full screen: skim would leave it with the
+        // terminal's rmcup, which erases nothing as it never entered the
+        // alternate screen, so the old list stayed under the next prompt.
+        // Without the alternate screen it erases its lines on the way out.
+        // That also skips erasing below the cursor on the way in, so it is
+        // done here.
+        if !full {
+            options.no_clear_start(true);
+            if let Ok(mut tty) = OpenOptions::new().write(true).open("/dev/tty") {
+                let _ = tty.write_all(b"\x1b[J");
+            }
+        }
         if self.reverse {
             options.layout("reverse".to_string());
         }
@@ -189,6 +203,16 @@ impl Picker {
 const COLORS: &str = "dark,matched:108,current:254,current_bg:236,current_match:151,\
 spinner:148,info:144,prompt:110,cursor:161,selected:168,header:109,border:59";
 
+/// Whether a height like `100%` or `40` takes the whole terminal, which
+/// skim draws on the alternate screen.
+fn full_screen(height: &str) -> bool {
+    let rows = |h: &str| h.trim().parse::<usize>().ok();
+    match height.strip_suffix('%') {
+        Some(percent) => rows(percent).is_some_and(|p| p >= 100),
+        None => false,
+    }
+}
+
 /// Whether there is a terminal to pick on.
 pub fn available() -> bool {
     OpenOptions::new()
@@ -229,6 +253,13 @@ mod tests {
         let item = Item::line("ls -la");
         assert_eq!(item.shown, "ls -la");
         assert_eq!(item.value, "ls -la");
+    }
+
+    #[test]
+    fn only_full_height_is_full_screen() {
+        assert!(full_screen("100%"));
+        assert!(!full_screen("40%"));
+        assert!(!full_screen("20"));
     }
 
     #[test]
