@@ -82,6 +82,7 @@ test("a code is six digits, typed in however", () => {
   assert.equal(cleanCode("012-345"), "012345");
   assert.match(message("login", "012345").text, /012345/);
   assert.match(message("signup", "012345").subject, /^012345 /);
+  assert.match(message("reset", "012345").text, /ignore this mail: your password stays/);
 });
 
 test("mail goes through clusterlean.net as no-reply@usecode.dev once there's a password", () => {

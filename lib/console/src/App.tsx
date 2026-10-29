@@ -23,6 +23,7 @@ export const PAGES: Record<string, Page> = {
   "/pricing": { title: "Pricing · usecode.dev", render: () => <Pricing />, prerender: true },
   "/login": { title: "Log in · usecode.dev", render: () => <AuthForm key="login" mode="login" /> },
   "/signup": { title: "Sign up · usecode.dev", render: () => <AuthForm key="signup" mode="signup" /> },
+  "/forgot": { title: "Forgot your password · usecode.dev", render: () => <AuthForm key="reset" mode="reset" /> },
   "/account": { title: "Your account · usecode.dev", render: () => <Account /> },
 };
 

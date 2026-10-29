@@ -22,7 +22,7 @@ import type { Sql } from "./db.js";
 type Env = { Variables: { user: auth.User | null } };
 
 /** The pages the app in src/ has; any other path gets it with a 404. */
-export const PAGES = ["/", "/pricing", "/login", "/signup", "/account"];
+export const PAGES = ["/", "/pricing", "/login", "/signup", "/forgot", "/account"];
 
 /** The cookie holding the token of the code waiting to be typed in. */
 export const OTP_COOKIE = "uc_otp";
@@ -155,8 +155,10 @@ export function createApp(sql: Sql, config: Config, clientDir: string, mailer: m
     }
     const { token, code } = await otp.start(sql, pending);
     const { subject, text } = otp.message(pending.purpose, code);
+    // A reset for an address without an account: nothing to mail.
+    const nobody = pending.purpose === "reset" && pending.userId === null;
     try {
-      await mailer.send(pending.email, subject, text);
+      if (!nobody) await mailer.send(pending.email, subject, text);
     } catch (err) {
       console.error(`mailing a code to ${pending.email}: ${(err as Error).message}`);
       return c.json({ error: "We couldn't send you the code just now. Please try again in a moment." }, 503);
@@ -195,6 +197,18 @@ export function createApp(sql: Sql, config: Config, clientDir: string, mailer: m
     return challenge(c, { purpose: "login", email: user.email, userId: user.id, passwordHash: null });
   });
 
+  // A forgotten password: the address and a new password, then a code goes
+  // out. An unknown address gets the same answer and no mail, so this
+  // doesn't say who has an account.
+  app.post("/api/reset", async (c) => {
+    const { email, password } = await credentials(c);
+    const problem = auth.signupProblem(email, password);
+    if (problem) return c.json({ error: problem }, 422);
+    const passwordHash = await auth.hashPassword(password);
+    const user = await auth.findUser(sql, email);
+    return challenge(c, { purpose: "reset", email, userId: user?.id ?? null, passwordHash });
+  });
+
   // Step two: the code from the mail.
   app.post("/api/verify", async (c) => {
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
@@ -212,6 +226,7 @@ export function createApp(sql: Sql, config: Config, clientDir: string, mailer: m
       if (!user) return c.json({ error: "That email already has an account. Try logging in." }, 409);
     } else {
       user = { id: p.userId!, email: p.email };
+      if (p.purpose === "reset") await auth.setPassword(sql, user.id, p.passwordHash!);
       limiter.clear(p.email);
     }
     mailed.clear(p.email);
@@ -248,6 +263,7 @@ export function createApp(sql: Sql, config: Config, clientDir: string, mailer: m
   app.get("/account", async (c, next) => (c.var.user ? next() : c.redirect("/login?next=/account")));
   app.get("/login", async (c, next) => (c.var.user ? c.redirect("/account") : next()));
   app.get("/signup", async (c, next) => (c.var.user ? c.redirect("/account") : next()));
+  app.get("/forgot", async (c, next) => (c.var.user ? c.redirect("/account") : next()));
   // A prerendered page if there is one, else the app renders it in the browser.
   const page = async (c: Context<Env>) => {
     const path = c.req.path;

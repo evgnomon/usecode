@@ -6,7 +6,7 @@
 import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 import type { Sql } from "./db.js";
 
-export type Purpose = "signup" | "login";
+export type Purpose = "signup" | "login" | "reset";
 
 /** How long a code works. */
 export const CODE_MINUTES = 10;
@@ -29,9 +29,9 @@ const codeHash = (token: string, code: string) => sha256(`${token}\0${code}`);
 export interface Pending {
   purpose: Purpose;
   email: string;
-  /** Who logs in; a sign up has no user yet. */
+  /** Who logs in or resets; a sign up has no user yet. */
   userId: number | null;
-  /** The new account's password hash, for a sign up. */
+  /** The new password's hash, for a sign up or a reset. */
   passwordHash: string | null;
 }
 
@@ -69,6 +69,9 @@ export async function check(sql: Sql, token: string, code: string): Promise<Chec
     if (row.attempts >= MAX_TRIES) await sql`DELETE FROM email_codes WHERE token_hash = ${key}`;
     return { ok: false, why: row.attempts >= MAX_TRIES ? "gone" : "wrong" };
   }
+  // A reset for nobody: its code was never mailed. Should it be guessed
+  // anyway, it still only runs out.
+  if (row.purpose === "reset" && row.user_id === null) return { ok: false, why: row.attempts >= MAX_TRIES ? "gone" : "wrong" };
   // Only one request gets to use it, however many arrive together.
   const used = await sql`DELETE FROM email_codes WHERE token_hash = ${key} RETURNING 1`;
   if (!used.length) return { ok: false, why: "gone" };
@@ -85,11 +88,12 @@ export async function check(sql: Sql, token: string, code: string): Promise<Chec
 
 /** The mail a code goes out in. */
 export function message(purpose: Purpose, code: string): { subject: string; text: string } {
-  const what = purpose === "signup" ? "finish signing up to" : "log in to";
-  const ignore =
-    purpose === "signup"
-      ? "If you didn't sign up, someone typed your address by mistake. Ignore this mail and no account is made."
-      : "If this wasn't you, someone knows your password. Don't share this code with anyone.";
+  const what = { signup: "finish signing up to", login: "log in to", reset: "set a new password on" }[purpose];
+  const ignore = {
+    signup: "If you didn't sign up, someone typed your address by mistake. Ignore this mail and no account is made.",
+    login: "If this wasn't you, someone knows your password. Don't share this code with anyone.",
+    reset: "If you didn't ask for this, ignore this mail: your password stays as it is. Don't share this code with anyone.",
+  }[purpose];
   return {
     subject: `${code} is your usecode.dev code`,
     text: `Hi,

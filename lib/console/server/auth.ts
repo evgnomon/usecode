@@ -44,7 +44,7 @@ export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
-/** Why `email` and `password` can't make an account, or null when they can. */
+/** Why `email` and `password` can't make an account (or be its new password), or null when they can. */
 export function signupProblem(email: string, password: string): string | null {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
     return "That doesn't look like an email address.";
@@ -72,6 +72,20 @@ export async function insertUser(sql: Sql, email: string, hash: string): Promise
     RETURNING id, email`;
   const row = rows[0];
   return row ? { id: Number(row.id), email: row.email } : null;
+}
+
+/** The user with `email`, if there is one. */
+export async function findUser(sql: Sql, email: string): Promise<User | null> {
+  const [row] = await sql<{ id: string; email: string }[]>`SELECT id, email FROM users WHERE email = ${email}`;
+  return row ? { id: Number(row.id), email: row.email } : null;
+}
+
+/** Sets a new password and logs the user out everywhere. */
+export async function setPassword(sql: Sql, userId: number, hash: string): Promise<void> {
+  await sql.begin(async (tx) => {
+    await tx`UPDATE users SET password_hash = ${hash} WHERE id = ${userId}`;
+    await tx`DELETE FROM sessions WHERE user_id = ${userId}`;
+  });
 }
 
 export async function emailTaken(sql: Sql, email: string): Promise<boolean> {

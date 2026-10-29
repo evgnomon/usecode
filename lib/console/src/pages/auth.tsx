@@ -10,8 +10,34 @@ import { post, useMe, type ApiError } from "@/lib/api";
 import { Link, navigate, useLocation } from "@/lib/router";
 import { safeNext } from "@/lib/safe-next";
 
-export function AuthForm({ mode }: { mode: "login" | "signup" }) {
-  const signup = mode === "signup";
+const TEXT = {
+  signup: {
+    title: "Make an account",
+    lead: "It takes a few seconds, and it's free. We'll mail you a code to check it's you.",
+    api: "/api/signup",
+    submit: "Sign up",
+    finish: "Make my account",
+  },
+  login: {
+    title: "Welcome back",
+    lead: "Log in to see your plan and nodes. We'll mail you a code to check it's you.",
+    api: "/api/login",
+    submit: "Log in",
+    finish: "Log in",
+  },
+  reset: {
+    title: "Forgot your password?",
+    lead: "Pick a new one, and we'll mail you a code to check it's you. Then you're logged in with it.",
+    api: "/api/reset",
+    submit: "Send me a code",
+    finish: "Set my new password",
+  },
+} as const;
+
+export function AuthForm({ mode }: { mode: "login" | "signup" | "reset" }) {
+  const text = TEXT[mode];
+  // A new password is picked on sign up and on a reset.
+  const fresh = mode !== "login";
   const { refresh } = useMe();
   const { query } = useLocation();
   const [email, setEmail] = useState("");
@@ -27,7 +53,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
     setBusy(true);
     setError("");
     try {
-      const res = await post<{ email: string }>(signup ? "/api/signup" : "/api/login", { email, password });
+      const res = await post<{ email: string }>(text.api, { email, password });
       setCode("");
       setSentTo(res.email);
     } catch (err) {
@@ -57,17 +83,15 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
   return (
     <Section>
       <div className="wrap max-w-[380px]">
-        <h1 className="mb-3 text-xl">{signup ? "Make an account" : "Welcome back"}</h1>
-        <p className="mb-5 text-muted-foreground">
-          {signup
-            ? "It takes a few seconds, and it's free. We'll mail you a code to check it's you."
-            : "Log in to see your plan and nodes. We'll mail you a code to check it's you."}
-        </p>
+        <h1 className="mb-3 text-xl">{text.title}</h1>
+        <p className="mb-5 text-muted-foreground">{text.lead}</p>
         {error ? <ErrorNote>{error}</ErrorNote> : null}
         {sentTo ? (
           <form onSubmit={verify} className="grid gap-3">
             <p className="text-muted-foreground">
-              We sent a code to <span className="text-foreground">{sentTo}</span>. It works for 10 minutes.
+              {mode === "reset" ? "If there's an account for " : "We sent a code to "}
+              <span className="text-foreground">{sentTo}</span>
+              {mode === "reset" ? ", we've mailed it a code." : "."} It works for 10 minutes.
             </p>
             <div className="grid gap-1.5">
               <Label htmlFor="code">Code</Label>
@@ -83,7 +107,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
               />
             </div>
             <Button type="submit" className="w-full" disabled={busy}>
-              {signup ? "Make my account" : "Log in"}
+              {text.finish}
             </Button>
             <Button type="button" variant="ghost" className="w-full" disabled={busy} onClick={submit}>
               Send a new code
@@ -96,27 +120,34 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
               <Input id="email" type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
             </div>
             <div className="grid gap-1.5">
-              <Label htmlFor="password">Password</Label>
+              <div className="flex items-baseline justify-between">
+                <Label htmlFor="password">{mode === "reset" ? "New password" : "Password"}</Label>
+                {mode === "login" ? (
+                  <Link href={other("/forgot")} className="text-xs text-primary hover:underline">
+                    Forgot it?
+                  </Link>
+                ) : null}
+              </div>
               <Input
                 id="password"
                 type="password"
                 required
-                minLength={signup ? 10 : undefined}
-                autoComplete={signup ? "new-password" : "current-password"}
+                minLength={fresh ? 10 : undefined}
+                autoComplete={fresh ? "new-password" : "current-password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
-              {signup ? <small className="text-xs text-muted-foreground">At least 10 characters.</small> : null}
+              {fresh ? <small className="text-xs text-muted-foreground">At least 10 characters.</small> : null}
             </div>
             <Button type="submit" className="w-full" disabled={busy}>
-              {signup ? "Sign up" : "Log in"}
+              {text.submit}
             </Button>
           </form>
         )}
         <p className="mt-5 text-muted-foreground">
-          {signup ? "Already have an account? " : "New here? "}
-          <Link href={other(signup ? "/login" : "/signup")} className="text-primary hover:underline">
-            {signup ? "Log in" : "Make an account"}
+          {mode === "login" ? "New here? " : mode === "signup" ? "Already have an account? " : "Remembered it? "}
+          <Link href={other(mode === "login" ? "/signup" : "/login")} className="text-primary hover:underline">
+            {mode === "login" ? "Make an account" : "Log in"}
           </Link>
         </p>
       </div>

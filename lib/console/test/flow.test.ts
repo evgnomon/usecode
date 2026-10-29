@@ -45,7 +45,7 @@ before(async () => {
   sql = connect(url);
   await sql`DROP SCHEMA public CASCADE`;
   await sql`CREATE SCHEMA public`;
-  assert.deepEqual(await migrate(sql, `${root}migrations`), ["0001_init.sql", "0002_email_codes.sql"]);
+  assert.deepEqual(await migrate(sql, `${root}migrations`), ["0001_init.sql", "0002_email_codes.sql", "0003_reset_codes.sql"]);
   assert.deepEqual(await migrate(sql, `${root}migrations`), [], "applied once");
   client = await mkdtemp(join(tmpdir(), "console-client-"));
   await writeFile(join(client, "index.html"), "<!doctype html><title>console</title>");
@@ -97,7 +97,7 @@ function browser() {
 }
 
 /** Signs up or logs in all the way, with the code from the mail. */
-async function through(b: ReturnType<typeof browser>, path: "/api/signup" | "/api/login", email: string, password: string) {
+async function through(b: ReturnType<typeof browser>, path: "/api/signup" | "/api/login" | "/api/reset", email: string, password: string) {
   const first = await b(path, { email, password });
   assert.equal(first.status, 202, `${path}: ${await first.clone().text()}`);
   return b("/api/verify", { code: lastCode(email.toLowerCase()) });
@@ -116,7 +116,7 @@ function webhook(event: unknown, secret = "whsec_test") {
 
 test("the pages and their files are served", { skip: !url }, async () => {
   const get = browser();
-  for (const path of ["/pricing", "/login", "/signup"]) {
+  for (const path of ["/pricing", "/login", "/signup", "/forgot"]) {
     const res = await get(path);
     assert.equal(res.status, 200, path);
     assert.match(await res.text(), /<title>console<\/title>/, path);
@@ -231,6 +231,35 @@ test("a code takes a few wrong guesses, then it's gone", { skip: !url }, async (
   assert.equal((await b("/api/verify", { code: bad })).status, 410, "the fifth ends it");
   assert.equal((await b("/api/verify", { code: good })).status, 410, "even the right one is too late");
   assert.equal((await through(b, "/api/login", "linus@example.com", "a long password")).status, 200, "a new code works");
+});
+
+test("a forgotten password is reset with a code, and the old one and its sessions stop working", { skip: !url }, async () => {
+  const old = browser();
+  assert.equal((await through(old, "/api/signup", "hopper@example.com", "the old password")).status, 201);
+  const b = browser();
+  assert.equal((await b("/api/reset", { email: "hopper@example.com", password: "short" })).status, 422);
+  assert.equal((await b("/api/reset", { email: "Hopper@example.com", password: "the new password" })).status, 202);
+  assert.match(outbox.at(-1)!.text, /set a new password/);
+  assert.equal((await browser()("/api/login", { email: "hopper@example.com", password: "the new password" })).status, 401, "not before the code");
+  assert.equal((await old("/account")).status, 200, "nor are others logged out yet");
+  assert.equal((await b("/api/verify", { code: lastCode("hopper@example.com") })).status, 200);
+  assert.equal((await b("/account")).status, 200, "logged in with it");
+  assert.equal((await old("/account")).status, 302, "every other session is gone");
+  assert.equal((await browser()("/api/login", { email: "hopper@example.com", password: "the old password" })).status, 401);
+  assert.equal((await through(browser(), "/api/login", "hopper@example.com", "the new password")).status, 200);
+  assert.equal((await b("/forgot")).headers.get("location"), "/account", "logged in already");
+});
+
+test("a reset doesn't tell who has an account", { skip: !url }, async () => {
+  const b = browser();
+  const sent = outbox.length;
+  const res = await b("/api/reset", { email: "nobody@example.com", password: "a long password" });
+  assert.equal(res.status, 202);
+  assert.deepEqual(await res.json(), { code: true, email: "nobody@example.com" });
+  assert.equal(outbox.length, sent, "no mail");
+  for (let i = 1; i < 5; i++) assert.equal((await b("/api/verify", { code: "123456" })).status, 401, `guess ${i}`);
+  assert.equal((await b("/api/verify", { code: "123456" })).status, 410);
+  assert.equal((await sql`SELECT 1 FROM users WHERE email = 'nobody@example.com'`).length, 0);
 });
 
 test("a failed mail says so and logs nobody in", { skip: !url }, async () => {

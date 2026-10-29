@@ -50,6 +50,11 @@ only made once the code is right. Without `SMTP_PASSWORD` the codes are
 printed to the log on `http://localhost`, and can't go out at all on an
 `https://` console, so nobody can log in there until it's set.
 
+A forgotten password is reset at `/forgot`: the address and a new password,
+then the code. The new password only takes once the code is right, and it
+logs the account out everywhere else. An address without an account gets
+the same answers and no mail, so the page doesn't tell who has one.
+
 Migrations in `migrations/` run on start, once, even with several replicas.
 
 In Stripe, point a webhook endpoint at `https://usecode.dev/stripe/webhook`
