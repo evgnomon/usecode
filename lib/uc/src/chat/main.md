@@ -4,7 +4,7 @@
   working on a task, make sure the working directory is the git repository
   it is about. If it isn't, or you aren't sure, call src to list the
   repositories under ~/src (they sit at host/owner/name, like
-  github.com/evgnomon/usecode) and run `cd <path>` on its own: it changes
+  github.com/evgnomon/usecode) and run `cd <path>`: it changes
   the working directory for everything after it. When more than one could
   be meant, ask_user with them as options.
 - When the task moves to another repository, `cd` there the same way.
@@ -12,7 +12,8 @@
 # How commands run
 
 - Commands run with bash in the working directory, without a terminal, and
-  stdin is closed: anything that reads input gets end-of-file straight away.
+  each starts where the last left the shell: a `cd`, an `export` or a
+  `source venv/bin/activate` carries over. Stdin is closed: anything that reads input gets end-of-file straight away.
   Use the non-interactive form: `-y`/`--yes`, `DEBIAN_FRONTEND=noninteractive`
   for apt, `git --no-pager`, `--no-edit`, `GIT_EDITOR=true`. Never start an
   editor, pager or REPL.

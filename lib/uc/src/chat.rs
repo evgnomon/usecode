@@ -20,8 +20,9 @@
 //! `--commands` is given, which shows the command line itself. A line that is a command
 //! (`ls -al`, `git status`, or anything after `!`) runs on the terminal
 //! straight away, with the same confirmations, without the model hearing
-//! about it (`cd` is the exception: it tells the model the directory changed);
-//! the user's bash aliases and functions work there too;
+//! about it (but where it left the directory, which the model is told);
+//! the user's bash aliases, functions and variables work there too, and what
+//! a command changes in the shell stays for the next, see [`shell`];
 //! `--no-shell` (or `UC_NO_SHELL=1`, or `no_shell: true` under `uc:` in the
 //! user config, see [`crate::flag`]) sends every line to the model. The model can drive the chat
 //! itself with the `chat` tool: `model` switches the model (no `model` lists
@@ -79,7 +80,7 @@ use std::io::{IsTerminal, Write};
 use std::path::PathBuf;
 use std::process::{ExitCode, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::task::JoinHandle;
@@ -89,6 +90,7 @@ use crate::{claude, copilot, providers};
 mod diff;
 mod out;
 pub mod serve;
+mod shell;
 mod voice;
 
 /// A status line, `· text` on the terminal; see [`out::note`].
@@ -563,6 +565,8 @@ struct Job {
     echo: Arc<AtomicBool>,
     readers: Vec<JoinHandle<()>>,
     status: Option<ExitStatus>,
+    /// Where its bash ended up, for a command waited on.
+    state: Option<shell::Started>,
 }
 
 /// A job's stdout and stderr together; only the last `MAX_KEPT` bytes stay.
@@ -1267,12 +1271,14 @@ fn runnable(name: &str) -> bool {
         .is_some_and(|path| std::env::split_paths(&path).any(|dir| executable(&dir.join(name))))
 }
 
-/// The user's bash aliases and functions, read once from an interactive bash,
-/// so a typed `ll` or `g status` runs as it would in their own shell.
-#[derive(Default)]
+/// The user's bash aliases and functions, read from an interactive bash at
+/// the start and kept up to date by the commands they type, so a typed `ll`
+/// or `g status` runs as it would in their own shell, and an alias or
+/// function they define stays.
+#[derive(Default, Clone)]
 struct UserShell {
-    /// Their shell options, aliases and functions, run before a typed command.
-    definitions: String,
+    /// Their shell options, variables, aliases and functions.
+    definitions: shell::Definitions,
     /// What their bash completes each command with, `complete -p`.
     completions: String,
     /// Each alias and what it stands for.
@@ -1283,6 +1289,29 @@ struct UserShell {
 }
 
 impl UserShell {
+    fn new(definitions: shell::Definitions, completions: String, history: Option<PathBuf>) -> Self {
+        let aliases = definitions
+            .aliases
+            .lines()
+            .filter_map(|line| line.strip_prefix("alias ")?.split_once('='))
+            .map(|(name, quoted)| {
+                let value = quoted.strip_prefix('\'').and_then(|v| v.strip_suffix('\''));
+                (
+                    name.to_string(),
+                    value.unwrap_or(quoted).replace("'\\''", "'"),
+                )
+            })
+            .collect();
+        let functions = definitions.names.lines().map(str::to_string).collect();
+        UserShell {
+            definitions,
+            completions,
+            aliases,
+            functions,
+            history,
+        }
+    }
+
     fn knows(&self, name: &str) -> bool {
         self.aliases.contains_key(name) || self.functions.contains(name)
     }
@@ -1298,35 +1327,30 @@ impl UserShell {
         }
     }
 
-    /// A bash script that runs the command with the user's definitions.
-    fn script(&self, command: &str) -> String {
-        format!("{}\n{command}", self.definitions)
-    }
-
     /// What Tab offers for the last word of a command line in their bash, or
     /// only file names for a word in a line for the model; nothing when bash
     /// takes too long.
     fn complete(&self, line: &str, files: bool) -> Vec<String> {
-        use std::os::unix::process::CommandExt;
-        let script = format!("{}\n{}\n{COMPLETE}", self.definitions, self.completions);
+        let definitions = format!("{}\n{}", self.definitions.script(), self.completions);
         let (line, mode) = match files {
             true => (line.to_string(), "files"),
             false => (self.expand(line), ""),
         };
-        let mut bash = std::process::Command::new("bash");
-        bash.args(["-c", &script, "uc", &line, mode])
+        let Ok(mut bash) =
+            shell::Bash::new(shell::Mode::Quiet, COMPLETE, &definitions, &[&line, mode])
+        else {
+            return Vec::new();
+        };
+        bash.command
             .stdin(Stdio::null())
+            .stdout(Stdio::piped())
             .stderr(Stdio::null());
-        // SAFETY: setsid is async-signal-safe and touches no memory.
-        unsafe {
-            bash.pre_exec(|| {
-                libc::setsid();
-                Ok(())
-            });
-        }
+        own_session(&mut bash.command);
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            let _ = tx.send(bash.output());
+            let child = bash.command.spawn();
+            bash.started();
+            let _ = tx.send(child.and_then(|c| c.wait_with_output()));
         });
         let Ok(Ok(output)) = rx.recv_timeout(Duration::from_secs(2)) else {
             return Vec::new();
@@ -1336,6 +1360,18 @@ impl UserShell {
             .map(|word| word.trim_end().to_string())
             .filter(|word| !word.is_empty())
             .collect()
+    }
+}
+
+/// Puts a command in a session of its own, away from the terminal.
+fn own_session(command: &mut std::process::Command) {
+    use std::os::unix::process::CommandExt;
+    // SAFETY: setsid is async-signal-safe and touches no memory.
+    unsafe {
+        command.pre_exec(|| {
+            libc::setsid();
+            Ok(())
+        });
     }
 }
 
@@ -1459,113 +1495,51 @@ impl rustyline::validate::Validator for Completion {}
 
 impl rustyline::Helper for Completion {}
 
-/// The user's shell, read on first use; empty when bash can't tell in time.
-fn user_shell() -> &'static UserShell {
-    static SHELL: OnceLock<UserShell> = OnceLock::new();
-    SHELL.get_or_init(|| read_user_shell().unwrap_or_default())
+/// The user's shell as it is now: read on first use, empty when bash can't
+/// tell in time, then as the last command they typed left it.
+fn user_shell() -> UserShell {
+    user_shell_cell()
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+}
+
+fn user_shell_cell() -> &'static RwLock<UserShell> {
+    static SHELL: OnceLock<RwLock<UserShell>> = OnceLock::new();
+    SHELL.get_or_init(|| RwLock::new(read_user_shell().unwrap_or_default()))
+}
+
+/// Takes on the definitions a typed command's bash ended with.
+fn update_user_shell(definitions: shell::Definitions) {
+    let mut shell = user_shell_cell().write().unwrap_or_else(|e| e.into_inner());
+    let (completions, history) = (shell.completions.clone(), shell.history.clone());
+    *shell = UserShell::new(definitions, completions, history);
 }
 
 /// Asks an interactive bash, with no terminal to touch, for its definitions.
-/// What the bashrc prints itself comes before the first NUL and is dropped.
+/// What the bashrc prints itself goes to stdout and is dropped; the state comes
+/// back on its own pipe.
 fn read_user_shell() -> Option<UserShell> {
-    use std::os::unix::process::CommandExt;
-    const DUMP: &str = "printf '\\0'; shopt -p; printf '\\0'; alias -p; printf '\\0'; \
-                        complete -p; printf '\\0'; declare -F; printf '\\0'; declare -f; \
-                        printf '\\0%s' \"$HISTFILE\"";
-    let mut bash = std::process::Command::new("bash");
-    bash.args(["-ic", DUMP])
+    let mut bash = shell::Bash::new(shell::Mode::Read, "", "", &[]).ok()?;
+    bash.command
         .stdin(Stdio::null())
+        .stdout(Stdio::null())
         .stderr(Stdio::null());
-    // SAFETY: setsid is async-signal-safe and touches no memory.
-    unsafe {
-        bash.pre_exec(|| {
-            libc::setsid();
-            Ok(())
-        });
-    }
+    own_session(&mut bash.command);
     // A bashrc that never finishes leaves the thread behind, not uc waiting.
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
-        let _ = tx.send(bash.output());
+        let child = bash.command.spawn();
+        let started = bash.started();
+        let _ = child.and_then(|mut c| c.wait());
+        let _ = tx.send(started.state());
     });
-    let output = rx.recv_timeout(Duration::from_secs(5)).ok()?.ok()?;
-    parse_user_shell(&String::from_utf8_lossy(&output.stdout))
-}
-
-fn parse_user_shell(dump: &str) -> Option<UserShell> {
-    let mut parts = dump.rsplitn(7, '\0');
-    let (history, functions, names, completions, aliases, options) = (
-        parts.next()?,
-        parts.next()?,
-        parts.next()?,
-        parts.next()?,
-        parts.next()?,
-        parts.next()?,
-    );
-    parts.next()?;
-    Some(UserShell {
-        // The options first: bash-completion's functions need extglob to parse.
-        definitions: format!("{options}shopt -s expand_aliases\n{aliases}{functions}"),
-        completions: completions.to_string(),
-        aliases: aliases
-            .lines()
-            .filter_map(|line| line.strip_prefix("alias ")?.split_once('='))
-            .map(|(name, quoted)| {
-                let value = quoted.strip_prefix('\'').and_then(|v| v.strip_suffix('\''));
-                (
-                    name.to_string(),
-                    value.unwrap_or(quoted).replace("'\\''", "'"),
-                )
-            })
-            .collect(),
-        functions: names
-            .lines()
-            .filter_map(|line| line.strip_prefix("declare -f "))
-            .map(str::to_string)
-            .collect(),
-        history: Some(PathBuf::from(history)).filter(|h| !h.as_os_str().is_empty()),
-    })
-}
-
-/// Where `cd` goes, for a plain `cd`, `cd ~/x` or `cd dir`; None for anything
-/// more, which bash runs.
-fn cd_target(command: &str) -> Option<PathBuf> {
-    let mut words = command.split_whitespace();
-    if words.next() != Some("cd") {
-        return None;
-    }
-    let (arg, rest) = (words.next(), words.next());
-    if rest.is_some() || arg.is_some_and(|a| a.contains(|c: char| "$`;|&<>*?".contains(c))) {
-        return None;
-    }
-    let home = || std::env::var_os("HOME").map(PathBuf::from);
-    match arg {
-        None | Some("~") => home(),
-        Some(arg) => match arg.strip_prefix("~/") {
-            Some(rest) => home().map(|h| h.join(rest)),
-            None => Some(in_cdpath(arg).unwrap_or_else(|| PathBuf::from(arg))),
-        },
-    }
-}
-
-/// The directory a relative `cd dir` finds through `$CDPATH`, like bash: not
-/// for `/x`, `./x` or `../x`, and an empty entry is the working directory.
-fn in_cdpath(dir: &str) -> Option<PathBuf> {
-    if dir.starts_with('/')
-        || dir == "."
-        || dir == ".."
-        || dir.starts_with("./")
-        || dir.starts_with("../")
-    {
-        return None;
-    }
-    let cdpath = std::env::var_os("CDPATH")?;
-    std::env::split_paths(&cdpath)
-        .map(|base| match base.as_os_str().is_empty() {
-            true => PathBuf::from(dir),
-            false => base.join(dir),
-        })
-        .find(|path| path.is_dir())
+    let state = rx.recv_timeout(Duration::from_secs(5)).ok()??;
+    Some(UserShell::new(
+        state.definitions?,
+        state.completions.unwrap_or_default(),
+        state.histfile.map(PathBuf::from),
+    ))
 }
 
 /// Asks on the terminal. Options are numbered, with one more number last for
@@ -1662,9 +1636,9 @@ fn tools() -> Value {
         tool(
             "bash",
             "Run a command with bash in the working directory, without a terminal and with stdin \
-             closed; returns its exit status and output (stdout and stderr together). A plain \
-             `cd <dir>` on its own changes the working directory for the commands and tools \
-             after it. A command still running after the timeout carries on as a job. Deleting files always asks the \
+             closed; returns its exit status and output (stdout and stderr together). Where it \
+             leaves the shell carries over to the commands and tools after it: a `cd`, an \
+             `export`, a `source`. A command still running after the timeout carries on as a job. Deleting files always asks the \
              user first. The exception is ssh-add: it runs on the user's terminal so they can \
              type the key's passphrase.",
             json!({
@@ -2327,29 +2301,37 @@ impl Session {
             note!("{title}");
         }
         self.confirm("run it?", ask || deletes(command))?;
-        if let Some(dir) = cd_target(command) {
-            std::env::set_current_dir(&dir).with_context(|| format!("cd {}", dir.display()))?;
-            let cwd = std::env::current_dir().unwrap_or(dir);
-            return Ok(format!("the working directory is now {}", cwd.display()));
-        }
         if on_terminal(command) {
             return self.run_on_terminal(command).await;
         }
         let id = self.start(command, !background && self.show_output)?;
         if background {
+            // What a job leaves behind isn't taken on: it ran beside the
+            // commands after it, not before them.
+            self.jobs.get_mut(&id).map(|job| job.state.take());
             note!("job {id} started");
             return Ok(format!("started job {id}"));
         }
         self.waiting = Some(id);
         self.wait(id, timeout).await;
         self.waiting = None;
-        let job = &self.jobs[&id];
+        let job = self.jobs.get_mut(&id).context("the job is gone")?;
         job.echo.store(false, Ordering::Relaxed);
+        let state = job.state.take();
         if job.status.is_none() {
             note!("still running after {timeout}s, as job {id}");
         }
+        let moved = match (job.status.is_some(), state) {
+            (true, Some(state)) => take_state(state)
+                .await
+                .map(|dir| format!("\nthe working directory is now {}", dir.display())),
+            _ => None,
+        };
         let (status, text) = self.take(id);
-        Ok(format!("{status}\noutput:\n{text}"))
+        Ok(format!(
+            "{status}{}\noutput:\n{text}",
+            moved.unwrap_or_default()
+        ))
     }
 
     /// Runs a command in the foreground with the terminal as its stdin and
@@ -2362,38 +2344,48 @@ impl Session {
     }
 
     /// A command the user typed: it runs on their terminal like in a shell,
-    /// after the same confirmations as the model's. The model hears nothing
-    /// about it, except for `cd`, which changes the working directory
+    /// after the same confirmations as the model's, with their aliases,
+    /// functions and variables, and what it changes stays for the next one:
+    /// the directory, the environment, the definitions. The model hears
+    /// nothing about it, except where it left the working directory, which
     /// everything the model does afterwards happens in.
     async fn run_typed(&mut self, command: &str) -> Result<()> {
         let shell = user_shell();
         self.confirm("run it?", deletes(&shell.expand(command)))?;
-        match cd_target(&shell.expand(command)) {
-            Some(dir) => {
-                FAILED.store(true, Ordering::Relaxed);
-                std::env::set_current_dir(&dir).with_context(|| format!("cd {}", dir.display()))?;
-                FAILED.store(false, Ordering::Relaxed);
-                let cwd = std::env::current_dir().unwrap_or(dir);
-                self.messages.push(json!({"role": "user",
-                           "content": format!(
-                               "I changed the working directory to {}.", cwd.display())}));
-            }
-            None => {
-                FAILED.store(true, Ordering::Relaxed);
-                let status = on_terminal_status(&shell.script(command)).await?;
-                FAILED.store(!status.success(), Ordering::Relaxed);
-                if !status.success() {
-                    note!("{status}");
-                }
-            }
+        FAILED.store(true, Ordering::Relaxed);
+        let bash = shell::Bash::new(
+            shell::Mode::Typed,
+            command,
+            &shell.definitions.script(),
+            &[],
+        )?;
+        let (status, started) = on_terminal_bash(bash).await?;
+        FAILED.store(!status.success(), Ordering::Relaxed);
+        if !status.success() {
+            note!("{status}");
+        }
+        let Some(state) = tokio::task::spawn_blocking(move || started.state())
+            .await
+            .ok()
+            .flatten()
+        else {
+            return Ok(());
         };
+        if let Some(definitions) = state.definitions.clone() {
+            update_user_shell(definitions);
+        }
+        if let Some(dir) = shell::take(&state) {
+            self.messages.push(json!({"role": "user",
+                       "content": format!(
+                           "I changed the working directory to {}.", dir.display())}));
+        }
         Ok(())
     }
 
     fn start(&mut self, command: &str, echo: bool) -> Result<usize> {
-        let mut bash = tokio::process::Command::new("bash");
-        bash.args(["-c", command])
-            .stdin(Stdio::null())
+        let shell = shell::Bash::new(shell::Mode::Model, command, "", &[])?;
+        let (mut bash, shell) = shell.into_tokio();
+        bash.stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         // Its own session, so job_kill stops a whole pipeline, and ssh can't
@@ -2408,7 +2400,9 @@ impl Session {
                 Ok(())
             });
         }
-        let mut child = bash.spawn().context("starting bash")?;
+        let child = bash.spawn();
+        let state = shell.started();
+        let mut child = child.context("starting bash")?;
         let group = child.id().context("bash has no pid")? as i32;
         GROUPS.lock().unwrap().insert(group);
         let output = Arc::new(Mutex::new(Output::default()));
@@ -2429,6 +2423,7 @@ impl Session {
                 echo,
                 readers,
                 status: None,
+                state: Some(state),
             },
         );
         Ok(id)
@@ -2587,16 +2582,42 @@ impl Session {
 
 /// Runs a command with the terminal as its stdin and output; Ctrl-C goes to it.
 async fn on_terminal_status(command: &str) -> Result<ExitStatus> {
+    let bash = shell::Bash::new(shell::Mode::Model, command, "", &[])?;
+    let (status, started) = on_terminal_bash(bash).await?;
+    if let Some(state) = tokio::task::spawn_blocking(move || started.state())
+        .await
+        .ok()
+        .flatten()
+    {
+        shell::take(&state);
+    }
+    Ok(status)
+}
+
+/// Runs a bash with the terminal as its stdin and output; Ctrl-C goes to it.
+async fn on_terminal_bash(bash: shell::Bash) -> Result<(ExitStatus, shell::Started)> {
     let _lent = lend_terminal();
     let _foreground = Foreground::take();
+    let (mut command, bash) = bash.into_tokio();
     // Stopped with Esc, the command goes too rather than staying on the
     // terminal next to the prompt.
-    tokio::process::Command::new("bash")
-        .args(["-c", command])
-        .kill_on_drop(true)
-        .status()
+    let child = command.kill_on_drop(true).spawn();
+    let started = bash.started();
+    let status = child
+        .context("starting bash")?
+        .wait()
         .await
-        .context("starting bash")
+        .context("waiting for bash")?;
+    Ok((status, started))
+}
+
+/// Takes on where a command's bash ended up; the new directory, if it moved.
+async fn take_state(state: shell::Started) -> Option<PathBuf> {
+    let state = tokio::task::spawn_blocking(move || state.state())
+        .await
+        .ok()
+        .flatten()?;
+    shell::take(&state)
 }
 
 /// Ctrl-C goes to the command on the terminal until dropped, even when the
@@ -3148,7 +3169,9 @@ pub(crate) fn label(_pool: &[Choice], choice: &Choice) -> String {
 /// serves is taken on the provider named, else on `prefer`, else on the
 /// first listed.
 pub(crate) fn choice_named(pool: &[Choice], name: &str, prefer: &str) -> Option<Choice> {
-    // `opus copilot` and `opus (Copilot)`, as the list shows it, both name one.
+    // `opus copilot` and `opus (Copilot)`, as the list shows it, both name one,
+    // quoted or not.
+    let name = name.trim().trim_matches(|c| c == '"' || c == '\'');
     let mut words: Vec<&str> = name.split_whitespace().collect();
     let only: Option<String> = match words[..] {
         [_, .., last] => {
@@ -4005,18 +4028,17 @@ mod tests {
 
     #[test]
     fn aliases_and_functions_come_from_the_users_bash() {
-        let dump = "bashrc says hi\0shopt -s extglob\n\0alias ..='cd ..'\n\
-                    alias say='echo '\\''hi'\\'''\n\0complete -F _git git\n\0declare -f mkcd\n\0mkcd () { :; }\n\0/home/me/.history";
-        let shell = parse_user_shell(dump).unwrap();
+        let definitions = shell::Definitions {
+            aliases: "alias ..='cd ..'\nalias say='echo '\\''hi'\\'''".into(),
+            names: "mkcd\n".into(),
+            ..Default::default()
+        };
+        let shell = UserShell::new(definitions, String::new(), None);
         assert!(shell.knows("..") && shell.knows("mkcd") && !shell.knows("hi"));
         assert_eq!(shell.aliases["say"], "echo 'hi'");
         assert_eq!(shell.expand(".."), "cd ..");
         assert_eq!(shell.expand("say there"), "echo 'hi' there");
         assert_eq!(shell.expand("ls -l"), "ls -l");
-        assert!(!shell.script("..").contains("bashrc says hi"));
-        assert!(shell.script("..").ends_with("mkcd () { :; }\n\n.."));
-        assert_eq!(shell.history, Some(PathBuf::from("/home/me/.history")));
-        assert!(parse_user_shell("no definitions").is_none());
     }
 
     #[test]
@@ -4028,17 +4050,6 @@ mod tests {
         assert_eq!((start, words), (3, vec!["Cargo.toml ".to_string()]));
         let (start, words) = Completion::candidates("look at sr");
         assert_eq!((start, words), (8, vec!["src/".to_string()]));
-    }
-
-    #[test]
-    fn cd_goes_where_bash_would() {
-        let home = PathBuf::from(std::env::var_os("HOME").unwrap());
-        assert_eq!(cd_target("cd"), Some(home.clone()));
-        assert_eq!(cd_target("cd ~/src"), Some(home.join("src")));
-        assert_eq!(cd_target("cd lib"), Some(PathBuf::from("lib")));
-        assert_eq!(cd_target("cd lib && make"), None);
-        assert_eq!(cd_target("cd $HOME"), None);
-        assert_eq!(cd_target("ls"), None);
     }
 
     fn openrouter_pool() -> Vec<Choice> {
@@ -4084,6 +4095,10 @@ mod tests {
         assert_eq!(
             named("opus", "openrouter"),
             opus("openrouter", "anthropic/claude-opus-5.5")
+        );
+        assert_eq!(
+            named("\"anthropic/claude-opus-5.5 (Claude)\"", "openrouter"),
+            opus("claude", "anthropic/claude-opus-5.5")
         );
         assert_eq!(
             named("opus", "claude"),
