@@ -52,6 +52,10 @@
 //! message count, an estimate before the first turn, the real token count of
 //! the last one, the model's window, and what the session has spent.
 //! What the model is told about all this is the main skill, `chat/main.md`, always in its system prompt.
+//! So are the repository's `AGENTS.md` files, with where each sits: the ones from the
+//! repository root down to the working directory, and, once a tool reads or
+//! changes files somewhere else (a subdirectory, a repository nested in this
+//! one), the ones that apply there (see [`instruction_files`]).
 //! The providers and their keys are in `agent.yaml` in the user config, see
 //! [`providers`]: OpenRouter, a Claude subscription (see [`claude`]), GitHub
 //! Copilot (see [`copilot`]) and any server that speaks OpenAI's chat
@@ -551,6 +555,9 @@ struct Session {
     last_usage: Option<Value>,
     /// What every turn has cost so far, from `usage.cost`.
     spent: f64,
+    /// The AGENTS.md files in the system prompt, outermost first: the ones
+    /// for the working directory, and for every place a tool has worked in.
+    instructed: Vec<PathBuf>,
 }
 
 /// A command started by bash, followed with job_output and stopped with job_kill.
@@ -698,7 +705,7 @@ async fn run(
         };
         // Ctrl-L comes while the line is typed, so the line goes fresh.
         if CLEARED.swap(false, Ordering::Relaxed) {
-            session.messages.retain(|m| m["role"] == "system");
+            session.forget();
             eprintln!("· context cleared");
         }
         let line = line.trim();
@@ -784,7 +791,7 @@ async fn run(
         // what the next line starts from.
         shown = Some(session.models());
         if CLEARED.swap(false, Ordering::Relaxed) {
-            session.messages.retain(|m| m["role"] == "system");
+            session.forget();
             eprintln!("· context cleared");
         }
     }
@@ -1596,7 +1603,101 @@ fn split_approval(line: &str) -> (&str, bool) {
     }
 }
 
-fn system_prompt(model: &str, ask: bool, output: bool) -> String {
+/// The file a directory keeps its instructions for agents in.
+const INSTRUCTIONS: &str = "AGENTS.md";
+/// The most of one instructions file the model is given.
+const MAX_INSTRUCTIONS: usize = 20_000;
+
+/// The AGENTS.md files that apply to `dir` (a real path): the ones in it and
+/// in the directories above it up to the root of its repository, outermost
+/// first. Outside a repository only `dir`'s own counts, so a stray file in
+/// the home directory or `/` does not reach every project under it. The walk
+/// stops at the nearest `.git`, so a repository inside another (a submodule,
+/// a vendored one) has its own rules, not its parent's.
+fn instruction_files(dir: &std::path::Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    let mut in_repo = false;
+    for d in dir.ancestors() {
+        let file = d.join(INSTRUCTIONS);
+        if file.is_file() {
+            found.push(file);
+        }
+        if d.join(".git").exists() {
+            in_repo = true;
+            break;
+        }
+    }
+    if !in_repo {
+        found.retain(|f| f.parent() == Some(dir));
+    }
+    found.reverse();
+    found
+}
+
+/// What the model is told of the AGENTS.md files in `files`; empty without any.
+/// Each is headed with where it sits, as that is what says what it is about.
+fn instructions_block(files: &[PathBuf]) -> String {
+    let mut out = String::new();
+    for file in files {
+        let Ok(text) = std::fs::read_to_string(file) else {
+            continue;
+        };
+        let mut text = text.trim().to_string();
+        if text.is_empty() {
+            continue;
+        }
+        if let Some((end, _)) = text.char_indices().nth(MAX_INSTRUCTIONS) {
+            text.truncate(end);
+            text.push_str("\n[cut]");
+        }
+        let dir = file.parent().unwrap_or(file);
+        out += &format!(
+            "\n\n## {} (applies to {} and everything under it)\n\n{text}",
+            file.display(),
+            dir.display()
+        );
+    }
+    if out.is_empty() {
+        return out;
+    }
+    format!(
+        "\n\n# Instructions from AGENTS.md files\n\n\
+         These are the project's own rules, written for you. Each applies to the \
+         directory its file is in and everything under it, so where it sits is part of \
+         what it says: one in a subdirectory is about that part of the code, and where \
+         two disagree the one nearer the files you are changing wins.{out}"
+    )
+}
+
+/// The directory a tool call looks at or changes, if it names a path.
+fn touched_dir(call: &Value) -> Option<PathBuf> {
+    if !matches!(
+        name_of(call).as_str(),
+        "read_file" | "write_file" | "edit_file" | "grep" | "glob"
+    ) {
+        return None;
+    }
+    let args: Value = call["function"]["arguments"]
+        .as_str()
+        .and_then(|a| serde_json::from_str(a).ok())?;
+    let path = std::path::Path::new(args["path"].as_str()?.trim());
+    if path.as_os_str().is_empty() {
+        return None;
+    }
+    let path = std::env::current_dir().ok()?.join(path);
+    let mut dir = if path.is_dir() {
+        path.as_path()
+    } else {
+        path.parent()?
+    };
+    // A file about to be written may be in a directory not made yet.
+    while !dir.exists() {
+        dir = dir.parent()?;
+    }
+    dir.canonicalize().ok()
+}
+
+fn system_prompt(model: &str, ask: bool, output: bool, instructed: &[PathBuf]) -> String {
     let cwd = std::env::current_dir()
         .map(|d| d.display().to_string())
         .unwrap_or_default();
@@ -1616,7 +1717,8 @@ fn system_prompt(model: &str, ask: bool, output: bool) -> String {
     format!(
         "You are uc, the usecode coding agent, running in a terminal on the user's machine, \
          on the model {model}. The working directory is {cwd}. Use the tools to \
-         look around, run commands and change files; {confirms}. {sees}\n\n{MAIN_SKILL}"
+         look around, run commands and change files; {confirms}. {sees}\n\n{MAIN_SKILL}{}",
+        instructions_block(instructed)
     )
 }
 
@@ -1790,10 +1892,18 @@ impl Session {
         let effort = env("UC_EFFORT")
             .or_else(|| providers::settings().effort.clone())
             .unwrap_or_else(|| DEFAULT_EFFORT.to_string());
+        let instructed = std::env::current_dir()
+            .and_then(|d| d.canonicalize())
+            .map(|d| instruction_files(&d))
+            .unwrap_or_default();
+        for file in &instructed {
+            note!("instructions from {}", file.display());
+        }
         Ok(Session {
             messages: vec![
-                json!({"role": "system", "content": system_prompt(&model, ask, output)}),
+                json!({"role": "system", "content": system_prompt(&model, ask, output, &instructed)}),
             ],
+            instructed,
             providers,
             provider: start.map(|p| p.name).unwrap_or_default(),
             pool,
@@ -1834,10 +1944,75 @@ impl Session {
     /// Makes `choice` the model.
     fn set_model(&mut self, choice: Choice) {
         if choice.model != self.model || choice.provider != self.provider {
-            self.messages[0] = json!({"role": "system", "content": system_prompt(&choice.model, self.ask, self.show_output)});
             self.model = choice.model;
             self.provider = choice.provider;
+            self.refresh();
         }
+    }
+
+    /// The system message, for the model, the directory and the AGENTS.md
+    /// files as they are now.
+    fn system(&self) -> Value {
+        json!({"role": "system", "content": system_prompt(
+            &self.model, self.ask, self.show_output, &self.instructed)})
+    }
+
+    /// Puts the system message as `system` says it.
+    fn refresh(&mut self) {
+        let system = self.system();
+        if let Some(first) = self.messages.first_mut() {
+            *first = system;
+        }
+    }
+
+    /// Takes on the AGENTS.md files that apply to `dir` and are not in the
+    /// system prompt yet; the ones it added.
+    fn learn(&mut self, dir: &std::path::Path) -> Vec<PathBuf> {
+        let Ok(dir) = dir.canonicalize() else {
+            return Vec::new();
+        };
+        let new: Vec<PathBuf> = instruction_files(&dir)
+            .into_iter()
+            .filter(|f| !self.instructed.contains(f))
+            .collect();
+        if !new.is_empty() {
+            for file in &new {
+                note!("instructions from {}", file.display());
+            }
+            self.instructed.extend(new.iter().cloned());
+            // Outer files first, so the nearer ones read as the later word.
+            self.instructed.sort_by_key(|f| f.components().count());
+            self.refresh();
+        }
+        new
+    }
+
+    /// `output` of `call`, with a word on the AGENTS.md files its path
+    /// brought into the system prompt, if any.
+    fn touched(&mut self, call: &Value, output: String) -> String {
+        let Some(dir) = touched_dir(call) else {
+            return output;
+        };
+        let new = self.learn(&dir);
+        if new.is_empty() {
+            return output;
+        }
+        let files: Vec<String> = new.iter().map(|f| f.display().to_string()).collect();
+        format!(
+            "{output}\n[uc added {} to the instructions in the system prompt: they apply to the files here]",
+            files.join(", ")
+        )
+    }
+
+    /// Forgets the conversation, as a fresh uc would: only the system message
+    /// stays, for the directory it is in now.
+    fn forget(&mut self) {
+        self.messages.retain(|m| m["role"] == "system");
+        self.instructed.clear();
+        if let Ok(dir) = std::env::current_dir().and_then(|d| d.canonicalize()) {
+            self.instructed = instruction_files(&dir);
+        }
+        self.refresh();
     }
 
     /// The whole request posted to the provider; its reply is OpenAI's.
@@ -2122,6 +2297,10 @@ impl Session {
     /// answer.
     async fn turn(&mut self) -> Result<String> {
         loop {
+            // A `cd`, by the model or the user, may have moved into other rules.
+            if let Ok(dir) = std::env::current_dir() {
+                self.learn(&dir);
+            }
             if self.near_window().await
                 && let Err(err) = self.compact().await
             {
@@ -2148,20 +2327,22 @@ impl Session {
                 )
                 .await;
                 for (call, output) in calls.iter().zip(outputs) {
+                    let output = self.touched(call, truncate(output));
                     self.messages.push(json!({
                         "role": "tool",
                         "tool_call_id": call["id"],
-                        "content": truncate(output),
+                        "content": output,
                     }));
                 }
                 continue;
             }
             for call in calls {
                 let output = self.call(&call).await;
+                let output = self.touched(&call, truncate(output));
                 self.messages.push(json!({
                     "role": "tool",
                     "tool_call_id": call["id"],
-                    "content": truncate(output),
+                    "content": output,
                 }));
             }
         }
@@ -3826,6 +4007,75 @@ mod tests {
     }
 
     #[test]
+    fn instructions_follow_the_repository_and_where_they_sit() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let put = |path: &str| {
+            let file = root.join(path);
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(&file, format!("rules of {path}")).unwrap();
+            file
+        };
+        let outer = put("AGENTS.md");
+        std::fs::create_dir(root.join(".git")).unwrap();
+        let daemon = put("lib/daemon/AGENTS.md");
+        let nested = put("third_party/vim/AGENTS.md");
+        std::fs::create_dir_all(root.join("third_party/vim/.git")).unwrap();
+        let deep = root.join("lib/daemon/src");
+        std::fs::create_dir_all(&deep).unwrap();
+        // From the root of the repository down, outermost first.
+        assert_eq!(instruction_files(&deep), [outer.clone(), daemon.clone()]);
+        assert_eq!(instruction_files(&root), [outer.clone()]);
+        // A repository inside another has its own rules only.
+        assert_eq!(instruction_files(&root.join("third_party/vim")), [nested]);
+        let block = instructions_block(&[outer, daemon.clone()]);
+        assert!(block.contains("rules of lib/daemon/AGENTS.md"));
+        assert!(block.contains(&format!(
+            "applies to {}",
+            daemon.parent().unwrap().display()
+        )));
+        assert_eq!(instructions_block(&[]), "");
+    }
+
+    #[test]
+    fn instructions_outside_a_repository_are_only_the_directorys_own() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        std::fs::write(root.join("AGENTS.md"), "stray").unwrap();
+        let sub = root.join("sub");
+        std::fs::create_dir(&sub).unwrap();
+        assert_eq!(instruction_files(&sub), Vec::<PathBuf>::new());
+        assert_eq!(instruction_files(&root), [root.join("AGENTS.md")]);
+    }
+
+    #[test]
+    fn a_tool_working_in_a_subdirectory_brings_its_instructions() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        std::fs::create_dir_all(root.join(".git")).unwrap();
+        std::fs::create_dir_all(root.join("lib/x")).unwrap();
+        std::fs::write(root.join("AGENTS.md"), "top").unwrap();
+        std::fs::write(root.join("lib/x/AGENTS.md"), "about x").unwrap();
+        let mut s = session();
+        s.messages.push(json!({"role": "system", "content": ""}));
+        s.learn(&root);
+        assert_eq!(s.instructed.len(), 1);
+        let call = json!({"function": {"name": "read_file", "arguments":
+            json!({"path": root.join("lib/x/new.rs")}).to_string()}});
+        let out = s.touched(&call, "text".into());
+        assert!(out.contains("lib/x/AGENTS.md"));
+        assert_eq!(s.instructed.len(), 2);
+        assert!(
+            s.messages[0]["content"]
+                .as_str()
+                .unwrap()
+                .contains("about x")
+        );
+        // Said once.
+        assert_eq!(s.touched(&call, "text".into()), "text");
+    }
+
+    #[test]
     fn greps_and_globs_skip_what_gitignore_ignores() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
@@ -4216,6 +4466,7 @@ mod tests {
             waiting: None,
             last_usage: None,
             spent: 0.0,
+            instructed: Vec::new(),
         }
     }
 
