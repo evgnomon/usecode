@@ -60,6 +60,11 @@ export function Home() {
           <h1 className="mb-8 text-[clamp(28px,5.5vw,44px)] leading-[1.15] font-semibold tracking-[-0.02em]">
             {MOTIVATION.tagline}
           </h1>
+          <div className="mx-auto mb-8 max-w-[60ch] space-y-3 text-base text-muted-foreground">
+            {MOTIVATION.intro.map((line) => (
+              <p key={line}>{line}</p>
+            ))}
+          </div>
           <Journeys journeys={MOTIVATION.journeys} />
           <div className="mt-8 flex flex-wrap justify-center gap-3">
             <Button asChild aria-keyshortcuts={me?.user ? "a" : "s"}>
