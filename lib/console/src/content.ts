@@ -61,11 +61,10 @@ export type Journey = { from: string; without: string; prompt: string; steps: st
 // The opening of the landing page. The hero rolls the journeys three at a
 // time, and plays the one in the middle in a console underneath.
 export const MOTIVATION = {
-  tagline: "Use code! (What?) Use Code! (What?) Code!",
+  tagline: "A coding agent, ready for real work.",
   intro: [
-    "Do you miss it still? OK! I do too. Let's do it.",
-    "Use code not only for everything you might need to use code for, but also for everything that using code might need to use code.",
-    "Yeah this is the end of story! And the beginning.",
+    "Sensible defaults mean less setup. Work with your agent from a web browser, " +
+      "with the tools to build, test, deploy and run software built in.",
   ],
   journeys: [
     {
