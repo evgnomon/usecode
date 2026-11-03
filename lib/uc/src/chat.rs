@@ -3049,12 +3049,20 @@ impl Drop for Foreground {
     }
 }
 
-/// The running clock of a wait, cleared away when dropped.
-struct Clock(JoinHandle<()>);
+/// The running clock of a wait, cleared away when dropped. The spinner draws
+/// only while holding `stopped` and not stopped, so a draw already under way
+/// on another thread can't land after the clear and leave its line for the
+/// next output to run into.
+struct Clock {
+    task: JoinHandle<()>,
+    stopped: Arc<Mutex<bool>>,
+}
 
 impl Drop for Clock {
     fn drop(&mut self) {
-        self.0.abort();
+        let mut stopped = self.stopped.lock().unwrap_or_else(|e| e.into_inner());
+        *stopped = true;
+        self.task.abort();
         eprint!("\r\x1b[2K");
     }
 }
@@ -3210,14 +3218,20 @@ type Doing = Arc<Mutex<String>>;
 /// The spinner, in the accent color, next to what uc waits on, the time
 /// since the task began, and who is at work, dimmed, until aborted. The line
 /// is cut to the terminal's width so it never wraps.
-async fn spin(what: Doing, who: String, since: Instant) {
+async fn spin(what: Doing, who: String, since: Instant, stopped: Arc<Mutex<bool>>) {
     for dot in SPINNER.into_iter().cycle() {
         let line = format!(
             "\x1b[94m{dot}\x1b[0m {} {}{who}",
             what.lock().unwrap(),
             elapsed(since.elapsed().as_secs())
         );
-        eprint!("\r\x1b[2K{}", fit(&line, columns()));
+        {
+            let stopped = stopped.lock().unwrap_or_else(|e| e.into_inner());
+            if *stopped {
+                return;
+            }
+            eprint!("\r\x1b[2K{}", fit(&line, columns()));
+        }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }
@@ -3247,7 +3261,11 @@ fn doing(chunk: &Value) -> Option<String> {
 
 /// Starts the spinner saying `what`, when there is a terminal to turn on.
 fn clock(what: &Doing, who: String, since: Instant) -> Option<Clock> {
-    out::tty().then(|| Clock(tokio::spawn(spin(what.clone(), who, since))))
+    out::tty().then(|| {
+        let stopped = Arc::new(Mutex::new(false));
+        let task = tokio::spawn(spin(what.clone(), who, since, stopped.clone()));
+        Clock { task, stopped }
+    })
 }
 
 /// Seconds the way a clock says them: 9s, 1m 07s, 1h 02m.
