@@ -63,25 +63,26 @@ with `checkout.session.completed` and `customer.subscription.created`,
 
 ## Ship it
 
-Set `CONTAINER_REGISTRY` once in `~/.bashrc.d/usecode.sh` (see below) and
-your kube context on the cluster; then, from this directory:
+Commit and `git push` your change, then, with your kube context on the
+cluster:
 
 ```sh
-make image                          # build localhost/usecode-console:<git sha>
-make push                           # push as :<sha> and :latest
-kubectl -n console set image deploy/console \
-  console=$CONTAINER_REGISTRY/usecode-console:$(git rev-parse --short HEAD) && \
-  kubectl -n console rollout status deploy/console
+make deploy
 ```
+
+That's `scripts/deploy.sh`: it builds the image at the latest push
+(origin/master, not the working tree, and it warns about anything local it
+leaves out), pushes it as `<sha>` and `latest`, points `console/console` at
+`<sha>`, waits for the rollout and checks `https://<host>/healthz` answers.
+The steps also run on their own: `make image`, `make push`, `make rollout`.
 
 `make push` reads the registry host from `CONTAINER_REGISTRY` (falling back
 to the `registry` Ingress's host if it's unset), logs podman in with the
 login the cluster keeps in the `registry-auth` secret (namespace `registry`)
 and pushes `<sha>` and `latest`.
 
-`kubectl set image` does the deploy itself: change the image tag to the sha
-you just pushed, and `rollout status` waits until the new replicas are
-Running. Verify with `curl -fsSL https://<host>/ | head` (the landing page
+`make rollout` changes the image tag to that sha and waits until the new
+replicas are Running. Verify with `curl -fsSL https://<host>/ | head` (the landing page
 is prerendered, so new copy and fonts show straight away) or
 `kubectl -n console get pods`.
 

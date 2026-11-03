@@ -12,7 +12,7 @@ PORT ?= 8080
 TEST_DB_PORT ?= 55432
 TEST_DATABASE_URL ?= postgres://postgres:test@127.0.0.1:$(TEST_DB_PORT)/console
 
-.PHONY: all build test test-db test-db-stop serve dev image push deploy clean
+.PHONY: all build test test-db test-db-stop serve dev image push deploy rollout clean
 
 all: build
 
@@ -47,8 +47,12 @@ image:
 push: image
 	./scripts/push.sh $(IMAGE) $(TAG) $(REGISTRY)
 
-# Rolls the console out at the latest push; `make push` it first.
+# Builds, pushes and rolls out the latest push, then checks the site answers.
 deploy:
+	./scripts/deploy.sh $(REGISTRY)
+
+# Only rolls the console out at the latest push; `make push` it first.
+rollout:
 	./scripts/k8s.sh deploy $(REGISTRY)
 
 clean:
