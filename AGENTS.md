@@ -13,6 +13,7 @@ General rules for working in the usecode project.
 * Long logic should be implemented in scripts, not make files.
 * Prefer Rust-native solutions in the Rust code. Call HTTP APIs directly with `reqwest` (rustls) instead of running `curl`, a vendor CLI (`cf`, `hcloud`, ...) or `dig`, and use a crate before shelling out to a tool. Keep crates that build static for musl (like `uc`) free of C: use reqwest's `rustls-no-provider` with the pure-Rust `rustls-graviola` provider, not the default aws-lc or ring. Only run external programs when they are the thing being managed (`kubectl`, `helm`, `systemctl`, ...).
 * uc ships as a binary and a .deb, so no uc binary may need the usecode checkout: never read from, link into or clone it at run time. Files a binary needs are built into it (see `lib/uc/src/configure/AGENTS.md`).
+* Each time you change a component and the task is done, build and install that component only: `make` and then `make install` in its own directory (e.g. `lib/uc`), not the top-level `make`, which builds every component.
 * After changing the console (`lib/console`), deploy it once the task is done: `make` and then `make deploy` in `lib/console` (see `lib/console/AGENTS.md`).
 
 # Flags
