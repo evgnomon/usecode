@@ -34,3 +34,7 @@ General rules for working in the usecode project.
 
 # The user's config
 * The user config is `~/.config/usecode` (the same directory as `~/src/github.com/<user>/config`).
+
+# Git
+* Use `git commit -s` to sign your commits.
+* Build and install after git pull, and before `git push` (see above).
