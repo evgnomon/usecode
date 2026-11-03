@@ -75,13 +75,14 @@ const FONTS: &[(&str, &[u8])] = &[
     ),
 ];
 const USAGE: &str = "usage: uc agent serve [--listen ADDR] [--ask] [--output] [--commands] \
-                     [--no-shell] [--parallel|--exa|--duckduckgo]";
+                     [--no-shell] [--long-cache] [--parallel|--exa|--duckduckgo]";
 /// The flags handed on to the uc on the terminal.
 const PASSED: &[&str] = &[
     "--ask",
     "--output",
     "--commands",
     "--no-shell",
+    "--long-cache",
     "--parallel",
     "--exa",
     "--duckduckgo",
@@ -443,7 +444,10 @@ fn fonts_version() -> String {
         hash.update(name.as_bytes());
         hash.update(bytes);
     }
-    hash.finalize()[..6].iter().map(|b| format!("{b:02x}")).collect()
+    hash.finalize()[..6]
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 /// One of [`FONTS`]; they never change within a build.

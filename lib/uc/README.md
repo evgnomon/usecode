@@ -90,6 +90,7 @@ uc --ask                                      # confirm each command and change
 uc --output                                   # also show what the commands print
 uc --commands                                 # show command lines, not their titles
 uc --no-shell                                 # every line goes to the model
+uc --long-cache                               # keep Claude's prompt cache an hour
 UC_MODEL=openai/gpt-5 uc                      # another model, just this once
 ```
 
@@ -168,7 +169,20 @@ Wondering how much of the model's context the conversation has taken? Type
 they make (an estimate until the model has counted them), what the last
 turn took in tokens — how many went in, how many were cached, how many
 came out — how full the model's context window is, and what the session
-has spent so far, at the model's price per million tokens.
+has spent so far, at the model's price per million tokens. It also tells
+you how much of everything the session sent was read from the provider's
+cache, which costs about a tenth of fresh input.
+
+uc tries hard to keep that share high. Claude models get cache markers on
+the system prompt and the last two places a request ended, so each request
+pays full price only for what is new. OpenRouter and OpenAI get a
+`prompt_cache_key` per session, which keeps your requests on the server that
+has your prompt cached. AGENTS.md files picked up halfway through a session
+are given to the model where it is reading, not by rewriting the system
+prompt, which would throw the whole cache away. Claude's cache lasts five
+minutes, so if you often stop to think for longer, `uc --long-cache` (or
+`long_cache: true` under `uc:`) keeps it for an hour. Writing to it then
+costs a bit more, and reading from it costs the same tenth.
 `uc agent compact` cuts old tool output and sums up the earlier
 conversation, and `uc agent exit` (or `uc agent quit`) leaves uc.
 

@@ -27,7 +27,23 @@ use sha2::{Digest, Sha256};
 use std::io::{BufRead, IsTerminal, Write};
 use std::pin::Pin;
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
+
+/// Keep the cached prompt for an hour instead of five minutes (`--long-cache`):
+/// writing it costs twice the input price instead of 1.25 times, reading it
+/// stays a tenth, so it pays when the user often pauses for more than five
+/// minutes between lines.
+pub static LONG_CACHE: AtomicBool = AtomicBool::new(false);
+
+/// A cache breakpoint: five minutes, or an hour with [`LONG_CACHE`].
+pub fn breakpoint() -> Value {
+    if LONG_CACHE.load(Ordering::Relaxed) {
+        json!({"type": "ephemeral", "ttl": "1h"})
+    } else {
+        json!({"type": "ephemeral"})
+    }
+}
 
 /// What a login is saved as in `agent.yaml`, and how a 401 says to fix it.
 const RELOGIN: &str = " (log in again: uc agent login claude)";
@@ -320,17 +336,40 @@ pub fn request(body: &Value, stream: bool) -> Value {
             _ => {}
         }
     }
-    // The prompt is read from the cache up to the last system block and the
-    // last message of the turn.
-    if let Some(last) = system.last_mut() {
-        last["cache_control"] = json!({"type": "ephemeral"});
+    // The prompt is read from the cache up to the last system block (the
+    // tools come before it) and the last message of the turn. The message
+    // the previous request ended on, the one before the latest reply, is
+    // marked too: Claude looks only about 20 blocks back from a breakpoint
+    // for what is cached, and a batch of tool calls and their results can add
+    // more than that at once. A request that doesn't stream is a one-off (the
+    // summary): nothing will read it back, so nothing of it is written to
+    // the cache.
+    for block in system.iter_mut().chain(
+        messages
+            .iter_mut()
+            .flat_map(|m| m["content"].as_array_mut().into_iter().flatten()),
+    ) {
+        if let Some(block) = block.as_object_mut() {
+            block.remove("cache_control");
+        }
     }
-    if let Some(block) = messages
-        .last_mut()
-        .and_then(|m| m["content"].as_array_mut())
-        .and_then(|c| c.last_mut())
-    {
-        block["cache_control"] = json!({"type": "ephemeral"});
+    if stream {
+        if let Some(last) = system.last_mut() {
+            last["cache_control"] = breakpoint();
+        }
+        let previous = messages
+            .iter()
+            .rposition(|m| m["role"] == "assistant")
+            .and_then(|i| i.checked_sub(1));
+        let last = messages.len().checked_sub(1);
+        for i in [previous, last].into_iter().flatten() {
+            if let Some(block) = messages[i]["content"]
+                .as_array_mut()
+                .and_then(|c| c.last_mut())
+            {
+                block["cache_control"] = breakpoint();
+            }
+        }
     }
     let mut request = json!({
         "model": model_id(body["model"].as_str().unwrap_or_default()),
@@ -883,6 +922,17 @@ mod tests {
         assert_eq!(m[2]["content"].as_array().unwrap().len(), 2);
         assert_eq!(m[2]["content"][0]["tool_use_id"], "t1");
         assert_eq!(m[2]["content"][1]["cache_control"]["type"], "ephemeral");
+        // The message before the reply is where the last request ended.
+        assert_eq!(m[0]["content"][0]["cache_control"]["type"], "ephemeral");
+        assert!(m[2]["content"][0].get("cache_control").is_none());
+        // A one-off request writes nothing to the cache.
+        let r = request(&chat(), false);
+        assert!(r["system"][1].get("cache_control").is_none());
+        assert!(
+            r["messages"][2]["content"][1]
+                .get("cache_control")
+                .is_none()
+        );
     }
 
     #[test]

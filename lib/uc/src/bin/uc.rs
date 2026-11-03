@@ -18,12 +18,13 @@ const PREFIX: &str = "uc-";
 /// Short names for commands: `uc ws` is `uc workspace`.
 const ALIASES: &[(&str, &str)] = &[("ws", "workspace")];
 
-/// The agent's options: `uc --ask --output --commands --no-shell`, and the search engine.
+/// The agent's options: `uc --ask --output --commands --no-shell --long-cache`, and the search engine.
 const CHAT_FLAGS: &[&str] = &[
     "--ask",
     "--output",
     "--commands",
     "--no-shell",
+    "--long-cache",
     "--parallel",
     "--exa",
     "--duckduckgo",
@@ -43,6 +44,7 @@ fn main() -> ExitCode {
     if args.iter().all(|a| CHAT_FLAGS.contains(&a.as_str())) {
         let has = |flag: &str| uc::flag::on(&args, flag);
         let search = SEARCH_FLAGS.iter().find(|(f, _)| has(f)).map(|(_, s)| *s);
+        uc::claude::LONG_CACHE.store(has("--long-cache"), std::sync::atomic::Ordering::Relaxed);
         return uc::chat::main(
             has("--ask"),
             has("--output"),
@@ -82,7 +84,7 @@ fn main() -> ExitCode {
 
 fn print_usage() {
     println!(
-        "Usage: uc [--ask] [--output] [--commands] [--no-shell] [--parallel|--exa|--duckduckgo] | <command> [<args>]\n"
+        "Usage: uc [--ask] [--output] [--commands] [--no-shell] [--long-cache] [--parallel|--exa|--duckduckgo] | <command> [<args>]\n"
     );
     println!("With no command, uc is a coding agent: talk to it and it runs commands and");
     println!("edits files for you, through the providers in ~/.config/usecode/agent.yaml:");
@@ -97,6 +99,8 @@ fn print_usage() {
     println!("`· list the rust files`; `uc --commands` shows the command line instead.");
     println!("A line that is a command, like `ls -al`, runs on the terminal straight");
     println!("away; `uc --no-shell` sends every line to the model instead.");
+    println!("Claude models keep the conversation cached for five minutes between requests;");
+    println!("`uc --long-cache` keeps it an hour, for when you often pause longer.");
     println!("Every flag can also be set as UC_<FLAG> (UC_NO_SHELL=1) or under `uc:` in");
     println!("config.yaml (no_shell: true); the command line wins, then the environment.");
     println!("It searches the web with Parallel, else Exa (their keys under search: in");

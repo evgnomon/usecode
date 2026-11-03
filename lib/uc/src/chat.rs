@@ -562,6 +562,12 @@ struct Session {
     /// The AGENTS.md files in the system prompt, outermost first: the ones
     /// for the working directory, and for every place a tool has worked in.
     instructed: Vec<PathBuf>,
+    /// The ones of them in the system prompt; the others were handed on in
+    /// the conversation, so the cached prompt stays as it is.
+    prompted: Vec<PathBuf>,
+    /// Sent as `prompt_cache_key`, so the requests of the session go where
+    /// its prompt is cached.
+    cache_key: String,
 }
 
 /// A command started by bash, followed with job_output and stopped with job_kill.
@@ -809,23 +815,30 @@ fn caches_on_request(model: &str) -> bool {
     model.starts_with("anthropic/") || model.starts_with("google/")
 }
 
-/// `messages` for a request: for a model that needs it, the system prompt and
-/// the last message carry a cache breakpoint, so each turn reads the earlier
-/// ones from the cache. The history itself stays as it is.
+/// `messages` for a request: for a model that needs it, the system prompt,
+/// the last message and the one the request before ended on (the one before
+/// the latest reply) carry a cache breakpoint, so each request reads all
+/// but its newest messages from the cache, even after a big batch of tool
+/// calls. The history itself stays as it is.
 fn cached(model: &str, messages: &[Value]) -> Vec<Value> {
     let mut messages = messages.to_vec();
     if !caches_on_request(model) {
         return messages;
     }
     let last = messages.len().saturating_sub(1);
+    let previous = messages
+        .iter()
+        .rposition(|m| m["role"] == "assistant")
+        .and_then(|i| i.checked_sub(1))
+        .unwrap_or(0);
     for (i, message) in messages.iter_mut().enumerate() {
-        if i != 0 && i != last {
+        if i != 0 && i != last && i != previous {
             continue;
         }
         // A tool call with no text has no content to mark.
         if let Some(text) = message["content"].as_str().filter(|t| !t.is_empty()) {
             message["content"] = json!([
-                {"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}
+                {"type": "text", "text": text, "cache_control": claude::breakpoint()}
             ]);
         }
     }
@@ -900,6 +913,23 @@ async fn send(provider: &Provider, body: &Value) -> Result<Value> {
 /// OpenRouter's own fields, asking for the usage at the end of a stream.
 fn plain_request(body: &Value) -> Value {
     copilot::request(body)
+}
+
+/// Whether `provider` takes `prompt_cache_key`: OpenRouter and OpenAI do.
+fn takes_cache_key(provider: &Provider) -> bool {
+    match provider.kind {
+        Kind::OpenRouter => true,
+        Kind::OpenAi => provider.base_url.contains("api.openai.com"),
+        Kind::Claude | Kind::Copilot => false,
+    }
+}
+
+/// A key of its own for each session, `uc-` and 16 hex digits.
+fn cache_key() -> String {
+    let mut bytes = [0u8; 8];
+    let _ = getrandom::fill(&mut bytes);
+    let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+    format!("uc-{hex}")
 }
 
 /// A reply as its chunks come in.
@@ -1673,6 +1703,20 @@ fn instructions_block(files: &[PathBuf]) -> String {
     )
 }
 
+/// The AGENTS.md `files` learned in the middle of a session, as the model
+/// reads them after a tool's output or the user's line. They go there, not
+/// into the system prompt, so the provider's cache of the conversation so
+/// far stays good; a compaction moves them into the system prompt.
+fn instructed(files: &[PathBuf]) -> String {
+    let block = instructions_block(files);
+    let names: Vec<String> = files.iter().map(|f| f.display().to_string()).collect();
+    format!(
+        "[uc: instructions from {} apply to the files here; take them as part of the system \
+         prompt]{block}",
+        names.join(", ")
+    )
+}
+
 /// The directory a tool call looks at or changes, if it names a path.
 fn touched_dir(call: &Value) -> Option<PathBuf> {
     if !matches!(
@@ -1907,7 +1951,9 @@ impl Session {
             messages: vec![
                 json!({"role": "system", "content": system_prompt(&model, ask, output, &instructed)}),
             ],
+            prompted: instructed.clone(),
             instructed,
+            cache_key: cache_key(),
             providers,
             provider: start.map(|p| p.name).unwrap_or_default(),
             pool,
@@ -1963,15 +2009,24 @@ impl Session {
         if choice.model != self.model || choice.provider != self.provider {
             self.model = choice.model;
             self.provider = choice.provider;
-            self.refresh();
+            // Another model has no cache of this one's prompt to keep.
+            self.settle();
         }
     }
 
     /// The system message, for the model, the directory and the AGENTS.md
-    /// files as they are now.
+    /// files it holds.
     fn system(&self) -> Value {
         json!({"role": "system", "content": system_prompt(
-            &self.model, self.ask, self.show_output, &self.instructed)})
+            &self.model, self.ask, self.show_output, &self.prompted)})
+    }
+
+    /// Takes the AGENTS.md files learned since into the system prompt. It
+    /// changes the start of the prompt, so the provider's cache of it is gone:
+    /// only for when it is gone anyway (a compaction).
+    fn settle(&mut self) {
+        self.prompted = self.instructed.clone();
+        self.refresh();
     }
 
     /// Puts the system message as `system` says it.
@@ -1982,8 +2037,10 @@ impl Session {
         }
     }
 
-    /// Takes on the AGENTS.md files that apply to `dir` and are not in the
-    /// system prompt yet; the ones it added.
+    /// Takes on the AGENTS.md files that apply to `dir` and the model wasn't
+    /// given yet; the ones it added. They are not put in the system prompt,
+    /// which would make the provider read the whole conversation again in
+    /// full: the caller hands them on at the end of it (see [`instructed`]).
     fn learn(&mut self, dir: &std::path::Path) -> Vec<PathBuf> {
         let Ok(dir) = dir.canonicalize() else {
             return Vec::new();
@@ -1999,13 +2056,12 @@ impl Session {
             self.instructed.extend(new.iter().cloned());
             // Outer files first, so the nearer ones read as the later word.
             self.instructed.sort_by_key(|f| f.components().count());
-            self.refresh();
         }
         new
     }
 
-    /// `output` of `call`, with a word on the AGENTS.md files its path
-    /// brought into the system prompt, if any.
+    /// `output` of `call`, with the AGENTS.md files its path brought in, if
+    /// any.
     fn touched(&mut self, call: &Value, output: String) -> String {
         let Some(dir) = touched_dir(call) else {
             return output;
@@ -2014,11 +2070,23 @@ impl Session {
         if new.is_empty() {
             return output;
         }
-        let files: Vec<String> = new.iter().map(|f| f.display().to_string()).collect();
-        format!(
-            "{output}\n[uc added {} to the instructions in the system prompt: they apply to the files here]",
-            files.join(", ")
-        )
+        format!("{output}\n\n{}", instructed(&new))
+    }
+
+    /// Gives the model the AGENTS.md `files` at the end of the conversation,
+    /// after the line or tool output it is about to read, so what is cached
+    /// before stays as it is.
+    fn hand_on(&mut self, files: &[PathBuf]) {
+        let block = instructed(files);
+        match self.messages.last_mut() {
+            Some(last) if last["role"] != "system" && last["content"].is_string() => {
+                let text = last["content"].as_str().unwrap_or_default();
+                last["content"] = json!(format!("{text}\n\n{block}"));
+            }
+            _ => self
+                .messages
+                .push(json!({"role": "user", "content": block})),
+        }
     }
 
     /// Forgets the conversation, as a fresh uc would: only the system message
@@ -2029,7 +2097,7 @@ impl Session {
         if let Ok(dir) = std::env::current_dir().and_then(|d| d.canonicalize()) {
             self.instructed = instruction_files(&dir);
         }
-        self.refresh();
+        self.settle();
     }
 
     /// The whole request posted to the provider; its reply is OpenAI's.
@@ -2208,6 +2276,9 @@ impl Session {
             self.messages.push(json!({"role": "assistant", "content": "Understood, carrying on from the summary."}));
             self.messages.extend(tail);
         }
+        // The conversation is read in full once more anyway: the place to
+        // take the instructions learned since into the system prompt.
+        self.settle();
         // The count was of the longer conversation.
         self.last_usage = None;
         note!(
@@ -2283,6 +2354,9 @@ impl Session {
         } else {
             note!("no turn yet, so no token count; that comes with the first reply");
         }
+        if let Some(line) = self.tokens.cache_line() {
+            note!("{line}");
+        }
         match model_info(&self.model).await {
             Ok(Some((window, per_million))) => {
                 if let (Some(window), Some(total)) = (window, tokens) {
@@ -2318,7 +2392,10 @@ impl Session {
         loop {
             // A `cd`, by the model or the user, may have moved into other rules.
             if let Ok(dir) = std::env::current_dir() {
-                self.learn(&dir);
+                let new = self.learn(&dir);
+                if !new.is_empty() {
+                    self.hand_on(&new);
+                }
             }
             if self.near_window().await
                 && let Err(err) = self.compact().await
@@ -2377,7 +2454,7 @@ impl Session {
         } else {
             cached(&self.model, messages)
         };
-        let body = json!({
+        let mut body = json!({
             "model": self.model,
             "messages": messages,
             "tools": tools(),
@@ -2385,6 +2462,12 @@ impl Session {
             "stream": true,
             "usage": {"include": true},
         });
+        // OpenAI's cache finds the prompt by it, and OpenRouter keeps the
+        // session on the provider that holds its cache. Other OpenAI-style
+        // servers may turn a field they don't know away, so they go without.
+        if self.current().is_ok_and(takes_cache_key) {
+            body["prompt_cache_key"] = json!(self.cache_key);
+        }
         let what = Doing::new(Mutex::new("waiting".into()));
         let mut clock = clock(&what, self.who(), self.since);
         let mut stream = self.stream(&body).await?;
@@ -3133,6 +3216,26 @@ impl Tokens {
         self.cached += cached;
         self.written += written;
         self.output += n(&usage["completion_tokens"]);
+    }
+
+    /// How the session's prompts were read, for `uc agent context`: `362k
+    /// tokens in, 91% read from the cache, 8% written to it`, or nothing
+    /// before the first reply.
+    fn cache_line(&self) -> Option<String> {
+        let total = self.input + self.cached + self.written;
+        if total == 0 {
+            return None;
+        }
+        let pct = |n: u64| 100.0 * n as f64 / total as f64;
+        let mut line = format!(
+            "this session {} tokens in, {:.0}% read from the cache",
+            short(total),
+            pct(self.cached)
+        );
+        if self.written > 0 {
+            line += &format!(", {:.0}% written to it", pct(self.written));
+        }
+        Some(line + &format!(", {} out", short(self.output)))
     }
 
     /// ` · 362k in, 2.1k out`, the cached and written counted in, or nothing
@@ -4210,16 +4313,19 @@ mod tests {
         let call = json!({"function": {"name": "read_file", "arguments":
             json!({"path": root.join("lib/x/new.rs")}).to_string()}});
         let out = s.touched(&call, "text".into());
-        assert!(out.contains("lib/x/AGENTS.md"));
+        assert!(out.contains("lib/x/AGENTS.md") && out.contains("about x"));
         assert_eq!(s.instructed.len(), 2);
+        // The cached system prompt stays as it was until a compaction.
+        assert_eq!(s.messages[0]["content"], "");
+        // Said once.
+        assert_eq!(s.touched(&call, "text".into()), "text");
+        s.settle();
         assert!(
             s.messages[0]["content"]
                 .as_str()
                 .unwrap()
                 .contains("about x")
         );
-        // Said once.
-        assert_eq!(s.touched(&call, "text".into()), "text");
     }
 
     #[test]
@@ -4307,6 +4413,19 @@ mod tests {
         assert_eq!(marked[1]["content"], "u");
         assert_eq!(marked[2]["content"][0]["text"], "last");
         assert_eq!(cached("z-ai/glm-5.3", &messages), messages);
+        // Where the request before ended is marked as well.
+        let messages = vec![
+            json!({"role": "system", "content": "s"}),
+            json!({"role": "user", "content": "a"}),
+            json!({"role": "user", "content": "b"}),
+            json!({"role": "assistant", "content": null, "tool_calls": []}),
+            json!({"role": "tool", "content": "c"}),
+            json!({"role": "tool", "content": "d"}),
+        ];
+        let marked = cached("anthropic/claude-haiku-5.5", &messages);
+        let mark = |i: usize| marked[i]["content"][0].get("cache_control").is_some();
+        assert!(mark(0) && mark(2) && mark(5));
+        assert!(!mark(1) && !mark(4));
     }
 
     #[test]
@@ -4616,6 +4735,8 @@ mod tests {
             tokens: Tokens::default(),
             since: Instant::now(),
             instructed: Vec::new(),
+            prompted: Vec::new(),
+            cache_key: "uc-test".into(),
         }
     }
 
@@ -4637,6 +4758,11 @@ mod tests {
             }
         );
         assert_eq!(tokens.line(), " · 3.0k in, 80 out");
+        assert_eq!(
+            tokens.cache_line().unwrap(),
+            "this session 3.0k tokens in, 67% read from the cache, 20% written to it, 80 out"
+        );
+        assert_eq!(Tokens::default().cache_line(), None);
         assert_eq!(short(25_400), "25k");
         assert_eq!(short(1_250_000), "1.2M");
     }
