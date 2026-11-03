@@ -65,6 +65,13 @@ export function Home() {
               <p key={line}>{line}</p>
             ))}
           </div>
+          <ul className="mx-auto mb-8 flex flex-wrap justify-center gap-x-3 gap-y-2 text-sm font-medium">
+            {MOTIVATION.pillars.map((p) => (
+              <li key={p} className="border px-2.5 py-1">
+                {p}
+              </li>
+            ))}
+          </ul>
           <Journeys journeys={MOTIVATION.journeys} />
           <div className="mt-8 flex flex-wrap justify-center gap-3">
             <Button asChild aria-keyshortcuts={me?.user ? "a" : "s"}>

@@ -61,13 +61,14 @@ export type Journey = { from: string; without: string; prompt: string; steps: st
 // The opening of the landing page. The hero rolls the journeys three at a
 // time, and plays the one in the middle in a console underneath.
 export const MOTIVATION = {
-  tagline: "Use code, from a prompt to a public company.",
+  tagline: "From prompt to production. Nothing to install.",
   intro: [
-    "A coding agent, ready for real work. More than a demo on your laptop. Sensible defaults mean less setup. " +
-      "Work with your agent from a web browser, with the tools to build, " +
-      "test, deploy and run software at scale built in. " +
-      "From the first prompt to production, and still up tomorrow.",
+    "usecode is a coding agent that comes with everything real software needs: " +
+      "build, test, deploy, hosting and scaling are already wired in. " +
+      "Open a browser, say what you want, and get an app that’s live today and still running tomorrow.",
   ],
+  // The three things that set it apart, as a row under the intro.
+  pillars: ["Batteries included", "Runs entirely in your browser", "Convention over configuration"],
   journeys: [
     {
       from: "From one agent to a team,",
