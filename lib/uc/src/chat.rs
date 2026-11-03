@@ -18,7 +18,7 @@
 //! the commands print, unless `--output` is given. A command the model runs
 //! shows as a few words on what it does, like `· list the rust files`, unless
 //! `--commands` is given, which shows the command line itself. A line that is a command
-//! (`ls -al`, `git status`, or anything after `!`) runs on the terminal
+//! (`ls -al`, `git status`) runs on the terminal
 //! straight away, with the same confirmations, without the model hearing
 //! about it (but where it left the directory, which the model is told);
 //! the user's bash aliases, functions and variables work there too, and what
@@ -149,7 +149,7 @@ const MAIN_SKILL: &str = include_str!("chat/main.md");
 /// directory. Keywords like `if` and `for` are left out: they start sentences.
 const BUILTINS: &[&str] = &["cd", "echo", "printf", "pwd", "type", "command", "time"];
 /// Programs whose name is usually an English word when typed at the prompt:
-/// `yes` answers the model, it doesn't print y forever. `!yes` still runs it.
+/// `yes` answers the model, it doesn't print y forever.
 const WORDS: &[&str] = &["yes", "more", "look", "write", "see", "at", "go"];
 /// Words that make a line a sentence for the model, not a command line.
 const PROSE: &[&str] = &[
@@ -1264,14 +1264,13 @@ fn direct_command(line: &str) -> Option<&str> {
     if AI.load(Ordering::Relaxed) {
         typed_command(line).filter(|_| SHELL.load(Ordering::Relaxed))
     } else {
-        Some(line.strip_prefix('!').unwrap_or(line).trim()).filter(|c| !c.is_empty())
+        Some(line.trim()).filter(|c| !c.is_empty())
     }
 }
 
 /// A typed `uc agent model ...` line, which the chat takes itself instead of
 /// running in bash: the rest of the line after `uc agent model`, or `Some("")`
-/// for `uc agent model-update`. `!uc agent model` still runs in bash, where
-/// the same words save the model for the sessions to come.
+/// for `uc agent model-update`.
 fn agent_model_line(line: &str) -> Option<&str> {
     if line == "uc agent model-update" {
         return Some("");
@@ -1282,7 +1281,7 @@ fn agent_model_line(line: &str) -> Option<&str> {
 
 /// `uc agent compact`, `status`, `exit` or `quit` typed at the prompt: the
 /// session's own commands, which it takes instead of running them in bash;
-/// the word after `uc agent`. `!uc agent status` still runs in bash.
+/// the word after `uc agent`.
 fn agent_command(line: &str) -> Option<&'static str> {
     let rest = line.strip_prefix("uc agent ")?.trim();
     AGENT_COMMANDS.iter().find(|c| **c == rest).copied()
@@ -1290,7 +1289,7 @@ fn agent_command(line: &str) -> Option<&'static str> {
 
 /// A typed `uc agent <name> [ARG]` for the commands that take an argument
 /// (`rewind`, `effort`, `export`, `import`), which the chat takes itself:
-/// what comes after the name, trimmed. `!uc agent rewind` still runs in bash.
+/// what comes after the name, trimmed.
 fn agent_arg<'l>(line: &'l str, name: &str) -> Option<&'l str> {
     line.strip_prefix("uc agent ")?
         .strip_prefix(name)
@@ -1316,12 +1315,9 @@ fn color_program(command: &str) -> String {
 }
 
 /// The command line to run when what was typed is one rather than something for
-/// the model: `!` and the rest, or a line starting with a program or builtin
+/// the model: a line starting with a program or builtin
 /// that doesn't read like a sentence. Unsure means it goes to the model.
 fn typed_command(line: &str) -> Option<&str> {
-    if let Some(command) = line.strip_prefix('!') {
-        return Some(command.trim()).filter(|c| !c.is_empty());
-    }
     if line.ends_with('?') {
         return None;
     }
@@ -1499,7 +1495,7 @@ if (( ${#COMPREPLY[@]} )); then printf '%s\n' "${COMPREPLY[@]}"; else compgen -f
 const AGENT_COMMANDS: &[&str] = &["compact", "status", "exit", "quit"];
 
 /// Tab at the prompt: a command line the way the user's bash
-/// completes it, with or without `!`, and file names in a line for the model.
+/// completes it, and file names in a line for the model.
 struct Completion;
 
 impl Completion {
@@ -1508,12 +1504,10 @@ impl Completion {
         let word_start = before.rfind(char::is_whitespace).map_or(0, |i| {
             i + before[i..].chars().next().map_or(1, char::len_utf8)
         });
-        let (offset, command) = match before.strip_prefix('!') {
-            Some(command) => (1, Some(command)),
-            None if word_start == 0 => (0, Some(before)),
-            None => (0, typed_command(before)),
+        let command = match word_start {
+            0 => Some(before),
+            _ => typed_command(before),
         };
-        let word_start = word_start.max(offset);
         let word = &before[word_start..];
         let words = match command {
             Some(command) => user_shell().complete(command, false),
@@ -1571,7 +1565,7 @@ impl rustyline::highlight::Highlighter for Completion {
         let Some(command) = direct_command(line) else {
             return std::borrow::Cow::Borrowed(line);
         };
-        // The command is a slice of the line: after a `!` and spaces, if any.
+        // The command is a slice of the line: the line without its spaces around.
         let start = command.as_ptr() as usize - line.as_ptr() as usize;
         let end = start + command.len();
         std::borrow::Cow::Owned(format!(
@@ -4983,11 +4977,9 @@ mod tests {
             "cd ..",
             "git commit -m 'fix the bug'",
             "make all",
-            "!yes | head -1",
         ] {
             assert!(typed_command(line).is_some(), "{line}");
         }
-        assert_eq!(typed_command("! ls"), Some("ls"));
         for line in [
             "yes",
             "go ahead",
@@ -4996,7 +4988,7 @@ mod tests {
             "ls?",
             "fix the tests",
             "why is it slow",
-            "!",
+            "!ls",
         ] {
             assert!(typed_command(line).is_none(), "{line}");
         }
@@ -5019,8 +5011,8 @@ mod tests {
 
     #[test]
     fn tab_completes_like_bash() {
-        let (start, words) = Completion::candidates("!ech");
-        assert_eq!(start, 1);
+        let (start, words) = Completion::candidates("ech");
+        assert_eq!(start, 0);
         assert!(words.iter().any(|w| w.trim_end() == "echo"), "{words:?}");
         let (start, words) = Completion::candidates("ls Carg");
         assert_eq!((start, words), (3, vec!["Cargo.toml ".to_string()]));

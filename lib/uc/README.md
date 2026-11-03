@@ -47,8 +47,7 @@ it asks you to okay still shows in full, and `uc --commands` shows every
 command line as it is.
 Type a command like `ls -al` or `git status` and it just runs on your
 terminal, like in a shell (`cd` and your bash aliases and functions too), with
-the same confirmations; a line that reads like a sentence goes to the model,
-and `!` in front makes anything a command. Rather talk to the model every
+the same confirmations; a line that reads like a sentence goes to the model. Rather talk to the model every
 time? `uc --no-shell` (or `UC_NO_SHELL=1`) sends every line to it.
 Up and Down bring back what you typed before, in uc or in bash, even in an earlier session,
 and Ctrl-R finds it in a colourful fuzzy picker, just like fzf in bash. Changed your mind while it
