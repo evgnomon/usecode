@@ -47,6 +47,8 @@
 //! more than one provider serves is
 //! listed once for each, with the provider beside it. `uc agent exit` (or
 //! `quit`) leaves uc, `uc agent compact` sums up the earlier conversation,
+//! `uc agent rewind [N]` goes back to before the line typed N lines ago
+//! (the picker picks it without N) and puts it back at the prompt to edit,
 //! and `uc agent context`
 //! prints how much of the model's context the conversation has taken: the
 //! message count, an estimate before the first turn, the real token count of
@@ -568,6 +570,9 @@ struct Session {
     /// Sent as `prompt_cache_key`, so the requests of the session go where
     /// its prompt is cached.
     cache_key: String,
+    /// The lines typed for the model, oldest first, with where each sits in
+    /// `messages`: what `uc agent rewind` goes back to.
+    asked: Vec<(usize, String)>,
 }
 
 /// A command started by bash, followed with job_output and stopped with job_kill.
@@ -723,7 +728,11 @@ async fn run(
         if line == "exit" || matches!(agent, Some("exit" | "quit")) {
             return Ok(());
         }
-        if !ai && (agent_model_line(line).is_some() || agent.is_some()) {
+        if !ai
+            && (agent_model_line(line).is_some()
+                || agent.is_some()
+                || agent_rewind_line(line).is_some())
+        {
             eprintln!("· AI off: {}, to turn it on", no_provider());
             continue;
         }
@@ -743,6 +752,10 @@ async fn run(
         }
         if agent == Some("context") {
             session.context().await;
+            continue;
+        }
+        if let Some(arg) = agent_rewind_line(line) {
+            session.rewind(arg);
             continue;
         }
         if agent == Some("compact") {
@@ -1254,6 +1267,14 @@ fn agent_command(line: &str) -> Option<&'static str> {
     AGENT_COMMANDS.iter().find(|c| **c == rest).copied()
 }
 
+/// A typed `uc agent rewind [N]`, which the chat takes itself: what comes
+/// after `rewind`, trimmed. `!uc agent rewind` still runs in bash.
+fn agent_rewind_line(line: &str) -> Option<&str> {
+    line.strip_prefix("uc agent rewind")
+        .filter(|rest| rest.is_empty() || rest.starts_with(' '))
+        .map(str::trim)
+}
+
 /// `command` with its first word, the program, in bright yellow: what a line
 /// that runs straight away looks like at the prompt.
 fn color_program(command: &str) -> String {
@@ -1510,7 +1531,10 @@ impl rustyline::hint::Hinter for Completion {
 impl rustyline::highlight::Highlighter for Completion {
     fn highlight<'l>(&self, line: &'l str, _: usize) -> std::borrow::Cow<'l, str> {
         // The chat takes `uc agent model` and the like itself; not bash lines.
-        if agent_model_line(line).is_some() || agent_command(line).is_some() {
+        if agent_model_line(line).is_some()
+            || agent_command(line).is_some()
+            || agent_rewind_line(line).is_some()
+        {
             return std::borrow::Cow::Borrowed(line);
         }
         let Some(command) = direct_command(line) else {
@@ -1972,6 +1996,7 @@ impl Session {
             spent: 0.0,
             tokens: Tokens::default(),
             since: Instant::now(),
+            asked: Vec::new(),
         })
     }
 
@@ -2094,6 +2119,7 @@ impl Session {
     /// stays, for the directory it is in now.
     fn forget(&mut self) {
         self.messages.retain(|m| m["role"] == "system");
+        self.asked.clear();
         self.instructed.clear();
         if let Ok(dir) = std::env::current_dir().and_then(|d| d.canonicalize()) {
             self.instructed = instruction_files(&dir);
@@ -2132,9 +2158,87 @@ impl Session {
 
     /// A line for the model: one turn, until it answers.
     async fn ask(&mut self, line: &str) -> Result<()> {
+        self.asked.push((self.messages.len(), line.to_string()));
         self.messages.push(json!({"role": "user", "content": line}));
         self.since = Instant::now();
         self.turn().await.map(drop)
+    }
+
+    /// `uc agent rewind [N]`: the conversation as it was before the line
+    /// typed `N` lines ago (1, the last, by default; with no `N` on a terminal
+    /// the picker picks it), and that line back at the prompt to edit. What
+    /// the model did since is forgotten, not undone: the files stay as they are.
+    fn rewind(&mut self, arg: &str) {
+        if self.asked.is_empty() {
+            note!("nothing to rewind");
+            return;
+        }
+        let back = if arg.is_empty() && picker::available() && self.asked.len() > 1 {
+            let items: Vec<picker::Item> = self
+                .asked
+                .iter()
+                .enumerate()
+                .rev()
+                .map(|(i, (_, line))| {
+                    picker::Item::new(line.replace('\n', " "), (self.asked.len() - i).to_string())
+                })
+                .collect();
+            let picked = picker::Picker::new("rewind to> ")
+                .reverse()
+                .select_one()
+                .pick(items);
+            match picked.and_then(|p| p.values.into_iter().next()) {
+                Some(back) => back.parse().unwrap_or(1),
+                None => return,
+            }
+        } else if arg.is_empty() {
+            1
+        } else {
+            match arg.parse::<usize>() {
+                Ok(n) if n > 0 => n,
+                _ => {
+                    note!("usage: uc agent rewind [N], N the lines back, 1 the last");
+                    return;
+                }
+            }
+        };
+        let line = self.rewind_to(back);
+        note!(
+            "rewound {back} line{}: {} messages",
+            if back == 1 { "" } else { "s" },
+            self.messages.len()
+        );
+        *PREFILL.lock().unwrap_or_else(|e| e.into_inner()) = Some(line);
+    }
+
+    /// Drops the line typed `back` lines ago (at most all of them) and
+    /// everything after it; the line.
+    fn rewind_to(&mut self, back: usize) -> String {
+        let back = back.min(self.asked.len());
+        let (at, line) = self.asked[self.asked.len() - back].clone();
+        self.asked.truncate(self.asked.len() - back);
+        self.messages.truncate(at.max(1));
+        // AGENTS.md files handed on in what is gone are handed on again when
+        // they apply.
+        let messages = &self.messages;
+        self.instructed.retain(|f| {
+            let name = f.display().to_string();
+            messages.iter().any(|m| {
+                m["content"]
+                    .as_str()
+                    .is_some_and(|c| c.contains("[uc: instructions from") && c.contains(&name))
+            })
+        });
+        for file in &self.prompted {
+            if !self.instructed.contains(file) {
+                self.instructed.push(file.clone());
+            }
+        }
+        self.instructed.sort_by_key(|f| f.components().count());
+        // The counts were of the longer conversation.
+        self.last_usage = None;
+        self.tokens.last = None;
+        line
     }
 
     /// `uc agent model` without a name it knows: picks the model with the picker, starting
@@ -2276,6 +2380,12 @@ impl Session {
             }));
             self.messages.push(json!({"role": "assistant", "content": "Understood, carrying on from the summary."}));
             self.messages.extend(tail);
+            // The lines before the summary are gone; the ones after it moved.
+            let kept = 3;
+            self.asked.retain(|(at, _)| *at >= last_user);
+            for (at, _) in &mut self.asked {
+                *at = *at - last_user + kept;
+            }
         }
         // The conversation is read in full once more anyway: the place to
         // take the instructions learned since into the system prompt.
@@ -3558,6 +3668,10 @@ impl std::fmt::Display for Stopped {
 
 impl std::error::Error for Stopped {}
 
+/// The line the next prompt starts with, to edit: the one `uc agent rewind`
+/// went back to.
+static PREFILL: Mutex<Option<String>> = Mutex::new(None);
+
 /// A line from stdin after `prompt`; None at end of input. Ctrl-C quits uc,
 /// or stops the model when it is working on a line.
 fn read_line(prompt: &str) -> Result<Option<String>> {
@@ -3600,7 +3714,12 @@ fn read_line(prompt: &str) -> Result<Option<String>> {
         *editor = Some(new);
     }
     BROWSING.store(false, Ordering::Relaxed);
-    match editor.as_mut().map(|e| e.readline(prompt)) {
+    let prefill = PREFILL.lock().unwrap_or_else(|e| e.into_inner()).take();
+    let read = |e: &mut Editor<Completion, DefaultHistory>| match &prefill {
+        Some(line) => e.readline_with_initial(prompt, (line, "")),
+        None => e.readline(prompt),
+    };
+    match editor.as_mut().map(read) {
         Some(Ok(line)) => match voice::SAID.lock().unwrap_or_else(|e| e.into_inner()).take() {
             // Shown where it would have been typed, the line above.
             Some(said) => {
@@ -4771,6 +4890,7 @@ mod tests {
             instructed: Vec::new(),
             prompted: Vec::new(),
             cache_key: "uc-test".into(),
+            asked: Vec::new(),
         }
     }
 
@@ -4957,6 +5077,27 @@ mod tests {
         assert_eq!(agent_command("uc agent contexts"), None);
         assert_eq!(agent_command("!uc agent exit"), None);
         assert_eq!(agent_command("/context"), None);
+        assert_eq!(agent_rewind_line("uc agent rewind"), Some(""));
+        assert_eq!(agent_rewind_line("uc agent rewind 2"), Some("2"));
+        assert_eq!(agent_rewind_line("uc agent rewinds"), None);
+        assert_eq!(agent_rewind_line("!uc agent rewind"), None);
+    }
+
+    #[test]
+    fn rewind_goes_back_to_before_a_typed_line() {
+        let mut s = session();
+        s.messages = vec![json!({"role": "system", "content": "you are uc"})];
+        for (line, reply) in [("one", "1"), ("two", "2"), ("three", "3")] {
+            s.asked.push((s.messages.len(), line.into()));
+            s.messages.push(json!({"role": "user", "content": line}));
+            s.messages.push(json!({"role": "assistant", "content": reply}));
+        }
+        assert_eq!(s.rewind_to(1), "three");
+        assert_eq!(s.messages.len(), 5);
+        assert_eq!(s.messages[4]["content"], "2");
+        assert_eq!(s.rewind_to(9), "one");
+        assert_eq!(s.messages.len(), 1);
+        assert!(s.asked.is_empty());
     }
 
     #[test]

@@ -192,6 +192,13 @@ costs a bit more, and reading from it costs the same tenth.
 `uc agent compact` cuts old tool output and sums up the earlier
 conversation, and `uc agent exit` (or `uc agent quit`) leaves uc.
 
+Took a wrong turn? `uc agent rewind` lets you pick one of the lines you
+typed and takes the conversation back to just before it, with that line
+waiting at the prompt so you can say it differently. `uc agent rewind 2`
+goes back two lines without the picker. It forgets what the model did
+since, but doesn't undo it: changed files stay changed, so `git` is your
+friend there.
+
 Rather talk than type? Hold Space at an empty prompt and say it: it
 listens while you hold, and when you let go what you said is written out and
 sent, just as if you had typed it. A quick tap still types a space, and any

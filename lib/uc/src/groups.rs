@@ -339,6 +339,11 @@ pub static AGENT: Group = Group {
             run: Run::Builtin(agent_context),
         },
         Sub {
+            name: "rewind",
+            summary: "at a uc prompt: go back to before an earlier line and edit it again",
+            run: Run::Builtin(agent_rewind),
+        },
+        Sub {
             name: "exit",
             summary: "at a uc prompt: leave uc",
             run: Run::Builtin(agent_exit),
@@ -413,7 +418,7 @@ fn agent_login(args: &[OsString]) -> ExitCode {
     }
 }
 
-/// `uc agent compact|context|exit|quit`: the chat's own commands, which a
+/// `uc agent compact|context|rewind|exit|quit`: the chat's own commands, which a
 /// session takes at its prompt; typed in a shell there is no session to act on.
 fn session_only(name: &str, args: &[OsString]) -> ExitCode {
     let help = args.iter().any(|arg| arg == "-h" || arg == "--help");
@@ -435,6 +440,10 @@ fn agent_compact(args: &[OsString]) -> ExitCode {
 
 fn agent_context(args: &[OsString]) -> ExitCode {
     session_only("context", args)
+}
+
+fn agent_rewind(args: &[OsString]) -> ExitCode {
+    session_only("rewind", args)
 }
 
 fn agent_exit(args: &[OsString]) -> ExitCode {
