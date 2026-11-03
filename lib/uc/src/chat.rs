@@ -85,7 +85,7 @@ use std::path::PathBuf;
 use std::process::{ExitCode, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::task::JoinHandle;
 
@@ -555,6 +555,10 @@ struct Session {
     last_usage: Option<Value>,
     /// What every turn has cost so far, from `usage.cost`.
     spent: f64,
+    /// The tokens every request has billed so far, shown beside the spinner.
+    tokens: Tokens,
+    /// When the line being worked on was typed: the spinner counts from it.
+    since: Instant,
     /// The AGENTS.md files in the system prompt, outermost first: the ones
     /// for the working directory, and for every place a tool has worked in.
     instructed: Vec<PathBuf>,
@@ -1920,6 +1924,8 @@ impl Session {
             waiting: None,
             last_usage: None,
             spent: 0.0,
+            tokens: Tokens::default(),
+            since: Instant::now(),
         })
     }
 
@@ -1936,8 +1942,9 @@ impl Session {
     fn who(&self) -> String {
         let model = self.model.rsplit('/').next().unwrap_or(&self.model);
         format!(
-            " \x1b[2m{model} on {}\x1b[0m",
-            providers::label(&self.provider)
+            " \x1b[2m{model} on {}{}\x1b[0m",
+            providers::label(&self.provider),
+            self.tokens.line()
         )
     }
 
@@ -2057,6 +2064,7 @@ impl Session {
     /// A line for the model: one turn, until it answers.
     async fn ask(&mut self, line: &str) -> Result<()> {
         self.messages.push(json!({"role": "user", "content": line}));
+        self.since = Instant::now();
         self.turn().await.map(drop)
     }
 
@@ -2219,12 +2227,14 @@ impl Session {
             ],
             "reasoning": {"effort": "low"},
         });
-        let what = format!("summarising the conversation{}", self.who());
-        let _clock = out::tty().then(|| Clock(tokio::spawn(spin(what))));
+        let what = "summarising the conversation".to_string();
+        let (who, since) = (self.who(), self.since);
+        let _clock = out::tty().then(|| Clock(tokio::spawn(spin(what, who, since))));
         let value = self.send(&body).await?;
         if let Some(cost) = value["usage"]["cost"].as_f64() {
             self.spent += cost;
         }
+        self.tokens.add(&value["usage"]);
         value["choices"][0]["message"]["content"]
             .as_str()
             .map(str::trim)
@@ -2376,8 +2386,9 @@ impl Session {
             "stream": true,
             "usage": {"include": true},
         });
-        let what = format!("\x1b[94m{}\x1b[0m{}", any(&DOING), self.who());
-        let mut clock = out::tty().then(|| Clock(tokio::spawn(spin(what))));
+        let what = format!("\x1b[94m{}\x1b[0m", any(&DOING));
+        let (who, since) = (self.who(), self.since);
+        let mut clock = out::tty().then(|| Clock(tokio::spawn(spin(what, who, since))));
         let mut stream = self.stream(&body).await?;
         let mut pending = Vec::new();
         let mut reply = Reply::default();
@@ -2419,6 +2430,7 @@ impl Session {
             if let Some(cost) = usage["cost"].as_f64() {
                 self.spent += cost;
             }
+            self.tokens.add(&usage);
             self.last_usage = Some(usage);
         }
         let message = reply.message();
@@ -2622,7 +2634,7 @@ impl Session {
 
     /// Waits up to `secs` for a job to finish.
     async fn wait(&mut self, id: usize, secs: u64) {
-        let who = self.who();
+        let (who, since) = (self.who(), self.since);
         let Some(job) = self.jobs.get_mut(&id) else {
             return;
         };
@@ -2631,8 +2643,8 @@ impl Session {
         }
         // Without its output on screen, a long wait would look like uc hung.
         let quiet = !job.echo.load(Ordering::Relaxed) && out::tty();
-        let what = format!("\x1b[94m{}\x1b[0m{}", any(&RUNNING), who);
-        let clock = quiet.then(|| Clock(tokio::spawn(spin(what))));
+        let what = format!("\x1b[94m{}\x1b[0m", any(&RUNNING));
+        let clock = quiet.then(|| Clock(tokio::spawn(spin(what, who, since))));
         let waited = tokio::time::timeout(Duration::from_secs(secs), job.child.wait()).await;
         drop(clock);
         if let Ok(Ok(status)) = waited {
@@ -3015,11 +3027,64 @@ fn any(words: &[&'static str]) -> &'static str {
 }
 
 /// The braille spinner turning in the default text color next to what uc
-/// waits on, until aborted.
-async fn spin(what: String) {
+/// waits on, the seconds since the task began, and who is at work, until
+/// aborted.
+async fn spin(what: String, who: String, since: Instant) {
     for dot in SPINNER.into_iter().cycle() {
-        eprint!("\r\x1b[2K{dot} {what}");
+        let secs = since.elapsed().as_secs();
+        eprint!("\r\x1b[2K{dot} {what} {secs}s{who}");
         tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+/// The tokens the session's requests were billed for, summed over every
+/// request: `input` is the prompt read in full, `cached` read from the
+/// provider's cache, `written` put into it, `output` what the model wrote.
+#[derive(Default, Debug, PartialEq)]
+struct Tokens {
+    input: u64,
+    cached: u64,
+    written: u64,
+    output: u64,
+}
+
+impl Tokens {
+    /// Adds one reply's OpenAI-style `usage`, whose prompt count takes in the
+    /// cached and written tokens.
+    fn add(&mut self, usage: &Value) {
+        let n = |v: &Value| v.as_u64().unwrap_or_default();
+        let details = &usage["prompt_tokens_details"];
+        let cached = n(&details["cached_tokens"]);
+        let written = n(&details["cache_write_tokens"]);
+        self.input += n(&usage["prompt_tokens"]).saturating_sub(cached + written);
+        self.cached += cached;
+        self.written += written;
+        self.output += n(&usage["completion_tokens"]);
+    }
+
+    /// ` · 12k in, 340k cached, 8k written, 2.1k out`, or nothing before the
+    /// first reply.
+    fn line(&self) -> String {
+        if *self == Tokens::default() {
+            return String::new();
+        }
+        format!(
+            " · {} in, {} cached, {} written, {} out",
+            short(self.input),
+            short(self.cached),
+            short(self.written),
+            short(self.output)
+        )
+    }
+}
+
+/// A token count the way a glance takes it: 950, 12k, 2.1k, 1.3M.
+fn short(n: u64) -> String {
+    match n {
+        0..1_000 => n.to_string(),
+        1_000..10_000 => format!("{:.1}k", n as f64 / 1e3),
+        10_000..1_000_000 => format!("{}k", n / 1_000),
+        _ => format!("{:.1}M", n as f64 / 1e6),
     }
 }
 
@@ -4477,8 +4542,24 @@ mod tests {
             waiting: None,
             last_usage: None,
             spent: 0.0,
+            tokens: Tokens::default(),
+            since: Instant::now(),
             instructed: Vec::new(),
         }
+    }
+
+    #[test]
+    fn the_spinner_sums_the_tokens_billed() {
+        let mut tokens = Tokens::default();
+        assert_eq!(tokens.line(), "");
+        let usage = json!({"prompt_tokens": 1500, "completion_tokens": 40,
+            "prompt_tokens_details": {"cached_tokens": 1000, "cache_write_tokens": 300}});
+        tokens.add(&usage);
+        tokens.add(&usage);
+        assert_eq!(tokens, Tokens { input: 400, cached: 2000, written: 600, output: 80 });
+        assert_eq!(tokens.line(), " · 400 in, 2.0k cached, 600 written, 80 out");
+        assert_eq!(short(25_400), "25k");
+        assert_eq!(short(1_250_000), "1.2M");
     }
 
     #[test]

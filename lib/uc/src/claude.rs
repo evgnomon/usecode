@@ -577,7 +577,7 @@ fn usage(input: u64, cached: u64, written: u64, output: u64) -> Value {
         "prompt_tokens": prompt,
         "completion_tokens": output,
         "total_tokens": prompt + output,
-        "prompt_tokens_details": {"cached_tokens": cached},
+        "prompt_tokens_details": {"cached_tokens": cached, "cache_write_tokens": written},
     })
 }
 
