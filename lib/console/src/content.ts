@@ -65,7 +65,8 @@ export const MOTIVATION = {
   intro: [
     "More than a demo on your laptop. Sensible defaults mean less setup. " +
       "Work with your agent from a web browser, with the tools to build, " +
-      "test, deploy and run software at scale built in.",
+      "test, deploy and run software at scale built in. " +
+      "From the first prompt to production, and still up tomorrow.",
   ],
   journeys: [
     {
