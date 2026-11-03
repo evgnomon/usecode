@@ -16,7 +16,6 @@ members = [
     "lib/ipmesh",
     "lib/jsonc",
     "lib/k8s_ddl",
-    "lib/mgo",
     "lib/mkdeb",
     "lib/mkp12",
     "lib/mkpod",

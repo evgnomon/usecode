@@ -137,11 +137,6 @@ pub static DB: Group = Group {
             &["uc-db-pg"],
         ),
         exec(
-            "mongo",
-            "MongoDB instances, collections and queries",
-            &["uc-db-mongo"],
-        ),
-        exec(
             "migrate",
             "apply SQL migrations to SQLite or PostgreSQL",
             &["uc-db-migrate"],

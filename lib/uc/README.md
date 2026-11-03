@@ -575,7 +575,7 @@ switching scripts over to the `uc` commands is a good idea.
 | `uc secret cert p12 KEYNAME` | `uc-secret-cert-p12-bundle` | `mkp12` |
 | `uc secret cert p12 fetch` | `uc-secret-cert-p12-fetch` | `zcdump` |
 | `uc deb build`, `publish` | `uc-deb-build`, `uc-deb-publish` | `mkdeb`, `pubdeb` |
-| `uc db pg`, `mongo`, `migrate` | `uc-db-pg`, `uc-db-mongo`, `uc-db-migrate` | `pg`, `mgo`, `sqlize` |
+| `uc db pg`, `migrate` | `uc-db-pg`, `uc-db-migrate` | `pg`, `sqlize` |
 | `uc db resources sync`, `dump` | `uc-db-resources-yaml sync`, `dump` | `ysys` |
 | `uc db resources configmap` | `uc-db-resources-configmap` | `confmap` |
 | `uc db resources schema` | `uc-db-resources-schema` | `k8s_ddl` |
