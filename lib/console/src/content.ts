@@ -148,22 +148,23 @@ export const MOTIVATION = {
       steps: ["Plans and prices set up", "Checkout page added", "Receipts and invoices on", "First customer paid"],
     },
   ] as Journey[],
-  close: "From burning tokens to compounding them.",
-  kicker: "Not just another coding agent.",
+  close: "Built so you never start over.",
+  kicker: "How a prompt gets you there.",
   body:
-    "The agent writes the code, tests it, builds it, deploys it, and patches " +
-    "it when something breaks. But code is the easy half: it also needs " +
-    "machines, networks, databases, DNS, mail and secrets, and no coding " +
-    "agent comes with those. usecode does. It isn't another coding agent; " +
-    "it's everything you need a coding agent for, and the toolbox to run it " +
-    "on any node, anywhere, configured the way you need it or the way that " +
-    "works best.",
+    "Most software gets rebuilt on the way up: the laptop demo moves to a " +
+    "hosting service, that moves to a cloud, and the cloud gets a platform " +
+    "team. usecode skips the rebuilds. From your first prompt, your agent " +
+    "works on what big companies run on: real Linux nodes, a private " +
+    "WireGuard mesh, Kubernetes, databases, DNS, mail and secrets. When you " +
+    "grow, you add nodes. You never have to move to a new stack.",
   team:
-    "Every tool for that job is already in uc, one command line that you, " +
-    "your team and your agents share. What one of you works out, the next " +
-    "one simply runs. And when a tool is missing, the agent adds it, so the " +
-    "next job starts further ahead.",
-  ship: "Not just another coding agent. The whole toolbox, and the agent to add even more.",
+    "It stays up because every node runs usecoded, a small daemon that keeps " +
+    "its host set up and fixes drift on its own. Your setup is config in your " +
+    "own repo, so moving to another cloud or your own racks means applying " +
+    "the same config somewhere else. And the work adds up: every tool is a uc " +
+    "command that you, your team and your agents share, and when one is " +
+    "missing, the agent adds it, so the next job starts further ahead.",
+  ship: "Not just another coding agent. Everything a company runs on, and an agent that keeps adding to it.",
 };
 
 /** A few of uc's commands, shown in the hero's terminal frame. */
