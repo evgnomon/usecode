@@ -164,6 +164,12 @@ The model can do the same itself with the `chat` tool: `chat model
 <name>` switches, `chat model` lists, and `chat clear` clears the screen and
 the context; `chat exit` leaves uc. It only does this when you ask.
 
+While it works, the line under the spinner tells you how it's doing:
+`· opus-5.5 on Claude · 113k ctx, 11% · 1.2k new, 771 out`. That's how
+big the conversation is and how full the model's window, then what the
+last request read at full price (or wrote to the cache) and what came out.
+A small "new" means the cache is doing its job; a big jump means it missed.
+
 Wondering how much of the model's context the conversation has taken? Type
 `uc agent context` and it says how many messages there are, about how many tokens
 they make (an estimate until the model has counted them), what the last

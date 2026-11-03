@@ -2011,6 +2011,7 @@ impl Session {
             self.provider = choice.provider;
             // Another model has no cache of this one's prompt to keep.
             self.settle();
+            self.tokens.window = None;
         }
     }
 
@@ -2281,6 +2282,7 @@ impl Session {
         self.settle();
         // The count was of the longer conversation.
         self.last_usage = None;
+        self.tokens.last = None;
         note!(
             "compacted the context: {} messages, was {before}",
             self.messages.len()
@@ -2516,6 +2518,11 @@ impl Session {
             }
             self.tokens.add(&usage);
             self.last_usage = Some(usage);
+        }
+        if self.tokens.window.is_none()
+            && let Ok(Some((window, _))) = model_info(&self.model).await
+        {
+            self.tokens.window = window;
         }
         let message = reply.message();
         if message["content"].is_null() && message.get("tool_calls").is_none() {
@@ -3202,6 +3209,19 @@ struct Tokens {
     cached: u64,
     written: u64,
     output: u64,
+    /// The last request: its whole prompt (the context), the part of it not
+    /// read from the cache, and what the model wrote.
+    last: Option<Last>,
+    /// The model's context window, when OpenRouter's list says it.
+    window: Option<u64>,
+}
+
+/// One request's tokens, as the spinner shows them.
+#[derive(Default, Debug, PartialEq, Clone, Copy)]
+struct Last {
+    context: u64,
+    new: u64,
+    output: u64,
 }
 
 impl Tokens {
@@ -3212,10 +3232,17 @@ impl Tokens {
         let details = &usage["prompt_tokens_details"];
         let cached = n(&details["cached_tokens"]);
         let written = n(&details["cache_write_tokens"]);
-        self.input += n(&usage["prompt_tokens"]).saturating_sub(cached + written);
+        let prompt = n(&usage["prompt_tokens"]);
+        let output = n(&usage["completion_tokens"]);
+        self.input += prompt.saturating_sub(cached + written);
         self.cached += cached;
         self.written += written;
-        self.output += n(&usage["completion_tokens"]);
+        self.output += output;
+        self.last = Some(Last {
+            context: prompt,
+            new: prompt.saturating_sub(cached),
+            output,
+        });
     }
 
     /// How the session's prompts were read, for `uc agent context`: `362k
@@ -3238,16 +3265,23 @@ impl Tokens {
         Some(line + &format!(", {} out", short(self.output)))
     }
 
-    /// ` · 362k in, 2.1k out`, the cached and written counted in, or nothing
-    /// before the first reply.
+    /// ` · 113k ctx, 11% · 1.2k new, 771 out` for the last request: how big
+    /// the context is and how full the window, then what was read at full
+    /// price or written to the cache, and what came out; nothing before the
+    /// first reply. A small `new` is the cache at work, a jump a miss.
     fn line(&self) -> String {
-        if *self == Tokens::default() {
+        let Some(last) = self.last else {
             return String::new();
-        }
+        };
+        let full = match self.window.filter(|w| *w > 0) {
+            Some(window) => format!(", {:.0}%", 100.0 * last.context as f64 / window as f64),
+            None => String::new(),
+        };
         format!(
-            " · {} in, {} out",
-            short(self.input + self.cached + self.written),
-            short(self.output)
+            " · {} ctx{full} · {} new, {} out",
+            short(last.context),
+            short(last.new),
+            short(last.output)
         )
     }
 }
@@ -4749,15 +4783,12 @@ mod tests {
         tokens.add(&usage);
         tokens.add(&usage);
         assert_eq!(
-            tokens,
-            Tokens {
-                input: 400,
-                cached: 2000,
-                written: 600,
-                output: 80
-            }
+            (tokens.input, tokens.cached, tokens.written, tokens.output),
+            (400, 2000, 600, 80)
         );
-        assert_eq!(tokens.line(), " · 3.0k in, 80 out");
+        assert_eq!(tokens.line(), " · 1.5k ctx · 500 new, 40 out");
+        tokens.window = Some(10_000);
+        assert_eq!(tokens.line(), " · 1.5k ctx, 15% · 500 new, 40 out");
         assert_eq!(
             tokens.cache_line().unwrap(),
             "this session 3.0k tokens in, 67% read from the cache, 20% written to it, 80 out"
