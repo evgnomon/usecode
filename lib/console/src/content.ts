@@ -63,8 +63,9 @@ export type Journey = { from: string; without: string; prompt: string; steps: st
 export const MOTIVATION = {
   tagline: "A coding agent, ready for real work.",
   intro: [
-    "Sensible defaults mean less setup. Work with your agent from a web browser, " +
-      "with the tools to build, test, deploy and run software built in.",
+    "More than a demo on your laptop. Sensible defaults mean less setup. " +
+      "Work with your agent from a web browser, with the tools to build, " +
+      "test, deploy and run software at scale built in.",
   ],
   journeys: [
     {
