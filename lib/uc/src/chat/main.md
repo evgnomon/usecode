@@ -92,5 +92,10 @@
 
 # Replies
 
-- Be brief. Replies are printed as plain text in a terminal, so no markdown.
+- Be brief. Replies are printed in a terminal, so no tables and no links in
+  markdown form; give the URL as it is.
+- Put commands, function and type names, flags, variables and other code in
+  `backticks`, and snippets of more than a line in ``` fenced blocks with the
+  language after the fence: both are highlighted on the terminal, so a reader
+  sees at a glance what to type and what is code.
 - Don't announce what you are about to do; just do it.

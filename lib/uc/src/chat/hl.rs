@@ -2,9 +2,12 @@
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
 //! A bit of color for the model's reply as it streams to the terminal:
-//! `code` and fenced blocks in cyan, paths and file names in blue, flags and
+//! `code`, fenced blocks and names only code has (`job_output`, `fetchUrl`,
+//! `uc::flag::on`, `tools()`) in cyan, paths and file names in blue, flags and
 //! environment variables in yellow, and words like error, warning and passed
-//! in red, yellow and green.
+//! in red, yellow and green. Titles are bold: a `# heading`, a `**bold**`
+//! line, or a short line like `Changes:` that starts with a capital and ends
+//! in a colon.
 //!
 //! The reply comes in pieces that can end in the middle of a word, so the
 //! last word waits for the next piece (or the end of the reply) before it is
@@ -18,6 +21,10 @@ const BAD: &str = "91";
 const WARN: &str = "93";
 const GOOD: &str = "92";
 const DIM: &str = "2";
+const BOLD: &str = "1";
+
+/// A line longer than this is never a title, so it isn't held back to see.
+const MAX_TITLE: usize = 80;
 
 /// Above this many bytes without a space, a word is printed as it is rather
 /// than waiting longer.
@@ -36,13 +43,25 @@ const BAD_WORDS: &[&str] = &[
 const WARN_WORDS: &[&str] = &["warning", "warnings", "deprecated"];
 const GOOD_WORDS: &[&str] = &["ok", "passed", "passes", "passing", "succeeded", "success"];
 
-#[derive(Default)]
 pub struct Highlighter {
     pending: String,
     /// Inside a `code` span.
     code: bool,
     /// Inside a ``` fenced block.
     fence: bool,
+    /// At the start of a line, where a title can begin.
+    line_start: bool,
+}
+
+impl Default for Highlighter {
+    fn default() -> Self {
+        Self {
+            pending: String::new(),
+            code: false,
+            fence: false,
+            line_start: true,
+        }
+    }
 }
 
 impl Highlighter {
@@ -103,10 +122,27 @@ impl Highlighter {
                 continue;
             }
             let space = rest.len() - rest.trim_start().len();
-            out.push_str(&rest[..space]);
-            rest = &rest[space..];
+            if space > 0 {
+                out.push_str(&rest[..space]);
+                self.line_start = rest[..space].ends_with('\n');
+                rest = &rest[space..];
+            }
             if rest.is_empty() {
                 break;
+            }
+            if self.line_start {
+                let end = rest.find('\n');
+                let line = &rest[..end.unwrap_or(rest.len())];
+                if end.is_none() && !all && line.len() <= MAX_TITLE && may_be_title(line) {
+                    // Wait for the end of the line to see whether it is a title.
+                    break;
+                }
+                self.line_start = false;
+                if (end.is_some() || all) && title(line) {
+                    paint(&mut out, BOLD, line);
+                    rest = &rest[line.len()..];
+                    continue;
+                }
             }
             if rest.starts_with('`') {
                 if rest.starts_with("```") {
@@ -140,6 +176,39 @@ impl Highlighter {
     }
 }
 
+/// Whether a line that begins with `start` could still turn out a title.
+fn may_be_title(start: &str) -> bool {
+    if start.starts_with(['#', '*']) {
+        return true;
+    }
+    // `Changes:` has no colon, dot or backtick before its last colon, so a
+    // sentence stops waiting as soon as it has one.
+    start.starts_with(|c: char| c.is_uppercase())
+        && !start.trim_end_matches(':').contains([':', '.', '`'])
+}
+
+/// `## Changes`, `**Changes**`, `Changes:`.
+fn title(line: &str) -> bool {
+    let line = line.trim_end();
+    if line.len() > MAX_TITLE || line.contains("```") {
+        return false;
+    }
+    let hashes = line.len() - line.trim_start_matches('#').len();
+    if (1..=6).contains(&hashes) {
+        return line[hashes..].starts_with(' ') && !line[hashes..].trim().is_empty();
+    }
+    if hashes > 0 {
+        return false;
+    }
+    if line.len() > 4 && line.starts_with("**") && line.trim_end_matches(':').ends_with("**") {
+        return true;
+    }
+    line.len() >= 3
+        && line.starts_with(|c: char| c.is_uppercase())
+        && line.ends_with(':')
+        && !line[..line.len() - 1].contains([':', '.', '`'])
+}
+
 /// How many backticks, at most two, `text` ends in.
 fn trailing_ticks(text: &str) -> usize {
     text.bytes()
@@ -158,6 +227,11 @@ fn paint(out: &mut String, color: &str, text: &str) {
 /// A word with no space in it, colored by what it is, its punctuation left
 /// as it is.
 fn word(out: &mut String, word: &str) {
+    if let Some(len) = call(word) {
+        paint(out, CODE, &word[..len]);
+        out.push_str(&word[len..]);
+        return;
+    }
     let core = word.trim_start_matches(['(', '[', '{', '"', '\'', '<']);
     let lead = &word[..word.len() - core.len()];
     let core = core.trim_end_matches(['.', ',', ';', ':', '!', '?', ')', ']', '}', '"', '\'', '>']);
@@ -187,6 +261,9 @@ fn kind(word: &str) -> Option<&'static str> {
     if flag(word) || env_var(word) {
         return Some(FLAG);
     }
+    if code_name(word) {
+        return Some(CODE);
+    }
     if path(word) {
         return Some(PATH);
     }
@@ -207,6 +284,55 @@ fn flag(word: &str) -> bool {
         && name
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// How much of `word` is a call like `tools()`, `out.push(x)` or
+/// `uc::flag::on("x")`, its closing punctuation left out; none when it
+/// isn't one.
+fn call(word: &str) -> Option<usize> {
+    let open = word.find('(')?;
+    let name = &word[..open];
+    if !path_of_names(name) {
+        return None;
+    }
+    let close = word.rfind(')').filter(|close| *close > open)?;
+    let rest = &word[close + 1..];
+    rest.chars()
+        .all(|c| ".,;:!?".contains(c))
+        .then_some(close + 1)
+}
+
+/// `job_output`, `fetchUrl`, `uc::flag::on`, `self.tools`: a name only
+/// code has. Not a plain word, a `Title` or an `ACRONYM`.
+fn code_name(word: &str) -> bool {
+    if word.contains("::") {
+        return path_of_names(word);
+    }
+    if word.len() < 3 || !ident(word) {
+        return false;
+    }
+    let inner = &word[1..word.len() - 1];
+    // snake_case, not just a leading or trailing _.
+    if inner.contains('_') && word.chars().any(|c| c.is_ascii_lowercase()) {
+        return true;
+    }
+    // camelCase.
+    word.starts_with(|c: char| c.is_ascii_lowercase())
+        && word.chars().any(|c| c.is_ascii_uppercase())
+}
+
+/// `tools`, `out.push`, `uc::flag::on`: names joined by `.` or `::`.
+fn path_of_names(text: &str) -> bool {
+    !text.is_empty()
+        && text
+            .split("::")
+            .flat_map(|part| part.split('.'))
+            .all(ident)
+}
+
+fn ident(name: &str) -> bool {
+    name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
+        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 /// `UC_NO_SHELL`, `$HOME`.
@@ -309,6 +435,28 @@ mod tests {
         assert_eq!(all(&["set UC_NO_SHELL"]), "set \x1b[33mUC_NO_SHELL\x1b[0m");
         assert_eq!(all(&["and/or - Hello"]), "and/or - Hello");
         assert_eq!(all(&["a `x` b"]), "a \x1b[36m`\x1b[0m\x1b[36mx`\x1b[0m b");
+    }
+
+    #[test]
+    fn code_names_get_colors() {
+        assert_eq!(all(&["call tools()."]), "call \x1b[36mtools()\x1b[0m.");
+        assert_eq!(all(&["see out.push(x),"]), "see \x1b[36mout.push(x)\x1b[0m,");
+        assert_eq!(all(&["use job_output"]), "use \x1b[36mjob_output\x1b[0m");
+        assert_eq!(all(&["use fetchUrl"]), "use \x1b[36mfetchUrl\x1b[0m");
+        assert_eq!(all(&["use uc::flag::on"]), "use \x1b[36muc::flag::on\x1b[0m");
+        for text in ["Hello there", "an API", "e.g. this", "(see above)", "_x", "it works (mostly)"] {
+            assert_eq!(all(&[text]), text);
+        }
+    }
+
+    #[test]
+    fn titles_are_bold() {
+        assert_eq!(all(&["Changes:\n- a"]), "\x1b[1mChanges:\x1b[0m\n- a");
+        assert_eq!(all(&["## Do", "ne\nok"]), "\x1b[1m## Done\x1b[0m\n\x1b[92mok\x1b[0m");
+        assert_eq!(all(&["x\n**Next**\n"]), "x\n\x1b[1m**Next**\x1b[0m\n");
+        assert_eq!(all(&["Run it: now:\n"]), "Run it: now:\n");
+        assert_eq!(all(&["not a title:\n"]), "not a title:\n");
+        assert_eq!(all(&["a Title:\n"]), "a Title:\n");
     }
 
     #[test]
