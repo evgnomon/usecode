@@ -1931,6 +1931,16 @@ impl Session {
         )
     }
 
+    /// Who is at work, beside the spinner: the model without its maker's
+    /// prefix, and the provider it runs on, dimmed.
+    fn who(&self) -> String {
+        let model = self.model.rsplit('/').next().unwrap_or(&self.model);
+        format!(
+            " \x1b[2m{model} on {}\x1b[0m",
+            providers::label(&self.provider)
+        )
+    }
+
     /// The provider the model runs on.
     fn current(&self) -> Result<&Provider> {
         named(&self.providers, &self.provider).ok_or_else(|| anyhow!("{}", no_provider()))
@@ -2209,8 +2219,8 @@ impl Session {
             ],
             "reasoning": {"effort": "low"},
         });
-        let _clock =
-            out::tty().then(|| Clock(tokio::spawn(spin("summarising the conversation".into()))));
+        let what = format!("summarising the conversation{}", self.who());
+        let _clock = out::tty().then(|| Clock(tokio::spawn(spin(what))));
         let value = self.send(&body).await?;
         if let Some(cost) = value["usage"]["cost"].as_f64() {
             self.spent += cost;
@@ -2366,7 +2376,7 @@ impl Session {
             "stream": true,
             "usage": {"include": true},
         });
-        let what = format!("\x1b[94m{}\x1b[0m", any(&DOING));
+        let what = format!("\x1b[94m{}\x1b[0m{}", any(&DOING), self.who());
         let mut clock = out::tty().then(|| Clock(tokio::spawn(spin(what))));
         let mut stream = self.stream(&body).await?;
         let mut pending = Vec::new();
@@ -2612,6 +2622,7 @@ impl Session {
 
     /// Waits up to `secs` for a job to finish.
     async fn wait(&mut self, id: usize, secs: u64) {
+        let who = self.who();
         let Some(job) = self.jobs.get_mut(&id) else {
             return;
         };
@@ -2620,7 +2631,7 @@ impl Session {
         }
         // Without its output on screen, a long wait would look like uc hung.
         let quiet = !job.echo.load(Ordering::Relaxed) && out::tty();
-        let what = format!("\x1b[94m{}\x1b[0m", any(&RUNNING));
+        let what = format!("\x1b[94m{}\x1b[0m{}", any(&RUNNING), who);
         let clock = quiet.then(|| Clock(tokio::spawn(spin(what))));
         let waited = tokio::time::timeout(Duration::from_secs(secs), job.child.wait()).await;
         drop(clock);
@@ -4468,6 +4479,16 @@ mod tests {
             spent: 0.0,
             instructed: Vec::new(),
         }
+    }
+
+    #[test]
+    fn the_spinner_says_which_model_and_provider_are_at_work() {
+        let session = Session {
+            provider: "claude".into(),
+            model: "anthropic/claude-opus-5.5".into(),
+            ..session()
+        };
+        assert_eq!(session.who(), " \x1b[2mclaude-opus-5.5 on Claude\x1b[0m");
     }
 
     #[tokio::test(flavor = "multi_thread")]
