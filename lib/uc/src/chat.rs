@@ -2410,8 +2410,7 @@ impl Session {
             ],
             "reasoning": {"effort": "low"},
         });
-        let what = Doing::new(Mutex::new("summarising the conversation".into()));
-        let _clock = clock(&what, self.who(), self.since);
+        let _clock = clock(self.who(), self.since);
         let value = self.send(&body).await?;
         if let Some(cost) = value["usage"]["cost"].as_f64() {
             self.spent += cost;
@@ -2580,8 +2579,7 @@ impl Session {
         if self.current().is_ok_and(takes_cache_key) {
             body["prompt_cache_key"] = json!(self.cache_key);
         }
-        let what = Doing::new(Mutex::new("waiting".into()));
-        let mut clock = clock(&what, self.who(), self.since);
+        let mut clock = clock(self.who(), self.since);
         let mut stream = self.stream(&body).await?;
         let mut pending = Vec::new();
         let mut reply = Reply::default();
@@ -2602,9 +2600,6 @@ impl Session {
                     continue;
                 };
                 let mut text = reply.add(&chunk)?;
-                if let Some(doing) = doing(&chunk) {
-                    *what.lock().unwrap() = doing;
-                }
                 if !shown {
                     text = text.trim_start().to_string();
                 }
@@ -2717,14 +2712,7 @@ impl Session {
             return Ok(format!("started job {id}"));
         }
         self.waiting = Some(id);
-        let what = match title {
-            "" => format!(
-                "running {}",
-                command.split_whitespace().next().unwrap_or("it")
-            ),
-            title => title.to_string(),
-        };
-        self.wait(id, timeout, what).await;
+        self.wait(id, timeout).await;
         self.waiting = None;
         let job = self.jobs.get_mut(&id).context("the job is gone")?;
         job.echo.store(false, Ordering::Relaxed);
@@ -2840,8 +2828,8 @@ impl Session {
         Ok(id)
     }
 
-    /// Waits up to `secs` for a job to finish, the spinner saying `what`.
-    async fn wait(&mut self, id: usize, secs: u64, what: String) {
+    /// Waits up to `secs` for a job to finish, the spinner turning.
+    async fn wait(&mut self, id: usize, secs: u64) {
         let (who, since) = (self.who(), self.since);
         let Some(job) = self.jobs.get_mut(&id) else {
             return;
@@ -2851,8 +2839,7 @@ impl Session {
         }
         // Without its output on screen, a long wait would look like uc hung.
         let quiet = !job.echo.load(Ordering::Relaxed) && out::tty();
-        let what = Doing::new(Mutex::new(what));
-        let clock = quiet.then(|| clock(&what, who, since)).flatten();
+        let clock = quiet.then(|| clock(who, since)).flatten();
         let waited = tokio::time::timeout(Duration::from_secs(secs), job.child.wait()).await;
         drop(clock);
         if let Ok(Ok(status)) = waited {
@@ -2887,7 +2874,7 @@ impl Session {
         if !self.jobs.contains_key(&id) {
             bail!("there is no job {id}");
         }
-        self.wait(id, wait, format!("waiting on job {id}")).await;
+        self.wait(id, wait).await;
         let (status, text) = self.take(id);
         if self.show_output {
             out::output(id, text.as_bytes());
@@ -2905,7 +2892,7 @@ impl Session {
         // bash exiting isn't enough: the rest of the pipeline may still run.
         for signal in [libc::SIGTERM, libc::SIGKILL] {
             signal_group(group, signal);
-            self.wait(id, 3, format!("stopping job {id}")).await;
+            self.wait(id, 3).await;
             if group_gone(group, 3).await {
                 break;
             }
@@ -3212,17 +3199,13 @@ impl Drop for Lent {
 /// The braille dots that fill and empty while uc waits, a step every 100ms.
 const SPINNER: [char; 8] = ['⣾', '⣽', '⣻', '⢿', '⡿', '⣟', '⣯', '⣷'];
 
-/// What the spinner says: what uc waits on, changed as the reply comes in.
-type Doing = Arc<Mutex<String>>;
-
-/// The spinner, in the accent color, next to what uc waits on, the time
-/// since the task began, and who is at work, dimmed, until aborted. The line
+/// The spinner, in the accent color, next to the time since the task
+/// began and who is at work, dimmed, until aborted. The line
 /// is cut to the terminal's width so it never wraps.
-async fn spin(what: Doing, who: String, since: Instant, stopped: Arc<Mutex<bool>>) {
+async fn spin(who: String, since: Instant, stopped: Arc<Mutex<bool>>) {
     for dot in SPINNER.into_iter().cycle() {
         let line = format!(
-            "\x1b[94m{dot}\x1b[0m {} {}{who}",
-            what.lock().unwrap(),
+            "\x1b[94m{dot}\x1b[0m {}{who}",
             elapsed(since.elapsed().as_secs())
         );
         {
@@ -3236,34 +3219,11 @@ async fn spin(what: Doing, who: String, since: Instant, stopped: Arc<Mutex<bool>
     }
 }
 
-/// What a chunk of the stream shows the model doing: thinking, or which
-/// tool it is writing a call to.
-fn doing(chunk: &Value) -> Option<String> {
-    let delta = &chunk["choices"][0]["delta"];
-    if let Some(name) = delta["tool_calls"][0]["function"]["name"].as_str() {
-        let what = match name {
-            "bash" => "writing a command",
-            "write_file" => "writing a file",
-            "edit_file" => "writing an edit",
-            "read_file" | "grep" | "glob" | "src" => "looking around",
-            "web_search" | "fetch_url" => "going to the web",
-            "ask_user" => "writing a question",
-            _ => "calling a tool",
-        };
-        return Some(what.into());
-    }
-    let reasons = delta["reasoning_details"]
-        .as_array()
-        .is_some_and(|d| !d.is_empty())
-        || delta["reasoning"].as_str().is_some_and(|r| !r.is_empty());
-    reasons.then(|| "thinking".into())
-}
-
-/// Starts the spinner saying `what`, when there is a terminal to turn on.
-fn clock(what: &Doing, who: String, since: Instant) -> Option<Clock> {
+/// Starts the spinner, when there is a terminal to turn on.
+fn clock(who: String, since: Instant) -> Option<Clock> {
     out::tty().then(|| {
         let stopped = Arc::new(Mutex::new(false));
-        let task = tokio::spawn(spin(what.clone(), who, since, stopped.clone()));
+        let task = tokio::spawn(spin(who, since, stopped.clone()));
         Clock { task, stopped }
     })
 }
@@ -4956,19 +4916,6 @@ mod tests {
             "\x1b[94m⣾\x1b[0m writing"
         );
         assert_eq!(fit("⣾ writing 1m 07s", 10), "⣾ writin…\x1b[0m");
-    }
-
-    #[test]
-    fn the_spinner_says_what_the_model_is_doing() {
-        let call =
-            json!({"choices": [{"delta": {"tool_calls": [{"function": {"name": "edit_file"}}]}}]});
-        assert_eq!(doing(&call).as_deref(), Some("writing an edit"));
-        let think = json!({"choices": [{"delta": {"reasoning": "hmm"}}]});
-        assert_eq!(doing(&think).as_deref(), Some("thinking"));
-        assert_eq!(
-            doing(&json!({"choices": [{"delta": {"content": "hi"}}]})),
-            None
-        );
     }
 
     #[tokio::test(flavor = "multi_thread")]
