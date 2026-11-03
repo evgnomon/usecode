@@ -252,17 +252,39 @@ async fn transcribe(pcm: Vec<u8>) -> Result<String> {
     body["response_format"] = json!("verbose_json");
     body["timestamp_granularities"] = json!(["segment", "word"]);
     let value = ask(&body, &key).await?;
-    if value.get("error").is_some() {
-        body["response_format"] = Value::Null;
-        body["timestamp_granularities"] = Value::Null;
-        let value = ask(&body, &key).await?;
-        if value.get("error").is_some() {
-            let msg = value["error"]["message"].as_str().unwrap_or("no message");
-            bail!("OpenRouter: {msg}");
-        }
-        return Ok(said_text(value["text"].as_str().unwrap_or_default()));
+    let Some(error) = value.get("error") else {
+        return Ok(said_text(&heard(&value)));
+    };
+    // Only a model refusing the request itself is worth asking again; no
+    // credit, a bad key or a rate limit answer the same either way.
+    if !refused(error) {
+        bail!("OpenRouter: {}", message(error));
     }
-    Ok(said_text(&heard(&value)))
+    // Left out, not null: OpenRouter takes a null as a wrong value.
+    if let Some(fields) = body.as_object_mut() {
+        fields.remove("response_format");
+        fields.remove("timestamp_granularities");
+    }
+    let value = ask(&body, &key).await?;
+    if let Some(error) = value.get("error") {
+        bail!("OpenRouter: {}", message(error));
+    }
+    Ok(said_text(value["text"].as_str().unwrap_or_default()))
+}
+
+/// Whether an error is the request's own fault (400 or 422), the kind a
+/// model gives for word by word timings it doesn't do.
+fn refused(error: &Value) -> bool {
+    matches!(error["code"].as_u64(), Some(400 | 422))
+}
+
+/// An error's message, with what to do about it when OpenRouter says.
+fn message(error: &Value) -> String {
+    let msg = error["message"].as_str().unwrap_or("no message");
+    match error["metadata"]["remedy_hint"].as_str() {
+        Some(hint) => format!("{msg}. {hint}"),
+        None => msg.to_string(),
+    }
 }
 
 /// One transcription request; a refusal comes back in the reply, not as a
@@ -499,6 +521,20 @@ fn wav(pcm: &[u8]) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_refused_request_is_asked_again_and_errors_say_what_to_do() {
+        let credits = json!({"message": "This request requires at least $0.50 in balance for audio",
+            "code": 402, "metadata": {"remedy_hint": "Add credits at https://openrouter.ai/settings/credits"}});
+        assert!(!refused(&credits));
+        assert_eq!(
+            message(&credits),
+            "This request requires at least $0.50 in balance for audio. \
+             Add credits at https://openrouter.ai/settings/credits"
+        );
+        assert!(refused(&json!({"message": "no word timings", "code": 400})));
+        assert_eq!(message(&json!({"code": 401})), "no message");
+    }
 
     #[test]
     fn wav_header() {
