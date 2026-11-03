@@ -15,8 +15,8 @@ use uc::dispatch::{self, is_executable, resolve, search_dirs};
 
 const PREFIX: &str = "uc-";
 
-/// Short names for commands: `uc ws` is `uc workspace`.
-const ALIASES: &[(&str, &str)] = &[("ws", "workspace")];
+/// Short names for commands: `uc ws` is `uc workspace`, `uc a` is `uc agent`.
+const ALIASES: &[(&str, &str)] = &[("ws", "workspace"), ("a", "agent")];
 
 /// The agent's options: `uc --ask --output --commands --no-shell --long-cache`, and the search engine.
 const CHAT_FLAGS: &[&str] = &[
