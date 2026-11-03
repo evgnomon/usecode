@@ -170,8 +170,9 @@ big the conversation is and how full the model's window, then what the
 last request read at full price (or wrote to the cache) and what came out.
 A small "new" means the cache is doing its job; a big jump means it missed.
 
-Wondering how much of the model's context the conversation has taken? Type
-`uc agent context` and it says how many messages there are, about how many tokens
+Wondering where things stand? Type `uc agent status` and it tells you the
+model, the effort and whether it asks before running things, then how much
+of the model's context the conversation has taken: how many messages there are, about how many tokens
 they make (an estimate until the model has counted them), what the last
 turn took in tokens — how many went in, how many were cached, how many
 came out — how full the model's context window is, and what the session
@@ -191,6 +192,20 @@ minutes, so if you often stop to think for longer, `uc --long-cache` (or
 costs a bit more, and reading from it costs the same tenth.
 `uc agent compact` cuts old tool output and sums up the earlier
 conversation, and `uc agent exit` (or `uc agent quit`) leaves uc.
+
+Want it to think harder, or answer faster? `uc agent effort` picks how
+hard the model thinks: `minimal`, `low`, `medium`, `high`, `xhigh` or `max`.
+`uc agent effort xhigh` goes straight there. It sticks for this session and
+is saved as `effort:` in `agent.yaml` for the next ones. It works on
+OpenRouter, a Claude subscription and Copilot alike; uc translates the level
+to what each one understands.
+
+Need to stop for the day, or pick a conversation up on another terminal?
+`uc agent export` writes it to a file in `~/.local/state/usecode/sessions`
+(or `uc agent export notes.json` to put it where you like), and `uc agent
+import` in a shell starts uc right where you left off, with the picker
+showing your saved conversations and how each began. Typed at a uc prompt,
+`uc agent import` swaps the current conversation for the saved one.
 
 Took a wrong turn? `uc agent rewind` lets you pick one of the lines you
 typed and takes the conversation back to just before it, with that line

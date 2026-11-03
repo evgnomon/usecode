@@ -52,7 +52,7 @@
 //! ```yaml
 //! provider: claude                # the one a session starts on
 //! model: anthropic/claude-opus-5.5 # and its model; uc agent model sets both
-//! effort: high                    # low, medium or high reasoning
+//! effort: high                    # minimal, low, medium, high, xhigh or max; uc agent effort sets it
 //! search:                         # web_search: Parallel, else Exa, else DuckDuckGo
 //!   parallel: {api_key: ...}
 //!   exa: {api_key: ...}
@@ -497,6 +497,14 @@ pub fn save_key(name: &str, kind: Kind, key: &str) -> Result<PathBuf> {
 pub fn save_choice(provider: &str, model: &str) -> Result<PathBuf> {
     update(|top| {
         set_choice(top, provider, model);
+        Ok(())
+    })
+}
+
+/// Makes `effort` the reasoning effort new sessions start on.
+pub fn save_effort(effort: &str) -> Result<PathBuf> {
+    update(|top| {
+        top.insert("effort".into(), effort.into());
         Ok(())
     })
 }

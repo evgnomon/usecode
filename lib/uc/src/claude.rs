@@ -378,6 +378,11 @@ pub fn request(body: &Value, stream: bool) -> Value {
         "messages": messages,
         "stream": stream,
     });
+    // `uc agent effort`; Claude has no `minimal`, its least is `low`.
+    if let Some(effort) = body["reasoning"]["effort"].as_str() {
+        let effort = if effort == "minimal" { "low" } else { effort };
+        request["output_config"] = json!({"effort": effort});
+    }
     let tools: Vec<Value> = body["tools"]
         .as_array()
         .into_iter()
@@ -900,6 +905,16 @@ mod tests {
             "tools": [{"type": "function", "function": {
                 "name": "bash", "description": "run", "parameters": {"type": "object"}}}],
         })
+    }
+
+    #[test]
+    fn the_effort_goes_as_output_config() {
+        assert!(request(&chat(), true).get("output_config").is_none());
+        let mut body = chat();
+        body["reasoning"] = json!({"effort": "xhigh"});
+        assert_eq!(request(&body, true)["output_config"]["effort"], "xhigh");
+        body["reasoning"] = json!({"effort": "minimal"});
+        assert_eq!(request(&body, true)["output_config"]["effort"], "low");
     }
 
     #[test]

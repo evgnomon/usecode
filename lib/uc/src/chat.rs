@@ -49,8 +49,11 @@
 //! `quit`) leaves uc, `uc agent compact` sums up the earlier conversation,
 //! `uc agent rewind [N]` goes back to before the line typed N lines ago
 //! (the picker picks it without N) and puts it back at the prompt to edit,
-//! and `uc agent context`
-//! prints how much of the model's context the conversation has taken: the
+//! `uc agent effort [LEVEL]` sets how hard the model thinks (and saves it),
+//! `uc agent export [FILE]` writes the conversation to a file and `uc agent
+//! import [FILE]` carries on from one (typed in a shell, in a new session),
+//! and `uc agent status` prints the model, the effort, the mode and how much
+//! of the model's context the conversation has taken: the
 //! message count, an estimate before the first turn, the real token count of
 //! the last one, the model's window, and what the session has spent.
 //! What the model is told about all this is the main skill, `chat/main.md`, always in its system prompt.
@@ -693,6 +696,10 @@ async fn run(
     SHELL.store(shell, Ordering::Relaxed);
     let mut session = Session::new(ask, output, commands, search).await?;
     let ai = AI.load(Ordering::Relaxed);
+    let import = IMPORT.lock().unwrap_or_else(|e| e.into_inner()).take();
+    if let Some(file) = import {
+        session.import_picked(&file)?;
+    }
     if shell || !ai {
         // Read the user's aliases while they type, not when the first line comes.
         std::thread::spawn(user_shell);
@@ -728,11 +735,7 @@ async fn run(
         if line == "exit" || matches!(agent, Some("exit" | "quit")) {
             return Ok(());
         }
-        if !ai
-            && (agent_model_line(line).is_some()
-                || agent.is_some()
-                || agent_rewind_line(line).is_some())
-        {
+        if !ai && (agent_model_line(line).is_some() || agent.is_some() || agent_arg_line(line)) {
             eprintln!("· AI off: {}, to turn it on", no_provider());
             continue;
         }
@@ -750,12 +753,30 @@ async fn run(
             shown = Some(session.models());
             continue;
         }
-        if agent == Some("context") {
-            session.context().await;
+        if agent == Some("status") {
+            session.status().await;
             continue;
         }
-        if let Some(arg) = agent_rewind_line(line) {
+        if let Some(arg) = agent_arg(line, "rewind") {
             session.rewind(arg);
+            continue;
+        }
+        if let Some(arg) = agent_arg(line, "effort") {
+            session.pick_effort(arg);
+            continue;
+        }
+        if let Some(arg) = agent_arg(line, "export") {
+            match session.export(arg) {
+                Ok(path) => note!("exported to {}", path.display()),
+                Err(err) => note!("{err:#}"),
+            }
+            continue;
+        }
+        if let Some(arg) = agent_arg(line, "import") {
+            if let Err(err) = session.import_picked(arg) {
+                note!("{err:#}");
+            }
+            shown = Some(session.models());
             continue;
         }
         if agent == Some("compact") {
@@ -1259,20 +1280,32 @@ fn agent_model_line(line: &str) -> Option<&str> {
         .filter(|rest| rest.is_empty() || rest.starts_with(' '))
 }
 
-/// `uc agent compact`, `context`, `exit` or `quit` typed at the prompt: the
+/// `uc agent compact`, `status`, `exit` or `quit` typed at the prompt: the
 /// session's own commands, which it takes instead of running them in bash;
-/// the word after `uc agent`. `!uc agent context` still runs in bash.
+/// the word after `uc agent`. `!uc agent status` still runs in bash.
 fn agent_command(line: &str) -> Option<&'static str> {
     let rest = line.strip_prefix("uc agent ")?.trim();
     AGENT_COMMANDS.iter().find(|c| **c == rest).copied()
 }
 
-/// A typed `uc agent rewind [N]`, which the chat takes itself: what comes
-/// after `rewind`, trimmed. `!uc agent rewind` still runs in bash.
-fn agent_rewind_line(line: &str) -> Option<&str> {
-    line.strip_prefix("uc agent rewind")
+/// A typed `uc agent <name> [ARG]` for the commands that take an argument
+/// (`rewind`, `effort`, `export`, `import`), which the chat takes itself:
+/// what comes after the name, trimmed. `!uc agent rewind` still runs in bash.
+fn agent_arg<'l>(line: &'l str, name: &str) -> Option<&'l str> {
+    line.strip_prefix("uc agent ")?
+        .strip_prefix(name)
         .filter(|rest| rest.is_empty() || rest.starts_with(' '))
         .map(str::trim)
+}
+
+/// The `uc agent` commands with an argument that the prompt takes itself.
+const AGENT_ARG_COMMANDS: &[&str] = &["rewind", "effort", "export", "import"];
+
+/// Whether the line is one of [`AGENT_ARG_COMMANDS`].
+fn agent_arg_line(line: &str) -> bool {
+    AGENT_ARG_COMMANDS
+        .iter()
+        .any(|name| agent_arg(line, name).is_some())
 }
 
 /// `command` with its first word, the program, in bright yellow: what a line
@@ -1463,7 +1496,7 @@ if (( ${#COMPREPLY[@]} )); then printf '%s\n' "${COMPREPLY[@]}"; else compgen -f
 "#;
 
 /// The `uc agent` commands the prompt itself takes, besides `model`.
-const AGENT_COMMANDS: &[&str] = &["compact", "context", "exit", "quit"];
+const AGENT_COMMANDS: &[&str] = &["compact", "status", "exit", "quit"];
 
 /// Tab at the prompt: a command line the way the user's bash
 /// completes it, with or without `!`, and file names in a line for the model.
@@ -1531,9 +1564,7 @@ impl rustyline::hint::Hinter for Completion {
 impl rustyline::highlight::Highlighter for Completion {
     fn highlight<'l>(&self, line: &'l str, _: usize) -> std::borrow::Cow<'l, str> {
         // The chat takes `uc agent model` and the like itself; not bash lines.
-        if agent_model_line(line).is_some()
-            || agent_command(line).is_some()
-            || agent_rewind_line(line).is_some()
+        if agent_model_line(line).is_some() || agent_command(line).is_some() || agent_arg_line(line)
         {
             return std::borrow::Cow::Borrowed(line);
         }
@@ -1961,9 +1992,7 @@ impl Session {
             .as_ref()
             .map(|p| start_model(p, &pool))
             .unwrap_or_default();
-        let effort = env("UC_EFFORT")
-            .or_else(|| providers::settings().effort.clone())
-            .unwrap_or_else(|| DEFAULT_EFFORT.to_string());
+        let effort = start_effort();
         let instructed = std::env::current_dir()
             .and_then(|d| d.canonicalize())
             .map(|d| instruction_files(&d))
@@ -2241,6 +2270,150 @@ impl Session {
         line
     }
 
+    /// `uc agent effort [LEVEL]`: sets how hard the model thinks, for this
+    /// session and, saved as `effort:` in `agent.yaml`, the ones to come.
+    /// Without a level the picker picks it, starting on the current one;
+    /// without a terminal it lists them.
+    fn pick_effort(&mut self, arg: &str) {
+        let level = if arg.is_empty() && picker::available() {
+            let mut order: Vec<&str> = EFFORTS.to_vec();
+            order.sort_by_key(|e| *e != self.effort);
+            let items = order.iter().map(|e| picker::Item::line(*e)).collect();
+            let picked = picker::Picker::new("effort> ")
+                .reverse()
+                .select_one()
+                .pick(items);
+            match picked.and_then(|p| p.values.into_iter().next()) {
+                Some(level) => level,
+                None => return,
+            }
+        } else if arg.is_empty() {
+            out::raw(&efforts_list(&self.effort));
+            return;
+        } else {
+            arg.to_lowercase()
+        };
+        if !EFFORTS.contains(&level.as_str()) {
+            note!("no effort {level}: one of {}", EFFORTS.join(", "));
+            return;
+        }
+        self.effort = level;
+        note!("effort {}", self.effort);
+        match save_effort(&self.effort) {
+            Ok(path) => note!("saved in {} for new `uc` sessions", path.display()),
+            Err(err) => note!("not saved: {err:#}"),
+        }
+    }
+
+    /// `uc agent export [FILE]`: writes the conversation, with the model it
+    /// was on, to `FILE`, or to a new file in the sessions directory (see
+    /// [`sessions_dir`]); the path written.
+    fn export(&self, arg: &str) -> Result<PathBuf> {
+        if self.asked.is_empty() {
+            bail!("nothing to export yet");
+        }
+        let path = if arg.is_empty() {
+            let name = chrono::Local::now().format("%Y%m%d-%H%M%S");
+            sessions_dir()
+                .ok_or_else(|| anyhow!("no home directory to export to"))?
+                .join(format!("{name}.json"))
+        } else {
+            expand_home(arg)
+        };
+        let exported = Exported {
+            usecode_session: 1,
+            provider: self.provider.clone(),
+            model: self.model.clone(),
+            effort: self.effort.clone(),
+            dir: std::env::current_dir().ok(),
+            messages: self.messages.iter().skip(1).cloned().collect(),
+            asked: self
+                .asked
+                .iter()
+                .map(|(at, line)| (at.saturating_sub(1), line.clone()))
+                .collect(),
+        };
+        if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+            std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+        }
+        let text = serde_json::to_string_pretty(&exported)?;
+        std::fs::write(&path, text).with_context(|| format!("writing {}", path.display()))?;
+        Ok(path)
+    }
+
+    /// `uc agent import [FILE]`: the conversation of an exported file, picked
+    /// from the sessions directory without one (the latest without a
+    /// terminal).
+    fn import_picked(&mut self, arg: &str) -> Result<()> {
+        let path = if arg.is_empty() {
+            let saved = saved_sessions();
+            if saved.is_empty() {
+                bail!("no exported sessions; `uc agent export` makes one");
+            }
+            if picker::available() && saved.len() > 1 {
+                let items = saved
+                    .iter()
+                    .map(|(path, shown)| picker::Item::new(shown, path.display().to_string()))
+                    .collect();
+                let picked = picker::Picker::new("import> ")
+                    .reverse()
+                    .select_one()
+                    .pick(items);
+                match picked.and_then(|p| p.values.into_iter().next()) {
+                    Some(path) => PathBuf::from(path),
+                    None => return Ok(()),
+                }
+            } else {
+                saved[0].0.clone()
+            }
+        } else {
+            let path = expand_home(arg);
+            match sessions_dir() {
+                Some(dir) if !path.exists() && !arg.contains('/') => {
+                    let named = dir.join(arg);
+                    if named.exists() {
+                        named
+                    } else {
+                        dir.join(format!("{arg}.json"))
+                    }
+                }
+                _ => path,
+            }
+        };
+        let text = std::fs::read_to_string(&path)
+            .with_context(|| format!("reading {}", path.display()))?;
+        let exported: Exported = serde_json::from_str(&text)
+            .with_context(|| format!("{} is not an exported uc session", path.display()))?;
+        let (lines, model) = (exported.asked.len(), exported.model.clone());
+        self.import(exported);
+        note!(
+            "imported {lines} line{} from {}, the conversation was on {model}",
+            if lines == 1 { "" } else { "s" },
+            path.display()
+        );
+        Ok(())
+    }
+
+    /// Puts an exported conversation in place of this one, after the system
+    /// prompt of this session. The model and effort stay what they are.
+    fn import(&mut self, exported: Exported) {
+        self.forget();
+        self.messages.extend(
+            exported
+                .messages
+                .into_iter()
+                .filter(|m| m["role"] != "system"),
+        );
+        self.asked = exported
+            .asked
+            .into_iter()
+            .map(|(at, line)| (at + 1, line))
+            .filter(|(at, _)| *at < self.messages.len())
+            .collect();
+        self.last_usage = None;
+        self.tokens.last = None;
+    }
+
     /// `uc agent model` without a name it knows: picks the model with the picker, starting
     /// on the current one and filtered by `query`; one match is taken
     /// straight away and Esc keeps the model. Without a terminal it is `switch`.
@@ -2424,11 +2597,30 @@ impl Session {
             .ok_or_else(|| anyhow!("the model wrote no summary"))
     }
 
-    /// `uc agent context`: how much of the model's context the conversation has
-    /// taken. The real count is from the last reply's `usage`, an estimate
-    /// from the bytes before that, and the window is the model's
-    /// `context_length` on OpenRouter.
-    async fn context(&self) {
+    /// `uc agent status`: the model, the effort, the mode and the directory,
+    /// then how much of the model's context the conversation has taken. The
+    /// real count is from the last reply's `usage`, an estimate from the
+    /// bytes before that, and the window is the model's `context_length` on
+    /// OpenRouter.
+    async fn status(&self) {
+        note!("{}", self.models());
+        note!("effort {}", self.effort);
+        note!(
+            "{}",
+            if self.allow_all {
+                "auto mode: commands run without asking"
+            } else {
+                "ask mode: commands are confirmed first"
+            }
+        );
+        if let Ok(dir) = std::env::current_dir() {
+            note!("in {}", dir.display());
+        }
+        if self.asked.is_empty() {
+            note!("no lines typed for the model yet");
+        } else {
+            note!("{} lines typed for the model", self.asked.len());
+        }
         // About 4 characters a token: a rough count until the model has
         // said what the last turn took.
         let bytes: usize = self
@@ -3333,7 +3525,7 @@ impl Tokens {
         });
     }
 
-    /// How the session's prompts were read, for `uc agent context`: `362k
+    /// How the session's prompts were read, for `uc agent status`: `362k
     /// tokens in, 91% read from the cache, 8% written to it`, or nothing
     /// before the first reply.
     fn cache_line(&self) -> Option<String> {
@@ -3645,6 +3837,143 @@ impl std::fmt::Display for Stopped {
 }
 
 impl std::error::Error for Stopped {}
+
+/// The reasoning efforts `uc agent effort` takes, least first. OpenRouter
+/// passes them on as the model takes them, Claude gets them as
+/// `output_config.effort` (see [`claude::request`]).
+const EFFORTS: &[&str] = &["minimal", "low", "medium", "high", "xhigh", "max"];
+
+/// The efforts, one a line, `current` marked.
+fn efforts_list(current: &str) -> String {
+    EFFORTS
+        .iter()
+        .map(|e| format!("{} {e}\n", if *e == current { "*" } else { " " }))
+        .collect()
+}
+
+/// The effort new sessions start on: `UC_EFFORT`, else `effort:` in
+/// `agent.yaml`, else [`DEFAULT_EFFORT`].
+fn start_effort() -> String {
+    env("UC_EFFORT")
+        .or_else(|| providers::settings().effort.clone())
+        .unwrap_or_else(|| DEFAULT_EFFORT.to_string())
+}
+
+/// Saves `effort` as the one new sessions start on.
+fn save_effort(effort: &str) -> Result<PathBuf> {
+    let path = providers::save_effort(effort)?;
+    if env("UC_EFFORT").is_some() {
+        note!("UC_EFFORT is set in this environment and wins over it; unset it");
+    }
+    Ok(path)
+}
+
+/// A conversation as `uc agent export` writes it: the messages after the
+/// system prompt, and the lines typed with where each sits among them.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Exported {
+    usecode_session: u32,
+    provider: String,
+    model: String,
+    effort: String,
+    #[serde(default)]
+    dir: Option<PathBuf>,
+    messages: Vec<Value>,
+    #[serde(default)]
+    asked: Vec<(usize, String)>,
+}
+
+/// Where `uc agent export` puts a conversation without a file named:
+/// `~/.local/state/usecode/sessions`.
+fn sessions_dir() -> Option<PathBuf> {
+    history_path().and_then(|h| h.parent().map(|d| d.join("sessions")))
+}
+
+/// The exported sessions there, newest first, each with what the picker
+/// shows: its name and the first line typed in it.
+fn saved_sessions() -> Vec<(PathBuf, String)> {
+    let Some(dir) = sessions_dir() else {
+        return Vec::new();
+    };
+    let mut found: Vec<(std::time::SystemTime, PathBuf)> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| e.path().extension().is_some_and(|x| x == "json"))
+        .map(|e| {
+            let when = e.metadata().and_then(|m| m.modified()).ok();
+            (when.unwrap_or(std::time::UNIX_EPOCH), e.path())
+        })
+        .collect();
+    found.sort_by_key(|f| std::cmp::Reverse(f.0));
+    found
+        .into_iter()
+        .map(|(_, path)| {
+            let first = std::fs::read_to_string(&path)
+                .ok()
+                .and_then(|t| serde_json::from_str::<Exported>(&t).ok())
+                .and_then(|e| e.asked.into_iter().next())
+                .map(|(_, line)| line.replace('\n', " "))
+                .unwrap_or_default();
+            let name = path.file_stem().unwrap_or_default().to_string_lossy();
+            let shown = format!("{name}  {first}");
+            (path, shown)
+        })
+        .collect()
+}
+
+/// `path` with a leading `~/` as the home directory.
+fn expand_home(path: &str) -> PathBuf {
+    match (path.strip_prefix("~/"), std::env::var_os("HOME")) {
+        (Some(rest), Some(home)) => PathBuf::from(home).join(rest),
+        _ => PathBuf::from(path),
+    }
+}
+
+/// The session `uc agent import` typed in a shell starts with.
+static IMPORT: Mutex<Option<String>> = Mutex::new(None);
+
+/// `uc agent import [FILE]` in a shell: a new uc session that carries on
+/// from an exported one. Its flags come from `UC_*` and the user config.
+pub fn resume(file: String) -> ExitCode {
+    *IMPORT.lock().unwrap_or_else(|e| e.into_inner()) = Some(file);
+    let has = |flag: &str| crate::flag::on(&[], flag);
+    crate::claude::LONG_CACHE.store(has("--long-cache"), Ordering::Relaxed);
+    let search = [
+        ("--parallel", Search::Parallel),
+        ("--exa", Search::Exa),
+        ("--duckduckgo", Search::DuckDuckGo),
+    ]
+    .into_iter()
+    .find(|(f, _)| has(f))
+    .map(|(_, s)| s);
+    main(
+        has("--ask"),
+        has("--output"),
+        has("--commands"),
+        !has("--no-shell"),
+        search,
+    )
+}
+
+/// `uc agent effort [LEVEL]` in a shell: lists the efforts, the one new
+/// sessions start on marked, or saves the one named for them.
+pub(crate) fn agent_effort(level: Option<&str>) -> Result<()> {
+    let Some(level) = level else {
+        out::raw(&efforts_list(&start_effort()));
+        return Ok(());
+    };
+    let level = level.to_lowercase();
+    if !EFFORTS.contains(&level.as_str()) {
+        bail!("no effort {level}: one of {}", EFFORTS.join(", "));
+    }
+    let path = save_effort(&level)?;
+    println!(
+        "· effort {level}, saved in {} for new `uc` sessions",
+        path.display()
+    );
+    Ok(())
+}
 
 /// The line the next prompt starts with, to edit: the one `uc agent rewind`
 /// went back to.
@@ -5035,17 +5364,48 @@ mod tests {
     #[test]
     fn uc_agent_commands_are_taken_by_the_chat() {
         assert_eq!(agent_command("uc agent compact"), Some("compact"));
-        assert_eq!(agent_command("uc agent context"), Some("context"));
+        assert_eq!(agent_command("uc agent status"), Some("status"));
+        assert_eq!(agent_command("uc agent context"), None);
         assert_eq!(agent_command("uc agent exit"), Some("exit"));
         assert_eq!(agent_command("uc agent quit"), Some("quit"));
         assert_eq!(agent_command("uc agent usage"), None);
-        assert_eq!(agent_command("uc agent contexts"), None);
+        assert_eq!(agent_command("uc agent statuses"), None);
         assert_eq!(agent_command("!uc agent exit"), None);
         assert_eq!(agent_command("/context"), None);
-        assert_eq!(agent_rewind_line("uc agent rewind"), Some(""));
-        assert_eq!(agent_rewind_line("uc agent rewind 2"), Some("2"));
-        assert_eq!(agent_rewind_line("uc agent rewinds"), None);
-        assert_eq!(agent_rewind_line("!uc agent rewind"), None);
+        assert_eq!(agent_arg("uc agent rewind", "rewind"), Some(""));
+        assert_eq!(agent_arg("uc agent rewind 2", "rewind"), Some("2"));
+        assert_eq!(agent_arg("uc agent rewinds", "rewind"), None);
+        assert_eq!(agent_arg("!uc agent rewind", "rewind"), None);
+        assert_eq!(agent_arg("uc agent effort low", "effort"), Some("low"));
+        assert_eq!(
+            agent_arg("uc agent export a.json", "export"),
+            Some("a.json")
+        );
+        assert!(agent_arg_line("uc agent import"));
+        assert!(!agent_arg_line("uc agent imports"));
+    }
+
+    #[test]
+    fn an_exported_conversation_imports_as_it_was() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("s.json");
+        let mut s = session();
+        s.messages = vec![json!({"role": "system", "content": "you are uc"})];
+        for (line, reply) in [("one", "1"), ("two", "2")] {
+            s.asked.push((s.messages.len(), line.into()));
+            s.messages.push(json!({"role": "user", "content": line}));
+            s.messages
+                .push(json!({"role": "assistant", "content": reply}));
+        }
+        let (messages, asked) = (s.messages.clone(), s.asked.clone());
+        s.export(file.to_str().unwrap()).unwrap();
+        let mut t = session();
+        t.messages = vec![json!({"role": "system", "content": "you are uc"})];
+        t.import_picked(file.to_str().unwrap()).unwrap();
+        assert_eq!(t.messages[1..], messages[1..]);
+        assert_eq!(t.asked, asked);
+        assert_eq!(t.rewind_to(1), "two");
+        assert_eq!(t.messages.len(), 3);
     }
 
     #[test]
@@ -5055,7 +5415,8 @@ mod tests {
         for (line, reply) in [("one", "1"), ("two", "2"), ("three", "3")] {
             s.asked.push((s.messages.len(), line.into()));
             s.messages.push(json!({"role": "user", "content": line}));
-            s.messages.push(json!({"role": "assistant", "content": reply}));
+            s.messages
+                .push(json!({"role": "assistant", "content": reply}));
         }
         assert_eq!(s.rewind_to(1), "three");
         assert_eq!(s.messages.len(), 5);

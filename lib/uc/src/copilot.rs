@@ -492,6 +492,8 @@ fn responses_request(body: &Value) -> Value {
         "store": false,
     });
     if let Some(effort) = body["reasoning"]["effort"].as_str() {
+        // OpenAI's most is `xhigh`.
+        let effort = if effort == "max" { "xhigh" } else { effort };
         request["reasoning"] = json!({"effort": effort});
     }
     let tools: Vec<Value> = body["tools"]

@@ -334,9 +334,24 @@ pub static AGENT: Group = Group {
             run: Run::Builtin(agent_compact),
         },
         Sub {
-            name: "context",
-            summary: "at a uc prompt: how much of the model's context the conversation has taken",
-            run: Run::Builtin(agent_context),
+            name: "status",
+            summary: "at a uc prompt: the model, effort and mode, and how much of the model's context the conversation has taken",
+            run: Run::Builtin(agent_status),
+        },
+        Sub {
+            name: "effort",
+            summary: "how hard the model thinks: minimal, low, medium, high, xhigh or max, saved for new sessions",
+            run: Run::Builtin(agent_effort),
+        },
+        Sub {
+            name: "export",
+            summary: "at a uc prompt: write the conversation to a file, to import later",
+            run: Run::Builtin(agent_export),
+        },
+        Sub {
+            name: "import",
+            summary: "carry on from an exported conversation: in a new session, or the one at the prompt",
+            run: Run::Builtin(agent_import),
         },
         Sub {
             name: "rewind",
@@ -418,7 +433,7 @@ fn agent_login(args: &[OsString]) -> ExitCode {
     }
 }
 
-/// `uc agent compact|context|rewind|exit|quit`: the chat's own commands, which a
+/// `uc agent compact|status|rewind|export|exit|quit`: the chat's own commands, which a
 /// session takes at its prompt; typed in a shell there is no session to act on.
 fn session_only(name: &str, args: &[OsString]) -> ExitCode {
     let help = args.iter().any(|arg| arg == "-h" || arg == "--help");
@@ -438,8 +453,65 @@ fn agent_compact(args: &[OsString]) -> ExitCode {
     session_only("compact", args)
 }
 
-fn agent_context(args: &[OsString]) -> ExitCode {
-    session_only("context", args)
+fn agent_status(args: &[OsString]) -> ExitCode {
+    session_only("status", args)
+}
+
+fn agent_export(args: &[OsString]) -> ExitCode {
+    session_only("export", args)
+}
+
+/// `uc agent effort [LEVEL]` in a shell: lists the efforts or saves one for
+/// the sessions to come; see [`crate::chat::agent_effort`].
+fn agent_effort(args: &[OsString]) -> ExitCode {
+    let args: Vec<String> = args
+        .iter()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
+    if args.iter().any(|a| a == "-h" || a == "--help") || args.len() > 1 {
+        println!("usage: uc agent effort [minimal|low|medium|high|xhigh|max]\n");
+        println!("How hard the model thinks before it answers. With no level: the levels,");
+        println!("the one new sessions start on marked. With one: saves it as effort: in");
+        println!(
+            "{}, for new `uc` sessions. Typed at a uc prompt it",
+            crate::providers::path().display()
+        );
+        println!("switches that session too (the picker picks one without a level).");
+        return if args.len() > 1 {
+            ExitCode::from(2)
+        } else {
+            ExitCode::SUCCESS
+        };
+    }
+    match crate::chat::agent_effort(args.first().map(String::as_str)) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(err) => {
+            eprintln!("uc agent effort: {err:#}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// `uc agent import [FILE]` in a shell: a new session that carries on from
+/// an exported conversation, the one picked without FILE.
+fn agent_import(args: &[OsString]) -> ExitCode {
+    let args: Vec<String> = args
+        .iter()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
+    if args.iter().any(|a| a == "-h" || a == "--help") || args.len() > 1 {
+        println!("usage: uc agent import [FILE]\n");
+        println!("Starts uc on a conversation `uc agent export` wrote, to carry on from it.");
+        println!("FILE is a path, or a name in ~/.local/state/usecode/sessions, where export");
+        println!("puts them without one; with no FILE the picker picks one of those.");
+        println!("Typed at a uc prompt it takes the place of that session's conversation.");
+        return if args.len() > 1 {
+            ExitCode::from(2)
+        } else {
+            ExitCode::SUCCESS
+        };
+    }
+    crate::chat::resume(args.into_iter().next().unwrap_or_default())
 }
 
 fn agent_rewind(args: &[OsString]) -> ExitCode {
