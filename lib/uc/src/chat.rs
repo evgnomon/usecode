@@ -97,6 +97,7 @@ use tokio::task::JoinHandle;
 use crate::{claude, copilot, providers};
 
 mod diff;
+mod hl;
 mod out;
 pub mod serve;
 mod shell;
@@ -823,6 +824,7 @@ async fn run(
         };
         BUSY.store(false, Ordering::Relaxed);
         if stopped {
+            out::text_end();
             eprintln!("\r\x1b[2K· stopped");
             session.stopped();
         }
@@ -871,9 +873,17 @@ fn cached(model: &str, messages: &[Value]) -> Vec<Value> {
         }
         // A tool call with no text has no content to mark.
         if let Some(text) = message["content"].as_str().filter(|t| !t.is_empty()) {
-            message["content"] = json!([
-                {"type": "text", "text": text, "cache_control": claude::breakpoint()}
-            ]);
+            let parts = if message["role"] == "system" {
+                claude::split(text)
+            } else {
+                vec![text]
+            };
+            message["content"] = json!(
+                parts
+                    .into_iter()
+                    .map(|t| json!({"type": "text", "text": t, "cache_control": claude::breakpoint()}))
+                    .collect::<Vec<_>>()
+            );
         }
     }
     messages
@@ -1811,10 +1821,15 @@ fn system_prompt(model: &str, ask: bool, output: bool, instructed: &[PathBuf]) -
         "The user sees what you run but not its output, only your replies, so tell \
          them what they need from it: the answer, not the raw output."
     };
+    // What is the same in every session comes first and what isn't after
+    // [`claude::SESSION`], so the provider caches the first part (with the
+    // tools before it) once for every session, in any directory.
     format!(
-        "You are uc, the usecode coding agent, running in a terminal on the user's machine, \
-         on the model {model}. The working directory is {cwd}. Use the tools to \
-         look around, run commands and change files; {confirms}. {sees}\n\n{MAIN_SKILL}{}",
+        "You are uc, the usecode coding agent, running in a terminal on the user's machine. \
+         Use the tools to look around, run commands and change files.\n\n{MAIN_SKILL}{}\
+         You run on the model {model}. The working directory is {cwd}. Commands: {confirms}. \
+         {sees}{}",
+        claude::SESSION,
         instructions_block(instructed)
     )
 }
@@ -2184,6 +2199,7 @@ impl Session {
         self.asked.push((self.messages.len(), line.to_string()));
         self.messages.push(json!({"role": "user", "content": line}));
         self.since = Instant::now();
+        self.tokens.turn = Turn::default();
         self.turn().await.map(drop)
     }
 
@@ -2631,30 +2647,20 @@ impl Session {
             .last_usage
             .as_ref()
             .and_then(|u| u["total_tokens"].as_u64());
-        if let Some(total) = tokens {
-            let usage = self.last_usage.as_ref();
-            let mut line = format!("last turn {total} tokens");
-            if let Some(prompt) = usage.and_then(|u| u["prompt_tokens"].as_u64()) {
-                line += &format!(" ({prompt} in");
-                if let Some(cached) = usage
-                    .and_then(|u| u["prompt_tokens_details"]["cached_tokens"].as_u64())
-                    .filter(|c| *c > 0)
-                {
-                    line += &format!(", {cached} cached");
-                }
-                line += ")";
-            }
-            if let Some(completion) = usage.and_then(|u| u["completion_tokens"].as_u64()) {
-                line += &format!(", {completion} out");
-            }
-            note!("{line}");
+        let info = model_info(&self.model).await;
+        if self.tokens.turn.requests > 0 {
+            let price = info.as_ref().ok().and_then(|i| i.as_ref()?.1);
+            // The subscription always caches for an hour.
+            let long = claude::LONG_CACHE.load(Ordering::Relaxed)
+                || self.current().is_ok_and(|p| p.kind == Kind::Claude);
+            note!("{}", self.tokens.turn.line(price, long));
         } else {
             note!("no turn yet, so no token count; that comes with the first reply");
         }
         if let Some(line) = self.tokens.cache_line() {
             note!("{line}");
         }
-        match model_info(&self.model).await {
+        match info {
             Ok(Some((window, per_million))) => {
                 if let (Some(window), Some(total)) = (window, tokens) {
                     let pct = 100.0 * total as f64 / window as f64;
@@ -3488,6 +3494,55 @@ struct Tokens {
     last: Option<Last>,
     /// The model's context window, when OpenRouter's list says it.
     window: Option<u64>,
+    /// The line being worked on, or the last one: every request it made.
+    turn: Turn,
+}
+
+/// What one typed line took, summed over all its requests (every tool call
+/// is one more): the same counts Claude Code shows for a turn.
+#[derive(Default, Debug, PartialEq, Clone, Copy)]
+struct Turn {
+    requests: u64,
+    input: u64,
+    cached: u64,
+    written: u64,
+    output: u64,
+    /// What OpenRouter charged, when it said.
+    cost: Option<f64>,
+}
+
+impl Turn {
+    /// `520 in, 3.9k out, 293k cache read, 28.5k cache write ($0.3662), 14
+    /// requests`; the cost from what was charged, else from `price` (input
+    /// and output per million), reads a tenth of the input price and writes
+    /// 1.25 times it (twice when `long`, the hour's cache).
+    fn line(&self, price: Option<(f64, f64)>, long: bool) -> String {
+        let mut line = format!(
+            "last turn {} in, {} out, {} cache read, {} cache write",
+            short(self.input),
+            short(self.output),
+            short(self.cached),
+            short(self.written)
+        );
+        let write = if long { 2.0 } else { 1.25 };
+        let cost = self.cost.or_else(|| {
+            price.map(|(i, o)| {
+                (self.input as f64 * i
+                    + self.cached as f64 * i * 0.1
+                    + self.written as f64 * i * write
+                    + self.output as f64 * o)
+                    / 1e6
+            })
+        });
+        if let Some(cost) = cost {
+            line += &format!(
+                " (${cost:.4}{})",
+                if self.cost.is_some() { "" } else { " est." }
+            );
+        }
+        let s = if self.requests == 1 { "" } else { "s" };
+        line + &format!(", {} request{s}", self.requests)
+    }
 }
 
 /// One request's tokens, as the spinner shows them.
@@ -3512,6 +3567,15 @@ impl Tokens {
         self.cached += cached;
         self.written += written;
         self.output += output;
+        let input = prompt.saturating_sub(cached + written);
+        self.turn.requests += 1;
+        self.turn.input += input;
+        self.turn.cached += cached;
+        self.turn.written += written;
+        self.turn.output += output;
+        if let Some(cost) = usage["cost"].as_f64() {
+            self.turn.cost = Some(self.turn.cost.unwrap_or_default() + cost);
+        }
         self.last = Some(Last {
             context: prompt,
             new: prompt.saturating_sub(cached),
@@ -4880,6 +4944,32 @@ mod tests {
         let mark = |i: usize| marked[i]["content"][0].get("cache_control").is_some();
         assert!(mark(0) && mark(2) && mark(5));
         assert!(!mark(1) && !mark(4));
+        // The system prompt's shared part and its session's part are cached
+        // apart, so a new session reads the first from the cache.
+        let messages = vec![
+            json!({"role": "system", "content": format!("shared{}cwd", claude::SESSION)}),
+            json!({"role": "user", "content": format!("a{}b", claude::SESSION)}),
+        ];
+        let marked = cached("anthropic/claude-haiku-5.5", &messages);
+        assert_eq!(marked[0]["content"][0]["text"], "shared");
+        assert!(
+            marked[0]["content"][1]["text"]
+                .as_str()
+                .unwrap()
+                .ends_with("cwd")
+        );
+        assert!(marked[0]["content"][1].get("cache_control").is_some());
+        assert_eq!(marked[1]["content"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn the_system_prompt_starts_with_what_every_session_shares() {
+        let a = system_prompt("m1", true, false, &[]);
+        let b = system_prompt("m2", false, true, &[]);
+        let (sa, sb) = (claude::split(&a), claude::split(&b));
+        assert_eq!(sa.len(), 2);
+        assert_eq!(sa[0], sb[0]);
+        assert!(sa[1].contains("m1") && !sa[0].contains("m1"));
     }
 
     #[test]
@@ -5213,6 +5303,10 @@ mod tests {
             "this session 3.0k tokens in, 67% read from the cache, 20% written to it, 80 out"
         );
         assert_eq!(Tokens::default().cache_line(), None);
+        assert_eq!(
+            tokens.turn.line(Some((5.0, 25.0)), false),
+            "last turn 400 in, 80 out, 2.0k cache read, 600 cache write ($0.0088 est.), 2 requests"
+        );
         assert_eq!(short(25_400), "25k");
         assert_eq!(short(1_250_000), "1.2M");
     }

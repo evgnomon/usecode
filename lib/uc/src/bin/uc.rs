@@ -99,8 +99,8 @@ fn print_usage() {
     println!("`· list the rust files`; `uc --commands` shows the command line instead.");
     println!("A line that is a command, like `ls -al`, runs on the terminal straight");
     println!("away; `uc --no-shell` sends every line to the model instead.");
-    println!("Claude models keep the conversation cached for five minutes between requests;");
-    println!("`uc --long-cache` keeps it an hour, for when you often pause longer.");
+    println!("Your Claude subscription keeps the conversation cached for an hour; Claude on");
+    println!("OpenRouter for five minutes, and `uc --long-cache` makes that an hour too.");
     println!("Every flag can also be set as UC_<FLAG> (UC_NO_SHELL=1) or under `uc:` in");
     println!("config.yaml (no_shell: true); the command line wins, then the environment.");
     println!("It searches the web with Parallel, else Exa (their keys under search: in");

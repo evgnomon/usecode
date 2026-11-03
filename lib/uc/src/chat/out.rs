@@ -6,6 +6,15 @@
 //! terminal would (see `serve`).
 
 use std::io::{IsTerminal, Write};
+use std::sync::{LazyLock, Mutex};
+
+use super::hl::Highlighter;
+
+/// The reply's highlighting, when stdout is a terminal and NO_COLOR is unset.
+static HL: LazyLock<Option<Mutex<Highlighter>>> = LazyLock::new(|| {
+    (std::env::var_os("NO_COLOR").is_none() && std::io::stdout().is_terminal())
+        .then(|| Mutex::new(Highlighter::default()))
+});
 
 /// Whether a spinner can turn: stderr is a terminal.
 pub(super) fn tty() -> bool {
@@ -24,12 +33,25 @@ pub(super) fn raw(text: &str) {
 
 /// A piece of the model's reply as it streams in.
 pub(super) fn text(text: &str) {
-    print!("{text}");
+    match HL.as_ref() {
+        Some(hl) => print!("{}", hl.lock().unwrap().push(text)),
+        None => print!("{text}"),
+    }
     let _ = std::io::stdout().flush();
+}
+
+/// What the reply's highlighting still holds back, printed: the reply ended
+/// or was stopped.
+pub(super) fn text_end() {
+    if let Some(hl) = HL.as_ref() {
+        print!("{}", hl.lock().unwrap().finish());
+        let _ = std::io::stdout().flush();
+    }
 }
 
 /// The model's reply is complete.
 pub(super) fn reply_end() {
+    text_end();
     println!("\n");
 }
 

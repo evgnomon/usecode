@@ -30,7 +30,8 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-/// Keep the cached prompt for an hour instead of five minutes (`--long-cache`):
+/// Keep the cached prompt for an hour instead of five minutes (`--long-cache`)
+/// on OpenRouter; the subscription always keeps it an hour (see [`hour`]):
 /// writing it costs twice the input price instead of 1.25 times, reading it
 /// stays a tenth, so it pays when the user often pauses for more than five
 /// minutes between lines.
@@ -43,6 +44,29 @@ pub fn breakpoint() -> Value {
     } else {
         json!({"type": "ephemeral"})
     }
+}
+
+/// Where the system prompt's part that changes from session to session (the
+/// model, the directory, the AGENTS.md files) starts. Each part gets its own
+/// cache breakpoint, so the part before it is read from the cache by every
+/// new session, as Claude Code's own prompt is.
+pub const SESSION: &str = "\n\n# This session\n\n";
+
+/// `text` cut where [`SESSION`] starts: the part every session shares, and
+/// the rest; `text` alone without it, or when it starts there (a part split
+/// already), so no part is ever empty.
+pub fn split(text: &str) -> Vec<&str> {
+    match text.find(SESSION).filter(|i| *i > 0) {
+        Some(i) => vec![&text[..i], &text[i..]],
+        None => vec![text],
+    }
+}
+
+/// A cache breakpoint for the subscription: always an hour. Writing it costs
+/// no money there, only some of the rate limit, and the conversation stays
+/// cached while the user pauses, as Claude Code keeps it.
+fn hour() -> Value {
+    json!({"type": "ephemeral", "ttl": "1h"})
 }
 
 /// What a login is saved as in `agent.yaml`, and how a 401 says to fix it.
@@ -301,7 +325,13 @@ pub fn request(body: &Value, stream: bool) -> Value {
     };
     for message in body["messages"].as_array().into_iter().flatten() {
         match message["role"].as_str().unwrap_or_default() {
-            "system" => system.extend(blocks(&message["content"])),
+            "system" => system.extend(blocks(&message["content"]).into_iter().flat_map(|b| {
+                let text = b["text"].as_str().unwrap_or_default();
+                split(text)
+                    .into_iter()
+                    .map(|t| json!({"type": "text", "text": t}))
+                    .collect::<Vec<_>>()
+            })),
             "user" => push("user", blocks(&message["content"])),
             "assistant" => {
                 let mut content = blocks(&message["content"]);
@@ -354,8 +384,12 @@ pub fn request(body: &Value, stream: bool) -> Value {
         }
     }
     if stream {
-        if let Some(last) = system.last_mut() {
-            last["cache_control"] = breakpoint();
+        // The part every session shares (the identity is too short for a
+        // breakpoint of its own) and the session's part: with the two
+        // messages, the four breakpoints Claude allows.
+        let shared = system.len().checked_sub(2).filter(|i| *i > 0);
+        for i in [shared, system.len().checked_sub(1)].into_iter().flatten() {
+            system[i]["cache_control"] = hour();
         }
         let previous = messages
             .iter()
@@ -367,7 +401,7 @@ pub fn request(body: &Value, stream: bool) -> Value {
                 .as_array_mut()
                 .and_then(|c| c.last_mut())
             {
-                block["cache_control"] = breakpoint();
+                block["cache_control"] = hour();
             }
         }
     }
@@ -924,7 +958,7 @@ mod tests {
         assert_eq!(r["stream"], true);
         assert_eq!(r["system"][0]["text"], IDENTITY);
         assert_eq!(r["system"][1]["text"], "be uc");
-        assert_eq!(r["system"][1]["cache_control"]["type"], "ephemeral");
+        assert_eq!(r["system"][1]["cache_control"]["ttl"], "1h");
         assert_eq!(r["tools"][0]["name"], "Bash");
         assert_eq!(r["tools"][0]["input_schema"]["type"], "object");
         let m = r["messages"].as_array().unwrap();
@@ -947,6 +981,36 @@ mod tests {
             r["messages"][2]["content"][1]
                 .get("cache_control")
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn the_shared_system_prompt_has_its_own_breakpoint() {
+        let body = json!({"model": "anthropic/claude-opus-5.5", "messages": [
+            {"role": "system", "content": format!("shared{SESSION}cwd")},
+            {"role": "user", "content": "hi"},
+        ]});
+        let r = request(&body, true);
+        assert_eq!(r["system"][1]["text"], "shared");
+        assert_eq!(r["system"][1]["cache_control"]["ttl"], "1h");
+        assert!(r["system"][2]["text"].as_str().unwrap().ends_with("cwd"));
+        assert_eq!(r["system"][2]["cache_control"]["ttl"], "1h");
+        assert!(r["system"][0].get("cache_control").is_none());
+        // Split already (by `chat::cached`), it is not split again into an
+        // empty block, which Claude refuses to cache.
+        let body = json!({"model": "anthropic/claude-opus-5.5", "messages": [
+            {"role": "system", "content": [
+                {"type": "text", "text": "shared"},
+                {"type": "text", "text": format!("{SESSION}cwd")}]},
+            {"role": "user", "content": "hi"},
+        ]});
+        let r = request(&body, true);
+        let system = r["system"].as_array().unwrap();
+        assert_eq!(system.len(), 3);
+        assert!(
+            system
+                .iter()
+                .all(|b| !b["text"].as_str().unwrap().is_empty())
         );
     }
 
