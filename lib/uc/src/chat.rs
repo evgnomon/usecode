@@ -1358,11 +1358,13 @@ fn agent_arg_line(line: &str) -> bool {
         .any(|name| agent_arg(line, name).is_some())
 }
 
-/// `command` with its first word, the program, underlined in the text's own
-/// color: what a line that runs straight away looks like at the prompt.
+/// `command` with its first word, the program, highlighted softly: bold cyan
+/// on the theme's own background, which reads on dark and light backgrounds
+/// alike without the harsh contrast of reverse video. What a line that runs
+/// straight away looks like at the prompt.
 fn color_program(command: &str) -> String {
     let end = command.find(char::is_whitespace).unwrap_or(command.len());
-    format!("\x1b[4m{}\x1b[0m{}", &command[..end], &command[end..])
+    format!("\x1b[1;36m{}\x1b[22;39m{}", &command[..end], &command[end..])
 }
 
 /// The command line to run when what was typed is one rather than something for
@@ -1594,7 +1596,7 @@ impl rustyline::hint::Hinter for Completion {
     type Hint = String;
 }
 
-/// The program of a line that will run straight away turns green as it is
+/// The program of a line that will run straight away is highlighted as it is
 /// typed, so it shows before Enter whether the line goes to bash or the model.
 impl rustyline::highlight::Highlighter for Completion {
     fn highlight<'l>(&self, line: &'l str, _: usize) -> std::borrow::Cow<'l, str> {

@@ -48,7 +48,7 @@ command line as it is.
 Type a command like `ls -al` or `git status` and it just runs on your
 terminal, like in a shell (`cd` and your bash aliases and functions too), with
 the same confirmations. You can tell before you hit Enter: the program is
-underlined when the line will run. Want to say `make it faster` to the model
+highlighted when the line will run. Want to say `make it faster` to the model
 instead? Start the line with a space and it goes to the model. Rather talk to the model every
 time? `uc --no-shell` (or `UC_NO_SHELL=1`) sends every line to it.
 Up and Down bring back what you typed before, in uc or in bash, even in an earlier session,
