@@ -30,4 +30,5 @@ pub mod register;
 pub mod reload;
 pub mod remote;
 pub mod setup;
+pub mod tls;
 pub mod wg;

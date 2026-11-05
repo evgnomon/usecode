@@ -212,8 +212,8 @@ fn download(dir: &Path, arch: &str) -> Result<PathBuf> {
     let name = format!("usecoded-{arch}");
     println!("downloading {name} from the {tag} release");
 
-    // graviola is pure Rust, so the static builds stay free of C.
-    let _ = rustls_graviola::default_provider().install_default();
+    // graviola, or ring where this CPU can't run it (see crate::tls).
+    crate::tls::install();
     let client = reqwest::blocking::Client::builder()
         .connect_timeout(Duration::from_secs(15))
         .timeout(Duration::from_secs(600))

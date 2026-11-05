@@ -4850,6 +4850,7 @@ dependencies = [
  "base64 0.23.1",
  "libc",
  "reqwest",
+ "rustls",
  "rustls-graviola",
  "serde",
  "serde_json",

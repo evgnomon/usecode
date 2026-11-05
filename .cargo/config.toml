@@ -6,3 +6,10 @@
 # without a cross gcc: make -C lib/uc build TARGET=aarch64-unknown-linux-musl
 [target.aarch64-unknown-linux-musl]
 linker = "rust-lld"
+
+# The C some crates build into usecoded (ring, its TLS fallback) needs no
+# libc headers, so the plain gcc builds it for x86_64 musl, and clang (which
+# targets any arch) cross-builds it for arm. uc itself has no C.
+[env]
+CC_x86_64_unknown_linux_musl = "gcc"
+CC_aarch64_unknown_linux_musl = "clang"

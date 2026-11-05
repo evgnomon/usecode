@@ -182,9 +182,10 @@ pub fn uptime() -> Option<i64> {
     Some(secs as i64)
 }
 
-/// An HTTP client for the usecode API, on the pure-Rust TLS provider.
+/// An HTTP client for the usecode API, on the TLS provider this CPU can
+/// run (see [`crate::tls`]).
 pub fn client() -> Result<reqwest::blocking::Client> {
-    let _ = rustls_graviola::default_provider().install_default();
+    crate::tls::install();
     reqwest::blocking::Client::builder()
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(30))

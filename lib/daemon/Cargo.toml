@@ -39,6 +39,8 @@ base64 = "0.23"
 libc.workspace = true
 reqwest = { workspace = true, features = ["blocking", "json", "rustls-no-provider"] }
 rustls-graviola = "0.4"
+# ring is the fallback for CPUs graviola can't run on (see src/tls.rs).
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 serde_yaml.workspace = true

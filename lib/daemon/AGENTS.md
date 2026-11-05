@@ -24,6 +24,17 @@ No keys, no vault, no packages, no feature setup.
 usecoded`, `dist`), never as part of the control-node build, and uc
 must never need the checkout to install it.
 
+## C dependencies are allowed here
+
+Unlike `uc`, `usecoded` may depend on C code: it only runs on
+Debian-family hosts, where the OS can provide libraries too. Prefer a
+production-grade crate with C (e.g. `ring` for TLS crypto) over an
+experimental pure-Rust one. Still prefer a static binary: vendor and
+link the C code statically (as `ring` does) when its license allows
+static linking into usecoded. Link a library from the OS dynamically
+(and add it to the .deb's `Depends`) only when it can't be linked
+statically or its license doesn't allow it.
+
 ## Setting up is the daemon's job
 
 Each module sets its part of the host up itself once its preconditions
