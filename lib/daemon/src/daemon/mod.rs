@@ -131,7 +131,7 @@ pub fn run() -> Result<()> {
 
     eprintln!("stopping");
     for m in modules.iter_mut().rev() {
-        if let Err(e) = m.stop() {
+        if let Err(e) = guarded(|| m.stop()) {
             eprintln!("{}: stop: {e}", m.name());
         }
     }
@@ -144,7 +144,7 @@ pub fn run() -> Result<()> {
 fn reconcile(modules: &mut [Box<dyn Module>], force: bool) -> String {
     let mut report = String::new();
     for m in modules.iter_mut() {
-        let result = m.reconcile(force);
+        let result = guarded(|| m.reconcile(force));
         record(m.name(), &result);
         match result {
             Ok(()) => report.push_str(&format!("{}: ok\n", m.name())),
@@ -155,6 +155,21 @@ fn reconcile(modules: &mut [Box<dyn Module>], force: bool) -> String {
         }
     }
     report
+}
+
+/// Run a module's step, turning a panic into an error like any other: a
+/// bug in one module (or a crate it uses) must not take the daemon, and
+/// with it every other module, down. Nothing is shared across the
+/// unwind but the module itself, which starts over on the next tick.
+fn guarded(step: impl FnOnce() -> Result<()>) -> Result<()> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(step)).unwrap_or_else(|panic| {
+        let what = panic
+            .downcast_ref::<&str>()
+            .map(|s| s.to_string())
+            .or_else(|| panic.downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "unknown cause".into());
+        Err(crate::error::Error(format!("panicked: {what}")))
+    })
 }
 
 /// SIGHUP, SIGTERM and SIGINT, blocked so they queue up for
@@ -214,6 +229,14 @@ impl Signals {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_panicking_module_is_an_error_not_a_crash() {
+        let result = guarded(|| panic!("no avx2"));
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("no avx2"), "{err}");
+        assert!(guarded(|| Ok(())).is_ok());
+    }
 
     #[test]
     fn a_blocked_signal_is_waited_for_not_delivered() {
