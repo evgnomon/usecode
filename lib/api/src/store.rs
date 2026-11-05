@@ -63,6 +63,14 @@ use uuid::Uuid;
 use crate::db::{self, Db, Partition};
 use crate::schema;
 
+/// `value` with LIKE's wildcards taken literally.
+fn like_escape(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+}
+
 pub fn hash(value: &str) -> String {
     format!("{:x}", Sha256::digest(value.as_bytes()))
 }
@@ -216,6 +224,58 @@ pub struct NewHost<'a> {
     pub os: &'a str,
     pub ip: Option<&'a str>,
 }
+
+/// Which of a user's hosts to list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostState {
+    All,
+    Online,
+    Offline,
+    /// Online, with a module that hit an error.
+    Failing,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostSort {
+    Name,
+    /// The ones heard from longest ago first: the quiet ones on top.
+    Quiet,
+}
+
+/// A page of a user's hosts.
+pub struct HostQuery<'a> {
+    /// Matched against the name, OS, version and address; empty for all.
+    pub search: &'a str,
+    pub state: HostState,
+    pub sort: HostSort,
+    /// A host heard from since this is online.
+    pub online_since: DateTime<Utc>,
+    pub limit: i64,
+    pub offset: i64,
+}
+
+/// How many of the hosts matching a search are in each state.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, sqlx::FromRow)]
+pub struct HostCounts {
+    pub all: i64,
+    pub online: i64,
+    pub offline: i64,
+    pub failing: i64,
+}
+
+impl HostCounts {
+    pub fn of(&self, state: HostState) -> i64 {
+        match state {
+            HostState::All => self.all,
+            HostState::Online => self.online,
+            HostState::Offline => self.offline,
+            HostState::Failing => self.failing,
+        }
+    }
+}
+
+/// A host whose last heartbeat had a module in error.
+const HOST_FAILING: &str = "modules @> '[{\"status\": \"error\"}]'::jsonb";
 
 /// What a host says on each heartbeat.
 pub struct Heartbeat<'a> {
@@ -1270,14 +1330,54 @@ impl Store {
         .await?)
     }
 
-    pub async fn list_hosts(&self, partition: &Partition, user_id: &Uuid) -> Result<Vec<HostRow>> {
+    /// A page of the user's hosts, and how many match the search in each
+    /// state. Hundreds of hosts are one index range on (user_id, name).
+    pub async fn list_hosts(
+        &self,
+        partition: &Partition,
+        user_id: &Uuid,
+        query: &HostQuery<'_>,
+    ) -> Result<(Vec<HostRow>, HostCounts)> {
         let pool = self.db.pool(partition).await?;
-        Ok(sqlx::query_as(sqlx::AssertSqlSafe(format!(
-            "SELECT {HOST_COLUMNS} FROM hosts WHERE user_id = $1 ORDER BY name, created_at"
+        let pattern = format!("%{}%", like_escape(query.search.trim()));
+        // $1 user, $2 online since, $3 search pattern.
+        let matching = "user_id = $1 AND ($3 = '%%' OR name ILIKE $3 OR os ILIKE $3 \
+                        OR version ILIKE $3 OR last_ip ILIKE $3)";
+        let counts: HostCounts = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "SELECT count(*) AS \"all\",
+                    count(*) FILTER (WHERE last_seen_at > $2) AS online,
+                    count(*) FILTER (WHERE last_seen_at <= $2) AS offline,
+                    count(*) FILTER (WHERE last_seen_at > $2 AND {HOST_FAILING}) AS failing
+             FROM hosts WHERE {matching}"
         )))
         .bind(user_id)
+        .bind(query.online_since)
+        .bind(&pattern)
+        .fetch_one(&pool)
+        .await?;
+
+        let state = match query.state {
+            HostState::All => "TRUE".to_string(),
+            HostState::Online => "last_seen_at > $2".to_string(),
+            HostState::Offline => "last_seen_at <= $2".to_string(),
+            HostState::Failing => format!("last_seen_at > $2 AND {HOST_FAILING}"),
+        };
+        let order = match query.sort {
+            HostSort::Name => "name, id",
+            HostSort::Quiet => "last_seen_at, name, id",
+        };
+        let rows = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "SELECT {HOST_COLUMNS} FROM hosts WHERE {matching} AND {state}
+             ORDER BY {order} LIMIT $4 OFFSET $5"
+        )))
+        .bind(user_id)
+        .bind(query.online_since)
+        .bind(&pattern)
+        .bind(query.limit)
+        .bind(query.offset)
         .fetch_all(&pool)
-        .await?)
+        .await?;
+        Ok((rows, counts))
     }
 
     /// Forget a host; its secret stops working, so it stops calling home.

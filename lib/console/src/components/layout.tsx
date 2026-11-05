@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Kbd, KeyLegend } from "@/components/kbd";
 import { REPO_URL } from "@/content";
 import { post, useMe } from "@/lib/api";
-import { HOTKEYS, useHotkeys } from "@/lib/keys";
+import { forWho, HOTKEYS, useHotkeys } from "@/lib/keys";
 import { Link, navigate, useLocation } from "@/lib/router";
 import { nextTheme, useTheme, type Theme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
@@ -68,6 +68,7 @@ function Header() {
           <NavLink href="/pricing">Pricing</NavLink>
           {me?.user ? (
             <>
+              <NavLink href="/hosts">Hosts</NavLink>
               <NavLink href="/account">Account</NavLink>
               <button type="button" onClick={logout} className="cursor-pointer py-1 text-[13px] text-muted-foreground transition-colors hover:text-foreground">
                 Log out
@@ -93,11 +94,7 @@ function Header() {
 
 function Footer() {
   const { me } = useMe();
-  const keys = HOTKEYS.filter((k) => {
-    if (k.href === "/account") return Boolean(me?.user);
-    if (k.href === "/login" || k.href === "/signup") return me != null && !me.user;
-    return true;
-  });
+  const keys = HOTKEYS.filter((k) => forWho(k, me ? Boolean(me.user) : null));
   return (
     <footer className="border-t py-5 text-xs">
       <div className="wrap flex flex-wrap justify-between gap-4">

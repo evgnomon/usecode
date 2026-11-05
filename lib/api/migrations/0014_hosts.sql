@@ -40,3 +40,5 @@ CREATE TABLE hosts (
     CONSTRAINT uq_hosts_user_machine UNIQUE (user_id, machine_id)
 );
 CREATE UNIQUE INDEX ix_hosts_secret_hash ON hosts (secret_hash);
+-- The console pages through a user's hosts by name.
+CREATE INDEX ix_hosts_user_name ON hosts (user_id, name, id);

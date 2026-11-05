@@ -7,6 +7,7 @@ import { useLocation, useTitle } from "@/lib/router";
 import { Account } from "@/pages/account";
 import { AuthForm } from "@/pages/auth";
 import { Home } from "@/pages/home";
+import { Hosts } from "@/pages/hosts";
 import { NotFound } from "@/pages/not-found";
 import { Pricing } from "@/pages/pricing";
 
@@ -25,6 +26,7 @@ export const PAGES: Record<string, Page> = {
   "/signup": { title: "Sign up · usecode.dev", render: () => <AuthForm key="signup" mode="signup" /> },
   "/forgot": { title: "Forgot your password · usecode.dev", render: () => <AuthForm key="reset" mode="reset" /> },
   "/account": { title: "Your account · usecode.dev", render: () => <Account /> },
+  "/hosts": { title: "Your hosts · usecode.dev", render: () => <Hosts /> },
 };
 
 export const NOT_FOUND: Page = { title: "Not found · usecode.dev", render: () => <NotFound />, prerender: true };

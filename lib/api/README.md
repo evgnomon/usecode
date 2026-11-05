@@ -61,8 +61,12 @@ minutes; `uc daemon register` sets that up (see `lib/daemon/README.md`).
 - `POST /hosts/heartbeat` — `Authorization: Bearer <secret>`,
   `{ "version", "uptime_seconds", "modules": [{ "name", "status", "detail"? }] }`.
   A `401` means the host was removed, and the daemon stops calling.
-- `GET /hosts`, `DELETE /hosts/{id}` — the user's hosts, each `online` while it called
-  within three heartbeats, and removing one.
+- `GET /hosts?q=&state=all|online|offline|failing&sort=name|quiet&limit=50&offset=0` — a
+  page of the user's hosts (at most 200), each `online` while it called within three
+  heartbeats and `failing` when online with a module in error. `q` matches the name, OS,
+  version and address. The answer has the `total` over all pages and `counts` per state for
+  the search, so the console never needs every host at once.
+- `DELETE /hosts/{id}` — forget a host; it stops calling home.
 
 Enrollment tokens and secrets are minted with the owner's shard in front, like web
 sessions, so `host_enrollments` and `hosts` live with the user. Only their hashes are kept.

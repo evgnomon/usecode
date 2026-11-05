@@ -12,21 +12,22 @@
 
 use std::sync::Arc;
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use chrono::{Duration, Utc};
+use serde::Deserialize;
 use serde_json::Value;
 
 use crate::App;
 use crate::error::{AppError, AppResult};
 use crate::extract::{Client, JsonBody};
 use crate::models::{
-    HeartbeatIn, HeartbeatOut, HostEnrollmentOut, HostListOut, HostOut, HostRegisterIn,
-    HostRegisterOut,
+    HeartbeatIn, HeartbeatOut, HostCountsOut, HostEnrollmentOut, HostListOut, HostOut,
+    HostRegisterIn, HostRegisterOut,
 };
-use crate::store::{Heartbeat, HostRow, NewHost, ts};
+use crate::store::{Heartbeat, HostQuery, HostRow, HostSort, HostState, NewHost, ts};
 
 /// How often a host is asked to call.
 pub const HEARTBEAT_SECONDS: u64 = 300;
@@ -39,6 +40,15 @@ const ENROLLMENT_TTL: Duration = Duration::hours(1);
 
 /// The most module statuses one heartbeat may carry.
 const MAX_MODULES: usize = 64;
+
+/// Hosts per page unless asked otherwise, and the most one page holds.
+const PAGE: i64 = 50;
+const MAX_PAGE: i64 = 200;
+
+/// How long a host may be silent and still be online.
+fn online_window() -> Duration {
+    Duration::seconds((HEARTBEAT_SECONDS * MISSED_BEATS) as i64)
+}
 
 pub fn router() -> Router<Arc<App>> {
     Router::new()
@@ -139,16 +149,73 @@ async fn heartbeat(
     }))
 }
 
+/// `GET /hosts?q=web&state=offline&sort=quiet&limit=50&offset=0`.
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct ListQuery {
+    q: String,
+    state: Option<String>,
+    sort: Option<String>,
+    limit: Option<i64>,
+    offset: Option<i64>,
+}
+
 async fn list_hosts(
     State(app): State<Arc<App>>,
     Client(client): Client,
+    Query(query): Query<ListQuery>,
 ) -> AppResult<Json<HostListOut>> {
-    let rows = app
+    let state = match query.state.as_deref().unwrap_or("all") {
+        "all" => HostState::All,
+        "online" => HostState::Online,
+        "offline" => HostState::Offline,
+        "failing" => HostState::Failing,
+        _ => {
+            return Err(AppError::invalid(
+                &["query", "state"],
+                "state is one of all, online, offline and failing",
+            ));
+        }
+    };
+    let sort = match query.sort.as_deref().unwrap_or("name") {
+        "name" => HostSort::Name,
+        "quiet" => HostSort::Quiet,
+        _ => {
+            return Err(AppError::invalid(
+                &["query", "sort"],
+                "sort is name or quiet",
+            ));
+        }
+    };
+    let limit = query.limit.unwrap_or(PAGE).clamp(1, MAX_PAGE);
+    let offset = query.offset.unwrap_or(0).max(0);
+    let search = clip(&query.q, 100);
+    let (rows, counts) = app
         .store
-        .list_hosts(&client.partition, &client.user_id)
+        .list_hosts(
+            &client.partition,
+            &client.user_id,
+            &HostQuery {
+                search: &search,
+                state,
+                sort,
+                online_since: Utc::now() - online_window(),
+                limit,
+                offset,
+            },
+        )
         .await?;
     Ok(Json(HostListOut {
         hosts: rows.into_iter().map(host_out).collect(),
+        total: counts.of(state),
+        counts: HostCountsOut {
+            all: counts.all,
+            online: counts.online,
+            offline: counts.offline,
+            failing: counts.failing,
+        },
+        limit,
+        offset,
     }))
 }
 
@@ -168,20 +235,23 @@ async fn delete_host(
 }
 
 fn host_out(row: HostRow) -> HostOut {
-    let silent = (Utc::now() - row.last_seen_at).num_seconds();
+    let online = Utc::now() - row.last_seen_at < online_window();
+    let modules = match row.modules.0 {
+        Value::Array(items) => items,
+        _ => Vec::new(),
+    };
+    let failing = online && modules.iter().any(|m| m["status"] == "error");
     HostOut {
         id: row.id.to_string(),
         name: row.name,
         version: row.version,
         arch: row.arch,
         os: row.os,
-        modules: match row.modules.0 {
-            Value::Array(items) => Value::Array(items),
-            _ => Value::Array(Vec::new()),
-        },
+        modules: Value::Array(modules),
         uptime_seconds: row.uptime_seconds,
         last_ip: row.last_ip,
-        online: silent < (HEARTBEAT_SECONDS * MISSED_BEATS) as i64,
+        online,
+        failing,
         last_seen_at: ts(row.last_seen_at),
         created_at: ts(row.created_at),
     }
@@ -319,7 +389,13 @@ mod tests {
         assert_eq!(host["uptime_seconds"], 42);
         assert_eq!(host["last_ip"], "203.0.113.7");
         assert_eq!(host["online"], true);
+        assert_eq!(host["failing"], true);
         assert_eq!(host["modules"][1]["detail"], "no k3s");
+        assert_eq!(listed.body["total"], 1);
+        assert_eq!(
+            listed.body["counts"],
+            json!({"all": 1, "online": 1, "offline": 0, "failing": 1})
+        );
 
         // The same machine registering again keeps its row and gets a new
         // secret; the old one stops working.
@@ -362,6 +438,104 @@ mod tests {
         assert_eq!(gone.status, StatusCode::UNAUTHORIZED);
         let listed = call(app, "GET", "/hosts", as_user, None).await;
         assert_eq!(listed.body["hosts"], json!([]));
+    }
+
+    #[tokio::test]
+    async fn hundreds_of_hosts_come_a_page_at_a_time() {
+        let Some(t) = testing::app(|_| {}).await else {
+            return;
+        };
+        let app = &t.app;
+        let (user, _) = app.store.get_or_create_user("+14155552672").await.unwrap();
+        let key = app.store.issue_api_key(&user, "test").await.unwrap();
+        let as_user = ("x-api-key", key.as_str());
+
+        for i in 0..120 {
+            let token = app
+                .store
+                .issue_host_enrollment(&user, Utc::now() + ENROLLMENT_TTL)
+                .await
+                .unwrap();
+            let name = format!("web-{i:03}");
+            let host = NewHost {
+                name: &name,
+                machine_id: &name,
+                version: "0.1.0",
+                arch: "x86_64",
+                os: if i % 2 == 0 { "Debian" } else { "Ubuntu" },
+                ip: None,
+            };
+            let (_, secret) = app
+                .store
+                .register_host(&token, host)
+                .await
+                .unwrap()
+                .unwrap();
+            let modules = if i < 5 {
+                json!([{"name": "mesh", "status": "error", "detail": "no key"}])
+            } else {
+                json!([{"name": "mesh", "status": "ok"}])
+            };
+            let beat = Heartbeat {
+                version: "0.1.0",
+                modules: &modules,
+                uptime_seconds: Some(1),
+                ip: None,
+            };
+            app.store.host_heartbeat(&secret, beat).await.unwrap();
+        }
+        // Ten went quiet an hour ago.
+        let pool = app.store.db().pool(&None).await.unwrap();
+        sqlx::query(
+            "UPDATE hosts SET last_seen_at = now() - interval '1 hour'
+             WHERE name >= 'web-110'",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let page = call(app, "GET", "/hosts", as_user, None).await.body;
+        assert_eq!(page["hosts"].as_array().unwrap().len(), PAGE as usize);
+        assert_eq!(page["total"], 120);
+        assert_eq!(page["hosts"][0]["name"], "web-000");
+        assert_eq!(
+            page["counts"],
+            json!({"all": 120, "online": 110, "offline": 10, "failing": 5})
+        );
+
+        let last = call(app, "GET", "/hosts?offset=100&limit=50", as_user, None)
+            .await
+            .body;
+        assert_eq!(last["hosts"].as_array().unwrap().len(), 20);
+        assert_eq!(last["hosts"][0]["name"], "web-100");
+
+        let quiet = call(app, "GET", "/hosts?state=offline", as_user, None)
+            .await
+            .body;
+        assert_eq!(quiet["total"], 10);
+        assert_eq!(quiet["hosts"][0]["online"], false);
+
+        let failing = call(app, "GET", "/hosts?state=failing", as_user, None)
+            .await
+            .body;
+        assert_eq!(failing["total"], 5);
+
+        let found = call(app, "GET", "/hosts?q=WEB-01", as_user, None)
+            .await
+            .body;
+        assert_eq!(found["total"], 10);
+        assert_eq!(found["counts"]["all"], 10);
+        let debian = call(app, "GET", "/hosts?q=debian&limit=1", as_user, None)
+            .await
+            .body;
+        assert_eq!(debian["total"], 60);
+        assert_eq!(debian["hosts"].as_array().unwrap().len(), 1);
+        // LIKE's wildcards are only themselves.
+        let none = call(app, "GET", "/hosts?q=%25", as_user, None).await.body;
+        assert_eq!(none["total"], 0);
+
+        let bad = call(app, "GET", "/hosts?state=sleepy", as_user, None).await;
+        assert_eq!(bad.status, StatusCode::UNPROCESSABLE_ENTITY);
     }
 
     #[test]

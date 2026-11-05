@@ -84,6 +84,8 @@ test("the account is for the logged in, the login for the others", async () => {
   assert.equal(new Headers(calls[0]!.init?.headers).get("cookie"), "uc_session=old");
 
   assert.equal((await get("/account", "uc_session=good")).status, 200);
+  assert.equal((await get("/hosts")).headers.get("location"), "/login?next=/hosts");
+  assert.equal((await get("/hosts", "uc_session=good")).status, 200);
   const member = await get("/login", "uc_session=good");
   assert.equal(member.status, 302);
   assert.equal(member.headers.get("location"), "/account");

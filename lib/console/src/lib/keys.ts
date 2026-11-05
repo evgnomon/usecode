@@ -19,17 +19,24 @@ export type Hotkey = {
   label: string;
   /** The page it goes to, if it's a page. */
   href?: string;
+  /** Only for the logged in, or only for the others. */
+  for?: "members" | "visitors";
 };
 
 /** The console's keys, in the order the footer lists them. */
 export const HOTKEYS: Hotkey[] = [
   { key: "h", label: "Home", href: "/" },
   { key: "p", label: "Pricing", href: "/pricing" },
-  { key: "a", label: "Account", href: "/account" },
-  { key: "l", label: "Log in", href: "/login" },
-  { key: "s", label: "Sign up", href: "/signup" },
+  { key: "o", label: "Hosts", href: "/hosts", for: "members" },
+  { key: "a", label: "Account", href: "/account", for: "members" },
+  { key: "l", label: "Log in", href: "/login", for: "visitors" },
+  { key: "s", label: "Sign up", href: "/signup", for: "visitors" },
   { key: "t", label: "Theme" },
 ];
+
+/** Whether a key is for whoever is looking; null until the page knows. */
+export const forWho = (k: Hotkey, member: boolean | null) =>
+  !k.for || (member !== null && member === (k.for === "members"));
 
 /** True when a keypress would be typed rather than pressed, so no shortcut takes it. */
 const typing = (el: EventTarget | null) =>
@@ -50,8 +57,7 @@ export function useHotkeys() {
       const hot = HOTKEYS.find((k) => k.key === e.key);
       if (!hot) return;
       // The keys of pages that aren't for you right now don't go anywhere.
-      if (hot.href === "/account" && !me?.user) return;
-      if ((hot.href === "/login" || hot.href === "/signup") && me?.user) return;
+      if (!forWho(hot, me ? Boolean(me.user) : null)) return;
       e.preventDefault();
       if (!hot.href) {
         setTheme(nextTheme(theme));

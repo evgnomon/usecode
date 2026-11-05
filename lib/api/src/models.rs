@@ -192,13 +192,29 @@ pub struct HostOut {
     pub uptime_seconds: Option<i64>,
     pub last_ip: Option<String>,
     pub online: bool,
+    /// Online, with a module that hit an error on its last heartbeat.
+    pub failing: bool,
     pub last_seen_at: f64,
     pub created_at: f64,
 }
 
 #[derive(Serialize)]
+pub struct HostCountsOut {
+    pub all: i64,
+    pub online: i64,
+    pub offline: i64,
+    pub failing: i64,
+}
+
+#[derive(Serialize)]
 pub struct HostListOut {
     pub hosts: Vec<HostOut>,
+    /// How many hosts match the search and the state, over all pages.
+    pub total: i64,
+    /// How many match the search in each state.
+    pub counts: HostCountsOut,
+    pub limit: i64,
+    pub offset: i64,
 }
 
 #[derive(Serialize)]

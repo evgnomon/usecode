@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { EmptyNodes, Pill } from "@/components/console";
+import { Pill } from "@/components/console";
 import { KeyLegend } from "@/components/kbd";
 import { ErrorNote, Notice, Section } from "@/components/layout";
 import { HOSTED_PRICE, PLANS } from "@/content";
@@ -95,8 +95,16 @@ export function Account() {
             <Subscription me={me} />
           </CardContent>
         </Card>
-        <h2 className="mb-3 text-base">Nodes</h2>
-        <EmptyNodes />
+        <h2 className="mb-3 text-base">Hosts</h2>
+        <p className="mb-3 text-muted-foreground">
+          Every host running the usecode daemon can check in here, so you see which are up and how they're doing.
+        </p>
+        <Button asChild variant="outline" aria-keyshortcuts="o">
+          <Link href="/hosts">
+            Your hosts
+            <KeyLegend k="o" />
+          </Link>
+        </Button>
       </div>
     </Section>
   );

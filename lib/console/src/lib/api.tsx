@@ -31,23 +31,34 @@ export function apiUrl(): string {
   return document.querySelector<HTMLMetaElement>('meta[name="uc-api"]')?.content || "http://localhost:8000";
 }
 
-/** POSTs `body` as JSON to the API; the reply's `detail` becomes an ApiError. */
-export async function post<T = unknown>(path: string, body: unknown = {}): Promise<T> {
+/** Calls the API with the session cookie; the reply's `detail` becomes an ApiError. */
+async function call<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`${apiUrl()}${path}`, {
-      method: "POST",
+      method,
       credentials: "include",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
+      headers: body === undefined ? {} : { "content-type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal,
     });
-  } catch {
+  } catch (err) {
+    if (signal?.aborted) throw err;
     throw new ApiError("We can't reach usecode.dev just now. Check your connection and try again.", 0);
   }
   const json = res.status === 204 ? {} : await res.json().catch(() => ({}));
   if (!res.ok) throw new ApiError(typeof json.detail === "string" ? json.detail : ON_OUR_SIDE, res.status);
   return json as T;
 }
+
+/** POSTs `body` as JSON to the API. */
+export const post = <T = unknown,>(path: string, body: unknown = {}) => call<T>("POST", path, body);
+
+/** GETs from the API; `signal` lets a newer request cancel this one. */
+export const get = <T = unknown,>(path: string, signal?: AbortSignal) => call<T>("GET", path, undefined, signal);
+
+/** DELETEs on the API. */
+export const del = (path: string) => call<unknown>("DELETE", path);
 
 /** Sends the browser to Stripe (or back to the account) with the URL an endpoint answers. */
 export async function goTo(path: "/billing/checkout" | "/billing/portal") {

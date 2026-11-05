@@ -16,10 +16,10 @@ import { join } from "node:path";
 import type { Config } from "./config.js";
 
 /** The pages the app in src/ has; any other path gets it with a 404. */
-export const PAGES = ["/", "/pricing", "/login", "/signup", "/forgot", "/account"];
+export const PAGES = ["/", "/pricing", "/login", "/signup", "/forgot", "/account", "/hosts"];
 
 /** Pages for the logged in, and the ones for the logged out. */
-const MEMBERS = ["/account"];
+const MEMBERS = ["/account", "/hosts"];
 const VISITORS = ["/login", "/signup", "/forgot"];
 
 /** The <meta> the pages read the API's address from (src/lib/api.tsx). */
