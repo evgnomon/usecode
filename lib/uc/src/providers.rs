@@ -189,6 +189,8 @@ pub struct Settings {
     pub provider: Option<String>,
     pub model: Option<String>,
     pub effort: Option<String>,
+    /// The skills new sessions start with on, `skills:`.
+    pub skills: Vec<String>,
     pub parallel_key: Option<String>,
     pub exa_key: Option<String>,
     pub cloudflare_account: Option<String>,
@@ -206,6 +208,7 @@ impl Default for Settings {
             provider: None,
             model: None,
             effort: None,
+            skills: Vec::new(),
             parallel_key: None,
             exa_key: None,
             cloudflare_account: None,
@@ -228,6 +231,8 @@ struct File {
     provider: Option<String>,
     model: Option<String>,
     effort: Option<String>,
+    #[serde(default)]
+    skills: Vec<String>,
     #[serde(default)]
     search: Search,
     #[serde(default)]
@@ -312,6 +317,11 @@ pub fn parse_settings(text: &str) -> Result<Settings> {
         provider: some(file.provider),
         model: some(file.model),
         effort: some(file.effort),
+        skills: file
+            .skills
+            .into_iter()
+            .filter_map(|s| some(Some(s)))
+            .collect(),
         parallel_key: key(file.search.parallel),
         exa_key: key(file.search.exa),
         cloudflare_account: some(cloudflare.account_id),
@@ -505,6 +515,20 @@ pub fn save_choice(provider: &str, model: &str) -> Result<PathBuf> {
 pub fn save_effort(effort: &str) -> Result<PathBuf> {
     update(|top| {
         top.insert("effort".into(), effort.into());
+        Ok(())
+    })
+}
+
+/// Makes `skills` the skills new sessions start with on; none takes
+/// `skills:` out.
+pub fn save_skills(skills: &[String]) -> Result<PathBuf> {
+    update(|top| {
+        if skills.is_empty() {
+            top.remove("skills");
+        } else {
+            let list = skills.iter().map(|s| Value::from(s.as_str())).collect();
+            top.insert("skills".into(), Value::Sequence(list));
+        }
         Ok(())
     })
 }

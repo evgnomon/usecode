@@ -339,6 +339,11 @@ pub static AGENT: Group = Group {
             run: Run::Builtin(agent_effort),
         },
         Sub {
+            name: "skill",
+            summary: "turn the skills in .agents/skills and ~/.agents/skills on and off: the picker, or NAME on and -NAME off, saved for new sessions",
+            run: Run::Builtin(agent_skill),
+        },
+        Sub {
             name: "export",
             summary: "at a uc prompt: write the conversation to a file, to import later",
             run: Run::Builtin(agent_export),
@@ -482,6 +487,38 @@ fn agent_effort(args: &[OsString]) -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("uc agent effort: {err:#}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// `uc agent skill [NAME...]` in a shell: lists the skills or saves which
+/// are on for the sessions to come; see [`crate::chat::agent_skill`].
+fn agent_skill(args: &[OsString]) -> ExitCode {
+    let args: Vec<String> = args
+        .iter()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
+    if args.iter().any(|a| a == "-h" || a == "--help") {
+        println!("usage: uc agent skill [NAME... | -NAME... | none]\n");
+        println!("Skills are directories with a SKILL.md in .agents/skills of the project");
+        println!("(the working directory up to its repository root) or in ~/.agents/skills;");
+        println!("a project one wins over a global one of the same name. With no NAME: the");
+        println!("skills there are, the ones new sessions start with on marked. NAME turns a");
+        println!("skill on, -NAME turns it off and none turns them all off, more than one at");
+        println!(
+            "a time, saved as skills: in {}. Typed at a",
+            crate::providers::path().display()
+        );
+        println!("uc prompt it changes that session too. Without a NAME the picker turns");
+        println!("the skills you take (Tab takes more than one) on or off; without a");
+        println!("terminal they are listed.");
+        return ExitCode::SUCCESS;
+    }
+    match crate::chat::agent_skill(&args) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(err) => {
+            eprintln!("uc agent skill: {err:#}");
             ExitCode::FAILURE
         }
     }

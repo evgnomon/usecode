@@ -47,7 +47,9 @@ it asks you to okay still shows in full, and `uc --commands` shows every
 command line as it is.
 Type a command like `ls -al` or `git status` and it just runs on your
 terminal, like in a shell (`cd` and your bash aliases and functions too), with
-the same confirmations; a line that reads like a sentence goes to the model. Rather talk to the model every
+the same confirmations. You can tell before you hit Enter: the program lights up
+in yellow when the line will run. Want to say `make it faster` to the model
+instead? Start the line with a space and it goes to the model. Rather talk to the model every
 time? `uc --no-shell` (or `UC_NO_SHELL=1`) sends every line to it.
 Up and Down bring back what you typed before, in uc or in bash, even in an earlier session,
 and Ctrl-R finds it in a colourful fuzzy picker, just like fzf in bash. Changed your mind while it
@@ -198,6 +200,19 @@ hard the model thinks: `minimal`, `low`, `medium`, `high`, `xhigh` or `max`.
 is saved as `effort:` in `agent.yaml` for the next ones. It works on
 OpenRouter, a Claude subscription and Copilot alike; uc translates the level
 to what each one understands.
+
+Got a way of working you want the model to follow? Put it in a skill: a
+directory with a `SKILL.md` in it, the same layout other agents use, in
+`.agents/skills` of your project or in `~/.agents/skills` for every project.
+`uc agent skill` shows them in the picker; Enter turns one on or off, and
+Tab picks a few at once, as many skills can be on together.
+`uc agent skill review -deploy` turns `review` on and `deploy` off straight
+away, and `uc agent skill none` turns them all off. The ones on go into the
+model's instructions and are saved as `skills:` in `agent.yaml` for the
+next sessions. Typed in a shell, `uc agent skill` opens the same picker and
+picks the skills new sessions start with. The model has a `skill` tool of
+its own too, so "use the review skill" just works, and it turns one on by
+itself when your task is what the skill is for.
 
 Need to stop for the day, or pick a conversation up on another terminal?
 `uc agent export` writes it to a file in `~/.local/state/usecode/sessions`

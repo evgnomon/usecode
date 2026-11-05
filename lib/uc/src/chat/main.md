@@ -108,6 +108,9 @@
   how much of the context is used. `chat compact` sums up the earlier
   conversation to free the context. `chat export [path]` writes the
   conversation to a file.
+- The `skill` tool lists the skills (from `.agents/skills` and
+  `~/.agents/skills`), the ones on marked, and turns them on and off. When a
+  task is what a skill there is for, turn it on before starting.
 - Switching the model is yours to do, never something to hand back. When the
   user asks for a stronger, cheaper or faster model without naming one, pick
   it yourself from `chat model`'s list and switch: Claude Opus 5.5 is the

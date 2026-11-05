@@ -17,9 +17,10 @@
 //! follows and stops itself. Only the model's replies are printed, not what
 //! the commands print, unless `--output` is given. A command the model runs
 //! shows as a few words on what it does, like `· list the rust files`, unless
-//! `--commands` is given, which shows the command line itself. A line that is a command
-//! (`ls -al`, `git status`) runs on the terminal
-//! straight away, with the same confirmations, without the model hearing
+//! `--commands` is given, which shows the command line itself. A line that
+//! starts with a program, builtin, alias or function (`ls -al`, `git status`)
+//! is a command: the prompt colors the program as it is typed, and it runs on
+//! the terminal straight away (a space before it sends the line to the model instead), with the same confirmations, without the model hearing
 //! about it (but where it left the directory, which the model is told);
 //! the user's bash aliases, functions and variables work there too, and what
 //! a command changes in the shell stays for the next, see [`shell`];
@@ -50,6 +51,10 @@
 //! `uc agent rewind [N]` goes back to before the line typed N lines ago
 //! (the picker picks it without N) and puts it back at the prompt to edit,
 //! `uc agent effort [LEVEL]` sets how hard the model thinks (and saves it),
+//! `uc agent skill [NAME...]` turns skills on and off, more than one at a
+//! time, from `.agents/skills` in the project and `~/.agents/skills` (and
+//! saves them; see [`skills`]), as the model's `skill` tool does for the
+//! session,
 //! `uc agent export [FILE]` writes the conversation to a file and `uc agent
 //! import [FILE]` carries on from one (typed in a shell, in a new session),
 //! and `uc agent status` prints the model, the effort, the mode and how much
@@ -104,6 +109,7 @@ mod hl;
 mod out;
 pub mod serve;
 mod shell;
+mod skills;
 mod voice;
 
 /// A status line, `· text` on the terminal; see [`out::note`].
@@ -152,16 +158,6 @@ const MAIN_SKILL: &str = include_str!("chat/main.md");
 /// Builtins worth running when typed at the prompt; `cd` changes uc's own
 /// directory. Keywords like `if` and `for` are left out: they start sentences.
 const BUILTINS: &[&str] = &["cd", "echo", "printf", "pwd", "type", "command", "time"];
-/// Programs whose name is usually an English word when typed at the prompt:
-/// `yes` answers the model, it doesn't print y forever.
-const WORDS: &[&str] = &["yes", "more", "look", "write", "see", "at", "go"];
-/// Words that make a line a sentence for the model, not a command line.
-const PROSE: &[&str] = &[
-    "the", "a", "an", "it", "its", "it's", "this", "that", "these", "those", "is", "are", "was",
-    "be", "to", "for", "of", "and", "but", "with", "at", "on", "why", "how", "what", "when",
-    "where", "me", "my", "i", "you", "your", "we", "our", "please", "can", "could", "should",
-    "would", "not", "ahead",
-];
 
 /// A command runs on the terminal: Ctrl-C stops it, not uc.
 static FOREGROUND: AtomicBool = AtomicBool::new(false);
@@ -580,6 +576,9 @@ struct Session {
     /// The lines typed for the model, oldest first, with where each sits in
     /// `messages`: what `uc agent rewind` goes back to.
     asked: Vec<(usize, String)>,
+    /// The names of the skills on, in the order they were turned on: the
+    /// ones found here go into the system prompt (see [`skills`]).
+    skills: Vec<String>,
 }
 
 /// A command started by bash, followed with job_output and stopped with job_kill.
@@ -734,7 +733,10 @@ async fn run(
             session.forget();
             eprintln!("· context cleared");
         }
-        let line = line.trim();
+        // A line starting with a space is for the model, never a command.
+        let spaced = line.starts_with(char::is_whitespace);
+        let line = agent_alias(line.trim());
+        let line = line.as_ref();
         let agent = agent_command(line);
         if line == "exit" || matches!(agent, Some("exit" | "quit")) {
             return Ok(());
@@ -769,6 +771,10 @@ async fn run(
             session.pick_effort(arg);
             continue;
         }
+        if let Some(arg) = agent_arg(line, "skill") {
+            session.pick_skills(arg);
+            continue;
+        }
         if let Some(arg) = agent_arg(line, "export") {
             match session.export(arg) {
                 Ok(path) => note!("exported to {}", path.display()),
@@ -796,7 +802,7 @@ async fn run(
         session.allow_turn = approved;
         // A typed command runs straight away, without the model: no `· model`
         // print, and nothing about it in the next turn.
-        let command = direct_command(line);
+        let command = direct_command(line).filter(|_| !(spaced && ai));
         if command.is_none() && !ai {
             continue;
         }
@@ -1289,6 +1295,17 @@ fn direct_command(line: &str) -> Option<&str> {
     }
 }
 
+/// A typed `uc a ...` as `uc agent ...`, the way the command line takes it:
+/// otherwise the chat wouldn't know `uc a skill` and the `a` reads as prose.
+fn agent_alias(line: &str) -> std::borrow::Cow<'_, str> {
+    match line.strip_prefix("uc a") {
+        Some(rest) if rest.is_empty() || rest.starts_with(' ') => {
+            format!("uc agent{rest}").into()
+        }
+        _ => line.into(),
+    }
+}
+
 /// A typed `uc agent model ...` line, which the chat takes itself instead of
 /// running in bash: the rest of the line after `uc agent model`, or `Some("")`
 /// for `uc agent model-update`.
@@ -1309,7 +1326,7 @@ fn agent_command(line: &str) -> Option<&'static str> {
 }
 
 /// A typed `uc agent <name> [ARG]` for the commands that take an argument
-/// (`rewind`, `effort`, `export`, `import`), which the chat takes itself:
+/// (`rewind`, `effort`, `skill`, `export`, `import`), which the chat takes itself:
 /// what comes after the name, trimmed.
 fn agent_arg<'l>(line: &'l str, name: &str) -> Option<&'l str> {
     line.strip_prefix("uc agent ")?
@@ -1319,7 +1336,7 @@ fn agent_arg<'l>(line: &'l str, name: &str) -> Option<&'l str> {
 }
 
 /// The `uc agent` commands with an argument that the prompt takes itself.
-const AGENT_ARG_COMMANDS: &[&str] = &["rewind", "effort", "export", "import"];
+const AGENT_ARG_COMMANDS: &[&str] = &["rewind", "effort", "skill", "export", "import"];
 
 /// Whether the line is one of [`AGENT_ARG_COMMANDS`].
 fn agent_arg_line(line: &str) -> bool {
@@ -1336,38 +1353,16 @@ fn color_program(command: &str) -> String {
 }
 
 /// The command line to run when what was typed is one rather than something for
-/// the model: a line starting with a program or builtin
-/// that doesn't read like a sentence. Unsure means it goes to the model.
+/// the model: a line starting with a program, builtin, alias or function. The
+/// prompt colors the program as it is typed, so the user sees it will run; a
+/// line starting with a space goes to the model whatever its first word.
 fn typed_command(line: &str) -> Option<&str> {
-    if line.ends_with('?') {
+    if line.starts_with(char::is_whitespace) {
         return None;
     }
     let first = line.split_whitespace().next()?;
     let known = BUILTINS.contains(&first) || runnable(first) || user_shell().knows(first);
-    if WORDS.contains(&first) || !known {
-        return None;
-    }
-    let prose = unquoted(line)
-        .split_whitespace()
-        .skip(1)
-        .any(|word| PROSE.contains(&word.to_lowercase().as_str()));
-    (!prose).then_some(line)
-}
-
-/// The line without what is inside quotes: `git commit -m 'fix the bug'` is
-/// still a command.
-fn unquoted(line: &str) -> String {
-    let mut out = String::with_capacity(line.len());
-    let mut quote = None;
-    for c in line.chars() {
-        match (quote, c) {
-            (None, '\'' | '"') => quote = Some(c),
-            (Some(q), c) if c == q => quote = None,
-            (None, c) => out.push(c),
-            _ => {}
-        }
-    }
-    out
+    known.then_some(line.trim_end())
 }
 
 /// Whether a program by this name is on PATH, or at this path when it has a /.
@@ -1591,9 +1586,19 @@ impl rustyline::hint::Hinter for Completion {
 impl rustyline::highlight::Highlighter for Completion {
     fn highlight<'l>(&self, line: &'l str, _: usize) -> std::borrow::Cow<'l, str> {
         // The chat takes `uc agent model` and the like itself; not bash lines.
-        if agent_model_line(line).is_some() || agent_command(line).is_some() || agent_arg_line(line)
+        let full = agent_alias(line);
+        if agent_model_line(&full).is_some()
+            || agent_command(&full).is_some()
+            || agent_arg_line(&full)
         {
             return std::borrow::Cow::Borrowed(line);
+        }
+        // `uc a login claude` runs as `uc agent login claude`.
+        if full != line {
+            return match direct_command(&full) {
+                Some(_) => std::borrow::Cow::Owned(color_program(line)),
+                None => std::borrow::Cow::Borrowed(line),
+            };
         }
         let Some(command) = direct_command(line) else {
             return std::borrow::Cow::Borrowed(line);
@@ -1827,7 +1832,13 @@ fn touched_dir(call: &Value) -> Option<PathBuf> {
     dir.canonicalize().ok()
 }
 
-fn system_prompt(model: &str, ask: bool, output: bool, instructed: &[PathBuf]) -> String {
+fn system_prompt(
+    model: &str,
+    ask: bool,
+    output: bool,
+    instructed: &[PathBuf],
+    skills: &[String],
+) -> String {
     let cwd = std::env::current_dir()
         .map(|d| d.display().to_string())
         .unwrap_or_default();
@@ -1851,8 +1862,9 @@ fn system_prompt(model: &str, ask: bool, output: bool, instructed: &[PathBuf]) -
         "You are uc, the usecode coding agent, running in a terminal on the user's machine. \
          Use the tools to look around, run commands and change files.\n\n{MAIN_SKILL}{}\
          You run on the model {model}. The working directory is {cwd}. Commands: {confirms}. \
-         {sees}{}",
+         {sees}{}{}",
         claude::SESSION,
+        skills::block(&skills::here(), skills),
         instructions_block(instructed)
     )
 }
@@ -2016,6 +2028,20 @@ fn tools() -> Value {
             }),
             &["action"],
         ),
+        tool(
+            "skill",
+            "Load skills, as `uc agent skill` does: a skill is a SKILL.md with instructions \
+             for one kind of work, from .agents/skills of the project or ~/.agents/skills. \
+             Without skills it lists the ones there are, the ones on marked with *, each with \
+             what it is for. With skills it turns them on (or off): the ones on are put in \
+             your system prompt from the next request on. Turn one on when the user asks, or \
+             when the task at hand is what its description says it is for.",
+            json!({
+                "skills": string("the skills to turn on, space-separated; -name turns one \
+                                  off, none turns them all off"),
+            }),
+            &[],
+        ),
     ])
 }
 
@@ -2042,10 +2068,15 @@ impl Session {
         for file in &instructed {
             note!("instructions from {}", file.display());
         }
+        let skills = start_skills();
+        let on = skills::on(&skills::here(), &skills);
+        if !on.is_empty() {
+            note!("skills {}", on.join(", "));
+        }
+        let system = system_prompt(&model, ask, output, &instructed, &skills);
         Ok(Session {
-            messages: vec![
-                json!({"role": "system", "content": system_prompt(&model, ask, output, &instructed)}),
-            ],
+            skills,
+            messages: vec![json!({"role": "system", "content": system})],
             prompted: instructed.clone(),
             instructed,
             cache_key: cache_key(),
@@ -2115,7 +2146,7 @@ impl Session {
     /// files it holds.
     fn system(&self) -> Value {
         json!({"role": "system", "content": system_prompt(
-            &self.model, self.ask, self.show_output, &self.prompted)})
+            &self.model, self.ask, self.show_output, &self.prompted, &self.skills)})
     }
 
     /// Takes the AGENTS.md files learned since into the system prompt. It
@@ -2358,6 +2389,64 @@ impl Session {
         let line = format!("effort {}", self.effort);
         note!("{line}");
         Ok(line)
+    }
+
+    /// `uc agent skill [NAME...]`: turns skills on and off, for this session
+    /// and, saved as `skills:` in `agent.yaml`, the ones to come. Without a
+    /// name the picker shows the skills there are, the ones on marked, and
+    /// turns the lines taken (Tab takes more than one) on if they are off
+    /// and off if they are on; without a terminal it lists them.
+    fn pick_skills(&mut self, arg: &str) {
+        let found = skills::here();
+        if arg.is_empty() && (!picker::available() || found.is_empty()) {
+            out::raw(&skills::list(&found, &self.skills));
+            return;
+        }
+        let before = self.skills.clone();
+        if arg.is_empty() {
+            let Some(said) = skill_picker(&found, &mut self.skills) else {
+                return;
+            };
+            for line in said {
+                note!("{line}");
+            }
+            self.refresh();
+        } else if self.set_skills(arg).is_err() {
+            return;
+        }
+        if self.skills == before {
+            return;
+        }
+        match save_skills(&self.skills) {
+            Ok(path) => note!("saved in {} for new `uc` sessions", path.display()),
+            Err(err) => note!("not saved: {err:#}"),
+        }
+    }
+
+    /// Turns skills on and off as `words` say (see [`skills::change`]), as
+    /// `uc agent skill NAME...` and the `skill` tool do; what changed, or an
+    /// error for a skill there isn't. The system prompt changes with them,
+    /// so the provider reads it again in full on the next request.
+    fn set_skills(&mut self, words: &str) -> Result<String> {
+        let words: Vec<&str> = words.split_whitespace().collect();
+        let said = skills::change(&mut self.skills, &words, &skills::here()).map_err(|err| {
+            note!("{err}");
+            anyhow!(err)
+        })?;
+        if said.is_empty() {
+            let on = skills::on(&skills::here(), &self.skills);
+            let line = match on.is_empty() {
+                true => "no skills on".to_string(),
+                false => format!("skills {} on already", on.join(", ")),
+            };
+            note!("{line}");
+            return Ok(line);
+        }
+        for line in &said {
+            note!("{line}");
+        }
+        self.refresh();
+        Ok(said.join("\n"))
     }
 
     /// `uc agent export [FILE]`: writes the conversation, with the model it
@@ -2690,6 +2779,10 @@ impl Session {
         }
         note!("{}", self.models());
         note!("effort {}", self.effort);
+        match skills::on(&skills::here(), &self.skills) {
+            on if on.is_empty() => note!("no skills on"),
+            on => note!("skills {}", on.join(", ")),
+        }
         note!(
             "{}",
             if self.allow_all {
@@ -2947,9 +3040,18 @@ impl Session {
                 return read_only(&self.search, call).await;
             }
             "write_file" => self.write_file(&arg("path"), &arg("content")),
+            "skill" => match arg("skills").trim() {
+                "" => {
+                    note!("looked at the skills");
+                    Ok(skills::catalog(&skills::here(), &self.skills))
+                }
+                words => self.set_skills(words),
+            },
             "edit_file" => self.edit_file(&arg("path"), &arg("old_text"), &arg("new_text")),
             "chat" => match arg("action").trim() {
-                "model" => Ok(self.switch_tool(format!("{} {}", arg("model"), arg("provider")).trim())),
+                "model" => {
+                    Ok(self.switch_tool(format!("{} {}", arg("model"), arg("provider")).trim()))
+                }
                 "model-update" => Ok(self.update_models().await),
                 "effort" => match arg("effort").trim() {
                     "" => Ok(efforts_list(&self.effort)),
@@ -4022,6 +4124,78 @@ fn save_effort(effort: &str) -> Result<PathBuf> {
     Ok(path)
 }
 
+/// The skills new sessions start with on: `UC_SKILLS` (names split by
+/// commas or spaces), else `skills:` in `agent.yaml`.
+fn start_skills() -> Vec<String> {
+    match env("UC_SKILLS") {
+        Some(names) => names
+            .split([',', ' '])
+            .filter(|n| !n.is_empty())
+            .map(String::from)
+            .collect(),
+        None => providers::settings().skills.clone(),
+    }
+}
+
+/// Saves `skills` as the ones new sessions start with on.
+fn save_skills(skills: &[String]) -> Result<PathBuf> {
+    let path = providers::save_skills(skills)?;
+    if env("UC_SKILLS").is_some() {
+        note!("UC_SKILLS is set in this environment and wins over it; unset it");
+    }
+    Ok(path)
+}
+
+/// `uc agent skill [NAME...]` in a shell: turns the named skills on (and
+/// `-NAME` off, `none` all off) for new sessions; without a name the picker
+/// turns them on and off, the ones new sessions start with marked, and
+/// without a terminal they are listed.
+pub(crate) fn agent_skill(words: &[String]) -> Result<()> {
+    let found = skills::here();
+    let mut on = start_skills();
+    let said = if words.is_empty() {
+        if !picker::available() || found.is_empty() {
+            out::raw(&skills::list(&found, &on));
+            return Ok(());
+        }
+        let Some(said) = skill_picker(&found, &mut on) else {
+            return Ok(());
+        };
+        said
+    } else {
+        let words: Vec<&str> = words.iter().map(String::as_str).collect();
+        skills::change(&mut on, &words, &found).map_err(|err| anyhow!(err))?
+    };
+    if said.is_empty() {
+        println!("· nothing to change");
+        return Ok(());
+    }
+    let path = save_skills(&on)?;
+    println!(
+        "· {}, saved in {} for new `uc` sessions",
+        said.join(", "),
+        path.display()
+    );
+    Ok(())
+}
+
+/// The picker of `uc agent skill`: the skills `found`, the ones in `on`
+/// marked; the lines taken (Tab takes more than one) are turned on if they
+/// are off and off if they are on. What changed, or `None` for Esc.
+fn skill_picker(found: &[skills::Skill], on: &mut Vec<String>) -> Option<Vec<String>> {
+    let items = skills::list(found, on)
+        .lines()
+        .zip(found)
+        .map(|(line, s)| picker::Item::new(line, s.name.clone()))
+        .collect();
+    let picked = picker::Picker::new("skill> ")
+        .header("Enter turns a skill on or off, Tab picks more than one")
+        .reverse()
+        .multi()
+        .pick(items)?;
+    (!picked.values.is_empty()).then(|| skills::toggle(on, &picked.values))
+}
+
 /// A conversation as `uc agent export` writes it: the messages after the
 /// system prompt, and the lines typed with where each sits among them.
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -5060,8 +5234,8 @@ mod tests {
 
     #[test]
     fn the_system_prompt_starts_with_what_every_session_shares() {
-        let a = system_prompt("m1", true, false, &[]);
-        let b = system_prompt("m2", false, true, &[]);
+        let a = system_prompt("m1", true, false, &[], &[]);
+        let b = system_prompt("m2", false, true, &[], &[]);
         let (sa, sb) = (claude::split(&a), claude::split(&b));
         assert_eq!(sa.len(), 2);
         assert_eq!(sa[0], sb[0]);
@@ -5156,25 +5330,25 @@ mod tests {
     }
 
     #[test]
-    fn a_command_line_runs_and_a_sentence_goes_to_the_model() {
+    fn a_line_starting_with_a_program_runs_and_a_space_sends_it_to_the_model() {
         for line in [
             "ls -al",
             "git status",
             "cd ..",
             "git commit -m 'fix the bug'",
             "make all",
+            "make it faster",
+            "yes",
         ] {
             assert!(typed_command(line).is_some(), "{line}");
         }
         for line in [
-            "yes",
-            "go ahead",
-            "find the bug in main.rs",
-            "make it faster",
-            "ls?",
+            " make it faster",
+            " ls -al",
             "fix the tests",
             "why is it slow",
             "!ls",
+            "",
         ] {
             assert!(typed_command(line).is_none(), "{line}");
         }
@@ -5376,6 +5550,7 @@ mod tests {
             prompted: Vec::new(),
             cache_key: "uc-test".into(),
             asked: Vec::new(),
+            skills: Vec::new(),
         }
     }
 
@@ -5545,6 +5720,11 @@ mod tests {
 
     #[test]
     fn uc_agent_commands_are_taken_by_the_chat() {
+        assert_eq!(agent_alias("uc a skill"), "uc agent skill");
+        assert_eq!(agent_alias("uc a"), "uc agent");
+        assert_eq!(agent_alias("uc agent skill"), "uc agent skill");
+        assert_eq!(agent_alias("uc apple"), "uc apple");
+        assert!(agent_arg_line(&agent_alias("uc a skill -foo")));
         assert_eq!(agent_command("uc agent compact"), Some("compact"));
         assert_eq!(agent_command("uc agent status"), Some("status"));
         assert_eq!(agent_command("uc agent context"), None);
@@ -5729,12 +5909,16 @@ mod tests {
         let mut s = session();
         s.messages = vec![json!({"role": "system", "content": "you are uc"})];
         let chat = |args: &str| json!({"id": "e", "function": {"name": "chat", "arguments": args}});
-        let out = s.call(&chat(r#"{"action": "effort", "effort": "Low"}"#)).await;
+        let out = s
+            .call(&chat(r#"{"action": "effort", "effort": "Low"}"#))
+            .await;
         assert_eq!(out, "effort low");
         assert_eq!(s.effort, "low");
         let out = s.call(&chat(r#"{"action": "effort"}"#)).await;
         assert!(out.contains("* low"), "{out}");
-        let out = s.call(&chat(r#"{"action": "effort", "effort": "huge"}"#)).await;
+        let out = s
+            .call(&chat(r#"{"action": "effort", "effort": "huge"}"#))
+            .await;
         assert!(out.starts_with("error: no effort huge"), "{out}");
         assert_eq!(s.effort, "low");
         let out = s.call(&chat(r#"{"action": "export"}"#)).await;

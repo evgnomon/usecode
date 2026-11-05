@@ -6,8 +6,10 @@
 //!
 //! A terminal tells a key's press, not its release, so holding is told by the
 //! key repeating: a second Space within `HOLD` starts it, and no Space for
-//! `RELEASE` ends it. A tap types a space as usual. Recording starts with the
-//! first Space, so the first word isn't lost while waiting for the repeat. The
+//! `RELEASE` ends it. The first Space types itself at once, as usual, and the
+//! hold is only checked for on the Space after it, on a line of just that one.
+//! Recording starts with the first Space, so the first word isn't lost while
+//! waiting for the repeat, and stops after `HOLD` if no repeat claims it. The
 //! microphone is the default source of PulseAudio, or of PipeWire through its
 //! pulse server, spoken to natively.
 //!
@@ -26,11 +28,11 @@ use crate::dispatch::search_dirs;
 use anyhow::{Context, Result, bail};
 use base64::Engine;
 use pulseaudio::protocol;
-use rustyline::{Cmd, ConditionalEventHandler, Event, EventContext, RepeatCount};
+use rustyline::{Cmd, ConditionalEventHandler, Event, EventContext, Movement, RepeatCount};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const API: &str = "https://openrouter.ai/api/v1/audio/transcriptions";
 /// MAI-Transcribe 2: the best of the engines on a short command, and a tenth
@@ -70,23 +72,40 @@ pub static SAID: Mutex<Option<String>> = Mutex::new(None);
 /// Bound to Space: on an empty line, a hold records and sends what was said.
 pub struct HoldToTalk;
 
+/// The recording the first Space at an empty prompt started, and when: the
+/// next Space claims it if it comes within `HOLD`, else it is stopped.
+static PENDING: Mutex<Option<(Instant, Recording)>> = Mutex::new(None);
+
+fn pending() -> std::sync::MutexGuard<'static, Option<(Instant, Recording)>> {
+    PENDING.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 impl ConditionalEventHandler for HoldToTalk {
     fn handle(&self, _: &Event, _: RepeatCount, _: bool, ctx: &EventContext) -> Option<Cmd> {
-        if !ctx.line().is_empty() {
+        // The first Space types itself at once, so a tap never lags; it
+        // starts the microphone too, so the first word isn't lost while
+        // waiting for the repeat.
+        if ctx.line().is_empty() {
+            let started = Instant::now();
+            *pending() = Some((started, Recording::start()));
+            std::thread::spawn(move || {
+                std::thread::sleep(HOLD);
+                let mut pending = pending();
+                if pending.as_ref().is_some_and(|(at, _)| *at == started) {
+                    pending.take();
+                }
+            });
             return None;
         }
-        let recording = Recording::start();
-        match next_key(HOLD) {
-            None => return Some(Cmd::SelfInsert(1, ' ')),
-            Some(key) if key.iter().all(|&b| b == b' ') => {}
-            // A tap, and they went on typing.
-            Some(key) => {
-                let typed = String::from_utf8(key)
-                    .ok()
-                    .filter(|t| !t.contains(char::is_control));
-                return Some(Cmd::Insert(1, format!(" {}", typed.unwrap_or_default())));
-            }
+        // A second Space on a line of just the first, soon enough to be its
+        // repeat: Space is held.
+        if ctx.line() != " " {
+            return None;
         }
+        let recording = match pending().take() {
+            Some((at, recording)) if at.elapsed() < HOLD => recording,
+            _ => return None,
+        };
         eprint!(
             "\r\x1b[2K\x1b[31m●\x1b[0m listening, let go of Space to send, any other key to cancel"
         );
@@ -98,9 +117,11 @@ impl ConditionalEventHandler for HoldToTalk {
             }
         };
         let pcm = recording.stop();
+        // The first Space was typed; it goes with what was said.
+        let clear = Cmd::Kill(Movement::WholeBuffer);
         if cancelled {
             eprint!("\r\x1b[2K");
-            return Some(Cmd::Repaint);
+            return Some(clear);
         }
         eprint!("\r\x1b[2K· transcribing");
         let said = pcm.and_then(transcribe_blocking);
@@ -112,11 +133,11 @@ impl ConditionalEventHandler for HoldToTalk {
             }
             Ok(_) => {
                 eprint!("· heard nothing\r\n");
-                Some(Cmd::Repaint)
+                Some(clear)
             }
             Err(err) => {
                 eprint!("· voice: {err:#}\r\n");
-                Some(Cmd::Repaint)
+                Some(clear)
             }
         }
     }
