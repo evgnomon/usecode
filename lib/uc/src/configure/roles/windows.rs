@@ -2,7 +2,8 @@
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
 //! `windows`: the Windows side of a WSL machine follows the theme, its
-//! light or dark app mode and the colors of its VS Code. Each part is
+//! light or dark app mode and the colors of its VS Code (`themes: vscode:`
+//! in the user config, Gruvbox when left out). Each part is
 //! skipped when the Windows tool or file it needs isn't there.
 
 use crate::configure::ctx::Ctx;
@@ -19,6 +20,7 @@ const PERSONALIZE: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Theme
 pub fn tasks(plan: &mut Plan, v: &Vars) {
     let wsl = v.facts.wsl2();
     let theme = v.config.theme;
+    let vscode = v.config.theme_of("vscode");
 
     plan.add(
         Task::new(
@@ -74,7 +76,7 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
                 ));
             };
             let text = String::from_utf8_lossy(&bytes);
-            let updated = set_vscode_theme(&text, theme);
+            let updated = jsonc::set_string(&text, "workbench.colorTheme", &vscode);
             file::write(&ctx, &path, updated.as_bytes(), None, false).await
         }),
     );
@@ -122,18 +124,6 @@ async fn windows_appdata(ctx: &Ctx) -> Result<Option<PathBuf>> {
         .filter(|p| p.is_dir()))
 }
 
-/// `text`, a VS Code `settings.json`, with `workbench.colorTheme` set to the
-/// theme it prefers for `theme`, or Gruvbox. Comments and the other lines
-/// stay as they are.
-fn set_vscode_theme(text: &str, theme: Theme) -> String {
-    let (key, fallback) = match theme {
-        Theme::Dark => ("workbench.preferredDarkColorTheme", "Gruvbox Dark Medium"),
-        Theme::Light => ("workbench.preferredLightColorTheme", "Gruvbox Light Hard"),
-    };
-    let name = jsonc::string(text, key).unwrap_or_else(|| fallback.to_string());
-    jsonc::set_string(text, "workbench.colorTheme", &name)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -149,24 +139,4 @@ mod tests {
         assert_eq!(reg_dword("", "AppsUseLightTheme"), None);
     }
 
-    #[test]
-    fn uses_the_preferred_theme() {
-        let t = "// c\n{\n    \"workbench.colorTheme\": \"Default Dark+\",\n    \"workbench.preferredLightColorTheme\": \"Solarized Light\"\n}\n";
-        assert_eq!(
-            set_vscode_theme(t, Theme::Light),
-            "// c\n{\n    \"workbench.colorTheme\": \"Solarized Light\",\n    \"workbench.preferredLightColorTheme\": \"Solarized Light\"\n}\n"
-        );
-    }
-
-    #[test]
-    fn adds_a_missing_theme() {
-        assert_eq!(
-            set_vscode_theme("{\n    \"a\": 1\n}\n", Theme::Dark),
-            "{\n    \"workbench.colorTheme\": \"Gruvbox Dark Medium\",\n    \"a\": 1\n}\n"
-        );
-        assert_eq!(
-            set_vscode_theme("{}\n", Theme::Light),
-            "{\n    \"workbench.colorTheme\": \"Gruvbox Light Hard\"\n}\n"
-        );
-    }
 }

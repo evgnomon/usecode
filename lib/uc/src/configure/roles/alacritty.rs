@@ -5,22 +5,25 @@
 //! a workstation it is copied into `~/.config/alacritty`; under WSL it goes
 //! to the Windows Alacritty in `%APPDATA%\alacritty`, with a shell that opens
 //! tmux in this distribution and a maximized window instead of a full screen.
-//! The colors come from `roles/alacritty/files/themes`, the one `theme` names.
+//! The colors are the theme `themes: alacritty:` in the user config names
+//! for the mode `theme` is in: one in `roles/alacritty/files/themes`, or a
+//! TOML file of the user's; Gruvbox when left out.
 
 use crate::configure::ctx::Ctx;
 use crate::configure::engine::{Outcome, Plan, Task};
 use crate::configure::modules::copy;
 use crate::configure::roles::WORKSTATION_ONLY;
-use crate::configure::vars::{Profile, Theme, Vars};
+use crate::configure::vars::{Profile, Vars};
 use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
 
 pub fn tasks(plan: &mut Plan, v: &Vars) {
     let shared = v.role("alacritty").join("files/alacritty.toml");
-    let theme = theme_file(&v.role("alacritty"), v.config.theme);
+    let themes = v.role("alacritty").join("files/themes");
+    let theme = v.config.theme_of("alacritty");
 
     let config = shared.clone();
-    let colors = theme.clone();
+    let (dir_of_themes, name) = (themes.clone(), theme.clone());
     plan.add(
         Task::new("alacritty/link", "Copy the Alacritty configuration")
             .tags(&["alacritty", "theme"])
@@ -31,7 +34,8 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
                 let main = copy::copy(&ctx, &config, &main_dest, None, false).await?;
                 // Alacritty watches its imports, so the open windows switch
                 // colors as soon as the theme is written.
-                let theme = copy::copy(&ctx, &colors, &theme_dest, None, false).await?;
+                let colors = colors(&ctx, &dir_of_themes, &name)?;
+                let theme = copy::content(&ctx, &colors, &theme_dest, None, false).await?;
                 Ok(main.and(theme))
             }),
     );
@@ -68,7 +72,7 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
                 false,
             )
             .await?;
-            let colors = ctx.vars().assets.read_string(&theme)?;
+            let colors = colors(&ctx, &themes, &theme)?;
             let theme_copy =
                 copy::content(&ctx, &colors, &dir.join("theme.toml"), None, false).await?;
             let main = copy::content(
@@ -136,13 +140,33 @@ async fn wsl_path(ctx: &Ctx, windows: &str) -> Result<PathBuf> {
     Ok(PathBuf::from(out.stdout.trim()))
 }
 
-/// The colors of `theme`, in the role's directory `role`.
-fn theme_file(role: &Path, theme: Theme) -> PathBuf {
-    let name = match theme {
-        Theme::Dark => "gruvbox-dark",
-        Theme::Light => "gruvbox-light-hard",
-    };
-    role.join(format!("files/themes/{name}.toml"))
+/// The colors of the theme `name`: one of the `themes` built into uc, or,
+/// for a name with a `/` in it, the TOML file at that path (`~/` is the
+/// home).
+fn colors(ctx: &Ctx, themes: &Path, name: &str) -> Result<String> {
+    if name.contains('/') {
+        let path = match name.strip_prefix("~/") {
+            Some(rest) => ctx.vars().home.join(rest),
+            None => PathBuf::from(name),
+        };
+        return std::fs::read_to_string(&path)
+            .with_context(|| format!("reading the Alacritty theme {}", path.display()));
+    }
+    let file = themes.join(format!("{name}.toml"));
+    let assets = &ctx.vars().assets;
+    if !assets.is_file(&file) {
+        let known: Vec<String> = assets
+            .walk(themes)
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|p| Some(p.file_stem()?.to_string_lossy().into_owned()))
+            .collect();
+        bail!(
+            "no Alacritty theme {name} in uc; it has {}, or give the path of a TOML file",
+            known.join(", ")
+        );
+    }
+    assets.read_string(&file)
 }
 
 /// A configuration without its `import = …` line: its paths are the Linux
@@ -264,11 +288,12 @@ mod tests {
     }
 
     #[test]
-    fn theme_file_exists_for_every_theme() {
+    fn the_default_themes_are_built_in() {
         let assets = crate::configure::assets::Assets::Embedded;
-        for theme in [Theme::Dark, Theme::Light] {
-            let file = theme_file(Path::new("alacritty"), theme);
-            assert!(assets.is_file(&file), "{theme:?}");
+        let (dark, light) = crate::configure::vars::UserConfig::default().themes_of("alacritty");
+        for name in [dark, light] {
+            let file = Path::new("alacritty/files/themes").join(format!("{name}.toml"));
+            assert!(assets.is_file(&file), "{name}");
         }
     }
 

@@ -10,7 +10,7 @@ use crate::configure::engine::{Outcome, Plan, Task};
 use crate::configure::modules::command::which;
 use crate::configure::modules::inflate::inflate;
 use crate::configure::modules::{copy, file, jsonc};
-use crate::configure::vars::{Theme, Vars};
+use crate::configure::vars::Vars;
 use anyhow::Context;
 use std::path::{Path, PathBuf};
 
@@ -90,6 +90,16 @@ fn dotdirs(v: &Vars) -> Vec<(String, String)> {
     ]
 }
 
+/// VS Code's settings, which name the themes it picks in dark and light mode.
+const VSCODE_SETTINGS: &str = ".config/Code/User/settings.json";
+
+/// VS Code's `settings.json` with the themes it follows the desktop's color
+/// scheme with set to `dark` and `light`.
+fn with_vscode_themes(text: &str, dark: &str, light: &str) -> String {
+    let text = jsonc::set_string(text, "workbench.preferredDarkColorTheme", dark);
+    jsonc::set_string(&text, "workbench.preferredLightColorTheme", light)
+}
+
 fn under(home: &Path, path: &str) -> PathBuf {
     if path.starts_with('/') {
         PathBuf::from(path)
@@ -133,22 +143,33 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
         }),
     );
 
+    let vscode = v.config.themes_of("vscode");
     for &(group, entries) in DOTFILES {
         let files = files.clone();
+        let vscode = vscode.clone();
         let dirs = if group == "claude" {
             dotdirs(v)
         } else {
             Vec::new()
         };
+        // VS Code's settings name its themes, so `-t theme` puts them in too.
+        let tags: &[&str] = if group == "vscode" { &["theme"] } else { &[] };
         plan.add(
-            Task::new(dot(group), format!("Copy the {group} dotfiles")).run(
+            Task::new(dot(group), format!("Copy the {group} dotfiles")).tags(tags).run(
                 move |ctx| async move {
                     let home = &ctx.vars().home;
                     let mut outcome = Outcome::Ok;
                     for entry in entries {
                         let (src, dest) = entry.split_once(':').unwrap_or((entry, entry));
                         let (src, dest) = (files.join(src), home.join(dest));
-                        outcome = outcome.and(copy::copy(&ctx, &src, &dest, None, false).await?);
+                        let step = if dest.ends_with(VSCODE_SETTINGS) {
+                            let text = ctx.vars().assets.read_string(&src)?;
+                            let text = with_vscode_themes(&text, &vscode.0, &vscode.1);
+                            copy::content(&ctx, &text, &dest, None, false).await?
+                        } else {
+                            copy::copy(&ctx, &src, &dest, None, false).await?
+                        };
+                        outcome = outcome.and(step);
                     }
                     for (dest, src) in &dirs {
                         let step =
@@ -161,7 +182,7 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
         );
     }
 
-    let jcode_theme = v.config.theme.name();
+    let jcode_theme = v.config.theme_of("jcode");
     plan.add(
         Task::new("dotfiles/jcode-theme", "Set the jcode theme in its config")
             .tags(&["dotfiles", "theme"])
@@ -171,17 +192,14 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
                     return Ok(Outcome::Ok);
                 };
                 let text = String::from_utf8_lossy(&bytes);
-                let updated = set_toml_string(&text, "display", "theme", jcode_theme);
+                let updated = set_toml_string(&text, "display", "theme", &jcode_theme);
                 file::write(&ctx, &path, updated.as_bytes(), None, false).await
             }),
     );
 
     // herdr writes its config on the first start; without it there is no
     // herdr to theme.
-    let herdr_theme = match v.config.theme {
-        Theme::Dark => "gruvbox",
-        Theme::Light => "gruvbox-light",
-    };
+    let herdr_theme = v.config.theme_of("herdr");
     plan.add(
         Task::new("dotfiles/herdr-theme", "Set the herdr theme in its config")
             .tags(&["dotfiles", "theme"])
@@ -191,7 +209,7 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
                     return Ok(Outcome::Skipped("herdr isn't set up".into()));
                 };
                 let text = String::from_utf8_lossy(&bytes);
-                let updated = set_toml_string(&text, "theme", "name", herdr_theme);
+                let updated = set_toml_string(&text, "theme", "name", &herdr_theme);
                 let outcome = file::write(&ctx, &path, updated.as_bytes(), None, false).await?;
                 // A running server picks the change up; none running is fine.
                 if outcome == Outcome::Changed && which(&ctx, "herdr").is_some() {
@@ -206,10 +224,7 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
     );
 
     // opencode keeps its TUI settings, the theme among them, in tui.json.
-    let opencode_theme = match v.config.theme {
-        Theme::Dark => "gruvbox-dark-medium",
-        Theme::Light => "gruvbox-light-hard",
-    };
+    let opencode_theme = v.config.theme_of("opencode");
     plan.add(
         Task::new(
             "dotfiles/opencode-theme",
@@ -224,7 +239,7 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
             let path = dir.join("tui.json");
             let updated = match file::read(&ctx, &path, false).await? {
                 Some(bytes) => {
-                    jsonc::set_string(&String::from_utf8_lossy(&bytes), "theme", opencode_theme)
+                    jsonc::set_string(&String::from_utf8_lossy(&bytes), "theme", &opencode_theme)
                 }
                 None => format!(
                     "{{\n  \"$schema\": \"https://opencode.ai/tui.json\",\n  \"theme\": \"{opencode_theme}\"\n}}\n"

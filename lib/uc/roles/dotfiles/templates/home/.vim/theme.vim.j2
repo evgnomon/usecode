@@ -2,5 +2,7 @@
 License-Identifier: HGL
 Copyright (C) The Usecode Authors (see AUTHORS)
 -#}
-" Written by `uc sync` from `theme` in config.yaml; .vimrc sources it.
+" Written by `uc sync` from `theme` and `themes: vim:` in config.yaml;
+" .vimrc sources it.
 set background={{ theme }}
+let g:uc_colorscheme = '{{ tool_themes.vim | replace("'", "''") }}'

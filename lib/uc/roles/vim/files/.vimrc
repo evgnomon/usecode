@@ -32,10 +32,17 @@ let mapleader=","             " Set the leader key to a comma, allowing custom k
 :set number relativenumber      " Display both absolute line numbers and relative line numbers.
 :let python_highlight_all = 1   " Enable full syntax highlighting for Python, including highlighting of built-in functions and classes.
 :set backspace=indent,eol,start " Allow backspacing over indentation, end of line, and insertion start position in insert mode.
-" Gruvbox dark unless `theme` in config.yaml is light; `uc sync` writes it.
+" Dark unless `theme` in config.yaml is light; `uc sync` writes it.
 set background=dark
 silent! source ~/.vim/theme.vim
 let g:gruvbox_contrast_light = 'hard'
+" 24-bit colors, which themes like Tokyo Night are made of. Alacritty has
+" them and tmux passes them on (Tc); under tmux's TERM Vim needs the codes.
+if has('termguicolors')
+  let &t_8f = "\<Esc>[38;2;%lu;%lu;%lum"
+  let &t_8b = "\<Esc>[48;2;%lu;%lu;%lum"
+  set termguicolors
+endif
 set belloff=all               " Disable all audible and visual bells, preventing distractions from error notifications.
 if v:progpath =~# '^/usr/bin/'
   set pythonthreehome=/usr
@@ -97,6 +104,18 @@ set completeopt=preview,menuone,popup      " Configure completion options: show 
 call plug#begin('~/.vim/plugged')
 Plug 'neoclide/jsonc.vim', {'commit': '6fb92460f9e50505c9b93181a00f27d10c9b383f' }
 Plug 'morhetz/gruvbox', {'commit': '697c00291db857ca0af00ec154e5bd514a79191f' }
+" Tokyo Night's Vim colors (tokyonight-night, -storm, -moon, -day).
+Plug 'folke/tokyonight.nvim', {'commit': 'cdc07ac78467a233fd62c493de29a17e0cf2b2b6', 'rtp': 'extras/vim' }
+" catppuccin_mocha, _macchiato, _frappe, _latte.
+Plug 'catppuccin/vim', {'as': 'catppuccin', 'commit': '5c988d5acb4759e020eef04b036f6eab8fbb3e3a' }
+" rosepine, rosepine_moon, rosepine_dawn.
+Plug 'rose-pine/vim', {'as': 'rose-pine', 'commit': 'd7bc0ccbbd71d632f5737a1a880a0ed32d1be6bf' }
+" kanagawa: the wave variant, dark only.
+Plug 'menisadi/kanagawa.vim', {'commit': '7566f9f395f5a8530bd833f8464ca77e1c87acd8' }
+" solarized8 (and _flat, _high, _low): dark or light by 'background'.
+Plug 'lifepillar/vim-solarized8', {'commit': '4433b4411de92b2446a4d32f0d8bf1b25c476bf9' }
+" one: Atom's One Dark or One Light by 'background'.
+Plug 'rakr/vim-one', {'commit': '187f5c85b682c1933f8780d4d419c55d26a82e24' }
 
 " Search
 Plug 'junegunn/fzf', { 'do': { -> fzf#install() } }
@@ -129,8 +148,9 @@ let g:coc_global_extensions = [
       \ 'coc-clangd'
       \]
 
-" Must be after laoding plugins
-colorscheme gruvbox
+" Must be after laoding plugins. The one `themes: vim:` in config.yaml
+" names (theme.vim), Gruvbox when there is none.
+execute 'colorscheme' get(g:, 'uc_colorscheme', 'gruvbox')
 
 nnoremap <C-P> :History<CR>
 nnoremap <leader>o :Files<CR>

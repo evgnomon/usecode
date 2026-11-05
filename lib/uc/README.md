@@ -316,6 +316,28 @@ config (`all` turns on every role):
 sync: [apt, extrepo, dotfiles, git, mise, alacritty]  # alacritty brings its font
 ```
 
+Everything it sets up comes in Gruvbox, dark by default. `theme: light`
+flips the terminal, vim, VS Code, opencode, herdr, jcode, GNOME and
+Windows over together. Prefer other colors? Name them per tool under
+`themes`: one name for both modes, or one each, and anything you leave
+out stays Gruvbox:
+
+```yaml
+theme: dark
+themes:
+  vim: desert                                       # both modes
+  vscode: {dark: One Dark Pro, light: GitHub Light}
+  opencode: {dark: tokyonight}                      # light stays Gruvbox
+  alacritty: {dark: ~/.config/alacritty/nord.toml}  # a TOML file of colors
+  herdr: {light: catppuccin-latte}
+  jcode: {dark: dark, light: light}
+```
+
+Alacritty takes a theme built into uc (`gruvbox-dark-hard`,
+`gruvbox-light-hard`) or the path of a TOML file with its `[colors]`.
+`uc sync -t theme` puts the new colors in place, and a typo in a tool's
+name is caught before anything runs.
+
 ```sh
 uc sync                    # what uc needs plus your sync list, for the detected profile
 uc sync -C                 # dry run: report what would change
