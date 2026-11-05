@@ -72,7 +72,10 @@
 //! (GLM 5.3 Flash on OpenRouter), and the reasoning effort `effort:` (or
 //! `UC_EFFORT`). The session
 //! keeps one model: each line is one request to it, and it changes only
-//! when `uc agent model` or `chat model` says so.
+//! when `uc agent model` or `chat model` says so. The `chat` tool gives the
+//! model the rest of `uc agent` as well (`model-update`, `effort`, `status`,
+//! `compact`, `export`, `clear` and `exit`), so it can do what the user asks
+//! of the chat itself; its effort and model last for the session, unsaved.
 
 use anyhow::{Context, Result, anyhow, bail};
 use futures_util::StreamExt;
@@ -741,7 +744,7 @@ async fn run(
             continue;
         }
         if line == "uc agent model-update" {
-            session.update_models().await;
+            drop(session.update_models().await);
             continue;
         }
         if let Some(rest) = agent_model_line(line) {
@@ -755,7 +758,7 @@ async fn run(
             continue;
         }
         if agent == Some("status") {
-            session.status().await;
+            drop(session.status().await);
             continue;
         }
         if let Some(arg) = agent_arg(line, "rewind") {
@@ -1509,6 +1512,18 @@ done
 if (( ${#COMPREPLY[@]} )); then printf '%s\n' "${COMPREPLY[@]}"; else compgen -f -- "$_uc_cur"; fi
 "#;
 
+/// What the `chat` tool does: `uc agent`'s commands, for the model.
+const CHAT_ACTIONS: &[&str] = &[
+    "model",
+    "model-update",
+    "effort",
+    "status",
+    "compact",
+    "export",
+    "clear",
+    "exit",
+];
+
 /// The `uc agent` commands the prompt itself takes, besides `model`.
 const AGENT_COMMANDS: &[&str] = &["compact", "status", "exit", "quit"];
 
@@ -1978,17 +1993,26 @@ fn tools() -> Value {
         ),
         tool(
             "chat",
-            "Drive the chat itself, not the machine, when the user asks for it: action model \
-             switches the model for the lines after it (model: a number from the list, part \
-             of a listed id or any id of the provider; without it the models of every \
-             provider are listed), \
-             action clear clears the screen and conversation context, action exit leaves uc.",
+            "Drive the chat itself, not the machine, when the user asks for it; the actions \
+             are `uc agent`'s commands. action model switches the model for the lines after \
+             it (model: a number from the list, part of a listed id or any id of the \
+             provider; without it the models of every provider are listed), action \
+             model-update fetches the providers' model lists again, action effort sets how \
+             hard the model thinks (without effort it lists the levels), action status tells \
+             the model, effort, mode and how much of the context is used, action compact sums \
+             up the earlier conversation to free the context, action export writes the \
+             conversation to a file (path, or a new one in the sessions directory), action \
+             clear clears the screen and conversation context, action exit leaves uc.",
             json!({
-                "action": string("what to do: model, clear or exit"),
+                "action": string("what to do: model, model-update, effort, status, compact, \
+                                  export, clear or exit"),
                 "model": string("which model to switch to, for action model: a number from \
                                  the list, part of a listed id or any id of the provider"),
                 "provider": string("for action model, which provider runs it when more than \
                                     one serves it, by the name the list shows beside it"),
+                "effort": string("for action effort, the level: low, medium, high and the \
+                                  others the list shows"),
+                "path": string("for action export, the file to write"),
             }),
             &["action"],
         ),
@@ -2312,16 +2336,28 @@ impl Session {
         } else {
             arg.to_lowercase()
         };
-        if !EFFORTS.contains(&level.as_str()) {
-            note!("no effort {level}: one of {}", EFFORTS.join(", "));
+        if self.set_effort(&level).is_err() {
             return;
         }
-        self.effort = level;
-        note!("effort {}", self.effort);
         match save_effort(&self.effort) {
             Ok(path) => note!("saved in {} for new `uc` sessions", path.display()),
             Err(err) => note!("not saved: {err:#}"),
         }
+    }
+
+    /// Sets the effort for this session, as `uc agent effort` and chat
+    /// `effort` do; the line printed, or an error for a level there isn't.
+    fn set_effort(&mut self, level: &str) -> Result<String> {
+        let level = level.trim().to_lowercase();
+        if !EFFORTS.contains(&level.as_str()) {
+            let line = format!("no effort {level}: one of {}", EFFORTS.join(", "));
+            note!("{line}");
+            bail!(line);
+        }
+        self.effort = level;
+        let line = format!("effort {}", self.effort);
+        note!("{line}");
+        Ok(line)
     }
 
     /// `uc agent export [FILE]`: writes the conversation, with the model it
@@ -2460,10 +2496,12 @@ impl Session {
 
     /// `uc agent model-update`: fetches every provider's model list again, keeps it
     /// in the cache and makes it the list `uc agent model` offers.
-    async fn update_models(&mut self) {
+    async fn update_models(&mut self) -> String {
         note!("fetching the model lists");
         self.pool = pool(&self.providers, true).await;
-        note!("{} models", self.pool.len());
+        let line = format!("{} models", self.pool.len());
+        note!("{line}");
+        line
     }
 
     /// `uc agent model` and chat `model`: list with no name; otherwise switch to the
@@ -2555,7 +2593,7 @@ impl Session {
 
     /// `uc agent compact`: cuts old tool output, then, if the conversation has earlier
     /// turns, replaces them with a summary. The latest turn stays as it is.
-    async fn compact(&mut self) -> Result<()> {
+    async fn compact(&mut self) -> Result<String> {
         let before = self.messages.len();
         prune_tool_output(&mut self.messages);
         // The turns before the last line the user typed; a tool call and its
@@ -2585,11 +2623,12 @@ impl Session {
         // The count was of the longer conversation.
         self.last_usage = None;
         self.tokens.last = None;
-        note!(
+        let line = format!(
             "compacted the context: {} messages, was {before}",
             self.messages.len()
         );
-        Ok(())
+        note!("{line}");
+        Ok(line)
     }
 
     /// What the model makes of `messages`, in a few paragraphs.
@@ -2620,8 +2659,17 @@ impl Session {
     /// then how much of the model's context the conversation has taken. The
     /// real count is from the last reply's `usage`, an estimate from the
     /// bytes before that, and the window is the model's `context_length` on
-    /// OpenRouter.
-    async fn status(&self) {
+    /// OpenRouter. The lines are printed and given back, for chat `status`.
+    async fn status(&self) -> String {
+        let mut lines: Vec<String> = Vec::new();
+        // Each line goes to the terminal and into what is given back.
+        macro_rules! note {
+            ($($arg:tt)*) => {{
+                let line = format!($($arg)*);
+                out::note(&line);
+                lines.push(line);
+            }};
+        }
         note!("{}", self.models());
         note!("effort {}", self.effort);
         note!(
@@ -2696,6 +2744,7 @@ impl Session {
             ),
             Err(err) => note!("OpenRouter's model list: {err:#}"),
         }
+        lines.join("\n")
     }
 
     /// Asks the model until it answers without calling a tool; returns that
@@ -2883,10 +2932,21 @@ impl Session {
             "edit_file" => self.edit_file(&arg("path"), &arg("old_text"), &arg("new_text")),
             "chat" => match arg("action").trim() {
                 "model" => Ok(self.switch(format!("{} {}", arg("model"), arg("provider")).trim())),
+                "model-update" => Ok(self.update_models().await),
+                "effort" => match arg("effort").trim() {
+                    "" => Ok(efforts_list(&self.effort)),
+                    level => self.set_effort(level),
+                },
+                "status" => Ok(self.status().await),
+                "compact" => self.compact().await,
+                "export" => self
+                    .export(arg("path").trim())
+                    .map(|path| format!("exported to {}", path.display())),
                 "clear" => Ok(self.clear()),
                 "exit" => self.exit(),
                 other => Err(anyhow!(
-                    "there is no chat action '{other}'; model, clear or exit"
+                    "there is no chat action '{other}'; one of {}",
+                    CHAT_ACTIONS.join(", ")
                 )),
             },
             other => Err(anyhow!("there is no tool called '{other}'")),
@@ -5643,6 +5703,24 @@ mod tests {
         let out = s.call(&unknown).await;
         assert!(out.starts_with("error: "), "{out}");
         assert!(out.contains("no chat action"), "{out}");
+        assert!(out.contains("model-update"), "{out}");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn chat_takes_the_agent_commands() {
+        let mut s = session();
+        s.messages = vec![json!({"role": "system", "content": "you are uc"})];
+        let chat = |args: &str| json!({"id": "e", "function": {"name": "chat", "arguments": args}});
+        let out = s.call(&chat(r#"{"action": "effort", "effort": "Low"}"#)).await;
+        assert_eq!(out, "effort low");
+        assert_eq!(s.effort, "low");
+        let out = s.call(&chat(r#"{"action": "effort"}"#)).await;
+        assert!(out.contains("* low"), "{out}");
+        let out = s.call(&chat(r#"{"action": "effort", "effort": "huge"}"#)).await;
+        assert!(out.starts_with("error: no effort huge"), "{out}");
+        assert_eq!(s.effort, "low");
+        let out = s.call(&chat(r#"{"action": "export"}"#)).await;
+        assert!(out.contains("nothing to export yet"), "{out}");
     }
 
     #[test]

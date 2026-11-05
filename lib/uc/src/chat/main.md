@@ -101,6 +101,13 @@
   more than one provider serves is listed once for each, with the provider
   beside it; pass `provider` (the name shown beside it) to pick which.
   `chat clear` clears the screen and the context. `chat exit` leaves uc.
+- The rest of `uc agent` is there too. `chat model-update` fetches the
+  model lists again, for a model the list doesn't have yet. `chat effort
+  <level>` sets how hard the model thinks (minimal to max; without a level
+  it lists them). `chat status` tells the model, the effort, the mode and
+  how much of the context is used. `chat compact` sums up the earlier
+  conversation to free the context. `chat export [path]` writes the
+  conversation to a file.
 - Switching the model is yours to do, never something to hand back. When the
   user asks for a stronger, cheaper or faster model without naming one, pick
   it yourself from `chat model`'s list and switch: Claude Opus 5.5 is the
