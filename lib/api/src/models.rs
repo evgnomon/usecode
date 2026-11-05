@@ -131,6 +131,77 @@ pub struct ApiKeyListOut {
 }
 
 #[derive(Serialize)]
+pub struct HostEnrollmentOut {
+    pub token: String,
+    pub expires_at: f64,
+}
+
+#[derive(Deserialize)]
+pub struct HostRegisterIn {
+    pub token: String,
+    pub name: String,
+    pub machine_id: String,
+    #[serde(default)]
+    pub version: String,
+    #[serde(default)]
+    pub arch: String,
+    #[serde(default)]
+    pub os: String,
+}
+
+#[derive(Serialize)]
+pub struct HostRegisterOut {
+    pub id: String,
+    pub secret: String,
+    pub heartbeat_seconds: u64,
+}
+
+/// How one daemon module did, as the host reports it.
+#[derive(Serialize, Deserialize)]
+pub struct HostModuleStatus {
+    pub name: String,
+    pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct HeartbeatIn {
+    #[serde(default)]
+    pub version: String,
+    #[serde(default)]
+    pub uptime_seconds: Option<i64>,
+    #[serde(default)]
+    pub modules: Vec<HostModuleStatus>,
+}
+
+#[derive(Serialize)]
+pub struct HeartbeatOut {
+    pub id: String,
+    pub heartbeat_seconds: u64,
+}
+
+#[derive(Serialize)]
+pub struct HostOut {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub arch: String,
+    pub os: String,
+    pub modules: Value,
+    pub uptime_seconds: Option<i64>,
+    pub last_ip: Option<String>,
+    pub online: bool,
+    pub last_seen_at: f64,
+    pub created_at: f64,
+}
+
+#[derive(Serialize)]
+pub struct HostListOut {
+    pub hosts: Vec<HostOut>,
+}
+
+#[derive(Serialize)]
 pub struct ModelOptionsOut {
     pub fields: Vec<Value>,
 }

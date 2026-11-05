@@ -174,6 +174,34 @@ opens the API (6443), lets pods reach their host, and lets the other
 nodes in - nothing else. k3s runs as its own `k3s.service`, so
 restarting or upgrading the daemon never takes your cluster down.
 
+### Calling home
+
+Got a handful of hosts and want to see them all in one place? Have them
+call home to usecode.dev:
+
+```sh
+export UC_USECODE_API_KEY=...        # from https://usecode.dev; or usecode_api_key under uc: in config.yaml
+uc daemon register edge cave         # or --all for every host in the inventory
+```
+
+Within a minute each host shows up in the console with the daemon's
+version, the OS, the uptime and how each module is doing (`mesh: ok`,
+`kube: error: ...`), and it checks in every five minutes after that, so
+you can tell at a glance which box went quiet.
+
+Your API key stays on your machine. `register` asks usecode.dev for a
+one-time token for each host and hands it over in `/etc/uc/callhome.toml`.
+The daemon registers with it, keeps the secret it gets back in
+`/var/lib/usecode/callhome.toml`, and throws the token away. A host only
+sends what's listed above, plus a hash of its machine id so a reinstall
+keeps its place. Nothing from the mesh, the firewall or the cluster is
+sent. Running your own usecode API? Point at it with `--usecode-api URL`
+(or `UC_USECODE_API`).
+
+It's off until you run `register`. To stop a host calling, remove it in
+the console. The daemon notices on its next check-in and stops for good,
+until you register it again.
+
 ## Quick install
 
 Got a box with systemd and ssh access? One command puts the daemon on

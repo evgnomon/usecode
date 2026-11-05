@@ -2,13 +2,14 @@
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
 //! `uc daemon`, run from the control node: `install` (see
-//! [`uc_daemon::install`]) and `reload` (see [`uc_daemon::reload`]).
+//! [`uc_daemon::install`]), `reload` (see [`uc_daemon::reload`]) and
+//! `register` (see [`uc_daemon::register`]).
 
 use std::process::ExitCode;
 
-use uc_daemon::{install, reload};
+use uc_daemon::{install, register, reload};
 
-const USAGE: &str = "usage: uc-daemon-ctl install|reload ARGS...";
+const USAGE: &str = "usage: uc-daemon-ctl install|reload|register ARGS...";
 
 /// A subcommand's entry point, as `uc_daemon` exposes it.
 type Command = fn(&[String]) -> uc_daemon::error::Result<()>;
@@ -18,6 +19,7 @@ fn main() -> ExitCode {
     let (name, run): (&str, Command) = match args.first().map(String::as_str) {
         Some("install") => ("install", install::run),
         Some("reload") => ("reload", reload::run),
+        Some("register") => ("register", register::run),
         _ => {
             eprintln!("{USAGE}");
             return ExitCode::FAILURE;

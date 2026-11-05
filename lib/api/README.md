@@ -48,6 +48,25 @@ Errors are `{"detail": "..."}`; a request that fails validation is a 422 whose
 See [docs/usecode-agent-architecture.md](../../docs/usecode-agent-architecture.md)
 ("Provider resources and tasks").
 
+## Hosts calling home
+
+The usecode daemon (`usecoded`) on a host registers itself and checks in every few
+minutes; `uc daemon register` sets that up (see `lib/daemon/README.md`).
+
+- `POST /hosts/enrollments` — with the user's `X-API-Key`: a one-time token, good for an
+  hour, that `uc daemon register` hands to a host. `{ "token", "expires_at" }`
+- `POST /hosts/register` — `{ "token", "name", "machine_id", "version", "arch", "os" }`
+  → `{ "id", "secret", "heartbeat_seconds" }`. Uses the token up. The same `machine_id`
+  registering again for the same user keeps its row and gets a new secret.
+- `POST /hosts/heartbeat` — `Authorization: Bearer <secret>`,
+  `{ "version", "uptime_seconds", "modules": [{ "name", "status", "detail"? }] }`.
+  A `401` means the host was removed, and the daemon stops calling.
+- `GET /hosts`, `DELETE /hosts/{id}` — the user's hosts, each `online` while it called
+  within three heartbeats, and removing one.
+
+Enrollment tokens and secrets are minted with the owner's shard in front, like web
+sessions, so `host_enrollments` and `hosts` live with the user. Only their hashes are kept.
+
 ## AI model API
 
 Kick-starts `llama-server` as a container on the uc-agent-api host (via `podman`/`docker`).

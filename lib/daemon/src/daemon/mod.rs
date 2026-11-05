@@ -5,8 +5,8 @@
 //! every host (usecode.service).
 //!
 //! What it does is the sum of its [`Module`]s. Each module owns one
-//! thing the host can do - the WireGuard mesh, the firewall, Kubernetes -
-//! and knows both what that thing needs and how to get the host there.
+//! thing the host can do - the WireGuard mesh, the firewall, Kubernetes,
+//! calling home - and knows both what that thing needs and how to get the host there.
 //! The daemon only drives them: it reconciles every module when it
 //! starts, again on SIGHUP (`systemctl reload usecode`) or a `reload` on
 //! its control socket ([`control`], `usecoded reload`, which also says
@@ -19,6 +19,7 @@
 //! logged the same way. Adding a feature is adding a module here, not a
 //! new service or a new binary.
 
+pub mod callhome;
 pub mod control;
 pub mod firewall;
 pub mod host;
@@ -26,9 +27,11 @@ pub mod kube;
 pub mod mesh;
 
 use std::os::unix::net::UnixStream;
+use std::sync::Mutex;
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::time::Duration;
 
+use crate::callhome::ModuleStatus;
 use crate::error::Result;
 
 /// How often every module is given another chance to converge.
@@ -54,7 +57,31 @@ fn modules() -> Vec<Box<dyn Module>> {
         Box::new(mesh::Mesh::default()),
         Box::new(firewall::Firewall::default()),
         Box::new(kube::Kube::default()),
+        // Last, so its heartbeat says how every other module just did.
+        Box::new(callhome::CallHome::default()),
     ]
+}
+
+/// How each module did the last time it was reconciled.
+static STATUSES: Mutex<Vec<ModuleStatus>> = Mutex::new(Vec::new());
+
+/// How each module did the last time it was reconciled, for the heartbeat.
+pub fn statuses() -> Vec<ModuleStatus> {
+    STATUSES.lock().map(|s| s.clone()).unwrap_or_default()
+}
+
+fn record(name: &str, result: &Result<()>) {
+    let status = ModuleStatus {
+        name: name.to_string(),
+        status: if result.is_ok() { "ok" } else { "error" }.to_string(),
+        detail: result.as_ref().err().map(|e| e.to_string()),
+    };
+    if let Ok(mut statuses) = STATUSES.lock() {
+        match statuses.iter_mut().find(|s| s.name == name) {
+            Some(old) => *old = status,
+            None => statuses.push(status),
+        }
+    }
 }
 
 /// What wakes the loop up before the next tick.
@@ -117,7 +144,9 @@ pub fn run() -> Result<()> {
 fn reconcile(modules: &mut [Box<dyn Module>], force: bool) -> String {
     let mut report = String::new();
     for m in modules.iter_mut() {
-        match m.reconcile(force) {
+        let result = m.reconcile(force);
+        record(m.name(), &result);
+        match result {
             Ok(()) => report.push_str(&format!("{}: ok\n", m.name())),
             Err(e) => {
                 eprintln!("{}: {e}; trying again in {}s", m.name(), TICK.as_secs());

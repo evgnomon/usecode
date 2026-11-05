@@ -62,6 +62,8 @@ pub async fn app(change: impl FnOnce(&mut Settings)) -> Option<TestApp> {
     let db = Arc::new(Db::connect(&settings).await.unwrap());
     db.seed_shard_ranges().await.unwrap();
     let mail = Arc::new(Mutex::new(Vec::new()));
+    // As main does: the HTTP client below needs a TLS provider.
+    let _ = rustls_graviola::default_provider().install_default();
     let app = Arc::new(App {
         cipher: crypto::Cipher::new(&settings.secret_key),
         store: Store::new(db),

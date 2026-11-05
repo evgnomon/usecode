@@ -84,6 +84,8 @@ pub fn token_urlsafe() -> String {
 // It is therefore minted with the owner's virtual shard in front —
 // "1a2b.<secret>" — which routes the lookup to exactly one instance. The
 // hash stored in the database covers the whole token, prefix included.
+// A host's enrollment token and its secret are minted the same way, for
+// the same reason.
 
 const TOKEN_PREFIX_WIDTH: usize = 4; // hex digits, enough for db::VIRTUAL_SHARDS - 1
 
@@ -187,6 +189,40 @@ pub struct ServerRow {
     pub public_ip6: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+/// A host running usecoded that called home.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct HostRow {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub name: String,
+    pub version: String,
+    pub arch: String,
+    pub os: String,
+    pub modules: Json<Value>,
+    pub uptime_seconds: Option<i64>,
+    pub last_ip: Option<String>,
+    pub last_seen_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
+}
+
+/// What a host says about itself when it registers.
+pub struct NewHost<'a> {
+    pub name: &'a str,
+    pub machine_id: &'a str,
+    pub version: &'a str,
+    pub arch: &'a str,
+    pub os: &'a str,
+    pub ip: Option<&'a str>,
+}
+
+/// What a host says on each heartbeat.
+pub struct Heartbeat<'a> {
+    pub version: &'a str,
+    pub modules: &'a Value,
+    pub uptime_seconds: Option<i64>,
+    pub ip: Option<&'a str>,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -296,6 +332,8 @@ pub struct NewServer<'a> {
 
 const SERVER_COLUMNS: &str = "id, user_id, provider, provider_server_id, type, name, status, \
                               public_ip4, public_ip6, created_at, updated_at";
+const HOST_COLUMNS: &str = "id, user_id, name, version, arch, os, modules, uptime_seconds, \
+                            last_ip, last_seen_at, created_at";
 const TASK_COLUMNS: &str =
     "id, user_id, kind, assignee, state, resources, payload, error, created_at, updated_at";
 
@@ -681,10 +719,11 @@ impl Store {
         Ok(token)
     }
 
-    /// The instance holding the `web_sessions` row for this token. The
-    /// prefix is a bucket of the *owner's* `users` map, since that is what
-    /// the row's placement follows.
-    async fn session_partition(&self, token: &str) -> Result<Partition> {
+    /// The instance holding the row for a token minted with
+    /// [`mint_session_token`]: a web session, a host enrollment or a host
+    /// secret. The prefix is a bucket of the *owner's* `users` map, since
+    /// that is what the row's placement follows.
+    async fn owner_partition(&self, token: &str) -> Result<Partition> {
         match session_token_bucket(token) {
             Some(bucket) => self.db.partition_for_bucket(schema::USERS, bucket).await,
             None => Ok(None),
@@ -692,7 +731,7 @@ impl Store {
     }
 
     pub async fn get_web_session(&self, token: &str) -> Result<Option<WebSessionRecord>> {
-        let partition = self.session_partition(token).await?;
+        let partition = self.owner_partition(token).await?;
         let pool = self.db.pool(&partition).await?;
         let row: Option<(Uuid, String, String, DateTime<Utc>)> = sqlx::query_as(
             "SELECT s.user_id, COALESCE(u.phone, ''), s.api_key_hash, s.created_at
@@ -714,7 +753,7 @@ impl Store {
     }
 
     pub async fn revoke_web_session(&self, token: &str) -> Result<()> {
-        let partition = self.session_partition(token).await?;
+        let partition = self.owner_partition(token).await?;
         let pool = self.db.pool(&partition).await?;
         sqlx::query("UPDATE web_sessions SET revoked_at = $2 WHERE token_hash = $1")
             .bind(hash(token))
@@ -1119,6 +1158,145 @@ impl Store {
             Some(row) => Ok((row, false)),
             None => Ok((self.create_server(partition, user_id, server).await?, true)),
         }
+    }
+
+    // -- Hosts (partitioned, routed by the token's shard prefix) -----------
+    // usecoded on a host calls home: it registers once with an enrollment
+    // token, then sends heartbeats with a secret of its own. Both arrive
+    // with nothing else, so both are minted with the owner's shard in
+    // front (see `mint_session_token`) and the rows live with the owner.
+
+    /// A one-time token a host registers with, good until `expires_at`.
+    /// The user's tokens that ran out are cleared on the way.
+    pub async fn issue_host_enrollment(
+        &self,
+        user_id: &Uuid,
+        expires_at: DateTime<Utc>,
+    ) -> Result<String> {
+        let token = mint_session_token(user_id);
+        let pool = self.pool_for_user(user_id).await?;
+        let now = Utc::now();
+        sqlx::query("DELETE FROM host_enrollments WHERE user_id = $1 AND expires_at <= $2")
+            .bind(user_id)
+            .bind(now)
+            .execute(&pool)
+            .await?;
+        sqlx::query(
+            "INSERT INTO host_enrollments (token_hash, user_id, expires_at, created_at)
+             VALUES ($1, $2, $3, $4)",
+        )
+        .bind(hash(&token))
+        .bind(user_id)
+        .bind(expires_at)
+        .bind(now)
+        .execute(&pool)
+        .await?;
+        Ok(token)
+    }
+
+    /// Use up the enrollment `token` to register a host, and return it with
+    /// its new secret; `None` when the token is unknown, used or ran out.
+    /// The same machine registering again for the same user gets its row
+    /// back, with a new secret that replaces the old one.
+    pub async fn register_host(
+        &self,
+        token: &str,
+        host: NewHost<'_>,
+    ) -> Result<Option<(HostRow, String)>> {
+        let partition = self.owner_partition(token).await?;
+        let pool = self.db.pool(&partition).await?;
+        let now = Utc::now();
+        let mut tx = pool.begin().await?;
+        let user_id: Option<Uuid> = sqlx::query_scalar(
+            "DELETE FROM host_enrollments WHERE token_hash = $1 AND expires_at > $2
+             RETURNING user_id",
+        )
+        .bind(hash(token))
+        .bind(now)
+        .fetch_optional(&mut *tx)
+        .await?;
+        let Some(user_id) = user_id else {
+            return Ok(None);
+        };
+        let secret = mint_session_token(&user_id);
+        let row: HostRow = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "INSERT INTO hosts (id, user_id, name, machine_id, secret_hash, version, arch, os,
+                                last_ip, last_seen_at, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
+             ON CONFLICT (user_id, machine_id) DO UPDATE SET
+                 name = EXCLUDED.name, secret_hash = EXCLUDED.secret_hash,
+                 version = EXCLUDED.version, arch = EXCLUDED.arch, os = EXCLUDED.os,
+                 last_ip = EXCLUDED.last_ip, last_seen_at = EXCLUDED.last_seen_at
+             RETURNING {HOST_COLUMNS}"
+        )))
+        .bind(Uuid::new_v4())
+        .bind(user_id)
+        .bind(host.name)
+        .bind(host.machine_id)
+        .bind(hash(&secret))
+        .bind(host.version)
+        .bind(host.arch)
+        .bind(host.os)
+        .bind(host.ip)
+        .bind(now)
+        .fetch_one(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(Some((row, secret)))
+    }
+
+    /// Record a heartbeat from the host whose secret this is; `None` when
+    /// no host has it (removed, or registered again since).
+    pub async fn host_heartbeat(
+        &self,
+        secret: &str,
+        beat: Heartbeat<'_>,
+    ) -> Result<Option<HostRow>> {
+        let partition = self.owner_partition(secret).await?;
+        let pool = self.db.pool(&partition).await?;
+        Ok(sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "UPDATE hosts SET version = $2, modules = $3, uptime_seconds = $4,
+                              last_ip = COALESCE($5, last_ip), last_seen_at = $6
+             WHERE secret_hash = $1
+             RETURNING {HOST_COLUMNS}"
+        )))
+        .bind(hash(secret))
+        .bind(beat.version)
+        .bind(Json(beat.modules))
+        .bind(beat.uptime_seconds)
+        .bind(beat.ip)
+        .bind(Utc::now())
+        .fetch_optional(&pool)
+        .await?)
+    }
+
+    pub async fn list_hosts(&self, partition: &Partition, user_id: &Uuid) -> Result<Vec<HostRow>> {
+        let pool = self.db.pool(partition).await?;
+        Ok(sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "SELECT {HOST_COLUMNS} FROM hosts WHERE user_id = $1 ORDER BY name, created_at"
+        )))
+        .bind(user_id)
+        .fetch_all(&pool)
+        .await?)
+    }
+
+    /// Forget a host; its secret stops working, so it stops calling home.
+    pub async fn delete_host(
+        &self,
+        partition: &Partition,
+        user_id: &Uuid,
+        host_id: &str,
+    ) -> Result<bool> {
+        let Ok(host_id) = Uuid::parse_str(host_id) else {
+            return Ok(false);
+        };
+        let pool = self.db.pool(partition).await?;
+        let deleted = sqlx::query("DELETE FROM hosts WHERE id = $1 AND user_id = $2")
+            .bind(host_id)
+            .bind(user_id)
+            .execute(&pool)
+            .await?;
+        Ok(deleted.rows_affected() > 0)
     }
 
     // -- Tasks (partitioned on the assignee) --------------------------------

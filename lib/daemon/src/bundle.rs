@@ -18,6 +18,9 @@
 //! And Kubernetes: the host's [`crate::kube::Settings`], written by
 //! `uc kube` so the daemon there runs it as a k3s controller.
 //!
+//! And calling home: the [`crate::callhome::Settings`] `uc daemon register`
+//! hands a host, a one-time token to register with usecode.dev.
+//!
 //! The file can hold a private key: it only ever sits in 0700
 //! directories, and is removed again once join has run.
 
@@ -26,11 +29,14 @@ use std::fs;
 
 use serde::{Deserialize, Serialize};
 
+use crate::callhome;
 use crate::daemon::mesh;
 use crate::error::{Context, Result};
 use crate::firewall::Settings;
 use crate::inventory::{GROUP, Inventory};
 use crate::kube;
+use crate::remote::Target;
+use crate::setup::BINARY_PATH;
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Bundle {
@@ -45,6 +51,10 @@ pub struct Bundle {
     /// The host's Kubernetes settings, when `uc kube` delivered them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kube: Option<kube::Settings>,
+    /// Where to call home and the token to register with, when
+    /// `uc daemon register` delivered them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub callhome: Option<callhome::Settings>,
 }
 
 impl Bundle {
@@ -91,6 +101,35 @@ impl Bundle {
     pub fn load(path: &str) -> Result<Bundle> {
         let body = fs::read_to_string(path).with_ctx(|| format!("read {path}"))?;
         toml::from_str(&body).with_ctx(|| format!("parse {path}"))
+    }
+
+    /// Hand the bundle to `usecoded join` on `target`. It may hold a
+    /// secret, so it only ever sits in 0700 directories, here and there,
+    /// and both go away afterwards.
+    pub fn deliver(&self, target: &Target) -> Result<()> {
+        let local = tempfile::Builder::new()
+            .prefix("uc-bundle-")
+            .tempdir()
+            .ctx("create a staging directory")?;
+        let path = local.path().join("bundle.toml");
+        fs::write(&path, self.encode()?).ctx("write the bundle")?;
+
+        let dir = target.stage(&[("bundle.toml", path.as_path())])?;
+        let result = target
+            .run_as_root(&[
+                BINARY_PATH.to_string(),
+                "join".to_string(),
+                format!("{dir}/bundle.toml"),
+            ])
+            .with_ctx(|| {
+                format!(
+                    "join (if the daemon is missing or older than this, `uc daemon install {}` \
+                     first)",
+                    self.host
+                )
+            });
+        target.remove_all(&dir);
+        result
     }
 }
 
@@ -156,5 +195,21 @@ mod tests {
         };
         let back: Bundle = toml::from_str(&bundle.encode().unwrap()).unwrap();
         assert_eq!(back.kube, bundle.kube);
+    }
+
+    #[test]
+    fn a_callhome_section_round_trips() {
+        let bundle = Bundle {
+            host: "edge".into(),
+            callhome: Some(callhome::Settings {
+                endpoint: callhome::DEFAULT_ENDPOINT.into(),
+                token: "1a2b.t".into(),
+                name: "edge".into(),
+            }),
+            ..Bundle::default()
+        };
+        let back: Bundle = toml::from_str(&bundle.encode().unwrap()).unwrap();
+        assert_eq!(back.callhome, bundle.callhome);
+        assert!(back.mesh.is_none());
     }
 }

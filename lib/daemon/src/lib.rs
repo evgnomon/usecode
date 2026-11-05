@@ -3,7 +3,8 @@
 
 //! The usecode daemon and its tools. `usecoded` is the one binary on
 //! every host: `usecoded run` is the daemon ([`daemon`]), which grows by
-//! modules - the WireGuard mesh, the firewall and Kubernetes (k3s). `uc-daemon-ctl` puts it on a host
+//! modules - the WireGuard mesh, the firewall, Kubernetes (k3s) and calling
+//! home to usecode.dev. `uc-daemon-ctl` puts it on a host
 //! from the control node (`uc daemon install`) and reloads it there
 //! (`uc daemon reload`), and `uc-net-mesh` is the mesh's own CLI.
 //! Each binary is a thin front over the modules here.
@@ -14,6 +15,7 @@ pub mod error;
 pub mod app;
 pub mod apply;
 pub mod bundle;
+pub mod callhome;
 pub mod config;
 pub mod daemon;
 pub mod firewall;
@@ -24,6 +26,7 @@ pub mod iptables;
 pub mod keys;
 pub mod kube;
 pub mod net;
+pub mod register;
 pub mod reload;
 pub mod remote;
 pub mod setup;

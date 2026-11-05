@@ -260,9 +260,33 @@ pub static DAEMON: Group = Group {
             "have the daemon on hosts converge every module now",
             &["uc-daemon-ctl", "reload"],
         ),
+        Sub {
+            name: "register",
+            summary: "have hosts call home to usecode.dev",
+            run: Run::Builtin(daemon_register),
+        },
     ],
     fallback: None,
 };
+
+/// `uc daemon register`: `uc-daemon-ctl register`, with the usecode.dev API
+/// key and endpoint also taken from the user config. The command line is
+/// read there and wins; the environment and config.yaml are read here.
+fn daemon_register(args: &[OsString]) -> ExitCode {
+    for (flag, var) in [
+        ("--usecode-api-key", "UC_USECODE_API_KEY"),
+        ("--usecode-api", "UC_USECODE_API"),
+    ] {
+        if let Some(value) = crate::flag::value(None, flag) {
+            // SAFETY: single-threaded, right before exec.
+            unsafe { std::env::set_var(var, value) };
+        }
+    }
+    crate::dispatch::exec(
+        "uc-daemon-ctl",
+        std::iter::once(OsString::from("register")).chain(args.iter().cloned()),
+    )
+}
 
 pub static VM: Group = alias(
     "uc vm",

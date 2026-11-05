@@ -10,13 +10,10 @@
 //! A member that can't be reached doesn't stop the others: it is
 //! reported at the end, and picks the topology up on the next apply.
 
-use std::fs;
-
 use crate::bundle::Bundle;
-use crate::error::{Context, Result};
+use crate::error::Result;
 use crate::inventory::{self, Inventory, Vault};
 use crate::remote::Target;
-use crate::setup::BINARY_PATH;
 
 pub fn run(args: &[String]) -> Result<()> {
     if args.iter().any(|a| a.starts_with('-')) {
@@ -66,31 +63,5 @@ fn deliver(inv: &Inventory, bundle: &Bundle) -> Result<()> {
     let host = inv
         .host(&bundle.host)
         .expect("bundles are for inventory hosts");
-    let target = Target::for_host(host)?;
-
-    // The bundle holds a private key: it only ever sits in 0700
-    // directories, here and there, and both go away afterwards.
-    let local = tempfile::Builder::new()
-        .prefix("uc-net-mesh-apply-")
-        .tempdir()
-        .ctx("create a staging directory")?;
-    let path = local.path().join("bundle.toml");
-    fs::write(&path, bundle.encode()?).ctx("write the bundle")?;
-
-    let dir = target.stage(&[("bundle.toml", path.as_path())])?;
-    let result = target
-        .run_as_root(&[
-            BINARY_PATH.to_string(),
-            "join".to_string(),
-            format!("{dir}/bundle.toml"),
-        ])
-        .with_ctx(|| {
-            format!(
-                "join (if the daemon is missing or older than this, `uc daemon install {}` \
-                 first)",
-                bundle.host
-            )
-        });
-    target.remove_all(&dir);
-    result
+    bundle.deliver(&Target::for_host(host)?)
 }

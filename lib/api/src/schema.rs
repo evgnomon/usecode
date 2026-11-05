@@ -208,6 +208,17 @@ pub const TABLES: &[Table] = &[
         name: STRIPE_EVENTS,
         placement: Placement::HashedOn("id"),
     },
+    Table {
+        // A one-time token for a host to register with. Minted with the
+        // owner's shard in front, like a web session, so it lives with them.
+        name: "host_enrollments",
+        placement: OWNED_BY_USER,
+    },
+    Table {
+        // A host calling home; its secret carries the owner's shard too.
+        name: "hosts",
+        placement: OWNED_BY_USER,
+    },
 ];
 
 pub fn placement_of(table: &str) -> Option<Placement> {

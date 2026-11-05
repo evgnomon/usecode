@@ -6,6 +6,7 @@
 
 pub(crate) mod account;
 mod auth;
+mod hosts;
 mod models;
 mod providers;
 mod servers;
@@ -45,6 +46,7 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/static/{*path}", get(static_file))
         .merge(account::router())
         .merge(auth::router())
+        .merge(hosts::router())
         .merge(models::router())
         .merge(providers::router())
         .merge(servers::router())
