@@ -984,6 +984,8 @@ struct Reply {
     calls: Vec<(String, String, String)>,
     /// Reasoning to hand back with the tool calls, merged by `index`.
     details: Vec<Value>,
+    /// Claude's content blocks, to send back unchanged (see [`claude::CONTENT`]).
+    blocks: Option<Value>,
     usage: Option<Value>,
 }
 
@@ -998,6 +1000,9 @@ impl Reply {
         }
         if let Some(usage) = chunk.get("usage").filter(|u| !u.is_null()) {
             self.usage = Some(usage.clone());
+        }
+        if let Some(blocks) = chunk.get(claude::CONTENT).filter(|b| b.is_array()) {
+            self.blocks = Some(blocks.clone());
         }
         let delta = &chunk["choices"][0]["delta"];
         for call in delta["tool_calls"].as_array().into_iter().flatten() {
@@ -1059,6 +1064,9 @@ impl Reply {
         }
         if !self.details.is_empty() {
             message["reasoning_details"] = json!(self.details);
+        }
+        if let Some(blocks) = self.blocks {
+            message[claude::CONTENT] = blocks;
         }
         message
     }
@@ -1854,7 +1862,8 @@ fn tools() -> Value {
              leaves the shell carries over to the commands and tools after it: a `cd`, an \
              `export`, a `source`. A command still running after the timeout carries on as a job. Deleting files always asks the \
              user first. The exception is ssh-add: it runs on the user's terminal so they can \
-             type the key's passphrase.",
+             type the key's passphrase. Several commands in one reply run one after another, \
+             so batch the looking around.",
             json!({
                 "command": string("the command line"),
                 "title": string("what it does in a few lowercase words, shown to the user instead of the command, like 'list the rust files' or 'build the release binary'"),
@@ -2752,11 +2761,20 @@ impl Session {
         let messages = &self.messages;
         // OpenRouter and Claude take cache breakpoints; the others, plain
         // messages.
-        let messages = if !matches!(self.kind(), Some(Kind::OpenRouter | Kind::Claude)) {
+        let mut messages = if !matches!(self.kind(), Some(Kind::OpenRouter | Kind::Claude)) {
             messages.clone()
         } else {
             cached(&self.model, messages)
         };
+        // Claude's own blocks are for Claude; the others may turn a field
+        // they don't know away.
+        if self.kind() != Some(Kind::Claude) {
+            for message in &mut messages {
+                if let Some(message) = message.as_object_mut() {
+                    message.remove(claude::CONTENT);
+                }
+            }
+        }
         let mut body = json!({
             "model": self.model,
             "messages": messages,

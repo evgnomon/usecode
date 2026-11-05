@@ -323,11 +323,7 @@ fn code_name(word: &str) -> bool {
 
 /// `tools`, `out.push`, `uc::flag::on`: names joined by `.` or `::`.
 fn path_of_names(text: &str) -> bool {
-    !text.is_empty()
-        && text
-            .split("::")
-            .flat_map(|part| part.split('.'))
-            .all(ident)
+    !text.is_empty() && text.split("::").flat_map(|part| part.split('.')).all(ident)
 }
 
 fn ident(name: &str) -> bool {
@@ -440,11 +436,24 @@ mod tests {
     #[test]
     fn code_names_get_colors() {
         assert_eq!(all(&["call tools()."]), "call \x1b[36mtools()\x1b[0m.");
-        assert_eq!(all(&["see out.push(x),"]), "see \x1b[36mout.push(x)\x1b[0m,");
+        assert_eq!(
+            all(&["see out.push(x),"]),
+            "see \x1b[36mout.push(x)\x1b[0m,"
+        );
         assert_eq!(all(&["use job_output"]), "use \x1b[36mjob_output\x1b[0m");
         assert_eq!(all(&["use fetchUrl"]), "use \x1b[36mfetchUrl\x1b[0m");
-        assert_eq!(all(&["use uc::flag::on"]), "use \x1b[36muc::flag::on\x1b[0m");
-        for text in ["Hello there", "an API", "e.g. this", "(see above)", "_x", "it works (mostly)"] {
+        assert_eq!(
+            all(&["use uc::flag::on"]),
+            "use \x1b[36muc::flag::on\x1b[0m"
+        );
+        for text in [
+            "Hello there",
+            "an API",
+            "e.g. this",
+            "(see above)",
+            "_x",
+            "it works (mostly)",
+        ] {
             assert_eq!(all(&[text]), text);
         }
     }
@@ -452,7 +461,10 @@ mod tests {
     #[test]
     fn titles_are_bold() {
         assert_eq!(all(&["Changes:\n- a"]), "\x1b[1mChanges:\x1b[0m\n- a");
-        assert_eq!(all(&["## Do", "ne\nok"]), "\x1b[1m## Done\x1b[0m\n\x1b[92mok\x1b[0m");
+        assert_eq!(
+            all(&["## Do", "ne\nok"]),
+            "\x1b[1m## Done\x1b[0m\n\x1b[92mok\x1b[0m"
+        );
         assert_eq!(all(&["x\n**Next**\n"]), "x\n\x1b[1m**Next**\x1b[0m\n");
         assert_eq!(all(&["Run it: now:\n"]), "Run it: now:\n");
         assert_eq!(all(&["not a title:\n"]), "not a title:\n");

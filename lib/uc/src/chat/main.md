@@ -39,6 +39,24 @@
   when a misheard name or path would matter.
 - The `uc` command line tool is installed (`uc -h` lists its commands).
 
+# Working fast
+
+- Each reply you send costs the user a round trip of many seconds; the
+  commands themselves take milliseconds. So when you need to look at
+  several things, ask for all of them in one reply: several read_file,
+  grep, glob and bash calls together, not one per reply.
+- When the looking has steps that follow from each other (find the files,
+  then read the part of each that matters), do it in one bash call: chain
+  the commands, or for real logic write a short `python3` script in a
+  heredoc. Print only what you need, with a header for each part.
+- Scripts are for looking only. Change files with edit_file and
+  write_file, and never delete from a script: deleting goes through `rm`,
+  so the user is asked.
+- Before you start looking, decide what you need to know, then gather it
+  in one or two batches. Don't read the same file twice.
+- Once you know enough to make the change, make it. Read more only when
+  an edit or a build tells you that you need to.
+
 # The web
 
 - Use web_search to look things up and fetch_url to read a page, never `curl`

@@ -83,6 +83,12 @@ const LIFETIME: u64 = 365 * 24 * 60 * 60;
 const MESSAGES_URL: &str = "https://api.anthropic.com/v1/messages?beta=true";
 const IDENTITY: &str = "You are Claude Code, Anthropic's official CLI for Claude.";
 const MAX_TOKENS: u64 = 32_000;
+/// The betas of a chat request: the subscription's, and the one that lets a
+/// request say what to do with thinking a changed history made stale.
+const BETAS: &str = "oauth-2025-04-20,claude-code-20250219,thinking-binding-controls-2026-08-01";
+/// The key a reply's content blocks are kept under in the chat's history, to
+/// go back to Claude unchanged; other providers never see it.
+pub const CONTENT: &str = "claude_content";
 
 /// Tool names the subscription API refuses unless they are Claude Code's.
 const NAMES: &[(&str, &str)] = &[("bash", "Bash"), ("grep", "Grep"), ("glob", "Glob")];
@@ -333,6 +339,20 @@ pub fn request(body: &Value, stream: bool) -> Value {
                     .collect::<Vec<_>>()
             })),
             "user" => push("user", blocks(&message["content"])),
+            // A reply from Claude goes back as it came: its thinking is only
+            // read with the blocks around it unchanged.
+            "assistant" if message[CONTENT].is_array() => push(
+                "assistant",
+                message[CONTENT]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter(|b| {
+                        b["type"] != "text" || b["text"].as_str().is_some_and(|t| !t.is_empty())
+                    })
+                    .cloned()
+                    .collect(),
+            ),
             "assistant" => {
                 let mut content = blocks(&message["content"]);
                 for call in message["tool_calls"].as_array().into_iter().flatten() {
@@ -412,6 +432,16 @@ pub fn request(body: &Value, stream: bool) -> Value {
         "messages": messages,
         "stream": stream,
     });
+    // The model thinks before each step; what it thought goes back with the
+    // next request, so it carries on with its plan instead of making it
+    // again. Where uc changes the history (a compaction), Claude drops the
+    // thinking it can no longer check rather than refusing the request.
+    if thinks(body["model"].as_str().unwrap_or_default()) {
+        request["thinking"] = json!({
+            "type": "adaptive",
+            "block_binding": {"prefix_mismatch_behavior": "drop_block"},
+        });
+    }
     // `uc agent effort`; Claude has no `minimal`, its least is `low`.
     if let Some(effort) = body["reasoning"]["effort"].as_str() {
         let effort = if effort == "minimal" { "low" } else { effort };
@@ -435,6 +465,21 @@ pub fn request(body: &Value, stream: bool) -> Value {
     request
 }
 
+/// Whether `model` takes adaptive thinking: Claude 4.6 and after. Older
+/// ones (Haiku 4.5, Sonnet 4.5, ...) would need a token budget instead.
+fn thinks(model: &str) -> bool {
+    let id = model_id(model);
+    let mut numbers = id
+        .split('-')
+        .skip_while(|part| part.parse::<u32>().is_err())
+        .map_while(|part| part.parse::<u32>().ok().filter(|n| *n < 100));
+    match (numbers.next(), numbers.next()) {
+        (Some(major), _) if major >= 5 => true,
+        (Some(4), Some(minor)) => minor >= 6,
+        _ => false,
+    }
+}
+
 /// How many times a request is tried, as for OpenRouter.
 const ATTEMPTS: u32 = 4;
 
@@ -447,7 +492,7 @@ async fn post(token: &str, request: &Value) -> Result<reqwest::Response> {
             .post(MESSAGES_URL)
             .bearer_auth(token)
             .header("anthropic-version", "2023-06-01")
-            .header("anthropic-beta", "oauth-2025-04-20,claude-code-20250219")
+            .header("anthropic-beta", BETAS)
             .header("user-agent", "claude-cli/2.1.311")
             .header("x-app", "cli")
             .json(request)
@@ -664,6 +709,11 @@ fn usage(input: u64, cached: u64, written: u64, output: u64) -> Value {
 pub struct Translator {
     /// The tool calls so far, by the index of the content block they are in.
     calls: Vec<u64>,
+    /// The reply's content blocks as they come, by their index: what goes
+    /// back to Claude unchanged with the next request (see [`CONTENT`]).
+    blocks: Vec<Value>,
+    /// A tool call's input so far, by the index of its block.
+    inputs: Vec<String>,
     input: u64,
     cached: u64,
     written: u64,
@@ -685,7 +735,16 @@ impl Translator {
                 self.output = u["output_tokens"].as_u64().unwrap_or_default();
                 Vec::new()
             }
-            "content_block_start" if event["content_block"]["type"] == "tool_use" => {
+            "content_block_start" => {
+                let index = event["index"].as_u64().unwrap_or_default() as usize;
+                while self.blocks.len() <= index {
+                    self.blocks.push(Value::Null);
+                    self.inputs.push(String::new());
+                }
+                self.blocks[index] = event["content_block"].clone();
+                if event["content_block"]["type"] != "tool_use" {
+                    return Vec::new();
+                }
                 self.calls.push(event["index"].as_u64().unwrap_or_default());
                 let name = event["content_block"]["name"].as_str().unwrap_or_default();
                 vec![chunk(json!({"tool_calls": [{
@@ -696,6 +755,7 @@ impl Translator {
             }
             "content_block_delta" => {
                 let delta = &event["delta"];
+                self.keep(event["index"].as_u64().unwrap_or_default() as usize, delta);
                 match delta["type"].as_str().unwrap_or_default() {
                     "text_delta" => vec![chunk(json!({"content": delta["text"]}))],
                     "input_json_delta" => {
@@ -717,14 +777,53 @@ impl Translator {
                 }
                 Vec::new()
             }
+            "content_block_stop" => {
+                let index = event["index"].as_u64().unwrap_or_default() as usize;
+                if let Some(block) = self.blocks.get_mut(index)
+                    && block["type"] == "tool_use"
+                {
+                    let input = &self.inputs[index];
+                    block["input"] = serde_json::from_str(input)
+                        .ok()
+                        .filter(Value::is_object)
+                        .unwrap_or_else(|| json!({}));
+                }
+                Vec::new()
+            }
             "message_stop" => vec![json!({
                 "choices": [],
                 "usage": usage(self.input, self.cached, self.written, self.output),
+                CONTENT: std::mem::take(&mut self.blocks)
+                    .into_iter()
+                    .filter(|b| !b.is_null())
+                    .collect::<Vec<_>>(),
             })],
             "error" => vec![json!({"error": {
                 "message": event["error"]["message"].as_str().unwrap_or("no message"),
             }})],
             _ => Vec::new(),
+        }
+    }
+}
+
+impl Translator {
+    /// Adds `delta` to the block at `index`, so it can go back as it came.
+    fn keep(&mut self, index: usize, delta: &Value) {
+        let Some(block) = self.blocks.get_mut(index) else {
+            return;
+        };
+        let mut append = |key: &str, piece: &Value| {
+            let have = block[key].as_str().unwrap_or_default();
+            block[key] = json!(format!("{have}{}", piece.as_str().unwrap_or_default()));
+        };
+        match delta["type"].as_str().unwrap_or_default() {
+            "text_delta" => append("text", &delta["text"]),
+            "thinking_delta" => append("thinking", &delta["thinking"]),
+            "signature_delta" => append("signature", &delta["signature"]),
+            "input_json_delta" => {
+                self.inputs[index].push_str(delta["partial_json"].as_str().unwrap_or_default())
+            }
+            _ => {}
         }
     }
 }
@@ -1064,6 +1163,71 @@ mod tests {
         assert_eq!(usage["completion_tokens"], 7);
         assert_eq!(usage["total_tokens"], 107);
         assert_eq!(usage["prompt_tokens_details"]["cached_tokens"], 90);
+    }
+
+    #[test]
+    fn the_reply_comes_with_its_blocks_as_they_were() {
+        let mut t = Translator::default();
+        let events = [
+            json!({"type": "content_block_start", "index": 0,
+                   "content_block": {"type": "thinking", "thinking": "", "signature": ""}}),
+            json!({"type": "content_block_delta", "index": 0,
+                   "delta": {"type": "thinking_delta", "thinking": "plan"}}),
+            json!({"type": "content_block_delta", "index": 0,
+                   "delta": {"type": "signature_delta", "signature": "sig"}}),
+            json!({"type": "content_block_stop", "index": 0}),
+            json!({"type": "content_block_start", "index": 1,
+                   "content_block": {"type": "tool_use", "id": "t1", "name": "Bash", "input": {}}}),
+            json!({"type": "content_block_delta", "index": 1,
+                   "delta": {"type": "input_json_delta", "partial_json": "{\"command\":\"ls\"}"}}),
+            json!({"type": "content_block_stop", "index": 1}),
+            json!({"type": "content_block_start", "index": 2,
+                   "content_block": {"type": "redacted_thinking", "data": "xyz"}}),
+            json!({"type": "content_block_stop", "index": 2}),
+            json!({"type": "message_stop"}),
+        ];
+        let chunks: Vec<Value> = events.iter().flat_map(|e| t.event(e)).collect();
+        let blocks = &chunks.last().unwrap()[CONTENT];
+        assert_eq!(
+            blocks[0],
+            json!({"type": "thinking", "thinking": "plan", "signature": "sig"})
+        );
+        assert_eq!(blocks[1]["input"], json!({"command": "ls"}));
+        assert_eq!(blocks[1]["name"], "Bash");
+        assert_eq!(
+            blocks[2],
+            json!({"type": "redacted_thinking", "data": "xyz"})
+        );
+    }
+
+    #[test]
+    fn a_reply_goes_back_with_its_thinking() {
+        let mut body = chat();
+        let thinking = json!({"type": "thinking", "thinking": "", "signature": "sig"});
+        let call =
+            json!({"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "ls"}});
+        body["messages"][2][CONTENT] = json!([thinking, {"type": "text", "text": ""}, call]);
+        let r = request(&body, true);
+        let content = &r["messages"][1]["content"];
+        assert_eq!(content.as_array().unwrap().len(), 2);
+        assert_eq!(content[0], thinking);
+        assert_eq!(content[1]["id"], "t1");
+        assert_eq!(r["thinking"]["type"], "adaptive");
+        assert_eq!(
+            r["thinking"]["block_binding"]["prefix_mismatch_behavior"],
+            "drop_block"
+        );
+    }
+
+    #[test]
+    fn only_claude_from_4_6_on_thinks_adaptively() {
+        assert!(thinks("anthropic/claude-opus-5.5"));
+        assert!(thinks("claude-fable-5-1"));
+        assert!(thinks("claude-opus-4-6"));
+        assert!(thinks("claude-sonnet-5"));
+        assert!(!thinks("claude-haiku-4-5-20251001"));
+        assert!(!thinks("claude-sonnet-4-20250514"));
+        assert!(!thinks("claude-3-7-sonnet-latest"));
     }
 
     #[test]
