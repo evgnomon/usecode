@@ -4,7 +4,8 @@
 //! `dotfiles`: render the home templates, and `dot`: copy the tracked
 //! dotfiles from `roles/dotfiles/files` into the home directories, one task
 //! per group so the `sync` list picks which ones. The files are built into
-//! uc, so a copy is all a machine gets: edit them here, not in the home.
+//! uc, so a copy is all a machine gets: edit them here, not in the home. The
+//! mise config is the exception: one already in the home is left alone.
 
 use crate::configure::engine::{Outcome, Plan, Task};
 use crate::configure::modules::command::which;
@@ -65,6 +66,10 @@ const DOTFILES: &[(&str, &[&str])] = &[
         ],
     ),
 ];
+
+/// Dotfiles only put in place when the home has none: a user's own copy is
+/// never overwritten, relative to the home.
+const SEEDS: &[&str] = &[".config/mise/config.toml"];
 
 /// Dotfiles no longer synced, relative to the home. Earlier syncs linked
 /// them into the usecode checkout; such a link is replaced by a copy of what
@@ -162,7 +167,11 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
                     for entry in entries {
                         let (src, dest) = entry.split_once(':').unwrap_or((entry, entry));
                         let (src, dest) = (files.join(src), home.join(dest));
-                        let step = if dest.ends_with(VSCODE_SETTINGS) {
+                        let step = if SEEDS.iter().any(|s| dest.ends_with(s))
+                            && file::stat(&ctx, &dest, false).await?.is_some()
+                        {
+                            Outcome::Ok
+                        } else if dest.ends_with(VSCODE_SETTINGS) {
                             let text = ctx.vars().assets.read_string(&src)?;
                             let text = with_vscode_themes(&text, &vscode.0, &vscode.1);
                             copy::content(&ctx, &text, &dest, None, false).await?
