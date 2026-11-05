@@ -60,7 +60,7 @@
 //! and `uc agent status` prints the model, the effort, the mode and how much
 //! of the model's context the conversation has taken: the
 //! message count, an estimate before the first turn, the real token count of
-//! the last one, the model's window, and what the session has spent.
+//! the last one and the model's window.
 //! What the model is told about all this is the main skill, `chat/main.md`, always in its system prompt.
 //! So are the repository's `AGENTS.md` files, with where each sits: the ones from the
 //! repository root down to the working directory, and, once a tool reads or
@@ -556,10 +556,8 @@ struct Session {
     search: Engine,
     /// The job bash is waiting on, stopped if Esc is pressed meanwhile.
     waiting: Option<usize>,
-    /// What OpenRouter's last reply said the turn took in tokens and cost.
+    /// What OpenRouter's last reply said the turn took in tokens.
     last_usage: Option<Value>,
-    /// What every turn has cost so far, from `usage.cost`.
-    spent: f64,
     /// The tokens every request has billed so far, shown beside the spinner.
     tokens: Tokens,
     /// When the line being worked on was typed: the spinner counts from it.
@@ -839,6 +837,16 @@ async fn run(
         }
         if let Err(err) = done {
             eprintln!("uc: {err:#}");
+        }
+        // What the line took, left on the screen once the spinner is gone.
+        if command.is_none()
+            && let Some(line) = session.tokens.done(session.since.elapsed().as_secs())
+        {
+            if out::tty() {
+                eprintln!("\x1b[2m· {line}\x1b[0m\n");
+            } else {
+                eprintln!("· {line}\n");
+            }
         }
         session.allow_turn = false;
         // A tool call may have switched the model or cleared the context
@@ -1345,11 +1353,11 @@ fn agent_arg_line(line: &str) -> bool {
         .any(|name| agent_arg(line, name).is_some())
 }
 
-/// `command` with its first word, the program, in bright yellow: what a line
-/// that runs straight away looks like at the prompt.
+/// `command` with its first word, the program, underlined in the text's own
+/// color: what a line that runs straight away looks like at the prompt.
 fn color_program(command: &str) -> String {
     let end = command.find(char::is_whitespace).unwrap_or(command.len());
-    format!("\x1b[1;93m{}\x1b[0m{}", &command[..end], &command[end..])
+    format!("\x1b[4m{}\x1b[0m{}", &command[..end], &command[end..])
 }
 
 /// The command line to run when what was typed is one rather than something for
@@ -2095,7 +2103,6 @@ impl Session {
             search: Engine::pick(search)?,
             waiting: None,
             last_usage: None,
-            spent: 0.0,
             tokens: Tokens::default(),
             since: Instant::now(),
             asked: Vec::new(),
@@ -2692,7 +2699,7 @@ impl Session {
             return false;
         };
         let window = match model_info(&self.model).await {
-            Ok(Some((Some(window), _))) => window,
+            Ok(Some(Some(window))) => window,
             _ => return false,
         };
         prompt as f64 >= COMPACT_AT * window as f64
@@ -2750,9 +2757,6 @@ impl Session {
         });
         let _clock = clock(self.who(), self.since);
         let value = self.send(&body).await?;
-        if let Some(cost) = value["usage"]["cost"].as_f64() {
-            self.spent += cost;
-        }
         self.tokens.add(&value["usage"]);
         value["choices"][0]["message"]["content"]
             .as_str()
@@ -2817,11 +2821,7 @@ impl Session {
             .and_then(|u| u["total_tokens"].as_u64());
         let info = model_info(&self.model).await;
         if self.tokens.turn.requests > 0 {
-            let price = info.as_ref().ok().and_then(|i| i.as_ref()?.1);
-            // The subscription always caches for an hour.
-            let long = claude::LONG_CACHE.load(Ordering::Relaxed)
-                || self.current().is_ok_and(|p| p.kind == Kind::Claude);
-            note!("{}", self.tokens.turn.line(price, long));
+            note!("{}", self.tokens.turn.line());
         } else {
             note!("no turn yet, so no token count; that comes with the first reply");
         }
@@ -2829,7 +2829,7 @@ impl Session {
             note!("{line}");
         }
         match info {
-            Ok(Some((window, per_million))) => {
+            Ok(Some(window)) => {
                 if let (Some(window), Some(total)) = (window, tokens) {
                     let pct = 100.0 * total as f64 / window as f64;
                     note!(
@@ -2839,18 +2839,9 @@ impl Session {
                         pct
                     );
                 }
-                if self.spent > 0.0 {
-                    let per_million = per_million.unwrap_or_default();
-                    note!(
-                        "spent about ${:.4} this session, input ${:.2} and output ${:.2} per million tokens",
-                        self.spent,
-                        per_million.0,
-                        per_million.1
-                    );
-                }
             }
             Ok(None) => note!(
-                "model {}'s window and price aren't on OpenRouter's list",
+                "model {}'s window isn't on OpenRouter's list",
                 self.model
             ),
             Err(err) => note!("OpenRouter's model list: {err:#}"),
@@ -2985,17 +2976,14 @@ impl Session {
         if shown {
             out::reply_end();
         }
-        // What the last turn took: `cost` is what OpenRouter charged, the
-        // token counts what it says the messages came to.
+        // What the last turn took: the token counts the provider says the
+        // messages came to.
         if let Some(usage) = reply.usage.clone() {
-            if let Some(cost) = usage["cost"].as_f64() {
-                self.spent += cost;
-            }
             self.tokens.add(&usage);
             self.last_usage = Some(usage);
         }
         if self.tokens.window.is_none()
-            && let Ok(Some((window, _))) = model_info(&self.model).await
+            && let Ok(Some(window)) = model_info(&self.model).await
         {
             self.tokens.window = window;
         }
@@ -3705,39 +3693,18 @@ struct Turn {
     cached: u64,
     written: u64,
     output: u64,
-    /// What OpenRouter charged, when it said.
-    cost: Option<f64>,
 }
 
 impl Turn {
-    /// `520 in, 3.9k out, 293k cache read, 28.5k cache write ($0.3662), 14
-    /// requests`; the cost from what was charged, else from `price` (input
-    /// and output per million), reads a tenth of the input price and writes
-    /// 1.25 times it (twice when `long`, the hour's cache).
-    fn line(&self, price: Option<(f64, f64)>, long: bool) -> String {
-        let mut line = format!(
+    /// `520 in, 3.9k out, 293k cache read, 28.5k cache write, 14 requests`.
+    fn line(&self) -> String {
+        let line = format!(
             "last turn {} in, {} out, {} cache read, {} cache write",
             short(self.input),
             short(self.output),
             short(self.cached),
             short(self.written)
         );
-        let write = if long { 2.0 } else { 1.25 };
-        let cost = self.cost.or_else(|| {
-            price.map(|(i, o)| {
-                (self.input as f64 * i
-                    + self.cached as f64 * i * 0.1
-                    + self.written as f64 * i * write
-                    + self.output as f64 * o)
-                    / 1e6
-            })
-        });
-        if let Some(cost) = cost {
-            line += &format!(
-                " (${cost:.4}{})",
-                if self.cost.is_some() { "" } else { " est." }
-            );
-        }
         let s = if self.requests == 1 { "" } else { "s" };
         line + &format!(", {} request{s}", self.requests)
     }
@@ -3771,9 +3738,6 @@ impl Tokens {
         self.turn.cached += cached;
         self.turn.written += written;
         self.turn.output += output;
-        if let Some(cost) = usage["cost"].as_f64() {
-            self.turn.cost = Some(self.turn.cost.unwrap_or_default() + cost);
-        }
         self.last = Some(Last {
             context: prompt,
             new: prompt.saturating_sub(cached),
@@ -3799,6 +3763,33 @@ impl Tokens {
             line += &format!(", {:.0}% written to it", pct(self.written));
         }
         Some(line + &format!(", {} out", short(self.output)))
+    }
+
+    /// What the line just worked on took, printed when it is done: `done in
+    /// 1m 07s · 14 requests · 520 in, 3.9k out, 293k cache read, 28k cache
+    /// write · 113k ctx, 11%`; nothing when no request was made.
+    fn done(&self, secs: u64) -> Option<String> {
+        let turn = &self.turn;
+        if turn.requests == 0 {
+            return None;
+        }
+        let s = if turn.requests == 1 { "" } else { "s" };
+        let mut line = format!(
+            "done in {} · {} request{s} · {} in, {} out, {} cache read, {} cache write",
+            elapsed(secs),
+            turn.requests,
+            short(turn.input),
+            short(turn.output),
+            short(turn.cached),
+            short(turn.written)
+        );
+        if let Some(last) = self.last {
+            line += &format!(" · {} ctx", short(last.context));
+            if let Some(window) = self.window.filter(|w| *w > 0) {
+                line += &format!(", {:.0}%", 100.0 * last.context as f64 / window as f64);
+            }
+        }
+        Some(line)
     }
 
     /// ` · 113k ctx, 11% · 1.2k new, 771 out` for the last request: how big
@@ -4514,7 +4505,7 @@ fn cache_set(key: &str, value: Value) {
 /// OpenRouter's model list as the session holds it.
 static OPENROUTER_LIST: Mutex<Option<Arc<Vec<Value>>>> = Mutex::new(None);
 
-/// The models' context window and prices, read off OpenRouter's list: from
+/// The models' context windows, read off OpenRouter's list: from
 /// the cache if it has one, else fetched and cached. `model_info` takes the
 /// field of the `model` whose `id` or `canonical_slug` matches, if it is in
 /// the list.
@@ -4557,10 +4548,6 @@ async fn refresh_models() -> Result<Arc<Vec<Value>>> {
                 "id": m["id"],
                 "canonical_slug": m["canonical_slug"],
                 "context_length": m["context_length"],
-                "pricing": {
-                    "prompt": m["pricing"]["prompt"],
-                    "completion": m["pricing"]["completion"],
-                },
                 "architecture": {"output_modalities": m["architecture"]["output_modalities"]},
             })
         })
@@ -4582,9 +4569,9 @@ fn chat_model_id(entry: &Value) -> Option<&str> {
     text.then_some(id)
 }
 
-/// The `model`'s context window and price per million tokens, off the list
-/// OpenRouter serves; None when the model isn't there.
-async fn model_info(model: &str) -> Result<Option<(Option<u64>, Option<(f64, f64)>)>> {
+/// The `model`'s context window, off the list OpenRouter serves; None when
+/// the model isn't there.
+async fn model_info(model: &str) -> Result<Option<Option<u64>>> {
     let models = models().await?;
     let Some(entry) = models
         .iter()
@@ -4600,17 +4587,7 @@ async fn model_info(model: &str) -> Result<Option<(Option<u64>, Option<(f64, f64
     else {
         return Ok(None);
     };
-    let window = entry["context_length"].as_u64();
-    let price = entry["pricing"]["prompt"]
-        .as_str()
-        .and_then(|p| p.parse::<f64>().ok())
-        .zip(
-            entry["pricing"]["completion"]
-                .as_str()
-                .and_then(|p| p.parse::<f64>().ok()),
-        )
-        .map(|(in_per, out_per)| (in_per * 1e6, out_per * 1e6));
-    Ok(Some((window, price)))
+    Ok(Some(entry["context_length"].as_u64()))
 }
 
 /// An environment variable, if it is set to something.
@@ -5543,7 +5520,6 @@ mod tests {
             search: Engine::DuckDuckGo,
             waiting: None,
             last_usage: None,
-            spent: 0.0,
             tokens: Tokens::default(),
             since: Instant::now(),
             instructed: Vec::new(),
@@ -5575,9 +5551,14 @@ mod tests {
         );
         assert_eq!(Tokens::default().cache_line(), None);
         assert_eq!(
-            tokens.turn.line(Some((5.0, 25.0)), false),
-            "last turn 400 in, 80 out, 2.0k cache read, 600 cache write ($0.0088 est.), 2 requests"
+            tokens.turn.line(),
+            "last turn 400 in, 80 out, 2.0k cache read, 600 cache write, 2 requests"
         );
+        assert_eq!(
+            tokens.done(67).unwrap(),
+            "done in 1m 07s · 2 requests · 400 in, 80 out, 2.0k cache read, 600 cache write · 1.5k ctx, 15%"
+        );
+        assert_eq!(Tokens::default().done(3), None);
         assert_eq!(short(25_400), "25k");
         assert_eq!(short(1_250_000), "1.2M");
     }

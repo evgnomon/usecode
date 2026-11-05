@@ -47,8 +47,8 @@ it asks you to okay still shows in full, and `uc --commands` shows every
 command line as it is.
 Type a command like `ls -al` or `git status` and it just runs on your
 terminal, like in a shell (`cd` and your bash aliases and functions too), with
-the same confirmations. You can tell before you hit Enter: the program lights up
-in yellow when the line will run. Want to say `make it faster` to the model
+the same confirmations. You can tell before you hit Enter: the program is
+underlined when the line will run. Want to say `make it faster` to the model
 instead? Start the line with a space and it goes to the model. Rather talk to the model every
 time? `uc --no-shell` (or `UC_NO_SHELL=1`) sends every line to it.
 Up and Down bring back what you typed before, in uc or in bash, even in an earlier session,
@@ -119,8 +119,7 @@ middle of a conversation. When a model is on more than one, say Opus on both
 OpenRouter and your Claude subscription, each gets its own line with the
 provider beside it, and `uc agent model opus claude` (or the number) picks the one you
 want. `uc` starts on the first provider in the file that has a key;
-`provider: claude` (or any provider's name) picks another. The
-cost line is OpenRouter's. `uc agent usage` shows how much of
+`provider: claude` (or any provider's name) picks another. `uc agent usage` shows how much of
 the subscription's 5-hour and weekly windows you have used, next to the
 OpenRouter spend when both keys are set.
 
@@ -176,8 +175,7 @@ model, the effort and whether it asks before running things, then how much
 of the model's context the conversation has taken: how many messages there are, about how many tokens
 they make (an estimate until the model has counted them), what the last
 turn took in tokens — how many went in, how many were cached, how many
-came out — how full the model's context window is, and what the session
-has spent so far, at the model's price per million tokens. It also tells
+came out — and how full the model's context window is. It also tells
 you how much of everything the session sent was read from the provider's
 cache, which costs about a tenth of fresh input.
 
