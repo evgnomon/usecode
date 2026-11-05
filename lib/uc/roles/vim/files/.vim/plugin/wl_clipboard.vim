@@ -21,11 +21,18 @@ def WlCopy(reg: string, type: string, str: list<string>)
 enddef
 
 def WlPaste(reg: string): tuple<string, list<string>>
-    var args = "wl-paste --no-newline --type text/plain;charset=utf-8"
+    # "--type text" accepts any text type; text copied on Windows (WSLg) is only offered as
+    # text/plain;charset=utf-8, and an unquoted ";" would have split the command in the shell.
+    var args = "timeout 2 wl-paste --no-newline --type text"
     if reg == "*"
         args ..= " -p"
     endif
-    return ("", systemlist(args))
+    args ..= " 2>/dev/null"
+    var lines = systemlist(args)
+    if v:shell_error != 0
+        return ("", [])
+    endif
+    return ("", lines)
 enddef
 
 v:clipproviders["wl_clipboard"] = {
