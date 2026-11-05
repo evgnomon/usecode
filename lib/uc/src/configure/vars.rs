@@ -60,8 +60,8 @@ impl Profile {
     }
 }
 
-/// `theme` in the user config: the Gruvbox colors of the terminal, vim and
-/// the desktop.
+/// `theme` in the user config: dark or light colors for the terminal, vim
+/// and the desktop.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Theme {
@@ -80,18 +80,24 @@ impl Theme {
     }
 }
 
-/// The tools whose theme `themes` in the user config picks, each with the
-/// one it has in dark and in light mode when left out: Gruvbox. Alacritty's
-/// is a theme built into uc (`roles/alacritty/files/themes`) or the path of
-/// a TOML file of colors.
-pub const THEMES: [(&str, &str, &str); 6] = [
-    ("alacritty", "gruvbox-dark-hard", "gruvbox-light-hard"),
-    ("vim", "gruvbox", "gruvbox"),
-    ("vscode", "Gruvbox Dark Medium", "Gruvbox Light Hard"),
-    ("opencode", "gruvbox-dark-medium", "gruvbox-light-hard"),
-    ("herdr", "gruvbox", "gruvbox-light"),
-    ("jcode", "dark", "light"),
-];
+/// The tools whose theme `theme_set` and `themes` in the user config pick.
+/// Alacritty's is a theme built into uc (`roles/alacritty/files/themes`) or
+/// the path of a TOML file of colors.
+pub const THEMES: [&str; 6] = ["alacritty", "vim", "vscode", "opencode", "herdr", "jcode"];
+
+/// The set a tool's theme comes from when neither `themes` nor the
+/// `theme_set` names one.
+const DEFAULT_SET: &str = "gruvbox";
+
+/// The theme sets built into uc, by name: each tool's theme in either mode.
+type ThemeSets = BTreeMap<String, BTreeMap<String, Pair>>;
+
+fn theme_sets() -> &'static ThemeSets {
+    static SETS: std::sync::OnceLock<ThemeSets> = std::sync::OnceLock::new();
+    SETS.get_or_init(|| {
+        serde_yaml::from_str(include_str!("theme_sets.yaml")).expect("theme_sets.yaml")
+    })
+}
 
 /// A tool's entry in `themes`: one name for both modes (`vim: desert`), or
 /// one for each (`vim: {dark: desert, light: morning}`); a mode left out
@@ -162,7 +168,11 @@ pub struct UserConfig {
     pub git_repos: Vec<GitRepo>,
     pub user_apt_packages: Option<BTreeMap<String, Option<Vec<String>>>>,
     pub theme: Theme,
-    /// The theme of each tool in [`THEMES`], in dark and light mode.
+    /// The set of themes built into uc (`theme_sets.yaml`) the tools take
+    /// theirs from: Gruvbox when left out.
+    pub theme_set: Option<String>,
+    /// The theme of each tool in [`THEMES`], in dark and light mode, over
+    /// the one its `theme_set` has.
     pub themes: BTreeMap<String, Pair>,
     /// What `uc sync` sets up besides what uc itself needs: roles, task ids
     /// or globs of them, or `all`. Nothing by default.
@@ -170,18 +180,24 @@ pub struct UserConfig {
 }
 
 impl UserConfig {
-    /// `tool`'s theme in dark and in light mode.
+    /// `tool`'s theme in dark and in light mode: the one `themes` names,
+    /// else the one of the `theme_set`, else Gruvbox's.
     pub fn themes_of(&self, tool: &str) -> (String, String) {
-        let (_, dark, light) = THEMES
-            .iter()
-            .find(|(t, ..)| *t == tool)
-            .copied()
-            .unwrap_or((tool, "gruvbox", "gruvbox"));
-        let pair = self.themes.get(tool).cloned().unwrap_or_default();
-        (
-            pair.dark.unwrap_or_else(|| dark.to_string()),
-            pair.light.unwrap_or_else(|| light.to_string()),
-        )
+        let sets = theme_sets();
+        let set = self.theme_set.as_deref().unwrap_or(DEFAULT_SET);
+        let layers = [
+            self.themes.get(tool),
+            sets.get(set).and_then(|s| s.get(tool)),
+            sets.get(DEFAULT_SET).and_then(|s| s.get(tool)),
+        ];
+        let pick = |mode: fn(&Pair) -> &Option<String>| {
+            layers
+                .iter()
+                .flatten()
+                .find_map(|p| mode(p).clone())
+                .unwrap_or_else(|| DEFAULT_SET.to_string())
+        };
+        (pick(|p| &p.dark), pick(|p| &p.light))
     }
 
     /// `tool`'s theme in the mode `theme` is in.
@@ -193,14 +209,20 @@ impl UserConfig {
         }
     }
 
-    /// Fails on a tool in `themes` that uc doesn't set the theme of.
+    /// Fails on a `theme_set` uc doesn't have, or a tool in `themes` that uc
+    /// doesn't set the theme of.
     fn check_themes(&self) -> Result<()> {
+        if let Some(set) = &self.theme_set
+            && !theme_sets().contains_key(set)
+        {
+            let known: Vec<&str> = theme_sets().keys().map(String::as_str).collect();
+            bail!("theme_set: uc has no set {set}; it has {}", known.join(", "));
+        }
         for tool in self.themes.keys() {
-            if !THEMES.iter().any(|(t, ..)| t == tool) {
-                let known: Vec<&str> = THEMES.iter().map(|(t, ..)| *t).collect();
+            if !THEMES.contains(&tool.as_str()) {
                 bail!(
                     "themes: uc doesn't set the theme of {tool}; it does for {}",
-                    known.join(", ")
+                    THEMES.join(", ")
                 );
             }
         }
@@ -367,7 +389,7 @@ impl Vars {
         // Each tool's theme in the mode the config is in, for the templates.
         let tool_themes: BTreeMap<&str, String> = THEMES
             .iter()
-            .map(|(tool, ..)| (*tool, vars.config.theme_of(tool)))
+            .map(|tool| (*tool, vars.config.theme_of(tool)))
             .collect();
         context.insert("tool_themes".into(), Value::from_serialize(&tool_themes));
         for (k, v) in extra {
@@ -729,6 +751,37 @@ mod tests {
         let typo: UserConfig = serde_yaml::from_str("themes: {alacrity: x}\n").unwrap();
         let err = typo.check_themes().unwrap_err().to_string();
         assert!(err.contains("alacrity") && err.contains("alacritty"), "{err}");
+    }
+
+    #[test]
+    fn a_theme_set_picks_every_tool_and_themes_go_over_it() {
+        let config: UserConfig =
+            serde_yaml::from_str("theme_set: kanagawa\nthemes:\n  vim: desert\n").unwrap();
+        assert!(config.check_themes().is_ok());
+        assert_eq!(config.theme_of("alacritty"), "kanagawa-wave");
+        assert_eq!(config.theme_of("vim"), "desert");
+        // A tool the set leaves out keeps Gruvbox's.
+        assert_eq!(config.themes_of("jcode"), ("dark".into(), "light".into()));
+
+        let typo: UserConfig = serde_yaml::from_str("theme_set: kanagwa\n").unwrap();
+        let err = typo.check_themes().unwrap_err().to_string();
+        assert!(err.contains("kanagwa") && err.contains("kanagawa"), "{err}");
+    }
+
+    #[test]
+    fn every_set_names_only_known_tools_and_built_in_alacritty_themes() {
+        let assets = crate::configure::assets::Assets::Embedded;
+        for (name, set) in theme_sets() {
+            for (tool, pair) in set {
+                assert!(THEMES.contains(&tool.as_str()), "{name}: {tool}");
+                if tool == "alacritty" {
+                    for theme in [&pair.dark, &pair.light].into_iter().flatten() {
+                        let file = Path::new("alacritty/files/themes").join(format!("{theme}.toml"));
+                        assert!(assets.is_file(&file), "{name}: {theme}");
+                    }
+                }
+            }
+        }
     }
 
     #[test]

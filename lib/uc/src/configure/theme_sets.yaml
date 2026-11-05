@@ -1,0 +1,58 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
+# The theme sets `theme_set:` in the user config picks from: each tool's
+# theme in dark and light mode (one name for both, or dark:/light:). A tool a
+# set leaves out keeps Gruvbox's. Alacritty's are the names of the themes in
+# roles/alacritty/files/themes. opencode's themes carry their own dark and
+# light colors; jcode has only dark and light.
+
+gruvbox:
+  alacritty: {dark: gruvbox-dark-hard, light: gruvbox-light-hard}
+  vim: gruvbox
+  vscode: {dark: Gruvbox Dark Medium, light: Gruvbox Light Hard}
+  opencode: {dark: gruvbox-dark-medium, light: gruvbox-light-hard}
+  herdr: {dark: gruvbox, light: gruvbox-light}
+  jcode: {dark: dark, light: light}
+
+tokyonight:
+  alacritty: {dark: tokyonight-night, light: tokyonight-day}
+  vim: {dark: tokyonight-night, light: tokyonight-day}
+  vscode: {dark: Tokyo Night, light: Tokyo Night Light}
+  opencode: tokyonight
+  herdr: {dark: tokyo-night, light: tokyo-night-day}
+
+catppuccin:
+  alacritty: {dark: catppuccin-mocha, light: catppuccin-latte}
+  vim: {dark: catppuccin_mocha, light: catppuccin_latte}
+  vscode: {dark: Catppuccin Mocha, light: Catppuccin Latte}
+  opencode: catppuccin
+  herdr: {dark: catppuccin, light: catppuccin-latte}
+
+rose-pine:
+  alacritty: {dark: rose-pine, light: rose-pine-dawn}
+  vim: {dark: rosepine, light: rosepine_dawn}
+  vscode: {dark: Rosé Pine, light: Rosé Pine Dawn}
+  opencode: rosepine
+  herdr: {dark: rose-pine, light: rose-pine-dawn}
+
+kanagawa:
+  alacritty: {dark: kanagawa-wave, light: kanagawa-lotus}
+  vim: {dark: kanagawa, light: catppuccin_latte}  # no Lotus for Vim
+  vscode: {dark: Kanagawa Wave, light: Kanagawa Lotus}
+  opencode: kanagawa
+  herdr: {dark: kanagawa, light: kanagawa-lotus}
+
+solarized:
+  alacritty: {dark: solarized-dark, light: solarized-light}
+  vim: solarized8
+  vscode: {dark: Solarized Dark, light: Solarized Light}
+  opencode: solarized
+  herdr: {dark: solarized, light: solarized-light}
+
+one:
+  alacritty: {dark: one-dark, light: one-light}
+  vim: one
+  vscode: {dark: Atom One Dark, light: Atom One Light}
+  opencode: one-dark
+  herdr: {dark: one-dark, light: one-light}

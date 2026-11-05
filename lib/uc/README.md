@@ -318,9 +318,18 @@ sync: [apt, extrepo, dotfiles, git, mise, alacritty]  # alacritty brings its fon
 
 Everything it sets up comes in Gruvbox, dark by default. `theme: light`
 flips the terminal, vim, VS Code, opencode, herdr, jcode, GNOME and
-Windows over together. Prefer other colors? Name them per tool under
-`themes`: one name for both modes, or one each, and anything you leave
-out stays Gruvbox:
+Windows over together. Prefer other colors? Pick a whole set with
+`theme_set`, and every tool follows: `tokyonight`, `catppuccin`,
+`rose-pine`, `kanagawa`, `solarized`, `one` or `gruvbox`.
+
+```yaml
+theme: dark
+theme_set: kanagawa
+```
+
+Want just one tool different? Name it under `themes`, over the set: one
+name for both modes, or one each, and anything you leave out stays with
+the set:
 
 ```yaml
 theme: dark
@@ -334,9 +343,11 @@ themes:
 ```
 
 Alacritty takes a theme built into uc (`gruvbox-dark-hard`,
-`gruvbox-light-hard`) or the path of a TOML file with its `[colors]`.
-`uc sync -t theme` puts the new colors in place, and a typo in a tool's
-name is caught before anything runs.
+`kanagawa-wave`, `tokyonight-day`, ...) or the path of a TOML file with
+its `[colors]`; `uc sync` puts all the built-in ones in
+`~/.config/alacritty/themes`, handy to start your own from.
+`uc sync -t theme` puts the new colors in place, and a typo in a set's or
+a tool's name is caught before anything runs.
 
 ```sh
 uc sync                    # what uc needs plus your sync list, for the detected profile

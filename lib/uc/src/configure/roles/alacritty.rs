@@ -5,9 +5,11 @@
 //! a workstation it is copied into `~/.config/alacritty`; under WSL it goes
 //! to the Windows Alacritty in `%APPDATA%\alacritty`, with a shell that opens
 //! tmux in this distribution and a maximized window instead of a full screen.
-//! The colors are the theme `themes: alacritty:` in the user config names
-//! for the mode `theme` is in: one in `roles/alacritty/files/themes`, or a
-//! TOML file of the user's; Gruvbox when left out.
+//! The colors are the theme `theme_set` or `themes: alacritty:` in the user
+//! config picks for the mode `theme` is in: one in
+//! `roles/alacritty/files/themes`, or a TOML file of the user's; Gruvbox
+//! when left out. Every built-in theme is also copied to
+//! `~/.config/alacritty/themes`.
 
 use crate::configure::ctx::Ctx;
 use crate::configure::engine::{Outcome, Plan, Task};
@@ -31,12 +33,18 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
             .run(move |ctx| async move {
                 let dir = ctx.vars().home.join(".config/alacritty");
                 let (main_dest, theme_dest) = (dir.join("alacritty.toml"), dir.join("theme.toml"));
-                let main = copy::copy(&ctx, &config, &main_dest, None, false).await?;
+                let mut outcome = copy::copy(&ctx, &config, &main_dest, None, false).await?;
+                // Every theme uc has goes to `themes/`, to import by hand or
+                // to start one of your own from.
+                for file in ctx.vars().assets.walk(&dir_of_themes)? {
+                    let (src, dest) = (dir_of_themes.join(&file), dir.join("themes").join(&file));
+                    outcome = outcome.and(copy::copy(&ctx, &src, &dest, None, false).await?);
+                }
                 // Alacritty watches its imports, so the open windows switch
                 // colors as soon as the theme is written.
                 let colors = colors(&ctx, &dir_of_themes, &name)?;
                 let theme = copy::content(&ctx, &colors, &theme_dest, None, false).await?;
-                Ok(main.and(theme))
+                Ok(outcome.and(theme))
             }),
     );
 
