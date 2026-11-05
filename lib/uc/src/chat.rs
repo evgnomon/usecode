@@ -3830,8 +3830,8 @@ fn short(n: u64) -> String {
     }
 }
 
-/// `user@host dir ₿ ` in the colors of the dotfiles' .bashrc prompt: the
-/// terminal theme's own, so it looks the same in Gruvbox dark and light.
+/// `user@host dir ₿ `: user and host in the text color, the directory in the
+/// theme's bright blue, and the ₿ in bitcoin orange.
 fn prompt() -> String {
     let user = ["USER", "LOGNAME"]
         .into_iter()
@@ -3848,18 +3848,13 @@ fn prompt() -> String {
             .map(|d| d.to_string_lossy().into_owned())
             .unwrap_or_else(|| cwd.display().to_string())
     };
-    // SAFETY: geteuid can't fail and touches no memory.
-    let who = if unsafe { libc::geteuid() } == 0 {
-        "1;91"
-    } else {
-        "1;92"
-    };
+    // Bitcoin orange (#F7931A) for the mark, red once the last command failed.
     let mark = if FAILED.load(Ordering::Relaxed) {
         "1;91"
     } else {
-        "0"
+        "38;2;247;147;26"
     };
-    format!("\x1b[{who}m{user}\x1b[0m@{host} \x1b[1;94m{dir} \x1b[{mark}m₿\x1b[0m ")
+    format!("{user}@{host} \x1b[1;94m{dir} \x1b[{mark}m₿\x1b[0m ")
 }
 
 /// The line editor every prompt reads through, so arrow keys edit the line.
