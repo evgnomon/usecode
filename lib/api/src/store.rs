@@ -123,7 +123,8 @@ pub struct ApiKeyRecord {
     // key's id. The token itself is returned exactly once, at issue time.
     pub id: String,
     pub user_id: Uuid,
-    pub phone: String,
+    pub phone: Option<String>,
+    pub email: Option<String>,
     // The database instance holding this *user's* partitioned rows; passed
     // to every partitioned store call made on their behalf. Not where the
     // api_keys row itself is — that one hashes on the key hash.
@@ -142,6 +143,13 @@ pub struct WebSessionRecord {
     pub created_at: f64,
 }
 
+/// Who a user is: their phone, their email, or both.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct Who {
+    pub phone: Option<String>,
+    pub email: Option<String>,
+}
+
 #[derive(sqlx::FromRow)]
 struct ApiKeyRow {
     key_hash: String,
@@ -152,11 +160,12 @@ struct ApiKeyRow {
 }
 
 impl ApiKeyRow {
-    fn record(self, phone: String, partition: Partition) -> ApiKeyRecord {
+    fn record(self, who: &Who, partition: Partition) -> ApiKeyRecord {
         ApiKeyRecord {
             id: self.key_hash,
             user_id: self.user_id,
-            phone,
+            phone: who.phone.clone(),
+            email: who.email.clone(),
             partition,
             label: self.label,
             created_at: ts(self.created_at),
@@ -316,17 +325,17 @@ impl Store {
         &self.db
     }
 
-    async fn pool_for_key(&self, table: &str, key: &str) -> Result<sqlx::PgPool> {
+    pub(crate) async fn pool_for_key(&self, table: &str, key: &str) -> Result<sqlx::PgPool> {
         let partition = self.db.partition_for_key(table, key).await?;
         self.db.pool(&partition).await
     }
 
-    async fn pool_for_user(&self, user_id: &Uuid) -> Result<sqlx::PgPool> {
+    pub(crate) async fn pool_for_user(&self, user_id: &Uuid) -> Result<sqlx::PgPool> {
         let partition = self.db.partition_for_user(user_id).await?;
         self.db.pool(&partition).await
     }
 
-    async fn pool_for_table(&self, table: &str) -> Result<sqlx::PgPool> {
+    pub(crate) async fn pool_for_table(&self, table: &str) -> Result<sqlx::PgPool> {
         let partition = self.db.partition_for_table(table).await?;
         self.db.pool(&partition).await
     }
@@ -481,16 +490,39 @@ impl Store {
 
     pub async fn issue_api_key(&self, user_id: &Uuid, label: &str) -> Result<String> {
         let api_key = token_urlsafe();
-        let key_hash = hash(&api_key);
+        self.insert_api_key(user_id, &hash(&api_key), label, None)
+            .await?;
+        Ok(api_key)
+    }
+
+    /// A browser's session: an API key that runs out at `expires_at`, and
+    /// is left out of the user's list of keys.
+    pub async fn issue_session(&self, user_id: &Uuid, expires_at: DateTime<Utc>) -> Result<String> {
+        let token = token_urlsafe();
+        self.insert_api_key(user_id, &hash(&token), "session", Some(expires_at))
+            .await?;
+        Ok(token)
+    }
+
+    /// Write a key by its hash; one already there is left as it is.
+    pub(crate) async fn insert_api_key(
+        &self,
+        user_id: &Uuid,
+        key_hash: &str,
+        label: &str,
+        expires_at: Option<DateTime<Utc>>,
+    ) -> Result<()> {
         let now = Utc::now();
-        let keys = self.pool_for_key(schema::API_KEYS, &key_hash).await?;
+        let keys = self.pool_for_key(schema::API_KEYS, key_hash).await?;
         sqlx::query(
-            "INSERT INTO api_keys (key_hash, user_id, label, created_at) VALUES ($1, $2, $3, $4)",
+            "INSERT INTO api_keys (key_hash, user_id, label, created_at, expires_at)
+             VALUES ($1, $2, $3, $4, $5) ON CONFLICT (key_hash) DO NOTHING",
         )
-        .bind(&key_hash)
+        .bind(key_hash)
         .bind(user_id)
         .bind(label)
         .bind(now)
+        .bind(expires_at)
         .execute(&keys)
         .await?;
 
@@ -499,14 +531,15 @@ impl Store {
         // cannot be authenticated with and cannot be revoked either.
         let index = self.pool_for_user(user_id).await?;
         sqlx::query(
-            "INSERT INTO user_api_keys (user_id, key_hash, created_at) VALUES ($1, $2, $3)",
+            "INSERT INTO user_api_keys (user_id, key_hash, created_at) VALUES ($1, $2, $3)
+             ON CONFLICT DO NOTHING",
         )
         .bind(user_id)
-        .bind(&key_hash)
+        .bind(key_hash)
         .bind(now)
         .execute(&index)
         .await?;
-        Ok(api_key)
+        Ok(())
     }
 
     pub async fn get_api_key(&self, api_key: &str) -> Result<Option<ApiKeyRecord>> {
@@ -514,7 +547,7 @@ impl Store {
         let keys = self.pool_for_key(schema::API_KEYS, &key_hash).await?;
         let row: Option<ApiKeyRow> = sqlx::query_as(
             "UPDATE api_keys SET last_used_at = $2
-             WHERE key_hash = $1 AND revoked_at IS NULL
+             WHERE key_hash = $1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > $2)
              RETURNING key_hash, user_id, label, created_at, last_used_at",
         )
         .bind(&key_hash)
@@ -529,11 +562,11 @@ impl Store {
         // call made on their behalf will use.
         let partition = self.db.partition_for_user(&row.user_id).await?;
         let users = self.db.pool(&partition).await?;
-        let phone: Option<String> = sqlx::query_scalar("SELECT phone FROM users WHERE id = $1")
+        let who: Option<Who> = sqlx::query_as("SELECT phone, email FROM users WHERE id = $1")
             .bind(row.user_id)
             .fetch_optional(&users)
             .await?;
-        Ok(phone.map(|phone| row.record(phone, partition)))
+        Ok(who.map(|who| row.record(&who, partition)))
     }
 
     /// This user's live keys, read through the `user_api_keys` index.
@@ -550,11 +583,11 @@ impl Store {
                 .bind(user_id)
                 .fetch_all(&users)
                 .await?;
-        let phone: Option<String> = sqlx::query_scalar("SELECT phone FROM users WHERE id = $1")
+        let who: Option<Who> = sqlx::query_as("SELECT phone, email FROM users WHERE id = $1")
             .bind(user_id)
             .fetch_optional(&users)
             .await?;
-        let Some(phone) = phone else {
+        let Some(who) = who else {
             return Ok(Vec::new());
         };
 
@@ -575,7 +608,8 @@ impl Store {
             let keys = self.db.pool(&key_partition).await?;
             let rows: Vec<ApiKeyRow> = sqlx::query_as(
                 "SELECT key_hash, user_id, label, created_at, last_used_at FROM api_keys
-                 WHERE key_hash = ANY($1) AND user_id = $2 AND revoked_at IS NULL",
+                 WHERE key_hash = ANY($1) AND user_id = $2 AND revoked_at IS NULL
+                   AND expires_at IS NULL",
             )
             .bind(&group)
             .bind(user_id)
@@ -583,7 +617,7 @@ impl Store {
             .await?;
             records.extend(
                 rows.into_iter()
-                    .map(|row| row.record(phone.clone(), partition.clone())),
+                    .map(|row| row.record(&who, partition.clone())),
             );
         }
         records.sort_by(|a, b| b.created_at.total_cmp(&a.created_at));
@@ -661,7 +695,7 @@ impl Store {
         let partition = self.session_partition(token).await?;
         let pool = self.db.pool(&partition).await?;
         let row: Option<(Uuid, String, String, DateTime<Utc>)> = sqlx::query_as(
-            "SELECT s.user_id, u.phone, s.api_key_hash, s.created_at
+            "SELECT s.user_id, COALESCE(u.phone, ''), s.api_key_hash, s.created_at
              FROM web_sessions s JOIN users u ON u.id = s.user_id
              WHERE s.token_hash = $1 AND s.revoked_at IS NULL",
         )

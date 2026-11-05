@@ -98,7 +98,8 @@ pub struct AuthTokenOut {
 
 #[derive(Serialize)]
 pub struct MeOut {
-    pub phone: String,
+    pub phone: Option<String>,
+    pub email: Option<String>,
     pub created_at: f64,
 }
 

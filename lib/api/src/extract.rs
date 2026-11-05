@@ -17,14 +17,19 @@ use crate::App;
 use crate::error::AppError;
 use crate::store::ApiKeyRecord;
 
-/// The caller, authenticated by the `X-API-Key` header.
+/// The cookie a browser's session is in. It is an API key that runs out,
+/// set for the console's domain so the console's own server sees it too.
+pub const SESSION_COOKIE: &str = "uc_session";
+
+/// The caller, authenticated by the `X-API-Key` header or, from a browser,
+/// the session cookie.
 pub struct Client(pub ApiKeyRecord);
 
 impl FromRequestParts<Arc<App>> for Client {
     type Rejection = AppError;
 
     async fn from_request_parts(parts: &mut Parts, app: &Arc<App>) -> Result<Self, AppError> {
-        let api_key = api_key(&parts.headers)
+        let api_key = credential(&parts.headers)
             .ok_or_else(|| AppError::unauthorized("Missing X-API-Key header"))?;
         app.store
             .get_api_key(&api_key)
@@ -32,6 +37,39 @@ impl FromRequestParts<Arc<App>> for Client {
             .map(Client)
             .ok_or_else(|| AppError::unauthorized("Invalid or expired API key"))
     }
+}
+
+/// The caller if there is one: for what answers everyone, e.g. who's
+/// looking.
+pub struct MaybeClient(pub Option<ApiKeyRecord>);
+
+impl FromRequestParts<Arc<App>> for MaybeClient {
+    type Rejection = AppError;
+
+    async fn from_request_parts(parts: &mut Parts, app: &Arc<App>) -> Result<Self, AppError> {
+        Ok(MaybeClient(match credential(&parts.headers) {
+            Some(api_key) => app.store.get_api_key(&api_key).await?,
+            None => None,
+        }))
+    }
+}
+
+/// The API key a request carries: the header, else the session cookie.
+pub fn credential(headers: &HeaderMap) -> Option<String> {
+    api_key(headers).or_else(|| cookie(headers, SESSION_COOKIE))
+}
+
+/// The value of the cookie `name`, if the request has it.
+pub fn cookie(headers: &HeaderMap, name: &str) -> Option<String> {
+    headers
+        .get_all(axum::http::header::COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|value| value.split(';'))
+        .filter_map(|pair| pair.trim().split_once('='))
+        .find(|(n, _)| *n == name)
+        .map(|(_, value)| value.trim_matches('"').to_string())
+        .filter(|value| !value.is_empty())
 }
 
 pub fn api_key(headers: &HeaderMap) -> Option<String> {

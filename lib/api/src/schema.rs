@@ -90,6 +90,10 @@ pub const TASKS: &str = "tasks";
 pub const SERVER_TYPE_MAPPINGS: &str = "server_type_mappings";
 pub const LOCATION_MAPPINGS: &str = "location_mappings";
 pub const PROVIDER_RESOURCES: &str = "provider_resources";
+pub const EMAIL_DIRECTORY: &str = "email_directory";
+pub const EMAIL_CODES: &str = "email_codes";
+pub const STRIPE_CUSTOMERS: &str = "stripe_customers";
+pub const STRIPE_EVENTS: &str = "stripe_events";
 
 const OWNED_BY_USER: Placement = Placement::InheritsFrom {
     column: "user_id",
@@ -177,6 +181,32 @@ pub const TABLES: &[Table] = &[
         // A user's own index of the tasks running on their behalf.
         name: "user_tasks",
         placement: OWNED_BY_USER,
+    },
+    Table {
+        // Email -> user id, for logging in with an email; as
+        // `user_directory` is for phones.
+        name: EMAIL_DIRECTORY,
+        placement: Placement::HashedOn("email"),
+    },
+    Table {
+        // A mailed code, found by the token the browser holds and nothing
+        // else; a sign up's has no user yet.
+        name: EMAIL_CODES,
+        placement: Placement::HashedOn("token_hash"),
+    },
+    Table {
+        name: "subscriptions",
+        placement: OWNED_BY_USER,
+    },
+    Table {
+        // Stripe customer -> user id: a webhook only names the customer.
+        name: STRIPE_CUSTOMERS,
+        placement: Placement::HashedOn("stripe_customer_id"),
+    },
+    Table {
+        // Webhook events already handled, found by Stripe's event id.
+        name: STRIPE_EVENTS,
+        placement: Placement::HashedOn("id"),
     },
 ];
 

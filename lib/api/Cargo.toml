@@ -23,9 +23,12 @@ chrono = { version = "0.4", features = ["serde"] }
 dotenvy.workspace = true
 fernet = { version = "0.2", default-features = false, features = ["rustcrypto"] }
 futures = "0.3"
+hmac = "0.12"
+mail-send = { version = "0.6", default-features = false, features = ["builder", "tls12"] }
 minijinja.workspace = true
 rand = "0.9"
-reqwest = { workspace = true, features = ["json", "query", "rustls", "charset", "http2"] }
+reqwest = { workspace = true, features = ["json", "query", "form", "rustls", "charset", "http2"] }
+scrypt = { version = "0.11", default-features = false }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true, features = ["preserve_order"] }
 sha2 = "0.10"
@@ -35,5 +38,9 @@ thiserror.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "process", "signal", "time", "fs"] }
 tower-http = { version = "0.6", features = ["cors"] }
 tracing = "0.1"
+unicode-normalization = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { workspace = true, features = ["v4", "serde"] }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }

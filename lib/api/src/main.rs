@@ -3,12 +3,16 @@
 
 //! uc-agent-api: the HTTP backend for usecode agent.
 
+mod accounts;
+mod billing;
 mod chat_store;
 mod config;
 mod crypto;
 mod db;
 mod error;
 mod extract;
+mod import;
+mod mail;
 mod migrate;
 mod model_config;
 mod model_process;
@@ -21,6 +25,8 @@ mod server_tasks;
 mod sms;
 mod store;
 mod tasks;
+#[cfg(test)]
+mod testing;
 mod web;
 
 use std::sync::Arc;
@@ -46,6 +52,9 @@ pub struct App {
     pub cipher: crypto::Cipher,
     pub chat: chat_store::ChatStore,
     pub templates: web::Templates,
+    pub mailer: mail::Mailer,
+    pub limits: accounts::Limits,
+    pub http: reqwest::Client,
 }
 
 impl App {
@@ -97,10 +106,14 @@ async fn shutdown_signal() {
 
 const USAGE: &str = "usage: uc-agent-api [serve]
        uc-agent-api migrate [--status]
+       uc-agent-api import-console POSTGRES_URL
 
   serve             migrate every database, then serve the API (the default)
   migrate           bring every database up to date and exit
   migrate --status  say what each database has applied and what is pending
+  import-console    copy the accounts, sessions and billing of the console's
+                    own database (before it used this API) into this one;
+                    running it again skips what is already here
 
 Settings come from USECODE_AGENT_* variables (and .env); see the README.";
 
@@ -111,6 +124,7 @@ async fn run() -> Result<()> {
         [] | ["serve"] => serve(Settings::from_env()?).await,
         ["migrate"] => migrate::run(&Settings::from_env()?).await,
         ["migrate", "--status"] => migrate::status(&Settings::from_env()?).await,
+        ["import-console", source] => import::run(Settings::from_env()?, source).await,
         ["-h" | "--help" | "help"] => {
             println!("{USAGE}");
             Ok(())
@@ -135,6 +149,9 @@ async fn serve(settings: Settings) -> Result<()> {
         store: Store::new(db.clone()),
         chat: chat_store::ChatStore::default(),
         templates: web::Templates::new()?,
+        mailer: mail::Mailer::from_settings(&settings),
+        limits: accounts::Limits::default(),
+        http: reqwest::Client::new(),
         settings,
     });
 

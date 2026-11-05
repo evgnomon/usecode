@@ -186,6 +186,11 @@ async fn connect(label: &str, url: &str) -> Result<PgConnection> {
     loop {
         match PgConnection::connect_with(&options).await {
             Ok(conn) => return Ok(conn),
+            Err(sqlx::Error::Database(err)) if err.code().as_deref() == Some(NO_DATABASE) => {
+                create_database(&options)
+                    .await
+                    .with_context(|| format!("creating the {label} database"))?;
+            }
             Err(err) if attempt < CONNECT_ATTEMPTS => {
                 tracing::info!("Waiting for the {label} database: {err}");
                 tokio::time::sleep(CONNECT_PAUSE).await;
@@ -196,6 +201,31 @@ async fn connect(label: &str, url: &str) -> Result<PgConnection> {
             }
         }
     }
+}
+
+/// PostgreSQL's "database does not exist".
+const NO_DATABASE: &str = "3D000";
+
+/// Make the database `options` names, through the server's `postgres`
+/// database, so a new deployment needs nothing done by hand. Another
+/// instance making it first is fine.
+async fn create_database(options: &PgConnectOptions) -> Result<()> {
+    let name = options
+        .get_database()
+        .context("the database URL names no database")?
+        .to_string();
+    let mut admin = PgConnection::connect_with(&options.clone().database("postgres")).await?;
+    let quoted = format!("\"{}\"", name.replace('"', "\"\""));
+    match sqlx::raw_sql(sqlx::AssertSqlSafe(format!("CREATE DATABASE {quoted}")))
+        .execute(&mut admin)
+        .await
+    {
+        Ok(_) => tracing::info!("Created the database {name}"),
+        Err(sqlx::Error::Database(err)) if err.code().as_deref() == Some("42P04") => {}
+        Err(err) => return Err(err.into()),
+    }
+    admin.close().await?;
+    Ok(())
 }
 
 /// Who the ledger says applied a migration: the instance's name, else the
@@ -455,25 +485,10 @@ mod tests {
         assert!(err.contains("0002_b is not applied"), "{err}");
     }
 
-    /// A database of its own for one test, on the Postgres at
-    /// `USECODE_AGENT_TEST_DATABASE_URL` (`make test-db`); `None` skips the
-    /// test when there isn't one.
     async fn fresh_database() -> Option<PgConnectOptions> {
-        let url = env::var("USECODE_AGENT_TEST_DATABASE_URL").ok()?;
-        let options: PgConnectOptions = url.parse().unwrap();
-        let mut admin = match PgConnection::connect_with(&options).await {
-            Ok(conn) => conn,
-            Err(err) => {
-                eprintln!("skipped, no test database: {err}");
-                return None;
-            }
-        };
-        let name = format!("migrate_{}", uuid::Uuid::new_v4().simple());
-        sqlx::raw_sql(sqlx::AssertSqlSafe(format!("CREATE DATABASE {name}")))
-            .execute(&mut admin)
+        crate::testing::fresh_database()
             .await
-            .unwrap();
-        Some(options.database(&name))
+            .map(|(_, options)| options)
     }
 
     async fn ledger(options: &PgConnectOptions) -> Vec<(String, String)> {

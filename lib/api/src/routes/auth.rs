@@ -6,18 +6,20 @@
 use std::sync::Arc;
 
 use axum::extract::{Path, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{HeaderMap, StatusCode, header};
+use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 
 use crate::App;
 use crate::error::{AppError, AppResult};
-use crate::extract::{Client, JsonBody, api_key};
+use crate::extract::{Client, JsonBody, SESSION_COOKIE, credential};
 use crate::models::{
     ApiKeyCreateIn, ApiKeyCreateOut, ApiKeyListOut, ApiKeyOut, AuthTokenOut, MeOut, OtpRequestIn,
     OtpRequestOut, OtpVerifyIn,
 };
 use crate::otp;
+use crate::routes::account::set_cookie;
 
 pub fn router() -> Router<Arc<App>> {
     Router::new()
@@ -65,15 +67,19 @@ async fn verify_otp(
 async fn me(Client(client): Client) -> Json<MeOut> {
     Json(MeOut {
         phone: client.phone,
+        email: client.email,
         created_at: client.created_at,
     })
 }
 
-async fn logout(State(app): State<Arc<App>>, headers: HeaderMap) -> AppResult<StatusCode> {
-    if let Some(api_key) = api_key(&headers) {
+/// Revoke the caller's key, from the header or the session cookie, and
+/// clear the cookie.
+async fn logout(State(app): State<Arc<App>>, headers: HeaderMap) -> AppResult<Response> {
+    if let Some(api_key) = credential(&headers) {
         app.store.revoke_api_key(&api_key).await?;
     }
-    Ok(StatusCode::NO_CONTENT)
+    let clear = set_cookie(&app.settings, SESSION_COOKIE, "", "/", 0, "Lax", true);
+    Ok((StatusCode::NO_CONTENT, [(header::SET_COOKIE, clear)]).into_response())
 }
 
 async fn create_api_key(

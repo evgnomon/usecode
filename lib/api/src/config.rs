@@ -41,6 +41,21 @@ pub struct Settings {
 
     pub cors_origins: Vec<String>,
 
+    // -- The console -------------------------------------------------------
+    // Where the console's pages are, e.g. https://usecode.dev. Its pages call
+    // this API straight from the browser, so it is always an allowed origin;
+    // Stripe sends people back to it.
+    pub console_url: String,
+    // The domain the session cookie is set for, e.g. `usecode.dev`, so the
+    // console's own server sees it too; unset, it stays with this host.
+    pub cookie_domain: Option<String>,
+    // Mail for the sign up and log in codes; without it the codes go to the
+    // log on an http:// console, and can't go out at all on an https:// one.
+    pub smtp: Option<Smtp>,
+    // Billing is on once all three Stripe settings are there.
+    pub stripe: Option<Stripe>,
+    pub stripe_api_base: String,
+
     // -- Databases ---------------------------------------------------------
     // Connection string for the **main/first** PostgreSQL instance — the one
     // a null partition key resolves to, and the one holding the
@@ -67,6 +82,31 @@ pub struct Settings {
     // Change this in production and keep it stable, rotating it invalidates
     // every stored secret.
     pub secret_key: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct Smtp {
+    pub host: String,
+    pub port: u16,
+    pub user: String,
+    pub password: String,
+    // The From: of the mail, e.g. `usecode.dev <no-reply@usecode.dev>`.
+    pub from: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct Stripe {
+    pub secret_key: String,
+    // The Hosted plan's monthly price.
+    pub price_id: String,
+    pub webhook_secret: String,
+}
+
+impl Settings {
+    /// Cookies only travel over HTTPS once the console is on it.
+    pub fn secure_cookies(&self) -> bool {
+        self.console_url.starts_with("https://")
+    }
 }
 
 const PREFIX: &str = "USECODE_AGENT_";
@@ -136,7 +176,40 @@ impl Settings {
         // without one.
         let node_name = var("NODE_NAME").unwrap_or_default().trim().to_string();
 
+        let smtp_user =
+            non_empty("SMTP_USER").unwrap_or_else(|| "no-reply@usecode.dev".to_string());
+        let smtp = non_empty("SMTP_PASSWORD").map(|password| Smtp {
+            host: non_empty("SMTP_HOST").unwrap_or_else(|| "mail.clusterlean.net".to_string()),
+            port: non_empty("SMTP_PORT")
+                .and_then(|p| p.trim().parse().ok())
+                .unwrap_or(465),
+            from: non_empty("SMTP_FROM").unwrap_or_else(|| format!("usecode.dev <{smtp_user}>")),
+            user: smtp_user,
+            password,
+        });
+        let stripe = match (
+            non_empty("STRIPE_SECRET_KEY"),
+            non_empty("STRIPE_PRICE_ID"),
+            non_empty("STRIPE_WEBHOOK_SECRET"),
+        ) {
+            (Some(secret_key), Some(price_id), Some(webhook_secret)) => Some(Stripe {
+                secret_key,
+                price_id,
+                webhook_secret,
+            }),
+            _ => None,
+        };
+
         Ok(Self {
+            console_url: non_empty("CONSOLE_URL")
+                .unwrap_or_else(|| "http://localhost:8080".to_string())
+                .trim_end_matches('/')
+                .to_string(),
+            cookie_domain: non_empty("COOKIE_DOMAIN"),
+            smtp,
+            stripe,
+            stripe_api_base: non_empty("STRIPE_API_BASE")
+                .unwrap_or_else(|| "https://api.stripe.com/v1".to_string()),
             node_name,
             bind: non_empty("BIND").unwrap_or_else(|| "0.0.0.0:8000".to_string()),
             otp_length: parsed("OTP_LENGTH", 6)?,

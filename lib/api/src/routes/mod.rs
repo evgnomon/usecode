@@ -4,6 +4,7 @@
 //! The HTTP surface: JSON API routers, the server-rendered web UI, static
 //! files and the health check.
 
+pub(crate) mod account;
 mod auth;
 mod models;
 mod providers;
@@ -12,8 +13,9 @@ mod tasks;
 
 use std::sync::Arc;
 
-use axum::extract::{Path, State};
-use axum::http::{HeaderValue, StatusCode, header};
+use axum::extract::{Path, Request, State};
+use axum::http::{HeaderValue, Method, StatusCode, header};
+use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
@@ -21,15 +23,14 @@ use serde_json::{Value, json};
 use tower_http::cors::{AllowHeaders, AllowMethods, CorsLayer};
 
 use crate::App;
+use crate::config::Settings;
 use crate::error::AppError;
 use crate::models::TaskOut;
 use crate::store::TaskRecord;
 use crate::web;
 
 pub fn router(app: Arc<App>) -> Router {
-    let origins: Vec<HeaderValue> = app
-        .settings
-        .cors_origins
+    let origins: Vec<HeaderValue> = allowed_origins(&app.settings)
         .iter()
         .filter_map(|origin| origin.parse().ok())
         .collect();
@@ -42,6 +43,7 @@ pub fn router(app: Arc<App>) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/static/{*path}", get(static_file))
+        .merge(account::router())
         .merge(auth::router())
         .merge(models::router())
         .merge(providers::router())
@@ -52,8 +54,46 @@ pub fn router(app: Arc<App>) -> Router {
         .method_not_allowed_fallback(|| async {
             AppError::new(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed")
         })
+        .layer(middleware::from_fn_with_state(app.clone(), same_site_only))
         .layer(cors)
         .with_state(app)
+}
+
+/// The origins whose pages may call the API with the browser's cookies:
+/// the console's, and any in USECODE_AGENT_CORS_ORIGINS.
+fn allowed_origins(settings: &Settings) -> Vec<String> {
+    let mut origins = settings.cors_origins.clone();
+    origins.push(settings.console_url.clone());
+    origins
+}
+
+/// A browser posting from a page the API doesn't know is turned away, so
+/// another site can't act with someone's cookies (CSRF): an unsafe request
+/// with an `Origin` has to come from an allowed origin or the API's own
+/// host. Requests without one (`uc`, scripts, Stripe) don't carry a
+/// browser's cookies.
+async fn same_site_only(State(app): State<Arc<App>>, request: Request, next: Next) -> Response {
+    let safe = matches!(
+        *request.method(),
+        Method::GET | Method::HEAD | Method::OPTIONS
+    );
+    let origin = request
+        .headers()
+        .get(header::ORIGIN)
+        .and_then(|v| v.to_str().ok());
+    if let (false, Some(origin)) = (safe, origin) {
+        let host = request
+            .headers()
+            .get(header::HOST)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default();
+        let own = origin.split_once("://").is_some_and(|(_, h)| h == host);
+        if !own && !allowed_origins(&app.settings).iter().any(|o| o == origin) {
+            return AppError::new(StatusCode::FORBIDDEN, "Not from a page we know.")
+                .into_response();
+        }
+    }
+    next.run(request).await
 }
 
 async fn health(State(app): State<Arc<App>>) -> Json<Value> {
