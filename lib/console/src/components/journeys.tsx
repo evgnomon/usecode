@@ -189,9 +189,7 @@ export function Journeys({ journeys }: { journeys: Journey[] }) {
         {/* Screen readers get the whole list, not a moving target. */}
         <ul className="sr-only">
           {journeys.map((j) => (
-            <li key={j.from}>
-              {j.from} {j.without}
-            </li>
+            <li key={j.from}>{`${j.from} ${j.without}`}</li>
           ))}
         </ul>
         <Console journey={journey} play={play} at={at} of={journeys.length} live={live} first={first} />

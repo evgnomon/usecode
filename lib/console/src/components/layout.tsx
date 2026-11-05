@@ -43,7 +43,7 @@ function NavLink({ href, children }: { href: string; children: ReactNode }) {
     <Link
       href={href}
       aria-current={path === href ? "page" : undefined}
-      className={cn("text-[13px] text-muted-foreground transition-colors hover:text-foreground", path === href && "text-foreground")}
+      className={cn("py-1 text-[13px] text-muted-foreground transition-colors hover:text-foreground", path === href && "text-foreground")}
     >
       {children}
     </Link>
@@ -60,7 +60,7 @@ function Header() {
   return (
     <header className="sticky top-0 z-10 border-b bg-background">
       <div className="wrap flex min-h-13 flex-wrap items-center justify-between gap-4 py-2 sm:py-0">
-        <Link href="/" className="font-medium">
+        <Link href="/" className="py-1 font-medium">
           usecode<span className="font-normal text-muted-foreground">.dev</span>
         </Link>
         <nav className="flex flex-wrap items-center gap-4">
@@ -69,7 +69,7 @@ function Header() {
           {me?.user ? (
             <>
               <NavLink href="/account">Account</NavLink>
-              <button type="button" onClick={logout} className="cursor-pointer text-[13px] text-muted-foreground transition-colors hover:text-foreground">
+              <button type="button" onClick={logout} className="cursor-pointer py-1 text-[13px] text-muted-foreground transition-colors hover:text-foreground">
                 Log out
               </button>
             </>
@@ -102,7 +102,7 @@ function Footer() {
     <footer className="border-t py-5 text-xs">
       <div className="wrap flex flex-wrap justify-between gap-4">
         <span className="text-muted-foreground">usecode, container for agents</span>
-        <a href={REPO_URL} className="text-primary hover:underline">
+        <a href={REPO_URL} className="-my-1 inline-block py-1 text-primary hover:underline">
           Source on GitHub
         </a>
       </div>
