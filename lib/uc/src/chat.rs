@@ -2507,19 +2507,37 @@ impl Session {
     /// `uc agent model` and chat `model`: list with no name; otherwise switch to the
     /// named model, on the provider named after it if more than one serves
     /// it. The same lines go to the terminal and back to whoever asked.
+    /// Every model of every provider with a key, numbered, the current one
+    /// marked with `*`.
+    fn model_list(&self) -> String {
+        let current = Choice::new(&self.provider, &self.model);
+        let mut lines = String::new();
+        for (i, choice) in self.pool.iter().enumerate() {
+            let mark = if *choice == current { "*" } else { " " };
+            lines.push_str(&format!("{mark} {} {}\n", i + 1, label(&self.pool, choice)));
+        }
+        lines
+    }
+
+    /// The `chat model` tool. Asked for the list, the model gets it but the
+    /// terminal only gets a line: the list runs to hundreds of models, and
+    /// the user didn't ask to read it. A switch is said as at the prompt.
+    fn switch_tool(&mut self, name: &str) -> String {
+        if !name.is_empty() {
+            return self.switch(name);
+        }
+        let list = self.model_list();
+        note!("looked at the {} models", self.pool.len());
+        list
+    }
+
     fn switch(&mut self, name: &str) -> String {
         let say = |line: String| {
             out::raw(&line);
             line
         };
         if name.is_empty() {
-            let current = Choice::new(&self.provider, &self.model);
-            let mut lines = String::new();
-            for (i, choice) in self.pool.iter().enumerate() {
-                let mark = if *choice == current { "*" } else { " " };
-                lines.push_str(&format!("{mark} {} {}\n", i + 1, label(&self.pool, choice)));
-            }
-            return say(lines);
+            return say(self.model_list());
         }
         match choice_named(&self.pool, name, &self.provider) {
             Some(choice) if named(&self.providers, &choice.provider).is_none() => say(format!(
@@ -2931,7 +2949,7 @@ impl Session {
             "write_file" => self.write_file(&arg("path"), &arg("content")),
             "edit_file" => self.edit_file(&arg("path"), &arg("old_text"), &arg("new_text")),
             "chat" => match arg("action").trim() {
-                "model" => Ok(self.switch(format!("{} {}", arg("model"), arg("provider")).trim())),
+                "model" => Ok(self.switch_tool(format!("{} {}", arg("model"), arg("provider")).trim())),
                 "model-update" => Ok(self.update_models().await),
                 "effort" => match arg("effort").trim() {
                     "" => Ok(efforts_list(&self.effort)),
