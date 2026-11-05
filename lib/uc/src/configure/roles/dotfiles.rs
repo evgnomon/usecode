@@ -7,9 +7,10 @@
 //! uc, so a copy is all a machine gets: edit them here, not in the home.
 
 use crate::configure::engine::{Outcome, Plan, Task};
+use crate::configure::modules::command::which;
 use crate::configure::modules::inflate::inflate;
-use crate::configure::modules::{copy, file};
-use crate::configure::vars::Vars;
+use crate::configure::modules::{copy, file, jsonc};
+use crate::configure::vars::{Theme, Vars};
 use anyhow::Context;
 use std::path::{Path, PathBuf};
 
@@ -170,9 +171,67 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
                     return Ok(Outcome::Ok);
                 };
                 let text = String::from_utf8_lossy(&bytes);
-                let updated = set_jcode_theme(&text, jcode_theme);
+                let updated = set_toml_string(&text, "display", "theme", jcode_theme);
                 file::write(&ctx, &path, updated.as_bytes(), None, false).await
             }),
+    );
+
+    // herdr writes its config on the first start; without it there is no
+    // herdr to theme.
+    let herdr_theme = match v.config.theme {
+        Theme::Dark => "gruvbox",
+        Theme::Light => "gruvbox-light",
+    };
+    plan.add(
+        Task::new("dotfiles/herdr-theme", "Set the herdr theme in its config")
+            .tags(&["dotfiles", "theme"])
+            .run(move |ctx| async move {
+                let path = ctx.vars().home.join(".config/herdr/config.toml");
+                let Some(bytes) = file::read(&ctx, &path, false).await? else {
+                    return Ok(Outcome::Skipped("herdr isn't set up".into()));
+                };
+                let text = String::from_utf8_lossy(&bytes);
+                let updated = set_toml_string(&text, "theme", "name", herdr_theme);
+                let outcome = file::write(&ctx, &path, updated.as_bytes(), None, false).await?;
+                // A running server picks the change up; none running is fine.
+                if outcome == Outcome::Changed && which(&ctx, "herdr").is_some() {
+                    ctx.cmd("herdr")
+                        .args(["server", "reload-config"])
+                        .any_code()
+                        .output()
+                        .await?;
+                }
+                Ok(outcome)
+            }),
+    );
+
+    // opencode keeps its TUI settings, the theme among them, in tui.json.
+    let opencode_theme = match v.config.theme {
+        Theme::Dark => "gruvbox-dark-medium",
+        Theme::Light => "gruvbox-light-hard",
+    };
+    plan.add(
+        Task::new(
+            "dotfiles/opencode-theme",
+            "Set the opencode theme in its tui.json",
+        )
+        .tags(&["dotfiles", "theme"])
+        .run(move |ctx| async move {
+            let dir = ctx.vars().home.join(".config/opencode");
+            if !dir.is_dir() && which(&ctx, "opencode").is_none() {
+                return Ok(Outcome::Skipped("opencode isn't installed".into()));
+            }
+            let path = dir.join("tui.json");
+            let updated = match file::read(&ctx, &path, false).await? {
+                Some(bytes) => {
+                    jsonc::set_string(&String::from_utf8_lossy(&bytes), "theme", opencode_theme)
+                }
+                None => format!(
+                    "{{\n  \"$schema\": \"https://opencode.ai/tui.json\",\n  \"theme\": \"{opencode_theme}\"\n}}\n"
+                ),
+            };
+            file::write(&ctx, &path, updated.as_bytes(), None, false).await
+        }),
     );
 
     plan.add(
@@ -262,21 +321,21 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
     );
 }
 
-/// `text`, a jcode `config.toml`, with `theme` in its `[display]` table set
-/// to `theme`. Every other line stays as it is.
-fn set_jcode_theme(text: &str, theme: &str) -> String {
-    let line = format!("theme = \"{theme}\"");
+/// `text`, a TOML file, with `key` in its `[table]` set to the string
+/// `value`. Every other line stays as it is.
+fn set_toml_string(text: &str, table: &str, key: &str, value: &str) -> String {
+    let (line, header) = (format!("{key} = \"{value}\""), format!("[{table}]"));
     let mut out: Vec<String> = Vec::new();
-    let (mut in_display, mut done) = (false, false);
+    let (mut in_table, mut done) = (false, false);
     for l in text.lines() {
         let t = l.trim();
         if t.starts_with('[') {
-            if in_display && !done {
+            if in_table && !done {
                 out.push(line.clone());
                 done = true;
             }
-            in_display = t == "[display]";
-        } else if in_display && !done && t.split('=').next().map(str::trim) == Some("theme") {
+            in_table = t == header;
+        } else if in_table && !done && t.split('=').next().map(str::trim) == Some(key) {
             out.push(line.clone());
             done = true;
             continue;
@@ -284,18 +343,22 @@ fn set_jcode_theme(text: &str, theme: &str) -> String {
         out.push(l.to_string());
     }
     if !done {
-        if in_display {
+        if in_table {
             out.push(line);
         } else {
-            out.extend(["".into(), "[display]".into(), line]);
+            out.extend(["".into(), header, line]);
         }
     }
     out.join("\n") + "\n"
 }
 
 #[cfg(test)]
-mod jcode_theme_tests {
-    use super::set_jcode_theme;
+mod toml_string_tests {
+    use super::set_toml_string;
+
+    fn set_jcode_theme(t: &str, theme: &str) -> String {
+        set_toml_string(t, "display", "theme", theme)
+    }
 
     #[test]
     fn replaces_existing() {

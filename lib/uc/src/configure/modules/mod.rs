@@ -11,6 +11,7 @@ pub mod copy;
 pub mod file;
 pub mod git;
 pub mod inflate;
+pub mod jsonc;
 pub mod system;
 
 use anyhow::{Context, Result};

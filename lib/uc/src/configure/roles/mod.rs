@@ -30,6 +30,7 @@ pub mod udev_hwdb;
 pub mod usecode;
 pub mod vim;
 pub mod webcam;
+pub mod windows;
 pub mod wsl_sudo;
 pub mod wslview;
 pub mod yubikey;
@@ -106,6 +107,7 @@ pub fn plan(v: &Vars) -> Plan {
     mise::tasks(&mut plan, v);
     bash_history_backup::tasks(&mut plan, v);
     wslview::tasks(&mut plan, v);
+    windows::tasks(&mut plan, v);
     wsl_sudo::tasks(&mut plan, v);
     yubikey::tasks(&mut plan, v);
     docker::tasks(&mut plan, v);
