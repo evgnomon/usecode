@@ -2,7 +2,15 @@
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
 //! `console`: usecode.dev itself, the landing page, pricing, sign up and log
-//! in (`lib/console`), with its own Postgres.
+//! in (`lib/console`), and the usecode API behind it (`lib/api`), with their
+//! Postgres.
+//!
+//! The API holds everything with state: accounts, sessions, billing and
+//! nodes. It runs as the StatefulSet `api` (so each instance keeps its name,
+//! `api-0`, `api-1`, ..., which its tasks are filed under) on
+//! `https://api.<console_host>`, with its own `api` database on the same
+//! Postgres, which it makes and migrates itself. The console's pages call
+//! it straight from the browser; the console only renders pages.
 //!
 //! Postgres keeps its data on one Hetzner Cloud Volume from
 //! [`hcloud_csi`](super::hcloud_csi), in the `hcloud-volumes` class, so it
@@ -29,6 +37,10 @@
 //!   `registry_host` is pulled with the registry's login, which the role
 //!   copies into console/registry.
 //! * `console_replicas`: (default: 2).
+//! * `console_api_image`: the image `make -C lib/api push` pushed (default:
+//!   `<registry_host>/usecode-api:latest`, else
+//!   `ghcr.io/evgnomon/usecode-api:latest`).
+//! * `console_api_replicas`: (default: 2).
 //! * `console_db_size`: the database volume size (default: 10Gi, Hetzner's
 //!   smallest). It can grow later, never shrink.
 //! * `console_storage_class`: (default: `hcloud-volumes`).
@@ -37,9 +49,9 @@
 //!
 //! Billing is on once `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID` and
 //! `STRIPE_WEBHOOK_SECRET` are in the environment of a run: the role keeps
-//! them in console/console-stripe, and restarts the console when they change.
+//! them in console/console-stripe, and restarts the API when they change.
 //! Runs without them leave the secret as it is. Stripe's webhook endpoint is
-//! `https://<console_host>/stripe/webhook`.
+//! `https://api.<console_host>/stripe/webhook`.
 //!
 //! Sign ups and logins are finished with a code mailed from
 //! `console_smtp_user` (default `no-reply@usecode.dev`) through
@@ -49,7 +61,8 @@
 //! in console/console-smtp. Until it is there nobody can sign up or log in.
 //!
 //! The database password is made once, at random, and kept in
-//! console/console-db: the secret is the source of truth.
+//! console/console-db: the secret is the source of truth. So is the key the
+//! API encrypts what it stores for users with, in console/api-secret.
 
 use crate::configure::ctx::Ctx;
 use crate::configure::engine::{Outcome, Plan, Task};
@@ -84,6 +97,12 @@ const PULL_SECRET: &str = "registry";
 /// The annotation on console-stripe and the pods that says which keys they have.
 const FINGERPRINT: &str = "usecode.dev/stripe-fingerprint";
 const TLS_SECRET: &str = "console-tls";
+/// The API: its StatefulSet, Service and Ingress, its database on console-db.
+const API: &str = "api";
+const API_PORT: u16 = 8000;
+const API_TLS_SECRET: &str = "api-tls";
+/// The key the API encrypts users' stored secrets with; made once.
+const API_SECRET: &str = "api-secret";
 const ISSUER: &str = "letsencrypt";
 const PORT: u16 = 8080;
 const DB_PORT: u16 = 5432;
@@ -102,6 +121,8 @@ pub struct Settings {
     /// `registry_host`, the cluster's own registry, when there is one.
     pub registry: Option<String>,
     pub replicas: u32,
+    pub api_image: String,
+    pub api_replicas: u32,
     pub size: String,
     pub class: String,
     /// The CNAME target for `host`, when the role manages its record.
@@ -143,16 +164,26 @@ impl Settings {
         if replicas == 0 {
             bail!("console_replicas has to be at least 1");
         }
+        let api_replicas = var(vars, "console_api_replicas")?.unwrap_or(2);
+        if api_replicas == 0 {
+            bail!("console_api_replicas has to be at least 1");
+        }
         let registry = name(var(vars, "registry_host")?);
         let image = var(vars, "console_image")?.unwrap_or_else(|| match &registry {
             Some(registry) => format!("{registry}/usecode-console:latest"),
             None => "ghcr.io/evgnomon/usecode-console:latest".into(),
+        });
+        let api_image = var(vars, "console_api_image")?.unwrap_or_else(|| match &registry {
+            Some(registry) => format!("{registry}/usecode-api:latest"),
+            None => "ghcr.io/evgnomon/usecode-api:latest".into(),
         });
         Ok(Settings {
             host,
             image,
             registry,
             replicas,
+            api_image,
+            api_replicas,
             size: var(vars, "console_db_size")?.unwrap_or_else(|| "10Gi".into()),
             class: var(vars, "console_storage_class")?.unwrap_or_else(|| GENERIC_CLASS.into()),
             dns_target,
@@ -170,11 +201,17 @@ impl Settings {
         })
     }
 
-    /// The cluster's registry, when the image comes from it.
+    /// The cluster's registry, when an image comes from it.
     pub fn pull_registry(&self) -> Option<&str> {
-        self.registry
-            .as_deref()
-            .filter(|r| self.image.starts_with(&format!("{r}/")))
+        self.registry.as_deref().filter(|r| {
+            let ours = format!("{r}/");
+            self.image.starts_with(&ours) || self.api_image.starts_with(&ours)
+        })
+    }
+
+    /// The name the API answers on: `api.<console_host>`.
+    pub fn api_host(&self) -> String {
+        format!("api.{}", self.host.as_deref().unwrap_or_default())
     }
 
     /// The fingerprint of the Stripe settings, when this run has them.
@@ -278,8 +315,13 @@ impl Settings {
                 "name": STRIPE_SECRET, "key": key, "optional": true,
             }}})
         });
+        let api_host = self.api_host();
         let mut env = vec![
             json!({"name": "PUBLIC_URL", "value": format!("https://{host}")}),
+            json!({"name": "API_URL", "value": format!("https://{api_host}")}),
+            json!({"name": "API_INTERNAL_URL", "value": format!("http://{API}:{API_PORT}")}),
+            // The rest is for consoles from before the API, until the new
+            // one has rolled out; it no longer reads them.
             json!({"name": "PGHOST", "value": DB}),
             json!({"name": "PGPORT", "value": DB_PORT.to_string()}),
             json!({"name": "PGUSER", "value": DB_USER}),
@@ -387,14 +429,125 @@ impl Settings {
                 }]}}],
             },
         });
+        let mut api = self.api_manifest(fingerprint, smtp_fingerprint);
         if self.pull_registry().is_some() {
             console["spec"]["template"]["spec"]["imagePullSecrets"] =
                 json!([{"name": PULL_SECRET}]);
+            api["spec"]["template"]["spec"]["imagePullSecrets"] = json!([{"name": PULL_SECRET}]);
         }
+        let api_service = json!({
+            "apiVersion": "v1",
+            "kind": "Service",
+            "metadata": meta(API),
+            "spec": {
+                "selector": {"app": API},
+                "ports": [{"name": "http", "port": API_PORT, "targetPort": API_PORT}],
+            },
+        });
+        let mut api_ingress = ingress.clone();
+        api_ingress["metadata"]["name"] = json!(API);
+        api_ingress["spec"]["tls"] = json!([{"hosts": [api_host], "secretName": API_TLS_SECRET}]);
+        api_ingress["spec"]["rules"] = json!([{"host": api_host, "http": {"paths": [{
+            "path": "/",
+            "pathType": "Prefix",
+            "backend": {"service": {"name": API, "port": {"number": API_PORT}}},
+        }]}}]);
         json!({
             "apiVersion": "v1",
             "kind": "List",
-            "items": [claim, db, db_service, console, service, redirect, ingress],
+            "items": [
+                claim, db, db_service, api, api_service, console, service, redirect, ingress,
+                api_ingress,
+            ],
+        })
+    }
+
+    /// The API's StatefulSet: named instances, on the `api` database of
+    /// console-db, with the Stripe and mail settings.
+    fn api_manifest(&self, fingerprint: Option<&str>, smtp_fingerprint: Option<&str>) -> Value {
+        let host = self.host.as_deref().unwrap_or_default();
+        let secret = |name: &str, key: &str, optional: bool| json!({"secretKeyRef": {"name": name, "key": key, "optional": optional}});
+        let mut env = vec![
+            json!({"name": "DB_PASSWORD", "valueFrom": secret(DB_SECRET, "password", false)}),
+            json!({"name": "USECODE_AGENT_NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "metadata.name"}}}),
+            json!({"name": "USECODE_AGENT_DATABASE_URL",
+                   "value": format!("postgres://{DB_USER}:$(DB_PASSWORD)@{DB}:{DB_PORT}/{API}")}),
+            json!({"name": "USECODE_AGENT_SECRET_KEY", "valueFrom": secret(API_SECRET, "secret_key", false)}),
+            json!({"name": "USECODE_AGENT_CONSOLE_URL", "value": format!("https://{host}")}),
+            json!({"name": "USECODE_AGENT_COOKIE_DOMAIN", "value": host}),
+            // Only the console's pages call it from a browser.
+            json!({"name": "USECODE_AGENT_CORS_ORIGINS", "value": "[]"}),
+            json!({"name": "USECODE_AGENT_DEBUG_EXPOSE_OTP", "value": "false"}),
+        ];
+        env.extend(STRIPE_ENV.map(|key| {
+            json!({"name": format!("USECODE_AGENT_{key}"), "valueFrom": secret(STRIPE_SECRET, key, true)})
+        }));
+        env.extend([
+            json!({"name": "USECODE_AGENT_SMTP_HOST", "value": self.smtp_host}),
+            json!({"name": "USECODE_AGENT_SMTP_PORT", "value": self.smtp_port.to_string()}),
+            json!({"name": "USECODE_AGENT_SMTP_USER", "value": self.smtp_user}),
+            json!({"name": "USECODE_AGENT_SMTP_PASSWORD",
+                   "valueFrom": secret(SMTP_SECRET, SMTP_PASSWORD, true)}),
+        ]);
+        let probe = json!({"httpGet": {"path": "/health", "port": API_PORT}});
+        json!({
+            "apiVersion": "apps/v1",
+            "kind": "StatefulSet",
+            "metadata": {"name": API, "namespace": NAMESPACE, "labels": {"app": API}},
+            "spec": {
+                "serviceName": API,
+                "replicas": self.api_replicas,
+                "podManagementPolicy": "Parallel",
+                "selector": {"matchLabels": {"app": API}},
+                "template": {
+                    "metadata": {
+                        "labels": {"app": API},
+                        "annotations": {
+                            FINGERPRINT: fingerprint.unwrap_or("none"),
+                            SMTP_FINGERPRINT: smtp_fingerprint.unwrap_or("none"),
+                        },
+                    },
+                    "spec": {
+                        "affinity": {"nodeAffinity": {"requiredDuringSchedulingIgnoredDuringExecution": {
+                            "nodeSelectorTerms": [{"matchExpressions": [
+                                {"key": CONTROL_PLANE, "operator": "DoesNotExist"},
+                            ]}]
+                        }}},
+                        "topologySpreadConstraints": [{
+                            "maxSkew": 1,
+                            "topologyKey": "kubernetes.io/hostname",
+                            "whenUnsatisfiable": "ScheduleAnyway",
+                            "labelSelector": {"matchLabels": {"app": API}},
+                        }],
+                        "containers": [{
+                            "name": API,
+                            "image": self.api_image,
+                            "imagePullPolicy": if self.api_image.ends_with(":latest") { "Always" } else { "IfNotPresent" },
+                            "ports": [{"containerPort": API_PORT, "name": "http"}],
+                            "env": env,
+                            "readinessProbe": probe,
+                            "livenessProbe": {
+                                "httpGet": {"path": "/health", "port": API_PORT},
+                                "initialDelaySeconds": 30,
+                                "periodSeconds": 20,
+                                "failureThreshold": 6,
+                            },
+                            "securityContext": {
+                                "runAsNonRoot": true,
+                                "runAsUser": 65534,
+                                "runAsGroup": 65534,
+                                "allowPrivilegeEscalation": false,
+                                "readOnlyRootFilesystem": true,
+                            },
+                            // Each password check is 32 MiB of scrypt.
+                            "resources": {
+                                "requests": {"cpu": "50m", "memory": "64Mi"},
+                                "limits": {"memory": "512Mi"},
+                            },
+                        }],
+                    },
+                },
+            },
         })
     }
 }
@@ -470,6 +623,17 @@ pub fn tasks(plan: &mut Plan, cluster: &Arc<Cluster>, vars: &Vars) -> Result<()>
         .run(move |ctx| async move { db_secret(&ctx, &c).await }),
     );
 
+    let c = cluster.clone();
+    plan.add(
+        Task::new(
+            "console/api-secret",
+            "Keep the key the API encrypts what it stores with in console/api-secret",
+        )
+        .tags(&["console"])
+        .after(["console/namespace"])
+        .run(move |ctx| async move { api_secret(&ctx, &c).await }),
+    );
+
     let (c, s) = (cluster.clone(), settings.clone());
     plan.add(
         Task::new(
@@ -523,29 +687,39 @@ pub fn tasks(plan: &mut Plan, cluster: &Arc<Cluster>, vars: &Vars) -> Result<()>
 
     let s = settings.clone();
     plan.add(
-        Task::new("console/dns", "Point the name at the workers on Cloudflare")
-            .tags(&["console", "dns"])
-            .after(["console/report"])
-            .when(
-                settings.dns_target.is_some(),
-                "console_dns_target is not set; the name is yours to point at the workers",
-            )
-            .run(move |ctx| async move {
-                let host = s.host.as_deref().unwrap_or_default();
-                let target = s.dns_target.as_deref().unwrap_or_default();
-                dns(&ctx, host, target, &s.dns_zone).await
-            }),
+        Task::new(
+            "console/dns",
+            "Point the console's and the API's names at the workers on Cloudflare",
+        )
+        .tags(&["console", "dns"])
+        .after(["console/report"])
+        .when(
+            settings.dns_target.is_some(),
+            "console_dns_target is not set; the names are yours to point at the workers",
+        )
+        .run(move |ctx| async move {
+            let host = s.host.as_deref().unwrap_or_default();
+            let target = s.dns_target.as_deref().unwrap_or_default();
+            let console = dns(&ctx, host, target, &s.dns_zone).await?;
+            let api = dns(&ctx, &s.api_host(), target, &s.dns_zone).await?;
+            Ok(if console == Outcome::Changed || api == Outcome::Changed {
+                Outcome::Changed
+            } else {
+                Outcome::Ok
+            })
+        }),
     );
 
     let (c, s) = (cluster.clone(), settings.clone());
     plan.add(
         Task::new(
             "console/install",
-            "Run the console and its Postgres on a Hetzner Volume",
+            "Run the console, the API and their Postgres on a Hetzner Volume",
         )
         .tags(&["console"])
         .after([
             "console/db-secret",
+            "console/api-secret",
             "console/stripe",
             "console/smtp",
             "console/pull-secret",
@@ -562,7 +736,7 @@ pub fn tasks(plan: &mut Plan, cluster: &Arc<Cluster>, vars: &Vars) -> Result<()>
     plan.add(
         Task::new(
             "console/verify",
-            "Check the console and its database run and it has its certificate",
+            "Check the console, the API and the database run and have their certificates",
         )
         .tags(&["console"])
         .after(["console/install"])
@@ -582,6 +756,12 @@ async fn report(ctx: &Ctx, cluster: &Cluster, s: &Settings) -> Result<Outcome> {
     ctx.note(&format!(
         "https://{host}: {} x{}, Postgres on {} of {} (claim {NAMESPACE}/{CLAIM})",
         s.image, s.replicas, s.size, s.class
+    ));
+    ctx.note(&format!(
+        "https://{}: {} x{}",
+        s.api_host(),
+        s.api_image,
+        s.api_replicas
     ));
     ctx.note(&format!(
         "login codes: from {} through {}:{}{}",
@@ -636,6 +816,7 @@ async fn report(ctx: &Ctx, cluster: &Cluster, s: &Settings) -> Result<Outcome> {
     // console/dns sees to the name when it manages the record.
     if s.dns_target.is_none() {
         check_resolves(ctx, cluster, &host).await?;
+        check_resolves(ctx, cluster, &s.api_host()).await?;
     }
 
     if problems.is_empty() {
@@ -672,6 +853,43 @@ async fn db_secret(ctx: &Ctx, cluster: &Cluster) -> Result<Outcome> {
         "kind": "Secret",
         "metadata": {"name": DB_SECRET, "namespace": NAMESPACE},
         "stringData": {"password": password},
+    });
+    kubectl(ctx, cluster)
+        .args(["create", "-f", "-"])
+        .stdin(secret.to_string())
+        .output()
+        .await?;
+    Ok(Outcome::Changed)
+}
+
+/// Makes the API's encryption key once. Losing it loses what users stored
+/// encrypted (provider tokens), so the secret is never replaced.
+async fn api_secret(ctx: &Ctx, cluster: &Cluster) -> Result<Outcome> {
+    let found = kubectl(ctx, cluster)
+        .args(["-n", NAMESPACE, "get", "secret", API_SECRET, "-o", "name"])
+        .any_code()
+        .read_only()
+        .output()
+        .await?;
+    if found.success() {
+        return Ok(Outcome::Ok);
+    }
+    if ctx.check() {
+        return Ok(Outcome::Changed);
+    }
+    let key = password::generate(
+        48,
+        Charset {
+            letters: true,
+            digits: true,
+            symbols: false,
+        },
+    )?;
+    let secret = json!({
+        "apiVersion": "v1",
+        "kind": "Secret",
+        "metadata": {"name": API_SECRET, "namespace": NAMESPACE},
+        "stringData": {"secret_key": key},
     });
     kubectl(ctx, cluster)
         .args(["create", "-f", "-"])
@@ -881,22 +1099,30 @@ async fn install(ctx: &Ctx, cluster: &Cluster, s: &Settings) -> Result<Outcome> 
     }
     // The first start attaches a new volume, and the console waits for the
     // database before it answers.
-    for deployment in [DB, NAME] {
-        if let Err(err) = wait_ready(ctx, cluster, deployment).await {
+    for (kind, name) in WORKLOADS {
+        if let Err(err) = wait_ready(ctx, cluster, kind, name).await {
             bail!("{err:#}\n\n{}", logs(ctx, cluster).await);
         }
     }
     Ok(outcome)
 }
 
-/// Waits up to ten minutes for a deployment to roll out, and gives up at
-/// once when its image can't be pulled, which waiting doesn't fix.
-async fn wait_ready(ctx: &Ctx, cluster: &Cluster, deployment: &str) -> Result<()> {
+/// What runs, in the order it comes up: the database, the API, the console.
+const WORKLOADS: [(&str, &str); 3] = [
+    ("deployment", DB),
+    ("statefulset", API),
+    ("deployment", NAME),
+];
+
+/// Waits up to ten minutes for a deployment or statefulset to roll out, and
+/// gives up at once when its image can't be pulled, which waiting doesn't
+/// fix.
+async fn wait_ready(ctx: &Ctx, cluster: &Cluster, kind: &str, deployment: &str) -> Result<()> {
     let deadline = Instant::now() + Duration::from_secs(600);
     loop {
         let rollout = kubectl(ctx, cluster)
             .args(["-n", NAMESPACE, "rollout", "status"])
-            .arg(format!("deployment/{deployment}"))
+            .arg(format!("{kind}/{deployment}"))
             .arg("--timeout=10s")
             .any_code()
             .read_only()
@@ -912,18 +1138,13 @@ async fn wait_ready(ctx: &Ctx, cluster: &Cluster, deployment: &str) -> Result<()
             &["-n", NAMESPACE, "get", "pods", "-l", &selector],
         )
         .await?;
-        let deploy = get_json(
-            ctx,
-            cluster,
-            &["-n", NAMESPACE, "get", "deployment", deployment],
-        )
-        .await?;
+        let deploy = get_json(ctx, cluster, &["-n", NAMESPACE, "get", kind, deployment]).await?;
         if let Some(why) = pull_failure(&pods, &images(&deploy)) {
-            bail!("deployment/{deployment} can't pull its image: {why}");
+            bail!("{kind}/{deployment} can't pull its image: {why}");
         }
         if Instant::now() > deadline {
             bail!(
-                "deployment/{deployment} is not ready after 10 minutes: {}",
+                "{kind}/{deployment} is not ready after 10 minutes: {}",
                 rollout.combined().trim()
             );
         }
@@ -978,9 +1199,11 @@ fn pull_failure(pods: &Value, images: &[&str]) -> Option<String> {
 /// events, for a failure message.
 async fn logs(ctx: &Ctx, cluster: &Cluster) -> String {
     let (console, db) = (format!("deployment/{NAME}"), format!("deployment/{DB}"));
+    let api = format!("statefulset/{API}");
     let mut text = String::new();
     for args in [
         vec!["logs", console.as_str(), "--all-containers", "--tail=30"],
+        vec!["logs", api.as_str(), "--tail=30"],
         vec!["logs", db.as_str(), "--tail=30"],
         vec!["describe", "pvc", CLAIM],
     ] {
@@ -1007,10 +1230,10 @@ async fn verify(ctx: &Ctx, cluster: &Cluster, s: &Settings) -> Result<Outcome> {
         return Ok(Outcome::Skipped("checked once it is installed".into()));
     }
     let mut problems = Vec::new();
-    for deployment in [DB, NAME] {
+    for (kind, name) in WORKLOADS {
         let rollout = kubectl(ctx, cluster)
             .args(["-n", NAMESPACE, "rollout", "status"])
-            .arg(format!("deployment/{deployment}"))
+            .arg(format!("{kind}/{name}"))
             .arg("--timeout=300s")
             .any_code()
             .read_only()
@@ -1018,7 +1241,7 @@ async fn verify(ctx: &Ctx, cluster: &Cluster, s: &Settings) -> Result<Outcome> {
             .await?;
         if !rollout.success() {
             problems.push(format!(
-                "deployment/{deployment} is not ready: {}",
+                "{kind}/{name} is not ready: {}",
                 rollout.combined().trim()
             ));
         }
@@ -1043,32 +1266,40 @@ async fn verify(ctx: &Ctx, cluster: &Cluster, s: &Settings) -> Result<Outcome> {
     }
 
     let host = s.host.as_deref().unwrap_or_default();
-    let cert = kubectl(ctx, cluster)
-        .args([
-            "-n",
-            NAMESPACE,
-            "get",
-            "certificate",
-            TLS_SECRET,
-            "-o",
-            "jsonpath={.status.conditions[?(@.type==\"Ready\")].status}",
-        ])
-        .any_code()
-        .read_only()
-        .output()
-        .await?;
-    if cert.stdout.trim() != "True" {
-        ctx.note(&format!(
-            "the certificate for {host} is not ready yet; once DNS points at the workers \
-             and the {ISSUER} ClusterIssuer exists, cert-manager gets it \
-             (kubectl -n {NAMESPACE} describe certificate {TLS_SECRET})"
-        ));
+    for (name, secret) in [
+        (host.to_string(), TLS_SECRET),
+        (s.api_host(), API_TLS_SECRET),
+    ] {
+        let cert = kubectl(ctx, cluster)
+            .args([
+                "-n",
+                NAMESPACE,
+                "get",
+                "certificate",
+                secret,
+                "-o",
+                "jsonpath={.status.conditions[?(@.type==\"Ready\")].status}",
+            ])
+            .any_code()
+            .read_only()
+            .output()
+            .await?;
+        if cert.stdout.trim() != "True" {
+            ctx.note(&format!(
+                "the certificate for {name} is not ready yet; once DNS points at the workers \
+                 and the {ISSUER} ClusterIssuer exists, cert-manager gets it \
+                 (kubectl -n {NAMESPACE} describe certificate {secret})"
+            ));
+        }
     }
 
     if !problems.is_empty() {
         bail!("{}\n\n{}", problems.join("\n"), logs(ctx, cluster).await);
     }
-    ctx.log(&format!("https://{host} is up"));
+    ctx.log(&format!(
+        "https://{host} and https://{} are up",
+        s.api_host()
+    ));
     if smtp_fingerprint(ctx, cluster).await?.is_none() {
         ctx.note(&format!(
             "nobody can sign up or log in yet: the codes can't be mailed. Run again with \
@@ -1079,7 +1310,8 @@ async fn verify(ctx: &Ctx, cluster: &Cluster, s: &Settings) -> Result<Outcome> {
     if stripe_fingerprint(ctx, cluster).await?.is_none() {
         ctx.note(&format!(
             "billing is off: run again with STRIPE_SECRET_KEY, STRIPE_PRICE_ID and \
-             STRIPE_WEBHOOK_SECRET set; Stripe's webhook goes to https://{host}/stripe/webhook"
+             STRIPE_WEBHOOK_SECRET set; Stripe's webhook goes to https://{}/stripe/webhook",
+            s.api_host()
         ));
     }
     Ok(Outcome::Ok)
@@ -1095,6 +1327,8 @@ mod tests {
             image: "ghcr.io/evgnomon/usecode-console:abc123".into(),
             registry: None,
             replicas: 2,
+            api_image: "ghcr.io/evgnomon/usecode-api:abc123".into(),
+            api_replicas: 2,
             size: "10Gi".into(),
             class: GENERIC_CLASS.into(),
             dns_target: None,
@@ -1187,12 +1421,76 @@ mod tests {
         };
         assert_eq!(ours.pull_registry(), Some("registry.example.com"));
         assert_eq!(pull_secrets(&ours), json!([{"name": PULL_SECRET}]));
+        let m = ours.manifest("10Gi", None, None);
+        assert_eq!(
+            item(&m, "StatefulSet", API)["spec"]["template"]["spec"]["imagePullSecrets"],
+            json!([{"name": PULL_SECRET}])
+        );
         let ghcr = Settings {
             registry: Some("registry.example.com".into()),
             ..settings()
         };
         assert_eq!(ghcr.pull_registry(), None);
         assert!(pull_secrets(&ghcr).is_null());
+    }
+
+    #[test]
+    fn the_api_runs_named_on_its_own_database() {
+        let m = settings().manifest("10Gi", Some("abc"), Some("def"));
+        let api = item(&m, "StatefulSet", API);
+        assert_eq!(api["spec"]["replicas"], 2);
+        assert_eq!(
+            api["spec"]["template"]["metadata"]["annotations"][FINGERPRINT],
+            "abc"
+        );
+        let container = &api["spec"]["template"]["spec"]["containers"][0];
+        assert_eq!(container["image"], "ghcr.io/evgnomon/usecode-api:abc123");
+        let env = container["env"].as_array().unwrap();
+        let get = |name: &str| env.iter().find(|e| e["name"] == name).unwrap();
+        assert_eq!(
+            get("USECODE_AGENT_NODE_NAME")["valueFrom"]["fieldRef"]["fieldPath"],
+            "metadata.name"
+        );
+        assert_eq!(
+            get("USECODE_AGENT_DATABASE_URL")["value"],
+            "postgres://console:$(DB_PASSWORD)@console-db:5432/api"
+        );
+        // DB_PASSWORD comes first, so the URL can use it.
+        assert_eq!(env[0]["name"], "DB_PASSWORD");
+        assert_eq!(
+            get("USECODE_AGENT_CONSOLE_URL")["value"],
+            "https://usecode.dev"
+        );
+        assert_eq!(get("USECODE_AGENT_COOKIE_DOMAIN")["value"], "usecode.dev");
+        assert_eq!(get("USECODE_AGENT_DEBUG_EXPOSE_OTP")["value"], "false");
+        assert_eq!(
+            get("USECODE_AGENT_STRIPE_SECRET_KEY")["valueFrom"]["secretKeyRef"]["key"],
+            "STRIPE_SECRET_KEY"
+        );
+        assert_eq!(
+            get("USECODE_AGENT_SMTP_PASSWORD")["valueFrom"]["secretKeyRef"]["name"],
+            SMTP_SECRET
+        );
+        assert_eq!(
+            get("USECODE_AGENT_SECRET_KEY")["valueFrom"]["secretKeyRef"]["name"],
+            API_SECRET
+        );
+
+        let console = item(&m, "Deployment", NAME);
+        let env = console["spec"]["template"]["spec"]["containers"][0]["env"]
+            .as_array()
+            .unwrap();
+        let get = |name: &str| env.iter().find(|e| e["name"] == name).unwrap();
+        assert_eq!(get("API_URL")["value"], "https://api.usecode.dev");
+        assert_eq!(get("API_INTERNAL_URL")["value"], "http://api:8000");
+
+        let ingress = item(&m, "Ingress", API);
+        assert_eq!(ingress["spec"]["rules"][0]["host"], "api.usecode.dev");
+        assert_eq!(
+            ingress["spec"]["rules"][0]["http"]["paths"][0]["backend"]["service"]["name"],
+            API
+        );
+        assert_eq!(ingress["spec"]["tls"][0]["secretName"], API_TLS_SECRET);
     }
 
     #[test]

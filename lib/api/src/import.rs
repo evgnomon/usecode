@@ -154,12 +154,8 @@ mod tests {
     use super::*;
     use crate::testing;
 
-    /// The console's own schema, from its migrations.
-    const CONSOLE: [&str; 3] = [
-        include_str!("../../console/migrations/0001_init.sql"),
-        include_str!("../../console/migrations/0002_email_codes.sql"),
-        include_str!("../../console/migrations/0003_reset_codes.sql"),
-    ];
+    /// The console's own schema, as its migrations left it.
+    const CONSOLE: &str = include_str!("../testdata/console_schema.sql");
 
     #[tokio::test]
     async fn the_console_moves_over() {
@@ -170,9 +166,7 @@ mod tests {
             return;
         };
         let mut src = PgConnection::connect_with(&console).await.unwrap();
-        for sql in CONSOLE {
-            sqlx::raw_sql(sql).execute(&mut src).await.unwrap();
-        }
+        sqlx::raw_sql(CONSOLE).execute(&mut src).await.unwrap();
         let token = "a-console-session-token";
         let token_hash = Sha256::digest(token.as_bytes()).to_vec();
         sqlx::raw_sql(

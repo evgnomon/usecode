@@ -9,10 +9,10 @@ REGISTRY ?= $(CONTAINER_REGISTRY)
 # The latest push: the commit origin/master is at.
 TAG ?= $(shell ./scripts/k8s.sh tag)
 PORT ?= 8080
-TEST_DB_PORT ?= 55432
-TEST_DATABASE_URL ?= postgres://postgres:test@127.0.0.1:$(TEST_DB_PORT)/console
+# The API the pages call; `make -C lib/api run` starts one here.
+API_URL ?= http://localhost:8000
 
-.PHONY: all build test test-db test-db-stop serve dev image push deploy rollout clean
+.PHONY: all build test serve dev image push deploy rollout clean
 
 all: build
 
@@ -23,22 +23,15 @@ node_modules: package.json package-lock.json
 build: node_modules
 	npm run --silent build
 
-# The signup and billing flow runs too while `make test-db` is up.
 test: node_modules
-	TEST_DATABASE_URL=$(TEST_DATABASE_URL) npm test
-
-test-db:
-	@./scripts/test-db.sh start $(TEST_DB_PORT)
-
-test-db-stop:
-	@./scripts/test-db.sh stop
+	npm test
 
 serve: build
-	DATABASE_URL=$(TEST_DATABASE_URL) PORT=$(PORT) PUBLIC_URL=http://localhost:$(PORT) node dist/server/main.js
+	API_URL=$(API_URL) PORT=$(PORT) PUBLIC_URL=http://localhost:$(PORT) node dist/server/main.js
 
-# The pages with hot reload on :5173, talking to `make serve`.
+# The pages with hot reload on :5173; they call the API at $(API_URL).
 dev: node_modules
-	API_URL=http://localhost:$(PORT) npx vite
+	npx vite
 
 # Builds the latest push, not the working tree.
 image:

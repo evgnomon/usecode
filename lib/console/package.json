@@ -2,7 +2,7 @@
   "name": "usecode-console",
   "private": true,
   "version": "0.1.0",
-  "description": "usecode.dev: the landing page, pricing, sign up and log in",
+  "description": "usecode.dev: the landing page, pricing, sign up and log in, on the usecode API",
   "license": "SEE LICENSE IN ../../COPYING",
   "type": "module",
   "engines": {
@@ -16,9 +16,7 @@
   },
   "dependencies": {
     "@hono/node-server": "2.1.4",
-    "hono": "4.13.13",
-    "nodemailer": "10.3.1",
-    "postgres": "3.4.9"
+    "hono": "4.13.13"
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.3.3",

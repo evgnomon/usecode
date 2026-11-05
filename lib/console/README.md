@@ -10,65 +10,60 @@ and logging in. An individual account is free, Hosted is $10 a month per
 user, and Enterprise is a conversation. Either way usecode.dev looks after
 all your nodes, edge or Kubernetes, however many you add.
 
-All TypeScript. The pages are a [Vite](https://vite.dev) + React app styled
-with [Tailwind CSS](https://tailwindcss.com) and
-[shadcn/ui](https://ui.shadcn.com) (in `src/`). Behind them is a small
-[Hono](https://hono.dev) server (in `server/`) with a JSON API, Postgres
-through [postgres](https://github.com/porsager/postgres), and the built
-pages. Payments go through Stripe Checkout, and the customer portal handles
-card changes and cancelling.
+The pages are a [Vite](https://vite.dev) + React app styled with
+[Tailwind CSS](https://tailwindcss.com) and [shadcn/ui](https://ui.shadcn.com)
+(in `src/`), served by a small [Hono](https://hono.dev) server (in
+`server/`). The server keeps no data: everything with state, accounts,
+sessions, billing and nodes, is the usecode API's (`lib/api`, in Rust), and
+the pages call it straight from the browser, at `https://api.usecode.dev`.
+The server is there for the pages: it sends them prerendered where it can,
+tells them where the API is, and asks the API who's logged in so `/account`
+and `/login` send you to the right one before anything loads.
+
+Payments go through Stripe Checkout, and the customer portal handles card
+changes and cancelling, both through the API.
 
 ## Try it
 
 ```sh
-make test-db      # a throwaway Postgres in podman, on 127.0.0.1:55432
-make serve        # http://localhost:8080
-make dev          # the pages with hot reload on :5173, next to `make serve`
-make test         # unit tests, plus the sign up, code and billing flow against test-db
-make test-db-stop
+make -C ../api test-db   # a throwaway Postgres for the API
+USECODE_AGENT_DATABASE_URL=postgres://postgres:test@127.0.0.1:55433/api \
+  USECODE_AGENT_NODE_NAME=api-1 make -C ../api run   # the API on :8000
+make serve               # http://localhost:8080
+make dev                 # the pages with hot reload on :5173
+make test
 ```
 
 ## Settings
 
-| Variable                | What it is                                                   |
-| ----------------------- | ------------------------------------------------------------ |
-| `PUBLIC_URL`            | Where it's reached, e.g. `https://usecode.dev`               |
-| `DATABASE_URL`          | A `postgres://` URL; else `PGHOST`, `PGUSER`, ... are used   |
-| `PORT`                  | Default `8080`                                               |
-| `STRIPE_SECRET_KEY`     | Billing is on once all three Stripe settings are set         |
-| `STRIPE_PRICE_ID`       | The Hosted plan's $10/month per user recurring price          |
-| `STRIPE_WEBHOOK_SECRET` | The signing secret of the webhook endpoint                   |
-| `SMTP_PASSWORD`         | The mail account's password; the login codes go out with it |
-| `SMTP_HOST`             | Default `mail.clusterlean.net`                              |
-| `SMTP_PORT`             | Default `465` (TLS); any other port uses STARTTLS           |
-| `SMTP_USER`             | Default `no-reply@usecode.dev`                              |
-| `SMTP_FROM`             | Default `usecode.dev <no-reply@usecode.dev>`                |
+| Variable           | What it is                                                     |
+| ------------------ | -------------------------------------------------------------- |
+| `PUBLIC_URL`       | Where it's reached, e.g. `https://usecode.dev`                 |
+| `API_URL`          | Where browsers reach the API, default `http://localhost:8000`  |
+| `API_INTERNAL_URL` | Where this server reaches it, e.g. `http://api:8000`; default `API_URL` |
+| `PORT`             | Default `8080`                                                 |
+
+Mail, Stripe and the database are the API's settings; see `lib/api/README.md`.
 
 Signing up and logging in both take the password and then a six digit code
 mailed to the address, good for 10 minutes and five guesses. The account is
-only made once the code is right. Without `SMTP_PASSWORD` the codes are
-printed to the log on `http://localhost`, and can't go out at all on an
-`https://` console, so nobody can log in there until it's set.
+only made once the code is right. A forgotten password is reset at
+`/forgot`: the address and a new password, then the code. The new password
+only takes once the code is right, and it logs the account out everywhere
+else. An address without an account gets the same answers and no mail, so
+the page doesn't tell who has one.
 
-A forgotten password is reset at `/forgot`: the address and a new password,
-then the code. The new password only takes once the code is right, and it
-logs the account out everywhere else. An address without an account gets
-the same answers and no mail, so the page doesn't tell who has one.
-
-Migrations in `migrations/` run on start, once, even with several replicas.
-
-In Stripe, point a webhook endpoint at `https://usecode.dev/stripe/webhook`
+In Stripe, point a webhook endpoint at `https://api.usecode.dev/stripe/webhook`
 with `checkout.session.completed` and `customer.subscription.created`,
-`.updated` and `.deleted`, and switch the customer portal on.
+`.updated` and `.deleted`, and switch the customer portal on. The old
+address, `https://usecode.dev/stripe/webhook`, is handed on to the API
+until you've moved it.
 
 ## Ship it
 
 Commit and `git push` your change, then, with your kube context on the
-cluster:
-
-```sh
-make deploy
-```
+cluster, `make deploy` at the top of the checkout: it ships the API first,
+then the console. `make deploy` here ships only the console.
 
 That's `scripts/deploy.sh`: it builds the image at the latest push
 (origin/master, not the working tree, and it warns about anything local it
@@ -97,7 +92,7 @@ gives as `console_host` under `kube.<context>`, e.g. `console_host: usecode.dev`
 see `lib/uc/src/kube/roles/console.rs` for the rest.
 
 Copy lives in `src/content.ts` and the pages are in `src/pages/`. The API
-they call is in `server/app.ts`.
+they call is `lib/api`, through `src/lib/api.tsx`.
 
 The landing page, pricing and the 404 are rendered to plain HTML at build
 time (`src/prerender.tsx`, the pages marked `prerender` in `src/App.tsx`),

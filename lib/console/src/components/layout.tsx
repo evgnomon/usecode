@@ -53,7 +53,7 @@ function NavLink({ href, children }: { href: string; children: ReactNode }) {
 function Header() {
   const { me, refresh } = useMe();
   const logout = async () => {
-    await post("/api/logout");
+    await post("/auth/logout");
     await refresh();
     navigate("/");
   };

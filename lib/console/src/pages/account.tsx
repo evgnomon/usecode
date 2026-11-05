@@ -38,7 +38,7 @@ function Subscription({ me }: { me: Me }) {
     );
   }
   const pastDue = sub.status === "past_due";
-  const manage = () => goTo("/api/billing/portal").catch((err: Error) => setError(err.message));
+  const manage = () => goTo("/billing/portal").catch((err: Error) => setError(err.message));
   return (
     <>
       <p className="mb-3 flex flex-wrap items-center gap-2">

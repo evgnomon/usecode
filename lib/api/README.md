@@ -105,6 +105,22 @@ provider that accepts `{to, sender, message}`) before deploying.
   provider's API base URL, e.g. to point at a fake in tests.
 - `RUST_LOG` — log filter, default `info`.
 
+The console (usecode.dev) and its accounts:
+
+- `USECODE_AGENT_CONSOLE_URL` — where the console's pages are, default `http://localhost:8080`.
+  They call the API straight from the browser, so it is always an allowed origin, and Stripe
+  sends people back there. Cookies are `Secure` once it is `https://`.
+- `USECODE_AGENT_COOKIE_DOMAIN` — the domain the session cookie is set for, e.g. `usecode.dev`,
+  so the console's own server sees it too.
+- `USECODE_AGENT_SMTP_PASSWORD` — mail for the sign up and log in codes is on once it is set;
+  `_SMTP_HOST` (default `mail.clusterlean.net`), `_SMTP_PORT` (465, TLS; others STARTTLS),
+  `_SMTP_USER` (`no-reply@usecode.dev`), `_SMTP_FROM`. Without it the codes go to the log on
+  an `http://` console, and can't go out on an `https://` one.
+- `USECODE_AGENT_STRIPE_SECRET_KEY`, `_STRIPE_PRICE_ID`, `_STRIPE_WEBHOOK_SECRET` — billing is
+  on once all three are set; Stripe's webhook goes to `/stripe/webhook`.
+
+A missing database is made on start, so a new deployment needs nothing done by hand.
+
 Horizontal scaling settings:
 
 - `USECODE_AGENT_NODE_NAME` (required) — this instance's name, e.g. `api-1`. Tasks this instance
@@ -120,6 +136,26 @@ Horizontal scaling settings:
   over these instances plus the main one — **once per table**, since `shard_ranges` holds a
   map per table. Afterwards a row's instance is found by hashing the key of the table it
   belongs to, or of the parent it hangs off (see `src/schema.rs`).
+
+## The console's account API
+
+- `GET /account` — who's looking (`user` is null for nobody), and their billing.
+- `POST /auth/email/signup`, `/auth/email/login`, `/auth/email/reset` — `{email, password}`;
+  mails a six digit code and sets the `uc_otp` cookie.
+- `POST /auth/email/verify` — `{code}`; logs the browser in with the `uc_session` cookie, a
+  session API key good for 30 days. `X-API-Key` works everywhere the cookie does.
+- `POST /billing/checkout`, `/billing/portal` — `{url}` to send the browser to.
+- `POST /stripe/webhook` — Stripe's events, signed.
+
+An unsafe request with an `Origin` from a page the API doesn't know is turned away (403).
+`uc-agent-api import-console URL` copies the console's old database over.
+
+## Ship it
+
+`make deploy` builds the image at the latest push (origin/master), pushes it to the cluster's
+registry and rolls `console/api` out at it, then checks `https://api.<host>/health`.
+`make push` and `make rollout` do one half each. The `console` role of `uc kube sync` runs it;
+`make deploy` at the top of the checkout ships the API, then the console.
 
 ## Migrations
 

@@ -52,8 +52,11 @@ ci:
 	@echo "  CI_PARENT:       $(CI_PARENT)"
 	@echo "══════════════════════════════════════════"
 
+# Ships usecode.dev from the latest push: the API first, then the console
+# on it.
 deploy:
-	@echo "Deploying $(CI_COMMIT_SHORT) from $(CI_BRANCH) [env=$(CI_ENV) track=$(CI_TRACK)]..."
+	@$(MAKE) -C lib/api deploy
+	@$(MAKE) -C lib/console deploy
 
 version:
 	@echo $(VERSION)

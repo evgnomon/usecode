@@ -14,21 +14,21 @@ const TEXT = {
   signup: {
     title: "Make an account",
     lead: "It takes a few seconds, and it's free. We'll mail you a code to check it's you.",
-    api: "/api/signup",
+    api: "/auth/email/signup",
     submit: "Sign up",
     finish: "Make my account",
   },
   login: {
     title: "Welcome back",
     lead: "Log in to see your plan and nodes. We'll mail you a code to check it's you.",
-    api: "/api/login",
+    api: "/auth/email/login",
     submit: "Log in",
     finish: "Log in",
   },
   reset: {
     title: "Forgot your password?",
     lead: "Pick a new one, and we'll mail you a code to check it's you. Then you're logged in with it.",
-    api: "/api/reset",
+    api: "/auth/email/reset",
     submit: "Send me a code",
     finish: "Set my new password",
   },
@@ -67,7 +67,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" | "reset" }) {
     setBusy(true);
     setError("");
     try {
-      await post("/api/verify", { code });
+      await post("/auth/email/verify", { code });
       await refresh();
       navigate(safeNext(query.get("next")), { replace: true });
     } catch (err) {

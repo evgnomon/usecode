@@ -65,7 +65,7 @@ function HostedAction() {
     setBusy(true);
     setError("");
     try {
-      await goTo("/api/billing/checkout");
+      await goTo("/billing/checkout");
     } catch (err) {
       setError((err as Error).message);
       setBusy(false);

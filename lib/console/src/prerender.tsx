@@ -6,7 +6,7 @@
 // Renders the content pages into HTML at build time, so search engines, AI
 // tools and anyone without JavaScript can read them. The browser hydrates
 // them and carries on as usual. Who's logged in isn't known here, so those
-// bits fill in once /api/me answers, just like on the other pages.
+// bits fill in once the API says, just like on the other pages.
 //
 // Run after `vite build`: node dist/prerender/prerender.js dist/client
 
