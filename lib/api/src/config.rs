@@ -112,23 +112,29 @@ fn parse_json<T: serde::de::DeserializeOwned>(name: &str, default: T) -> Result<
 }
 
 impl Settings {
-    pub fn from_env() -> Result<Self> {
-        // Values already in the environment win over the file.
-        let _ = dotenvy::from_filename(".env");
-
-        // Enforced as non-empty rather than merely present, because
-        // USECODE_AGENT_NODE_NAME="" would otherwise be just as unusable as
-        // an absent one: every such node's tasks would be assigned to "" and
-        // would all hash to the same bucket, so the nodes would sweep each
-        // other's work.
-        let node_name = var("NODE_NAME").unwrap_or_default().trim().to_string();
-        if node_name.is_empty() {
+    /// Refuse to serve without a name. Enforced as non-empty rather than
+    /// merely present, because USECODE_AGENT_NODE_NAME="" would otherwise
+    /// be just as unusable as an absent one: every such node's tasks would
+    /// be assigned to "" and would all hash to the same bucket, so the
+    /// nodes would sweep each other's work.
+    pub fn require_node_name(&self) -> Result<()> {
+        if self.node_name.is_empty() {
             bail!(
                 "USECODE_AGENT_NODE_NAME must be set to a non-empty node name, e.g. 'api-1'. \
                  A task's assignee is a node name and is what addresses the task, so an \
                  unnamed node could neither claim work nor find it again."
             );
         }
+        Ok(())
+    }
+
+    pub fn from_env() -> Result<Self> {
+        // Values already in the environment win over the file.
+        let _ = dotenvy::from_filename(".env");
+
+        // Only serving needs it (see `require_node_name`); `migrate` runs
+        // without one.
+        let node_name = var("NODE_NAME").unwrap_or_default().trim().to_string();
 
         Ok(Self {
             node_name,

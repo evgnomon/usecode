@@ -95,8 +95,35 @@ async fn shutdown_signal() {
     }
 }
 
+const USAGE: &str = "usage: uc-agent-api [serve]
+       uc-agent-api migrate [--status]
+
+  serve             migrate every database, then serve the API (the default)
+  migrate           bring every database up to date and exit
+  migrate --status  say what each database has applied and what is pending
+
+Settings come from USECODE_AGENT_* variables (and .env); see the README.";
+
 async fn run() -> Result<()> {
-    let settings = Settings::from_env()?;
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    match args.as_slice() {
+        [] | ["serve"] => serve(Settings::from_env()?).await,
+        ["migrate"] => migrate::run(&Settings::from_env()?).await,
+        ["migrate", "--status"] => migrate::status(&Settings::from_env()?).await,
+        ["-h" | "--help" | "help"] => {
+            println!("{USAGE}");
+            Ok(())
+        }
+        _ => {
+            eprintln!("{USAGE}");
+            std::process::exit(2);
+        }
+    }
+}
+
+async fn serve(settings: Settings) -> Result<()> {
+    settings.require_node_name()?;
     tracing::info!("Starting API instance {:?}", settings.node_name);
 
     migrate::run(&settings).await?;

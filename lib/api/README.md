@@ -123,12 +123,36 @@ Horizontal scaling settings:
 
 ## Migrations
 
-`migrations/*.sql` are applied in order to every configured database on
-startup, in one transaction per database under a PostgreSQL advisory lock.
-Progress is recorded in the `alembic_version` table under the same revision
-ids the earlier Python/Alembic implementation used, so a database it created
-is picked up where it left off. To add a migration, add the next
-`NNNN_name.sql` file and list it in `src/migrate.rs`.
+Every `migrations/NNNN_name.sql` is built into the binary and applied in
+order to every configured database. To add one, add the next numbered file;
+that's all. Once applied, a file is never edited: a change is a new file.
+
+They run on every start, and on their own:
+
+```sh
+uc-agent-api migrate            # or `make migrate`
+uc-agent-api migrate --status   # or `make migrate-status`: applied and pending, per database
+```
+
+The `migrations` table is the ledger: each applied file with its checksum,
+when, and which instance applied it. Instances that start together take
+turns on a PostgreSQL advisory lock, so one applies what's pending and the
+rest find it done. Each migration is its own transaction with a 60s
+`lock_timeout`, so a failure stops at the last good one and the next start
+carries on.
+
+During a rolling deploy the old build keeps running on the new schema: a
+build that finds newer migrations than it knows still starts. So a migration
+only adds what the running build can do without, and anything to drop goes
+in a later release. A build refuses to start if an applied file changed, or
+the history otherwise doesn't match its own.
+
+A database made by the earlier Alembic setup is adopted the first time:
+everything up to its `alembic_version` goes in the ledger, and that table
+is dropped.
+
+The tests that need Postgres run against `make test-db` (podman, port
+55433) and skip themselves without it.
 
 ## Code map
 

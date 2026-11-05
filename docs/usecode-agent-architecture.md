@@ -191,9 +191,13 @@ deliberate operation rather than a side effect of booting.
   to, since the range table can't be read before it exists. Runtime
   resolution always reads the table.
 - `lib/api/src/migrate.rs` — migrates *every* instance to head on startup
-  (then `main.rs` seeds the shard ranges). Instances boot concurrently, so
-  each upgrade, and the seeding, runs under a PostgreSQL advisory lock; the
-  losers find the work already done.
+  (then `main.rs` seeds the shard ranges), or on its own with
+  `uc-agent-api migrate`. Instances boot concurrently, so each upgrade, and
+  the seeding, runs under a PostgreSQL advisory lock; the losers find the
+  work already done. Each migration is its own transaction, recorded with
+  its checksum in the `migrations` ledger, and an older build starts on a
+  newer schema, so migrations only add (expand) and removals come a release
+  later (contract).
 - `deploy/Caddyfile` — both load balancers round-robin over both API
   instances, with `/health` as the health check. `/health` reports the
   instance's own name, which is the simplest way to see which one answered.

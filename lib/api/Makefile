@@ -5,11 +5,28 @@ NAME := usecode-agent-api
 BIN := uc-agent-api
 # The old name, kept for a release so scripts calling it carry on working.
 ALIASES := usecode-agent-api
-EXTRA_SOURCES := $(shell find migrations templates static model_image -type f)
+EXTRA_SOURCES := $(shell find migrations templates static model_image -type f) build.rs
+TEST_DB_PORT ?= 55433
+# The database tests run against it while `make test-db` is up, and skip
+# themselves when it isn't.
+export USECODE_AGENT_TEST_DATABASE_URL ?= postgres://postgres:test@127.0.0.1:$(TEST_DB_PORT)/api
 
 include ../rust.mk
 
-.PHONY: run
+.PHONY: run migrate migrate-status test-db test-db-stop
 
 run:
 	@cargo run -p $(NAME)
+
+# Bring every database in USECODE_AGENT_DATABASE_URL and _SHARDS up to date.
+migrate:
+	@cargo run -q -p $(NAME) -- migrate
+
+migrate-status:
+	@cargo run -q -p $(NAME) -- migrate --status
+
+test-db:
+	@./scripts/test-db.sh start $(TEST_DB_PORT)
+
+test-db-stop:
+	@./scripts/test-db.sh stop
