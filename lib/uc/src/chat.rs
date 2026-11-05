@@ -156,8 +156,13 @@ const DELETES: &[&str] = &["rm", "rmdir", "unlink", "shred", "-delete"];
 /// Always in the system prompt: how commands run, jobs, what needs asking.
 const MAIN_SKILL: &str = include_str!("chat/main.md");
 /// Builtins worth running when typed at the prompt; `cd` changes uc's own
-/// directory. Keywords like `if` and `for` are left out: they start sentences.
-const BUILTINS: &[&str] = &["cd", "echo", "printf", "pwd", "type", "command", "time"];
+/// directory, and `source`, `export`, `alias` and the like change the shell
+/// state later commands run with. Keywords like `if` and `for` are left out:
+/// they start sentences.
+const BUILTINS: &[&str] = &[
+    "cd", "echo", "printf", "pwd", "type", "command", "time", "source", ".", "export", "unset",
+    "alias", "unalias", "declare", "umask", "ulimit",
+];
 
 /// A command runs on the terminal: Ctrl-C stops it, not uc.
 static FOREGROUND: AtomicBool = AtomicBool::new(false);
@@ -5313,6 +5318,9 @@ mod tests {
             "git status",
             "cd ..",
             "git commit -m 'fix the bug'",
+            "source ~/.bashrc.d/crawler.sh",
+            ". ~/.profile",
+            "export KEY=value",
             "make all",
             "make it faster",
             "yes",
