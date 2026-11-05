@@ -27,7 +27,8 @@ hmac = "0.12"
 mail-send = { version = "0.6", default-features = false, features = ["builder", "tls12"] }
 minijinja.workspace = true
 rand = "0.9"
-reqwest = { workspace = true, features = ["json", "query", "form", "rustls", "charset", "http2"] }
+reqwest = { workspace = true, features = ["json", "query", "form", "rustls-no-provider", "charset", "http2"] }
+rustls-graviola = "0.4"
 scrypt = { version = "0.11", default-features = false }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true, features = ["preserve_order"] }

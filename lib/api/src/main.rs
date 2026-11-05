@@ -171,6 +171,9 @@ async fn serve(settings: Settings) -> Result<()> {
 
 #[tokio::main]
 async fn main() {
+    // One process-wide TLS provider for reqwest and the SMTP client;
+    // graviola is pure Rust, like the rest of the workspace.
+    let _ = rustls_graviola::default_provider().install_default();
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .with_ansi(std::io::IsTerminal::is_terminal(&std::io::stderr()))
