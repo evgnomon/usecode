@@ -38,3 +38,6 @@ General rules for working in the usecode project.
 # Git
 * Use `git commit -s` to sign your commits.
 * Build and install after git pull, and before `git push` (see above).
+
+# Working directory
+* Note the directory you received the prompt in. When the task is done, `cd` back to it, so the user isn't left in the last directory you switched to.
