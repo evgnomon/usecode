@@ -78,6 +78,43 @@ Cloud examples:
   uc vm remove uc3 --provider hetzner --force
 ";
 
+/// The commands a cloud provider has; the rest are local only.
+const CLOUD_COMMANDS: &[&str] = &[
+    "create", "list", "info", "inspect", "start", "stop", "restart", "remove", "ip",
+];
+
+/// What `--provider` adds to a command's help.
+fn cloud_command_help(command: &str) -> String {
+    let mut help = String::from(
+        "With --provider <hetzner|digitalocean|ovh|upcloud> it works on that \
+         provider's servers\ninstead (no sudo needed), with the credentials \
+         `uc vm -h` lists.\n",
+    );
+    if command == "create" {
+        help.push_str(
+            "\
+It picks the cheapest server type with at least --vcpus, --memory and
+--disk-size (on UpCloud the smallest unless they are given); --machine and
+--mount are local only.
+
+Cloud options:
+  --location <code>                  Hetzner location, DigitalOcean region,
+                                     OVHcloud region such as GRA11 or UpCloud
+                                     zone such as de-fra1 (default: the
+                                     cheapest one, or dk-cph1 on UpCloud)
+  --arch <x86|arm>                   CPU architecture (default: x86)
+  --image <name>                     Provider image (default: debian-13,
+                                     'Debian 13' on OVHcloud, or the
+                                     'Debian GNU/Linux 13' template on UpCloud)
+
+Example:
+  uc vm create uc3 --memory 4GiB --vcpus 4 --disk-size 60G --provider hetzner
+",
+        );
+    }
+    help
+}
+
 /// The `main` of `uc-vm`.
 pub fn main() -> ExitCode {
     let args: Vec<String> = std::env::args_os()
@@ -95,13 +132,31 @@ pub fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let Some(provider) = provider else {
-        if matches!(args.first().map(String::as_str), Some("-h" | "--help")) {
-            // uc-vm-local's own help, followed by what `uc vm` adds to it.
-            let _ = Command::new("uc-vm-local").arg("--help").status();
-            print!("{CLOUD_HELP}");
-            return ExitCode::SUCCESS;
+    // Help anywhere is only help, with a provider or without: `uc vm
+    // remove -h` must not take `-h` for a VM's name.
+    if args.iter().any(|arg| arg == "-h" || arg == "--help") {
+        match args.first().map(String::as_str) {
+            Some("-h" | "--help") | None => {
+                // uc-vm-local's own help, followed by what `uc vm` adds to it.
+                let _ = Command::new("uc-vm-local").arg("--help").status();
+                print!("{CLOUD_HELP}");
+            }
+            Some(command) => {
+                // The command's own help, and what a cloud provider changes.
+                let _ = Command::new("uc-vm-local").args([command, "--help"]).status();
+                if CLOUD_COMMANDS.contains(&command) {
+                    print!("\n{}", cloud_command_help(command));
+                } else if ["snapshot", "fork", "mount", "config"].contains(&command) {
+                    println!("\nLocal VMs only: not with --provider.");
+                } else {
+                    // Not a command: uc-vm-local printed its whole help.
+                    print!("{CLOUD_HELP}");
+                }
+            }
         }
+        return ExitCode::SUCCESS;
+    }
+    let Some(provider) = provider else {
         let args: Vec<OsString> = args.into_iter().map(OsString::from).collect();
         return crate::groups::VM.run(&args);
     };

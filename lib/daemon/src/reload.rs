@@ -30,6 +30,10 @@ with an answer.
 pub const SUMMARY: &str = "have the daemon on hosts converge every module now";
 
 pub fn run(args: &[String]) -> Result<()> {
+    if crate::flags::wants_help(args) {
+        println!("{USAGE}");
+        return Ok(());
+    }
     let names: Vec<String> = match args {
         [] => bail!("{USAGE}"),
         [flag] if flag == "--summary" => {

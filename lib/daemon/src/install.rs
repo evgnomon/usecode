@@ -57,7 +57,11 @@ pub fn run(args: &[String]) -> Result<()> {
             println!("{SUMMARY}");
             return Ok(());
         }
-        [flag] if matches!(flag.as_str(), "-h" | "--help" | "help") => {
+        [flag] if flag == "help" => {
+            println!("{USAGE}");
+            return Ok(());
+        }
+        _ if crate::flags::wants_help(args) => {
             println!("{USAGE}");
             return Ok(());
         }

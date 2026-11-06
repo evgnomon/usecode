@@ -49,7 +49,25 @@ fn debs(names: impl Iterator<Item = String>) -> Vec<String> {
     v
 }
 
+const USAGE: &str = "usage: uc deb publish
+
+Publishes ./dist/*.deb to the apt repository:
+  1. rsync -avP --delete shadow:~/.cache/blueprint/apt/ to here
+  2. reprepro includedeb trixie ./dist/*.deb, then export
+  3. rsync it back to shadow, with --delete
+  4. on shadow, rclone sync it to archive:$USER/debian/
+Stops at the first step that fails. It takes no arguments.";
+
 fn main() {
+    if env::args().len() > 1 {
+        let help = env::args().skip(1).any(|arg| arg == "-h" || arg == "--help");
+        if help {
+            println!("{USAGE}");
+            exit(0);
+        }
+        eprintln!("{USAGE}");
+        exit(2);
+    }
     let home = required("HOME");
     let repo = format!("{home}/.cache/blueprint/apt/");
     let remote = format!("shadow:{repo}");

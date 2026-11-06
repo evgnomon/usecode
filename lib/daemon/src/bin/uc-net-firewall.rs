@@ -15,6 +15,7 @@ use std::process::ExitCode;
 use uc_daemon::bundle::Bundle;
 use uc_daemon::error::{Context, Result};
 use uc_daemon::firewall::{self, Settings};
+use uc_daemon::flags::{usage_of, wants_help};
 use uc_daemon::kube;
 use uc_daemon::remote::Target;
 use uc_daemon::setup::BINARY_PATH;
@@ -64,6 +65,12 @@ fn run(args: &[String]) -> Result<()> {
     match cmd.as_str() {
         "help" | "-h" | "--help" => {
             println!("{USAGE}");
+            Ok(())
+        }
+        "status" | "allow" | "unallow" | "ssh-port" | "enable" | "disable" if wants_help(rest) => {
+            let section = usage_of(USAGE, &format!("  {cmd} "));
+            let host = USAGE.rsplit("\n\n").next().unwrap_or_default();
+            println!("usage: uc net firewall {cmd} ...\n\n{section}\n{host}");
             Ok(())
         }
         "status" => status(rest),

@@ -47,6 +47,16 @@ fn run(args: &[String]) -> Result<()> {
         return Ok(());
     };
 
+    if flags::wants_help(rest) {
+        let section = flags::usage_of(&usage_text(), &format!("  uc net mesh {cmd} "));
+        if !section.is_empty() {
+            let config = usage_text();
+            let config = config.trim_end().rsplit("\n\n").next().unwrap_or_default();
+            println!("{section}\n{config}");
+            return Ok(());
+        }
+    }
+
     match cmd.as_str() {
         "up" => with_config(rest, REQUIRE_ROOT, app::up),
         "down" => with_config(rest, REQUIRE_ROOT, app::down),
@@ -94,7 +104,11 @@ fn run(args: &[String]) -> Result<()> {
 }
 
 fn usage() {
-    eprint!(
+    eprint!("{}", usage_text());
+}
+
+fn usage_text() -> String {
+    format!(
         r#"uc net mesh - WireGuard mesh + DNAT port forwarding manager
 
 Every host runs the same commands. What a host does (accept inbound
@@ -146,7 +160,7 @@ Config defaults to {config_path} and must be mode 0600, owned by root.
 "#,
         keys_dir = keys::DIR,
         config_path = config::DEFAULT_PATH,
-    );
+    )
 }
 
 fn config_path(args: &[String]) -> String {

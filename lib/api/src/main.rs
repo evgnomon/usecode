@@ -120,6 +120,10 @@ Settings come from USECODE_AGENT_* variables (and .env); see the README.";
 async fn run() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    if args.iter().any(|arg| matches!(*arg, "-h" | "--help")) {
+        println!("{USAGE}");
+        return Ok(());
+    }
     match args.as_slice() {
         [] | ["serve"] => serve(Settings::from_env()?).await,
         ["migrate"] => migrate::run(&Settings::from_env()?).await,
