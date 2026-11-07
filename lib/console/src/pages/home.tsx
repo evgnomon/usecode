@@ -1,7 +1,7 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, CodeXml } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { KeyLegend } from "@/components/kbd";
@@ -66,6 +66,13 @@ export function Home() {
               <p key={line}>{line}</p>
             ))}
           </div>
+          <a
+            href={REPO_URL}
+            className="mb-4 inline-flex items-center gap-2 border border-primary bg-primary/10 px-3 py-1.5 text-sm font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
+          >
+            <CodeXml className="size-4" strokeWidth={1.75} />
+            {MOTIVATION.openSource}
+          </a>
           <ul className="mx-auto mb-8 flex flex-wrap justify-center gap-x-3 gap-y-2 text-sm font-medium">
             {MOTIVATION.pillars.map((p) => (
               <li key={p} className="border px-2.5 py-1">
