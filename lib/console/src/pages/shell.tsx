@@ -85,7 +85,7 @@ const TIP_DISMISSED = "shell.lock-tip.dismissed";
 /** What the bar says in full screen. */
 const fullNote = (locked: boolean) =>
   locked
-    ? "Esc and Ctrl+W go to the shell; hold Esc or press F11 to leave"
+    ? "Every key goes to the shell; hold Esc to leave"
     : shieldsHideLock()
       ? "Brave's Shields keep Esc: turn off fingerprint blocking for this site, then full screen again. Till then Ctrl+[ is Esc"
       : "This browser keeps Esc to leave full screen; Ctrl+[ is Esc for the shell";
@@ -138,11 +138,13 @@ function useFullscreen(onChange: () => void) {
     const ok = (await early) || (await lockKeys(kb));
     setLocked(ok && Boolean(document.fullscreenElement));
   }, []);
-  // F11 is our full screen, the one with the keyboard locked, rather than
-  // the browser's, which locks nothing. Caught before the terminal sees it.
+  // F11 goes into our full screen, the one with the keyboard locked, rather
+  // than the browser's, which locks nothing. Only into it: in full screen
+  // every key is the shell's, F11 too, and holding Esc is the one way out.
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.key !== "F11" || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
+      if (document.fullscreenElement) return;
       e.preventDefault();
       e.stopImmediatePropagation();
       void toggle();
@@ -306,15 +308,15 @@ export function Shell() {
             title={
               full
                 ? locked
-                  ? "Leave full screen (F11, or hold Esc)"
-                  : "Leave full screen (F11 or Esc)"
+                  ? "Leave full screen (or hold Esc)"
+                  : "Leave full screen (or press Esc)"
                 : "Full screen (F11): Esc, Ctrl+W and the browser's other keys go to the shell"
             }
             className={`${full ? "" : "ml-auto "}flex items-center gap-1.5 text-[#a89984] hover:text-[#ebdbb2]`}
           >
             {full ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
             {full ? "Exit full screen" : "Full screen"}
-            <kbd className="font-mono text-[10px] opacity-60">F11</kbd>
+            {full ? null : <kbd className="font-mono text-[10px] opacity-60">F11</kbd>}
           </button>
         </>
       }

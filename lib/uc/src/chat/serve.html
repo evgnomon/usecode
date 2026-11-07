@@ -154,11 +154,11 @@ const label = () => {
   full.title = !on
     ? "Full screen (F11): Esc, Ctrl+W and the browser's other keys go to uc"
     : locked
-      ? "Leave full screen (F11, or hold Esc)"
+      ? "Every key goes to uc; leave full screen here or hold Esc"
       : !navigator.keyboard && navigator.brave
         // Brave's Shields take navigator.keyboard away (brave/brave-browser#50719).
-        ? "Leave full screen (F11 or Esc); Brave's Shields keep Esc: turn off fingerprint blocking for this site. Till then Ctrl+[ is Esc"
-        : "Leave full screen (F11 or Esc); this browser keeps Esc, Ctrl+[ is Esc for uc";
+        ? "Leave full screen (or press Esc); Brave's Shields keep Esc: turn off fingerprint blocking for this site. Till then Ctrl+[ is Esc"
+        : "Leave full screen (or press Esc); this browser keeps Esc, Ctrl+[ is Esc for uc";
 };
 
 // What would keep the lock from working, looked for once, as a tip until
@@ -207,10 +207,12 @@ async function toggle() {
   label();
 }
 full.addEventListener("click", toggle);
-// F11 is this full screen, the one with the keyboard locked, rather than the
-// browser's, which locks nothing. Caught before the terminal sees it.
+// F11 goes into this full screen, the one with the keyboard locked, rather
+// than the browser's, which locks nothing. Only into it: in full screen every
+// key is uc's, F11 too, and holding Esc is the one way out.
 addEventListener("keydown", e => {
   if (e.key !== "F11" || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
+  if (document.fullscreenElement) return;
   e.preventDefault();
   e.stopImmediatePropagation();
   toggle();
