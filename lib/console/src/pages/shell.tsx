@@ -8,7 +8,7 @@
 // workspace's cluster (lib/api's relay.rs).
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, RotateCcw } from "lucide-react";
+import { ArrowLeft, Maximize2, Minimize2, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { apiUrl, post, useMe } from "@/lib/api";
 import { navigate, useLocation, useTitle } from "@/lib/router";
@@ -28,6 +28,39 @@ const FONTS = [
   { url: icons, name: "CaskaydiaMono NF Icons", weight: 400 },
 ];
 
+// The Keyboard Lock API (Chrome, Edge, Opera), not in TypeScript's DOM types.
+type KeyboardLock = { lock(keys?: string[]): Promise<void>; unlock(): void };
+const keyboard = () => (navigator as Navigator & { keyboard?: KeyboardLock }).keyboard;
+
+/**
+ * Whether the page is full screen, and the way in and out. Browsers keep
+ * Ctrl+W, Ctrl+T, Ctrl+N and such to themselves, so a shell never sees them;
+ * the one way a page gets them is full screen with the keyboard locked. Then
+ * they all go to the shell, and holding Esc leaves.
+ */
+function useFullscreen(onChange: () => void) {
+  const [full, setFull] = useState(false);
+  useEffect(() => {
+    const changed = () => {
+      const now = Boolean(document.fullscreenElement);
+      setFull(now);
+      if (!now) keyboard()?.unlock();
+      onChange();
+    };
+    document.addEventListener("fullscreenchange", changed);
+    return () => document.removeEventListener("fullscreenchange", changed);
+  }, [onChange]);
+  const toggle = useCallback(async () => {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen().catch(() => {});
+      return;
+    }
+    await document.documentElement.requestFullscreen({ navigationUI: "hide" }).catch(() => {});
+    await keyboard()?.lock().catch(() => {});
+  }, []);
+  return { full, toggle };
+}
+
 export function Shell() {
   const { me } = useMe();
   const { query } = useLocation();
@@ -45,6 +78,20 @@ export function Shell() {
   const ended = useRef<string | null>(null);
   const [status, setStatus] = useState("Loading the terminal…");
   const [over, setOver] = useState<string | null>(null);
+  const refocus = useCallback(() => term.current?.focus(), []);
+  const { full, toggle } = useFullscreen(refocus);
+
+  // Out of full screen, Ctrl+W meant for the shell would close the tab: while
+  // the shell is open, the browser asks first.
+  useEffect(() => {
+    const guard = (e: BeforeUnloadEvent) => {
+      if (ended.current !== null || !term.current?.isPtyConnected()) return;
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", guard);
+    return () => window.removeEventListener("beforeunload", guard);
+  }, []);
 
   const end = useCallback((why: string) => {
     ended.current ??= why;
@@ -151,7 +198,24 @@ export function Shell() {
   }
 
   return (
-    <Frame title={name}>
+    <Frame
+      title={name}
+      actions={
+        <button
+          type="button"
+          onClick={() => void toggle()}
+          title={
+            full
+              ? "Leave full screen (or hold Esc)"
+              : "Full screen: Ctrl+W and the browser's other keys go to the shell"
+          }
+          className="ml-auto flex items-center gap-1.5 text-[#a89984] hover:text-[#ebdbb2]"
+        >
+          {full ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
+          {full ? "Exit full screen" : "Full screen"}
+        </button>
+      }
+    >
       <div ref={root} className="absolute inset-0 p-1.5" aria-label={`A shell in ${name}`} />
       {status ? <Note>{status}</Note> : null}
       {over ? (
@@ -168,7 +232,7 @@ export function Shell() {
 }
 
 /** The page: a thin bar with the way back, the terminal under it. */
-function Frame({ title, children }: { title: string; children: ReactNode }) {
+function Frame({ title, actions, children }: { title: string; actions?: ReactNode; children: ReactNode }) {
   return (
     <div className="flex h-svh flex-col bg-[#282828] text-[#d5c4a1]">
       <div className="flex h-9 shrink-0 items-center gap-3 border-b border-white/10 px-3 text-xs">
@@ -177,6 +241,7 @@ function Frame({ title, children }: { title: string; children: ReactNode }) {
           Workspaces
         </a>
         <span className="font-mono text-[#ebdbb2]">{title}</span>
+        {actions}
       </div>
       <div className="relative min-h-0 flex-1 overflow-hidden">{children}</div>
     </div>
