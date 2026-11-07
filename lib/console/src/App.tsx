@@ -26,7 +26,7 @@ export interface Page {
 
 // Keep in step with PAGES in server/app.ts.
 export const PAGES: Record<string, Page> = {
-  "/": { title: "usecode.dev, container for agents", render: () => <Home />, prerender: true },
+  "/": { title: "usecode.dev, intelligence without overhead", render: () => <Home />, prerender: true },
   "/pricing": { title: "Pricing · usecode.dev", render: () => <Pricing />, prerender: true },
   "/login": { title: "Log in · usecode.dev", render: () => <AuthForm key="login" mode="login" /> },
   "/signup": { title: "Sign up · usecode.dev", render: () => <AuthForm key="signup" mode="signup" /> },

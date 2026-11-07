@@ -1,7 +1,7 @@
 License-Identifier: HGL
 Copyright (C) The Usecode Authors (see AUTHORS)
 
-usecode - Container for agents
+usecode - Intelligence without overhead
 ==============================
 
 Use code! When your coding agent can run code, it solves problems better and

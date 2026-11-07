@@ -101,7 +101,7 @@ function Footer() {
   return (
     <footer className="border-t py-5 text-xs">
       <div className="wrap flex flex-wrap justify-between gap-4">
-        <span className="text-muted-foreground">usecode, container for agents</span>
+        <span className="text-muted-foreground">usecode, intelligence without overhead</span>
         <a href={REPO_URL} className="-my-1 inline-block py-1 text-primary hover:underline">
           Source on GitHub
         </a>
