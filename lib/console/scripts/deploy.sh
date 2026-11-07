@@ -34,12 +34,15 @@ echo "deploying $tag to https://$host (live now: ${live##*:})"
 ./scripts/push.sh "$image" "$tag" "$registry"
 ./scripts/k8s.sh deploy "$registry"
 
+# Quiet while it tries: a 502 or two while the ingress moves to the new pods
+# is normal. Only giving up is worth saying.
 for _ in $(seq 30); do
-    if curl -fsS -o /dev/null "https://$host/healthz"; then
+    if curl -fs -o /dev/null "https://$host/healthz"; then
         echo "https://$host is up on $tag"
         exit 0
     fi
     sleep 2
 done
+curl -fsS -o /dev/null "https://$host/healthz" || true
 echo "https://$host/healthz doesn't answer; see kubectl -n console logs deploy/console" >&2
 exit 1
