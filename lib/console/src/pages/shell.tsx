@@ -240,10 +240,10 @@ export function Shell() {
   const { full, locked, toggle } = useFullscreen(refocus);
   const { tip, dismiss } = useLockTip();
 
-  const add = useCallback((host: string, ws: string, typed?: string) => {
+  // A new shell takes its workspace's name ("dev", "dev 2"); rename it in the bar.
+  const add = useCallback((host: string, ws: string) => {
     const id = nextId++;
-    const name = shellName(typed);
-    setTabs((ts) => [...ts, name ? { host, ws, name, id } : { host, ws, id }]);
+    setTabs((ts) => [...ts, { host, ws, id }]);
     setActive(id);
     setPicking(false);
   }, []);
@@ -477,7 +477,7 @@ export function Shell() {
                   list={list}
                   error={error}
                   nameFor={(w) => nextDefault(w.host_id, w.name)}
-                  onPick={(w, name) => add(w.host_id, w.name, name)}
+                  onPick={(w) => add(w.host_id, w.name)}
                   onClose={() => pick(false)}
                 />
               </div>
@@ -505,7 +505,7 @@ export function Shell() {
                   list={list}
                   error={error}
                   nameFor={(w) => nextDefault(w.host_id, w.name)}
-                  onPick={(w, name) => add(w.host_id, w.name, name)}
+                  onPick={(w) => add(w.host_id, w.name)}
                 />
               </div>
             </div>
@@ -547,12 +547,10 @@ function Picker({
   error: string;
   /** What a shell in `w` is called unless you name it. */
   nameFor: (w: Workspace) => string;
-  onPick: (w: Workspace, name: string) => void;
+  onPick: (w: Workspace) => void;
   onClose?: () => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
-  const [name, setName] = useState("");
-  const open = list?.filter((w) => !noShell(w)) ?? [];
   useEffect(() => {
     if (!onClose) return;
     const away = (e: MouseEvent) => {
@@ -569,21 +567,6 @@ function Picker({
 
   return (
     <div ref={box} className="text-xs">
-      <label className="block px-2 pt-1.5 pb-2">
-        <span className="mb-1 block text-[11px] text-[#928374]">Name the new shell (optional)</span>
-        <input
-          autoFocus
-          value={name}
-          maxLength={SHELL_NAME_MAX}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => {
-            // With one workspace to pick, Enter opens the shell in it.
-            if (e.key === "Enter" && open.length === 1) onPick(open[0]!, name);
-          }}
-          placeholder={open.length === 1 ? `${nameFor(open[0]!)}, Enter opens it` : "build, logs, server…"}
-          className="w-full rounded border border-white/10 bg-[#1d2021] px-2 py-1 font-mono text-[#ebdbb2] outline-none placeholder:text-[#665c54] focus:border-[#d79921]/60"
-        />
-      </label>
       {error ? <p className="px-2 py-1.5 text-[#fb4934]">{error}</p> : null}
       {list === null && !error ? <p className="px-2 py-1.5 text-[#a89984]">Loading your workspaces…</p> : null}
       {list !== null && list.length === 0 ? (
@@ -602,8 +585,8 @@ function Picker({
             key={`${w.cluster_id || w.host_id}/${w.name}`}
             type="button"
             disabled={Boolean(why)}
-            onClick={() => onPick(w, name)}
-            title={why ?? `A shell in ${w.name}, as ${w.user || "you"}, called ${shellName(name) ?? nameFor(w)}`}
+            onClick={() => onPick(w)}
+            title={why ?? `A shell in ${w.name}, as ${w.user || "you"}, called ${nameFor(w)}; rename it in the bar`}
             className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
           >
             <SquareTerminal className="size-3.5 shrink-0 text-[#a89984]" />
