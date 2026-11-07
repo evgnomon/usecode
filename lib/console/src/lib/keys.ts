@@ -28,6 +28,7 @@ export const HOTKEYS: Hotkey[] = [
   { key: "h", label: "Home", href: "/" },
   { key: "p", label: "Pricing", href: "/pricing" },
   { key: "o", label: "Hosts", href: "/hosts", for: "members" },
+  { key: "w", label: "Workspaces", href: "/workspaces", for: "members" },
   { key: "a", label: "Account", href: "/account", for: "members" },
   { key: "l", label: "Log in", href: "/login", for: "visitors" },
   { key: "s", label: "Sign up", href: "/signup", for: "visitors" },

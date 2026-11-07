@@ -7,6 +7,7 @@ import { withApi } from "../server/app.js";
 import { load } from "../server/config.js";
 import { safeNext } from "../src/lib/safe-next.js";
 import { ago, duration, hostHealth, hostsPath, pageRange, type Host } from "../src/lib/hosts.js";
+import { endedWith, noShell, shellHref, shellSocketUrl, ticketPath, type Workspace } from "../src/lib/workspaces.js";
 
 test("a login only sends you somewhere on this site", () => {
   assert.equal(safeNext("/pricing"), "/pricing");
@@ -55,4 +56,29 @@ test("hosts read as online, failing or offline, with times people say", () => {
   assert.equal(pageRange(0, 50, 1000), "1–50 of 1,000");
   assert.equal(pageRange(950, 50, 1000), "951–1,000 of 1,000");
   assert.equal(pageRange(0, 0, 0), "none");
+});
+
+test("a shell is a page of its own, paid for with a ticket", () => {
+  const w: Workspace = {
+    name: "dev",
+    state: "running",
+    user: "ada",
+    image: "base",
+    host_id: "h-1",
+    host_name: "ctl-1",
+    cluster_id: "k1",
+    online: true,
+    connected: true,
+    last_seen_at: 0,
+  };
+  assert.equal(shellHref(w), "/shell?host=h-1&ws=dev");
+  assert.equal(ticketPath("h-1", "dev"), "/workspaces/h-1/dev/shell");
+  assert.equal(shellSocketUrl("https://api.usecode.dev", "a.b-c_d"), "wss://api.usecode.dev/workspaces/shell?ticket=a.b-c_d");
+  assert.equal(shellSocketUrl("http://localhost:8000", "t"), "ws://localhost:8000/workspaces/shell?ticket=t");
+  assert.equal(noShell(w), null);
+  assert.match(noShell({ ...w, state: "stopped" }) ?? "", /uc ws start dev/);
+  assert.match(noShell({ ...w, connected: false }) ?? "", /uc daemon install ctl-1/);
+  assert.match(noShell({ ...w, online: false, connected: false }) ?? "", /gone quiet/);
+  assert.equal(endedWith(0), "The shell exited.");
+  assert.equal(endedWith(130), "The shell exited with status 130.");
 });

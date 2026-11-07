@@ -24,7 +24,15 @@ function subscribe(listener: () => void) {
   };
 }
 
+/** Pages only ever loaded afresh, as the server sends them other headers (the shell's CSP). */
+const FRESH = ["/shell"];
+
 export function navigate(to: string, { replace = false } = {}) {
+  if (FRESH.includes(to.split("?", 1)[0] ?? "")) {
+    if (replace) location.replace(to);
+    else location.assign(to);
+    return;
+  }
   if (replace) history.replaceState(null, "", to);
   else history.pushState(null, "", to);
   window.scrollTo(0, 0);

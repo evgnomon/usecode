@@ -86,10 +86,28 @@ test("the account is for the logged in, the login for the others", async () => {
   assert.equal((await get("/account", "uc_session=good")).status, 200);
   assert.equal((await get("/hosts")).headers.get("location"), "/login?next=/hosts");
   assert.equal((await get("/hosts", "uc_session=good")).status, 200);
+  assert.equal((await get("/workspaces")).headers.get("location"), "/login?next=/workspaces");
+  assert.equal(
+    (await get("/shell?host=h&ws=dev")).headers.get("location"),
+    "/login?next=/shell%3Fhost%3Dh%26ws%3Ddev",
+    "back to the same shell after logging in",
+  );
   const member = await get("/login", "uc_session=good");
   assert.equal(member.status, 302);
   assert.equal(member.headers.get("location"), "/account");
   assert.equal((await get("/signup")).status, 200);
+});
+
+test("only the shell's page may run WebAssembly and inline styles", async () => {
+  const csp = async (path: string) => (await get(path, "uc_session=good")).headers.get("content-security-policy") ?? "";
+  const shell = await csp("/shell?host=h&ws=dev");
+  assert.match(shell, /script-src 'self' 'wasm-unsafe-eval'/);
+  assert.match(shell, /style-src 'self' 'unsafe-inline'/);
+  assert.match(shell, /connect-src 'self' http:\/\/api.test ws:\/\/api.test/);
+  for (const path of ["/", "/workspaces", "/hosts"]) {
+    const strict = await csp(path);
+    assert.doesNotMatch(strict, /wasm-unsafe-eval|unsafe-inline/, path);
+  }
 });
 
 test("when the API is down, nobody is sent anywhere", async () => {

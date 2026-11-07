@@ -213,6 +213,12 @@ pub struct HostRow {
     pub last_ip: Option<String>,
     pub last_seen_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
+    /// The workspaces it last reported, as `[{name, state, user, image}]`.
+    pub workspaces: Json<Value>,
+    /// The uid of its cluster's kube-system, empty when it isn't a controller.
+    pub cluster_id: String,
+    /// The API instance its relay socket is open to, if it is.
+    pub relay_url: Option<String>,
 }
 
 /// What a host says about itself when it registers.
@@ -283,6 +289,9 @@ pub struct Heartbeat<'a> {
     pub modules: &'a Value,
     pub uptime_seconds: Option<i64>,
     pub ip: Option<&'a str>,
+    /// The workspaces and the cluster's id, from a controller; `None` from
+    /// a daemon that doesn't report them, which leaves them as they were.
+    pub workspaces: Option<(&'a Value, &'a str)>,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -393,7 +402,7 @@ pub struct NewServer<'a> {
 const SERVER_COLUMNS: &str = "id, user_id, provider, provider_server_id, type, name, status, \
                               public_ip4, public_ip6, created_at, updated_at";
 const HOST_COLUMNS: &str = "id, user_id, name, version, arch, os, modules, uptime_seconds, \
-                            last_ip, last_seen_at, created_at";
+                            last_ip, last_seen_at, created_at, workspaces, cluster_id, relay_url";
 const TASK_COLUMNS: &str =
     "id, user_id, kind, assignee, state, resources, payload, error, created_at, updated_at";
 
@@ -1316,7 +1325,9 @@ impl Store {
         let pool = self.db.pool(&partition).await?;
         Ok(sqlx::query_as(sqlx::AssertSqlSafe(format!(
             "UPDATE hosts SET version = $2, modules = $3, uptime_seconds = $4,
-                              last_ip = COALESCE($5, last_ip), last_seen_at = $6
+                              last_ip = COALESCE($5, last_ip), last_seen_at = $6,
+                              workspaces = COALESCE($7, workspaces),
+                              cluster_id = COALESCE($8, cluster_id)
              WHERE secret_hash = $1
              RETURNING {HOST_COLUMNS}"
         )))
@@ -1326,7 +1337,98 @@ impl Store {
         .bind(beat.uptime_seconds)
         .bind(beat.ip)
         .bind(Utc::now())
+        .bind(beat.workspaces.map(|(w, _)| Json(w)))
+        .bind(beat.workspaces.map(|(_, c)| c))
         .fetch_optional(&pool)
+        .await?)
+    }
+
+    /// The host whose secret this is, for its relay socket.
+    pub async fn host_by_secret(&self, secret: &str) -> Result<Option<HostRow>> {
+        let partition = self.owner_partition(secret).await?;
+        let pool = self.db.pool(&partition).await?;
+        Ok(sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "SELECT {HOST_COLUMNS} FROM hosts WHERE secret_hash = $1"
+        )))
+        .bind(hash(secret))
+        .fetch_optional(&pool)
+        .await?)
+    }
+
+    /// One of the user's hosts.
+    pub async fn get_host(&self, user_id: &Uuid, host_id: &Uuid) -> Result<Option<HostRow>> {
+        let pool = self.pool_for_user(user_id).await?;
+        Ok(sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "SELECT {HOST_COLUMNS} FROM hosts WHERE id = $1 AND user_id = $2"
+        )))
+        .bind(host_id)
+        .bind(user_id)
+        .fetch_optional(&pool)
+        .await?)
+    }
+
+    /// The workspaces a host reports over its relay socket, between
+    /// heartbeats; it is heard from, too.
+    pub async fn set_host_workspaces(
+        &self,
+        user_id: &Uuid,
+        host_id: &Uuid,
+        workspaces: &Value,
+        cluster_id: &str,
+    ) -> Result<()> {
+        let pool = self.pool_for_user(user_id).await?;
+        sqlx::query(
+            "UPDATE hosts SET workspaces = $3, cluster_id = $4, last_seen_at = $5
+             WHERE id = $1 AND user_id = $2",
+        )
+        .bind(host_id)
+        .bind(user_id)
+        .bind(Json(workspaces))
+        .bind(cluster_id)
+        .bind(Utc::now())
+        .execute(&pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Say which API instance the host's relay socket is open to. Clearing
+    /// it (`url` `None`) only clears `was`, so an instance the host left
+    /// doesn't wipe out the one it went to.
+    pub async fn set_host_relay(
+        &self,
+        user_id: &Uuid,
+        host_id: &Uuid,
+        url: Option<&str>,
+        was: Option<&str>,
+    ) -> Result<()> {
+        let pool = self.pool_for_user(user_id).await?;
+        sqlx::query(
+            "UPDATE hosts SET relay_url = $3
+             WHERE id = $1 AND user_id = $2 AND ($4::VARCHAR IS NULL OR relay_url = $4)",
+        )
+        .bind(host_id)
+        .bind(user_id)
+        .bind(url)
+        .bind(was)
+        .execute(&pool)
+        .await?;
+        Ok(())
+    }
+
+    /// The user's hosts that report workspaces, by name.
+    pub async fn hosts_with_workspaces(
+        &self,
+        partition: &Partition,
+        user_id: &Uuid,
+    ) -> Result<Vec<HostRow>> {
+        let pool = self.db.pool(partition).await?;
+        Ok(sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "SELECT {HOST_COLUMNS} FROM hosts
+             WHERE user_id = $1 AND jsonb_array_length(workspaces) > 0
+             ORDER BY name, id"
+        )))
+        .bind(user_id)
+        .fetch_all(&pool)
         .await?)
     }
 

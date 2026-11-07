@@ -173,6 +173,56 @@ pub struct HeartbeatIn {
     pub uptime_seconds: Option<i64>,
     #[serde(default)]
     pub modules: Vec<HostModuleStatus>,
+    /// The workspaces of the cluster, from a controller; left out by a
+    /// host that isn't one, or a daemon too old to say.
+    #[serde(default)]
+    pub workspaces: Option<Vec<WorkspaceIn>>,
+    /// The uid of the cluster's kube-system namespace.
+    #[serde(default)]
+    pub cluster_id: Option<String>,
+}
+
+/// One workspace, as a controller reports it.
+#[derive(Serialize, Deserialize, Clone)]
+pub struct WorkspaceIn {
+    pub name: String,
+    /// running, starting or stopped.
+    #[serde(default)]
+    pub state: String,
+    /// Who you are in there.
+    #[serde(default)]
+    pub user: String,
+    #[serde(default)]
+    pub image: String,
+}
+
+#[derive(Serialize)]
+pub struct WorkspaceOut {
+    pub name: String,
+    pub state: String,
+    pub user: String,
+    pub image: String,
+    /// The host that reports it, where its shells go through.
+    pub host_id: String,
+    pub host_name: String,
+    pub cluster_id: String,
+    /// The host is heard from.
+    pub online: bool,
+    /// Its relay socket is open: a shell can be had.
+    pub connected: bool,
+    pub last_seen_at: f64,
+}
+
+#[derive(Serialize)]
+pub struct WorkspaceListOut {
+    pub workspaces: Vec<WorkspaceOut>,
+}
+
+#[derive(Serialize)]
+pub struct ShellTicketOut {
+    /// Good once, for a minute: `GET /workspaces/shell?ticket=...`.
+    pub ticket: String,
+    pub expires_at: f64,
 }
 
 #[derive(Serialize)]

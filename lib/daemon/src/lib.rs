@@ -27,6 +27,7 @@ pub mod keys;
 pub mod kube;
 pub mod net;
 pub mod register;
+pub mod relay;
 pub mod reload;
 pub mod remote;
 pub mod setup;

@@ -16,11 +16,14 @@ import { join } from "node:path";
 import type { Config } from "./config.js";
 
 /** The pages the app in src/ has; any other path gets it with a 404. */
-export const PAGES = ["/", "/pricing", "/login", "/signup", "/forgot", "/account", "/hosts"];
+export const PAGES = ["/", "/pricing", "/login", "/signup", "/forgot", "/account", "/hosts", "/workspaces", "/shell"];
 
 /** Pages for the logged in, and the ones for the logged out. */
-const MEMBERS = ["/account", "/hosts"];
+const MEMBERS = ["/account", "/hosts", "/workspaces", "/shell"];
 const VISITORS = ["/login", "/signup", "/forgot"];
+
+/** The page with a terminal on it. */
+export const SHELL = "/shell";
 
 /** The <meta> the pages read the API's address from (src/lib/api.tsx). */
 export const API_META = "uc-api";
@@ -82,16 +85,23 @@ export function createApp(config: Config, clientDir: string, fetchApi: Fetch = f
     return c.body(await res.text(), res.status as 200, { "content-type": "application/json" });
   });
 
-  app.use(
+  // The shell's terminal (restty) runs WebAssembly and puts <style>s of
+  // its own in the page, so that page, and only it, allows both. It is
+  // only ever loaded afresh, never reached from another page in place.
+  const api = new URL(config.apiUrl).origin;
+  const csp = (shell: boolean) =>
     secureHeaders({
       contentSecurityPolicy: {
         defaultSrc: ["'self'"],
-        connectSrc: ["'self'", new URL(config.apiUrl).origin],
+        connectSrc: ["'self'", api, api.replace(/^http/, "ws")],
         formAction: ["'self'"],
         frameAncestors: ["'none'"],
+        ...(shell ? { scriptSrc: ["'self'", "'wasm-unsafe-eval'"], styleSrc: ["'self'", "'unsafe-inline'"] } : {}),
       },
-    }),
-  );
+    });
+  const strict = csp(false);
+  const shell = csp(true);
+  app.use((c, next) => (c.req.path === SHELL ? shell : strict)(c, next));
 
   // The pages. Vite names its bundles by their content, so they keep.
   app.get("/assets/*", serveStatic({ root: clientDir, onFound: (_, c) => c.header("cache-control", "public, max-age=31536000, immutable") }));
@@ -100,7 +110,13 @@ export function createApp(config: Config, clientDir: string, fetchApi: Fetch = f
     if ((await loggedIn(config, c.req.header("cookie"), fetchApi)) === when) return c.redirect(where);
     await next();
   };
-  for (const path of MEMBERS) app.get(path, sendTo(`/login?next=${path}`, false));
+  for (const path of MEMBERS) {
+    app.get(path, async (c, next) => {
+      // Back to the same place after logging in, the query (which shell) too.
+      const search = new URL(c.req.url).search;
+      return sendTo(`/login?next=${path}${search ? encodeURIComponent(search) : ""}`, false)(c, next);
+    });
+  }
   for (const path of VISITORS) app.get(path, sendTo("/account", true));
 
   // A prerendered page if there is one, else the app renders it in the browser.

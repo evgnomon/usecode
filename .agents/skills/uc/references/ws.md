@@ -44,6 +44,13 @@ the agent, run things there with `ssh dev 'command'` or
 
 `down --purge` deletes everything in the home: always `ask: true`.
 
+A shell from the browser: once the cluster's controllers call home
+(`uc daemon register`) with a usecoded that has the `relay` module, the
+console's Workspaces page (https://usecode.dev/workspaces) lists every
+workspace with a Shell button, logged in as its user. The daemon calls out
+to the API and the shell rides that socket, so nothing is exposed. A host
+that says it "isn't connected for shells" wants `uc daemon install HOST`.
+
 ## uc forward
 
 The cluster's Services on localhost, all of a namespace at once. It keeps

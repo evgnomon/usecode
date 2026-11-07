@@ -19,6 +19,7 @@ mod model_process;
 mod models;
 mod otp;
 mod providers;
+mod relay;
 mod routes;
 mod schema;
 mod server_tasks;
@@ -55,6 +56,8 @@ pub struct App {
     pub mailer: mail::Mailer,
     pub limits: accounts::Limits,
     pub http: reqwest::Client,
+    /// The hosts' relay sockets and the shells riding them, on this instance.
+    pub relay: relay::Hub,
 }
 
 impl App {
@@ -148,7 +151,10 @@ async fn serve(settings: Settings) -> Result<()> {
     let db = Arc::new(Db::connect(&settings).await?);
     db.seed_shard_ranges().await?;
 
+    let relay = relay::Hub::new(relay::internal_url(&settings).await);
+    tracing::info!("Other instances reach this one at {}", relay.internal_url);
     let app = Arc::new(App {
+        relay,
         cipher: crypto::Cipher::new(&settings.secret_key),
         store: Store::new(db.clone()),
         chat: chat_store::ChatStore::default(),

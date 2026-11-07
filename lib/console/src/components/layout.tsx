@@ -69,6 +69,7 @@ function Header() {
           {me?.user ? (
             <>
               <NavLink href="/hosts">Hosts</NavLink>
+              <NavLink href="/workspaces">Workspaces</NavLink>
               <NavLink href="/account">Account</NavLink>
               <button type="button" onClick={logout} className="cursor-pointer py-1 text-[13px] text-muted-foreground transition-colors hover:text-foreground">
                 Log out

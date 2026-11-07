@@ -3,8 +3,9 @@
 
 //! Calling home, as a daemon module: registering the host with
 //! usecode.dev once `uc daemon register` delivered a token, then a
-//! heartbeat every few minutes with the daemon's version, the uptime and
-//! how every other module did. See [`crate::callhome`].
+//! heartbeat every few minutes with the daemon's version, the uptime,
+//! how every other module did and, from a Kubernetes controller, its
+//! cluster's workspaces. See [`crate::callhome`].
 //!
 //! Without a token or a registration it does nothing. A token the API
 //! turns down (used, or it ran out) is dropped, and so is the
@@ -46,7 +47,7 @@ impl Module for CallHome {
             return Ok(());
         }
 
-        match callhome::heartbeat(&state, &super::statuses())? {
+        match callhome::heartbeat(&state, &super::statuses(), crate::relay::report())? {
             Answer::Ok(seconds) => {
                 let changed = seconds != state.heartbeat_seconds;
                 let state = State {
