@@ -32,6 +32,22 @@ const FONTS = [
 type KeyboardLock = { lock(keys?: string[]): Promise<void>; unlock(): void };
 const keyboard = () => (navigator as Navigator & { keyboard?: KeyboardLock }).keyboard;
 
+/**
+ * Brave's Shields take `navigator.keyboard` away, against fingerprinting
+ * (brave/brave-browser#50719), so there is nothing to lock with until
+ * fingerprinting protection is off for the site.
+ */
+const shieldsHideLock = () =>
+  !keyboard() && Boolean((navigator as Navigator & { brave?: unknown }).brave);
+
+/** What the bar says in full screen. */
+const fullNote = (locked: boolean) =>
+  locked
+    ? "Esc and Ctrl+W go to the shell; hold Esc to leave"
+    : shieldsHideLock()
+      ? "Brave's Shields keep Esc: turn off fingerprint blocking for this site, then full screen again. Till then Ctrl+[ is Esc"
+      : "This browser keeps Esc to leave full screen; Ctrl+[ is Esc for the shell";
+
 /** Locks the keyboard; whether it took. */
 const lockKeys = (kb: KeyboardLock | undefined) =>
   kb ? kb.lock().then(() => true, () => false) : Promise.resolve(false);
@@ -226,9 +242,7 @@ export function Shell() {
         <>
           {full ? (
             <span className="ml-auto text-[#a89984]" role="status">
-              {locked
-                ? "Esc and Ctrl+W go to the shell; hold Esc to leave"
-                : "This browser keeps Esc to leave full screen; Ctrl+[ is Esc for the shell"}
+              {fullNote(locked)}
             </span>
           ) : null}
           <button

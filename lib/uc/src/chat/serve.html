@@ -147,7 +147,10 @@ const label = () => {
     ? "Full screen: Esc, Ctrl+W and the browser's other keys go to uc"
     : locked
       ? "Leave full screen (or hold Esc)"
-      : "Leave full screen (or press Esc); this browser keeps Esc, Ctrl+[ is Esc for uc";
+      : !navigator.keyboard && navigator.brave
+        // Brave's Shields take navigator.keyboard away (brave/brave-browser#50719).
+        ? "Leave full screen (or press Esc); Brave's Shields keep Esc: turn off fingerprint blocking for this site. Till then Ctrl+[ is Esc"
+        : "Leave full screen (or press Esc); this browser keeps Esc, Ctrl+[ is Esc for uc";
 };
 full.addEventListener("click", async () => {
   if (document.fullscreenElement) {
