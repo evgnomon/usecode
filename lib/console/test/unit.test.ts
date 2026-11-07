@@ -81,7 +81,7 @@ test("a shell is a page of its own, paid for with a ticket", () => {
     connected: true,
     last_seen_at: 0,
   };
-  assert.equal(shellHref(w), "/shell?host=h-1&ws=dev");
+  assert.equal(shellHref(w), "/workspaces?host=h-1&ws=dev");
   assert.equal(ticketPath("h-1", "dev"), "/workspaces/h-1/dev/shell");
   assert.equal(shellSocketUrl("https://api.usecode.dev", "a.b-c_d"), "wss://api.usecode.dev/workspaces/shell?ticket=a.b-c_d");
   assert.equal(shellSocketUrl("http://localhost:8000", "t"), "ws://localhost:8000/workspaces/shell?ticket=t");
@@ -100,12 +100,12 @@ test("the shells page's address names its shells, the old one-shell address too"
     { host: "h-1", ws: "dev" },
     { host: "h-2", ws: "api" },
   ];
-  assert.equal(shellsHref(two, 1), "/shell?host=h-1&ws=dev&host=h-2&ws=api&at=1");
-  assert.equal(shellsHref(two, 0), "/shell?host=h-1&ws=dev&host=h-2&ws=api");
+  assert.equal(shellsHref(two, 1), "/workspaces?host=h-1&ws=dev&host=h-2&ws=api&at=1");
+  assert.equal(shellsHref(two, 0), "/workspaces?host=h-1&ws=dev&host=h-2&ws=api");
   assert.deepEqual(shellsIn(q("host=h-1&ws=dev&host=h-2&ws=api&at=1")), { shells: two, at: 1 });
   assert.equal(shellsIn(q("host=h-1&ws=dev&at=7")).at, 0, "an `at` past the end is the first");
   assert.deepEqual(shellsIn(q("host=h-1")).shells, [], "a host without a workspace is no shell");
-  assert.equal(shellsHref([], 0), "/shell");
+  assert.equal(shellsHref([], 0), "/workspaces");
 });
 
 test("a shell keeps the name you gave it in the address", () => {
@@ -115,8 +115,8 @@ test("a shell keeps the name you gave it in the address", () => {
     { host: "h-1", ws: "dev", name: "logs" },
   ];
   const href = shellsHref(named, 1);
-  assert.equal(href, "/shell?host=h-1&ws=dev&name=&host=h-1&ws=dev&name=logs&at=1");
-  assert.deepEqual(shellsIn(q(href.slice("/shell?".length))), { shells: named, at: 1 });
+  assert.equal(href, "/workspaces?host=h-1&ws=dev&name=&host=h-1&ws=dev&name=logs&at=1");
+  assert.deepEqual(shellsIn(q(href.slice("/workspaces?".length))), { shells: named, at: 1 });
   assert.deepEqual(shellsIn(q("host=h-1&ws=dev&name=%20%20")).shells, [{ host: "h-1", ws: "dev" }], "a blank name is none");
   assert.equal(shellName("  build  "), "build");
   assert.equal(shellName(""), undefined);

@@ -58,7 +58,8 @@ function Header() {
     navigate("/");
   };
   return (
-    <header className="sticky top-0 z-10 border-b bg-background">
+    // Out of the way while the shells page is full screen.
+    <header className="sticky top-0 z-10 shrink-0 border-b bg-background [:root:fullscreen_&]:hidden">
       <div className="wrap flex min-h-13 flex-wrap items-center justify-between gap-4 py-2 sm:py-0">
         <Link href="/" className="flex items-center gap-2 py-1 font-medium">
           <img src="/icon.svg" alt="" width={22} height={22} className="size-5.5 rounded-[5px]" />
@@ -124,6 +125,16 @@ export function Layout({ children }: { children: ReactNode }) {
       <Header />
       <main className="flex-1">{children}</main>
       <Footer />
+    </div>
+  );
+}
+
+/** A page filling the window under the header, as the shells do: no footer, no shortcut keys. */
+export function FillLayout({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex h-svh flex-col">
+      <Header />
+      <main className="min-h-0 flex-1">{children}</main>
     </div>
   );
 }

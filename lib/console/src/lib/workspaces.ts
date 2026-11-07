@@ -28,7 +28,7 @@ export type WorkspaceList = { workspaces: Workspace[] };
 
 /** The console's page with a shell in `w`. */
 export function shellHref(w: Pick<Workspace, "host_id" | "name">): string {
-  return `/shell?${new URLSearchParams({ host: w.host_id, ws: w.name })}`;
+  return `/workspaces?${new URLSearchParams({ host: w.host_id, ws: w.name })}`;
 }
 
 /**
@@ -47,7 +47,7 @@ export function shellName(typed: string | null | undefined): string | undefined 
 }
 
 /**
- * The shells a /shell address names, in order, and which one is in front:
+ * The shells a /workspaces address names, in order, and which one is in front:
  * `host` and `ws` pairs, as many as there are, a `name` for each when any
  * has one (blank for those without), and `at`, the index of the one in
  * front (the first when there's no `at`).
@@ -66,7 +66,7 @@ export function shellsIn(query: URLSearchParams): { shells: ShellRef[]; at: numb
   return { shells, at: Number.isInteger(at) && at >= 0 && at < shells.length ? at : 0 };
 }
 
-/** The /shell address with `shells` open and the one at `at` in front. */
+/** The /workspaces address with `shells` open and the one at `at` in front. */
 export function shellsHref(shells: ShellRef[], at: number): string {
   const q = new URLSearchParams();
   const named = shells.some((s) => s.name);
@@ -77,7 +77,7 @@ export function shellsHref(shells: ShellRef[], at: number): string {
   }
   if (at > 0 && at < shells.length) q.set("at", String(at));
   const s = q.toString();
-  return s ? `/shell?${s}` : "/shell";
+  return s ? `/workspaces?${s}` : "/workspaces";
 }
 
 /** The API path that hands out a ticket for a shell in `name` on `host`. */

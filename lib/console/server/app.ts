@@ -16,14 +16,17 @@ import { join } from "node:path";
 import type { Config } from "./config.js";
 
 /** The pages the app in src/ has; any other path gets it with a 404. */
-export const PAGES = ["/", "/pricing", "/login", "/signup", "/forgot", "/account", "/hosts", "/workspaces", "/shell"];
+export const PAGES = ["/", "/pricing", "/login", "/signup", "/forgot", "/account", "/hosts", "/workspaces"];
 
 /** Pages for the logged in, and the ones for the logged out. */
-const MEMBERS = ["/account", "/hosts", "/workspaces", "/shell"];
+const MEMBERS = ["/account", "/hosts", "/workspaces"];
 const VISITORS = ["/login", "/signup", "/forgot"];
 
-/** The page with a terminal on it. */
-export const SHELL = "/shell";
+/** The page with the terminals on it: your workspaces and their shells. */
+export const SHELL = "/workspaces";
+
+/** Where the shells were before they moved in with the workspaces. */
+const OLD_SHELL = "/shell";
 
 /** The <meta> the pages read the API's address from (src/lib/api.tsx). */
 export const API_META = "uc-api";
@@ -110,6 +113,8 @@ export function createApp(config: Config, clientDir: string, fetchApi: Fetch = f
     if ((await loggedIn(config, c.req.header("cookie"), fetchApi)) === when) return c.redirect(where);
     await next();
   };
+  // Old links to the shells, the shells they named with them.
+  app.get(OLD_SHELL, (c) => c.redirect(`${SHELL}${new URL(c.req.url).search}`, 301));
   for (const path of MEMBERS) {
     app.get(path, async (c, next) => {
       // Back to the same place after logging in, the query (which shell) too.
