@@ -31,20 +31,36 @@ export function shellHref(w: Pick<Workspace, "host_id" | "name">): string {
   return `/shell?${new URLSearchParams({ host: w.host_id, ws: w.name })}`;
 }
 
-/** A shell the shells page has open: which workspace, on which host. */
-export type ShellRef = { host: string; ws: string };
+/**
+ * A shell the shells page has open: which workspace, on which host, and the
+ * name you gave it, if you did.
+ */
+export type ShellRef = { host: string; ws: string; name?: string };
+
+/** The longest name a shell takes. */
+export const SHELL_NAME_MAX = 64;
+
+/** A name as typed, made one to keep: trimmed and cut short; none when blank. */
+export function shellName(typed: string | null | undefined): string | undefined {
+  const name = (typed ?? "").trim().slice(0, SHELL_NAME_MAX);
+  return name || undefined;
+}
 
 /**
  * The shells a /shell address names, in order, and which one is in front:
- * `host` and `ws` pairs, as many as there are, and `at`, the index of the
- * one in front (the first when there's no `at`).
+ * `host` and `ws` pairs, as many as there are, a `name` for each when any
+ * has one (blank for those without), and `at`, the index of the one in
+ * front (the first when there's no `at`).
  */
 export function shellsIn(query: URLSearchParams): { shells: ShellRef[]; at: number } {
   const hosts = query.getAll("host");
-  const names = query.getAll("ws");
+  const wss = query.getAll("ws");
+  const names = query.getAll("name");
   const shells: ShellRef[] = [];
-  for (let i = 0; i < Math.min(hosts.length, names.length); i++) {
-    if (hosts[i] && names[i]) shells.push({ host: hosts[i]!, ws: names[i]! });
+  for (let i = 0; i < Math.min(hosts.length, wss.length); i++) {
+    if (!hosts[i] || !wss[i]) continue;
+    const name = shellName(names[i]);
+    shells.push(name ? { host: hosts[i]!, ws: wss[i]!, name } : { host: hosts[i]!, ws: wss[i]! });
   }
   const at = Number.parseInt(query.get("at") ?? "0", 10);
   return { shells, at: Number.isInteger(at) && at >= 0 && at < shells.length ? at : 0 };
@@ -53,9 +69,11 @@ export function shellsIn(query: URLSearchParams): { shells: ShellRef[]; at: numb
 /** The /shell address with `shells` open and the one at `at` in front. */
 export function shellsHref(shells: ShellRef[], at: number): string {
   const q = new URLSearchParams();
+  const named = shells.some((s) => s.name);
   for (const s of shells) {
     q.append("host", s.host);
     q.append("ws", s.ws);
+    if (named) q.append("name", s.name ?? "");
   }
   if (at > 0 && at < shells.length) q.set("at", String(at));
   const s = q.toString();

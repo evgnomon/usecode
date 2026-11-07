@@ -11,6 +11,7 @@ import {
   endedWith,
   noShell,
   shellHref,
+  shellName,
   shellsHref,
   shellsIn,
   shellSocketUrl,
@@ -105,4 +106,19 @@ test("the shells page's address names its shells, the old one-shell address too"
   assert.equal(shellsIn(q("host=h-1&ws=dev&at=7")).at, 0, "an `at` past the end is the first");
   assert.deepEqual(shellsIn(q("host=h-1")).shells, [], "a host without a workspace is no shell");
   assert.equal(shellsHref([], 0), "/shell");
+});
+
+test("a shell keeps the name you gave it in the address", () => {
+  const q = (s: string) => new URLSearchParams(s);
+  const named = [
+    { host: "h-1", ws: "dev" },
+    { host: "h-1", ws: "dev", name: "logs" },
+  ];
+  const href = shellsHref(named, 1);
+  assert.equal(href, "/shell?host=h-1&ws=dev&name=&host=h-1&ws=dev&name=logs&at=1");
+  assert.deepEqual(shellsIn(q(href.slice("/shell?".length))), { shells: named, at: 1 });
+  assert.deepEqual(shellsIn(q("host=h-1&ws=dev&name=%20%20")).shells, [{ host: "h-1", ws: "dev" }], "a blank name is none");
+  assert.equal(shellName("  build  "), "build");
+  assert.equal(shellName(""), undefined);
+  assert.equal(shellName("x".repeat(100))?.length, 64);
 });

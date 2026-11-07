@@ -11,7 +11,7 @@
 // The address names the open shells, so a reload opens them again.
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, Maximize2, Minimize2, PanelLeft, Plus, RotateCcw, SquareTerminal, X } from "lucide-react";
+import { ArrowLeft, Maximize2, Minimize2, PanelLeft, Pencil, Plus, RotateCcw, SquareTerminal, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dot, type State } from "@/components/console";
 import { apiUrl, get, post, useMe } from "@/lib/api";
@@ -20,6 +20,8 @@ import { takeShells } from "@/lib/shells";
 import {
   endedWith,
   noShell,
+  SHELL_NAME_MAX,
+  shellName,
   shellsHref,
   shellsIn,
   shellSocketUrl,
@@ -238,12 +240,27 @@ export function Shell() {
   const { full, locked, toggle } = useFullscreen(refocus);
   const { tip, dismiss } = useLockTip();
 
-  const add = useCallback((host: string, ws: string) => {
+  const add = useCallback((host: string, ws: string, typed?: string) => {
     const id = nextId++;
-    setTabs((ts) => [...ts, { host, ws, id }]);
+    const name = shellName(typed);
+    setTabs((ts) => [...ts, name ? { host, ws, name, id } : { host, ws, id }]);
     setActive(id);
     setPicking(false);
   }, []);
+
+  // The shell being renamed, if one is.
+  const [editing, setEditing] = useState<number | null>(null);
+  const rename = useCallback(
+    (id: number, typed: string | null) => {
+      setEditing(null);
+      if (typed !== null) {
+        const name = shellName(typed);
+        setTabs((ts) => ts.map((t) => (t.id === id ? (({ name: _, ...rest }) => (name ? { ...rest, name } : rest))(t) : t)));
+      }
+      refocus();
+    },
+    [refocus],
+  );
 
   const close = useCallback((id: number) => {
     setTabs((ts) => ts.filter((t) => t.id !== id));
@@ -300,15 +317,24 @@ export function Shell() {
 
   if (!me?.user) return null;
 
-  // Two shells in the same workspace: the second is "dev 2".
+  // The name you gave a shell, else its workspace's: two shells in the same
+  // workspace, the second is "dev 2".
+  const defaults = new Map<number, string>();
   const labels = new Map<number, string>();
   const seen = new Map<string, number>();
   for (const t of tabs) {
     const key = `${t.host}/${t.ws}`;
     const n = (seen.get(key) ?? 0) + 1;
     seen.set(key, n);
-    labels.set(t.id, n > 1 ? `${t.ws} ${n}` : t.ws);
+    const plain = n > 1 ? `${t.ws} ${n}` : t.ws;
+    defaults.set(t.id, plain);
+    labels.set(t.id, t.name ?? plain);
   }
+  // What a new shell in `ws` is called when you don't name it.
+  const nextDefault = (host: string, ws: string) => {
+    const n = (seen.get(`${host}/${ws}`) ?? 0) + 1;
+    return n > 1 ? `${ws} ${n}` : ws;
+  };
 
   return (
     <div className="flex h-svh flex-col bg-[#282828] text-[#d5c4a1]">
@@ -326,8 +352,27 @@ export function Shell() {
           <ArrowLeft className="size-3.5" />
           Workspaces
         </a>
-        <span className="truncate font-mono text-[#ebdbb2]">{front ? labels.get(front.id) : "Shells"}</span>
-        {front && hostName(front.host) ? <span className="truncate text-[#a89984]">on {hostName(front.host)}</span> : null}
+        {front && editing === front.id && navHidden ? (
+          <NameInput value={front.name ?? ""} placeholder={defaults.get(front.id) ?? front.ws} onDone={(n) => rename(front.id, n)} />
+        ) : front ? (
+          <button
+            type="button"
+            onDoubleClick={() => setEditing(front.id)}
+            title="Double-click to rename this shell"
+            className="truncate font-mono text-[#ebdbb2]"
+          >
+            {labels.get(front.id)}
+          </button>
+        ) : (
+          <span className="truncate font-mono text-[#ebdbb2]">Shells</span>
+        )}
+        {front && (front.name || hostName(front.host)) ? (
+          <span className="truncate text-[#a89984]">
+            {front.name ? front.ws : null}
+            {front.name && hostName(front.host) ? " " : null}
+            {hostName(front.host) ? `on ${hostName(front.host)}` : null}
+          </span>
+        ) : null}
         {full ? (
           <span className="ml-auto truncate text-[#a89984]" role="status">
             {fullNote(locked)}
@@ -377,21 +422,42 @@ export function Shell() {
                       t.id === active ? "bg-white/10 text-[#ebdbb2]" : "text-[#d5c4a1] hover:bg-white/5"
                     }`}
                   >
-                    <button
-                      type="button"
-                      onClick={() => show(t.id)}
-                      aria-current={t.id === active ? "page" : undefined}
-                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                      title={lives[t.id]?.phase === "over" ? (lives[t.id] as { why: string }).why : undefined}
-                    >
-                      <Dot state={dotOf(lives[t.id])} />
-                      <span className="min-w-0">
-                        <span className="block truncate font-mono">{labels.get(t.id)}</span>
-                        {hostName(t.host) ? (
-                          <span className="block truncate text-[11px] text-[#928374]">{hostName(t.host)}</span>
-                        ) : null}
-                      </span>
-                    </button>
+                    {editing === t.id ? (
+                      <div className="flex min-w-0 flex-1 items-center gap-2">
+                        <Dot state={dotOf(lives[t.id])} />
+                        <NameInput value={t.name ?? ""} placeholder={defaults.get(t.id) ?? t.ws} onDone={(n) => rename(t.id, n)} />
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => show(t.id)}
+                        onDoubleClick={() => setEditing(t.id)}
+                        aria-current={t.id === active ? "page" : undefined}
+                        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                        title={lives[t.id]?.phase === "over" ? (lives[t.id] as { why: string }).why : "Double-click to rename"}
+                      >
+                        <Dot state={dotOf(lives[t.id])} />
+                        <span className="min-w-0">
+                          <span className="block truncate font-mono">{labels.get(t.id)}</span>
+                          {t.name || hostName(t.host) ? (
+                            <span className="block truncate text-[11px] text-[#928374]">
+                              {[t.name ? t.ws : "", hostName(t.host)].filter(Boolean).join(" on ")}
+                            </span>
+                          ) : null}
+                        </span>
+                      </button>
+                    )}
+                    {editing === t.id ? null : (
+                      <button
+                        type="button"
+                        onClick={() => setEditing(t.id)}
+                        title="Rename this shell"
+                        aria-label={`Rename ${labels.get(t.id)}`}
+                        className="invisible shrink-0 text-[#a89984] group-hover:visible hover:text-[#ebdbb2] focus-visible:visible"
+                      >
+                        <Pencil className="size-3" />
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => close(t.id)}
@@ -407,7 +473,13 @@ export function Shell() {
             </ul>
             {picking ? (
               <div className="absolute top-8 right-1.5 left-1.5 z-20 max-h-[70%] overflow-y-auto rounded-md border border-white/10 bg-[#282828] p-1 shadow-lg">
-                <Picker list={list} error={error} onPick={(w) => add(w.host_id, w.name)} onClose={() => pick(false)} />
+                <Picker
+                  list={list}
+                  error={error}
+                  nameFor={(w) => nextDefault(w.host_id, w.name)}
+                  onPick={(w, name) => add(w.host_id, w.name, name)}
+                  onClose={() => pick(false)}
+                />
               </div>
             ) : null}
           </nav>
@@ -429,7 +501,12 @@ export function Shell() {
               <h1 className="mb-1 text-base text-[#ebdbb2]">No shells open</h1>
               <p className="mb-4 text-[#a89984]">Pick one of your workspaces for a shell in it.</p>
               <div className="rounded-md border border-white/10 p-1">
-                <Picker list={list} error={error} onPick={(w) => add(w.host_id, w.name)} />
+                <Picker
+                  list={list}
+                  error={error}
+                  nameFor={(w) => nextDefault(w.host_id, w.name)}
+                  onPick={(w, name) => add(w.host_id, w.name, name)}
+                />
               </div>
             </div>
           ) : null}
@@ -462,15 +539,20 @@ export function Shell() {
 function Picker({
   list,
   error,
+  nameFor,
   onPick,
   onClose,
 }: {
   list: Workspace[] | null;
   error: string;
-  onPick: (w: Workspace) => void;
+  /** What a shell in `w` is called unless you name it. */
+  nameFor: (w: Workspace) => string;
+  onPick: (w: Workspace, name: string) => void;
   onClose?: () => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
+  const [name, setName] = useState("");
+  const open = list?.filter((w) => !noShell(w)) ?? [];
   useEffect(() => {
     if (!onClose) return;
     const away = (e: MouseEvent) => {
@@ -487,6 +569,21 @@ function Picker({
 
   return (
     <div ref={box} className="text-xs">
+      <label className="block px-2 pt-1.5 pb-2">
+        <span className="mb-1 block text-[11px] text-[#928374]">Name the new shell (optional)</span>
+        <input
+          autoFocus
+          value={name}
+          maxLength={SHELL_NAME_MAX}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => {
+            // With one workspace to pick, Enter opens the shell in it.
+            if (e.key === "Enter" && open.length === 1) onPick(open[0]!, name);
+          }}
+          placeholder={open.length === 1 ? `${nameFor(open[0]!)}, Enter opens it` : "build, logs, server…"}
+          className="w-full rounded border border-white/10 bg-[#1d2021] px-2 py-1 font-mono text-[#ebdbb2] outline-none placeholder:text-[#665c54] focus:border-[#d79921]/60"
+        />
+      </label>
       {error ? <p className="px-2 py-1.5 text-[#fb4934]">{error}</p> : null}
       {list === null && !error ? <p className="px-2 py-1.5 text-[#a89984]">Loading your workspaces…</p> : null}
       {list !== null && list.length === 0 ? (
@@ -505,8 +602,8 @@ function Picker({
             key={`${w.cluster_id || w.host_id}/${w.name}`}
             type="button"
             disabled={Boolean(why)}
-            onClick={() => onPick(w)}
-            title={why ?? `A shell in ${w.name}, as ${w.user || "you"}`}
+            onClick={() => onPick(w, name)}
+            title={why ?? `A shell in ${w.name}, as ${w.user || "you"}, called ${shellName(name) ?? nameFor(w)}`}
             className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
           >
             <SquareTerminal className="size-3.5 shrink-0 text-[#a89984]" />
@@ -664,6 +761,46 @@ function Pane({
         </div>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * A shell's name, being typed: Enter or a click away keeps it, Esc puts the
+ * old one back. Blank goes back to the workspace's name.
+ */
+function NameInput({
+  value,
+  placeholder,
+  onDone,
+}: {
+  value: string;
+  placeholder: string;
+  /** The name typed, or null when Esc took it back. */
+  onDone: (name: string | null) => void;
+}) {
+  const done = useRef(false);
+  const finish = (name: string | null) => {
+    if (done.current) return;
+    done.current = true;
+    // Left as the workspace's name: no name of its own.
+    onDone(name !== null && name.trim() === placeholder ? "" : name);
+  };
+  return (
+    <input
+      autoFocus
+      defaultValue={value || placeholder}
+      maxLength={SHELL_NAME_MAX}
+      placeholder={placeholder}
+      aria-label="The shell's name"
+      onFocus={(e) => e.currentTarget.select()}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === "Enter") finish(e.currentTarget.value);
+        else if (e.key === "Escape") finish(null);
+      }}
+      onBlur={(e) => finish(e.currentTarget.value)}
+      className="min-w-0 flex-1 rounded border border-[#d79921]/60 bg-[#1d2021] px-1.5 py-0.5 font-mono text-xs text-[#ebdbb2] outline-none"
+    />
   );
 }
 
