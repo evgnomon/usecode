@@ -13,11 +13,16 @@
             font: 12px/1.4 "Cascadia Mono", ui-monospace, Menlo, Consolas, monospace; color: #a89984;
             background: #1d2021cc; padding: 2px 8px; border-radius: 4px; }
   #status:empty { display: none; }
+  #full { position: fixed; top: 8px; right: 10px; z-index: 10; cursor: pointer; opacity: .35;
+          font: 12px/1.4 "Cascadia Mono", ui-monospace, Menlo, Consolas, monospace; color: #a89984;
+          background: #1d2021cc; border: 1px solid #ffffff1a; padding: 2px 8px; border-radius: 4px; }
+  #full:hover, #full:focus-visible { opacity: 1; color: #ebdbb2; }
 </style>
 </head>
 <body>
 <div id="terminal" aria-label="uc"></div>
 <div id="status">loading the terminal…</div>
+<button id="full" type="button" title="Full screen: Ctrl+W and the browser's other keys go to uc">full screen</button>
 <script type="module">
 // restty (https://github.com/wiedymi/restty): libghostty-vt in WebAssembly,
 // drawn with WebGPU or WebGL2. Pinned, and checked against its hash.
@@ -125,6 +130,34 @@ status.textContent = "connecting…";
 restty.connectPty(ws);
 addEventListener("pagehide", () => { wanted = false; });
 addEventListener("focus", () => restty.focus());
+
+// Browsers keep Ctrl+W, Ctrl+T, Ctrl+N and such to themselves; the one way a
+// page gets them is full screen with the keyboard locked (Chrome, Edge,
+// Opera). Then they all go to uc, and holding Esc leaves.
+const full = document.getElementById("full");
+full.addEventListener("click", async () => {
+  if (document.fullscreenElement) {
+    await document.exitFullscreen().catch(() => {});
+    return;
+  }
+  await document.documentElement.requestFullscreen({ navigationUI: "hide" }).catch(() => {});
+  await navigator.keyboard?.lock().catch(() => {});
+});
+document.addEventListener("fullscreenchange", () => {
+  const on = Boolean(document.fullscreenElement);
+  if (!on) navigator.keyboard?.unlock();
+  full.textContent = on ? "exit full screen" : "full screen";
+  full.title = on ? "Leave full screen (or hold Esc)" : "Full screen: Ctrl+W and the browser's other keys go to uc";
+  restty.focus();
+});
+
+// Out of full screen, Ctrl+W meant for uc would close the tab: while it is
+// connected, the browser asks first.
+addEventListener("beforeunload", e => {
+  if (!restty.isPtyConnected()) return;
+  e.preventDefault();
+  e.returnValue = "";
+});
 </script>
 </body>
 </html>
