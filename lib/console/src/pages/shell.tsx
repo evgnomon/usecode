@@ -8,7 +8,7 @@
 // workspace's cluster (lib/api's relay.rs).
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, Maximize2, Minimize2, RotateCcw } from "lucide-react";
+import { ArrowLeft, Maximize2, Minimize2, RotateCcw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { apiUrl, post, useMe } from "@/lib/api";
 import { navigate, useLocation, useTitle } from "@/lib/router";
@@ -40,10 +40,52 @@ const keyboard = () => (navigator as Navigator & { keyboard?: KeyboardLock }).ke
 const shieldsHideLock = () =>
   !keyboard() && Boolean((navigator as Navigator & { brave?: unknown }).brave);
 
+/** Why full screen won't give the shell Esc and Ctrl+W here, if it won't. */
+type LockTrouble = "shields" | "unsupported" | "blocked";
+
+const TIPS: Record<LockTrouble, string> = {
+  shields:
+    "Brave's Shields keep Esc and Ctrl+W from the shell, even in full screen. To let them through, click the lion in the address bar, turn off fingerprint blocking for this site, and reload.",
+  unsupported:
+    "This browser keeps Esc and Ctrl+W from the shell, even in full screen (Chrome and Edge let them through). Ctrl+[ is Esc for the shell.",
+  blocked:
+    "Keyboard lock is blocked for this site, so Esc and Ctrl+W stay with the browser in full screen. Allow it in the site's settings (the icon left of the address) and reload.",
+};
+
+/** Looks for what would keep the keyboard lock from working; null if nothing. */
+async function lockTrouble(): Promise<LockTrouble | null> {
+  if (shieldsHideLock()) return "shields";
+  if (!keyboard()) return "unsupported";
+  try {
+    const { state } = await navigator.permissions.query({ name: "keyboard-lock" as PermissionName });
+    if (state === "denied") return "blocked";
+  } catch {
+    // No such permission here: nothing in the way.
+  }
+  return null;
+}
+
+/** The tip for what's in the way, once a look found it; until dismissed. */
+function useLockTip() {
+  const [tip, setTip] = useState<LockTrouble | null>(null);
+  useEffect(() => {
+    void lockTrouble().then((t) => {
+      if (t && localStorage.getItem(TIP_DISMISSED) !== t) setTip(t);
+    });
+  }, []);
+  const dismiss = useCallback(() => {
+    if (tip) localStorage.setItem(TIP_DISMISSED, tip);
+    setTip(null);
+  }, [tip]);
+  return { tip: tip && TIPS[tip], dismiss };
+}
+
+const TIP_DISMISSED = "shell.lock-tip.dismissed";
+
 /** What the bar says in full screen. */
 const fullNote = (locked: boolean) =>
   locked
-    ? "Esc and Ctrl+W go to the shell; hold Esc to leave"
+    ? "Esc and Ctrl+W go to the shell; hold Esc or press F11 to leave"
     : shieldsHideLock()
       ? "Brave's Shields keep Esc: turn off fingerprint blocking for this site, then full screen again. Till then Ctrl+[ is Esc"
       : "This browser keeps Esc to leave full screen; Ctrl+[ is Esc for the shell";
@@ -96,6 +138,18 @@ function useFullscreen(onChange: () => void) {
     const ok = (await early) || (await lockKeys(kb));
     setLocked(ok && Boolean(document.fullscreenElement));
   }, []);
+  // F11 is our full screen, the one with the keyboard locked, rather than
+  // the browser's, which locks nothing. Caught before the terminal sees it.
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "F11" || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      void toggle();
+    };
+    window.addEventListener("keydown", key, { capture: true });
+    return () => window.removeEventListener("keydown", key, { capture: true });
+  }, [toggle]);
   return { full, locked, toggle };
 }
 
@@ -118,6 +172,7 @@ export function Shell() {
   const [over, setOver] = useState<string | null>(null);
   const refocus = useCallback(() => term.current?.focus(), []);
   const { full, locked, toggle } = useFullscreen(refocus);
+  const { tip, dismiss } = useLockTip();
 
   // Out of full screen, Ctrl+W meant for the shell would close the tab: while
   // the shell is open, the browser asks first.
@@ -251,19 +306,39 @@ export function Shell() {
             title={
               full
                 ? locked
-                  ? "Leave full screen (or hold Esc)"
-                  : "Leave full screen (or press Esc)"
-                : "Full screen: Esc, Ctrl+W and the browser's other keys go to the shell"
+                  ? "Leave full screen (F11, or hold Esc)"
+                  : "Leave full screen (F11 or Esc)"
+                : "Full screen (F11): Esc, Ctrl+W and the browser's other keys go to the shell"
             }
             className={`${full ? "" : "ml-auto "}flex items-center gap-1.5 text-[#a89984] hover:text-[#ebdbb2]`}
           >
             {full ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
             {full ? "Exit full screen" : "Full screen"}
+            <kbd className="font-mono text-[10px] opacity-60">F11</kbd>
           </button>
         </>
       }
     >
       <div ref={root} className="absolute inset-0 p-1.5" aria-label={`A shell in ${name}`} />
+      {tip ? (
+        <div className="absolute top-3 right-3 z-10 flex max-w-[min(90%,60ch)] items-start gap-3 rounded-md border border-[#d79921]/40 bg-[#1d2021]/95 px-3 py-2 text-sm text-[#d5c4a1] shadow">
+          <span role="note">
+            <span className="text-[#fabd2f]">Tip: </span>
+            {tip}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              dismiss();
+              refocus();
+            }}
+            aria-label="Dismiss the tip"
+            className="shrink-0 text-[#a89984] hover:text-[#ebdbb2]"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+      ) : null}
       {status ? <Note>{status}</Note> : null}
       {over ? (
         <div className="absolute right-3 bottom-3 z-10 flex max-w-[min(90%,48ch)] items-center gap-3 rounded-md border border-white/10 bg-[#1d2021]/95 px-3 py-2 text-sm text-[#d5c4a1] shadow">
