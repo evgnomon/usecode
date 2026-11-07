@@ -7,7 +7,16 @@ import { withApi } from "../server/app.js";
 import { load } from "../server/config.js";
 import { safeNext } from "../src/lib/safe-next.js";
 import { ago, duration, hostHealth, hostsPath, pageRange, type Host } from "../src/lib/hosts.js";
-import { endedWith, noShell, shellHref, shellSocketUrl, ticketPath, type Workspace } from "../src/lib/workspaces.js";
+import {
+  endedWith,
+  noShell,
+  shellHref,
+  shellsHref,
+  shellsIn,
+  shellSocketUrl,
+  ticketPath,
+  type Workspace,
+} from "../src/lib/workspaces.js";
 
 test("a login only sends you somewhere on this site", () => {
   assert.equal(safeNext("/pricing"), "/pricing");
@@ -81,4 +90,19 @@ test("a shell is a page of its own, paid for with a ticket", () => {
   assert.match(noShell({ ...w, online: false, connected: false }) ?? "", /gone quiet/);
   assert.equal(endedWith(0), "The shell exited.");
   assert.equal(endedWith(130), "The shell exited with status 130.");
+});
+
+test("the shells page's address names its shells, the old one-shell address too", () => {
+  const q = (s: string) => new URLSearchParams(s);
+  assert.deepEqual(shellsIn(q("host=h-1&ws=dev")), { shells: [{ host: "h-1", ws: "dev" }], at: 0 });
+  const two = [
+    { host: "h-1", ws: "dev" },
+    { host: "h-2", ws: "api" },
+  ];
+  assert.equal(shellsHref(two, 1), "/shell?host=h-1&ws=dev&host=h-2&ws=api&at=1");
+  assert.equal(shellsHref(two, 0), "/shell?host=h-1&ws=dev&host=h-2&ws=api");
+  assert.deepEqual(shellsIn(q("host=h-1&ws=dev&host=h-2&ws=api&at=1")), { shells: two, at: 1 });
+  assert.equal(shellsIn(q("host=h-1&ws=dev&at=7")).at, 0, "an `at` past the end is the first");
+  assert.deepEqual(shellsIn(q("host=h-1")).shells, [], "a host without a workspace is no shell");
+  assert.equal(shellsHref([], 0), "/shell");
 });

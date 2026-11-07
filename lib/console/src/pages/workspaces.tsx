@@ -11,6 +11,7 @@ import { Dot, List, Pill, type State } from "@/components/console";
 import { ErrorNote, Section } from "@/components/layout";
 import { get, useMe } from "@/lib/api";
 import { navigate } from "@/lib/router";
+import { openShell, SHELLS_WINDOW } from "@/lib/shells";
 import { noShell, shellHref, type Workspace, type WorkspaceList, type WorkspaceState } from "@/lib/workspaces";
 
 /** How often the list looks again while the page is in view. */
@@ -32,6 +33,8 @@ export function Workspaces() {
   const [list, setList] = useState<Workspace[] | null>(null);
   const [error, setError] = useState("");
   const [tick, setTick] = useState(0);
+  /** The workspace whose shell just went to the shells tab open already. */
+  const [handed, setHanded] = useState<string | null>(null);
 
   useEffect(() => {
     if (!me?.user) return;
@@ -65,7 +68,11 @@ export function Workspaces() {
         <div className="mb-6 flex flex-wrap items-baseline justify-between gap-3">
           <h1 className="text-xl">Your workspaces</h1>
           {list && list.length > 0 ? (
-            <p className="text-xs text-muted-foreground">A shell opens in a new tab, logged in as you.</p>
+            <p className="text-xs text-muted-foreground" role="status">
+              {handed
+                ? `A shell in ${handed} is open in your shells tab.`
+                : "Shells open in one tab of their own, logged in as you."}
+            </p>
           ) : null}
         </div>
         {error ? <ErrorNote>{error}</ErrorNote> : null}
@@ -74,7 +81,7 @@ export function Workspaces() {
         {list !== null && list.length > 0 ? (
           <List>
             {list.map((w) => (
-              <WorkspaceRow key={`${w.cluster_id || w.host_id}/${w.name}`} workspace={w} />
+              <WorkspaceRow key={`${w.cluster_id || w.host_id}/${w.name}`} workspace={w} onOpened={setHanded} />
             ))}
           </List>
         ) : null}
@@ -83,7 +90,7 @@ export function Workspaces() {
   );
 }
 
-function WorkspaceRow({ workspace: w }: { workspace: Workspace }) {
+function WorkspaceRow({ workspace: w, onOpened }: { workspace: Workspace; onOpened: (handed: string | null) => void }) {
   const state = STATE[w.state] ?? STATE.unknown;
   const why = noShell(w);
   return (
@@ -110,8 +117,17 @@ function WorkspaceRow({ workspace: w }: { workspace: Workspace }) {
           </Button>
         ) : (
           <Button asChild variant="outline" size="sm" className="gap-2">
-            {/* A page of its own, loaded afresh: the terminal wants more of the browser than the rest does. */}
-            <a href={shellHref(w)} target="_blank" rel="noopener">
+            {/* Your shells page, in a tab of its own, loaded afresh: the terminal wants more of the
+                browser than the rest does. When it's open already, the shell goes there. */}
+            <a
+              href={shellHref(w)}
+              target={SHELLS_WINDOW}
+              onClick={(e) => {
+                if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                e.preventDefault();
+                void openShell(w).then((how) => onOpened(how === "handed" ? w.name : null));
+              }}
+            >
               <SquareTerminal />
               Shell
             </a>
