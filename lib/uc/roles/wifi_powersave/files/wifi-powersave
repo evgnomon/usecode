@@ -1,0 +1,27 @@
+#!/bin/sh
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
+# Wi-Fi power saving on battery only: off while a charger is plugged in,
+# on once it is unplugged. Run by udev when the charger comes or goes and
+# when a Wi-Fi card shows up. A machine without a charger to watch (a
+# desktop) keeps it off.
+
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+
+state=off
+for supply in /sys/class/power_supply/*; do
+    [ "$(cat "$supply/type" 2>/dev/null)" = Mains ] || continue
+    if [ "$(cat "$supply/online" 2>/dev/null)" = 1 ]; then
+        state=off
+        break
+    fi
+    state=on
+done
+
+for wireless in /sys/class/net/*/wireless; do
+    [ -d "$wireless" ] || continue
+    iface=$(basename "$(dirname "$wireless")")
+    iw dev "$iface" set power_save "$state"
+done
+exit 0
