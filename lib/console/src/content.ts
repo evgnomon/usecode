@@ -62,7 +62,7 @@ export type Journey = { from: string; without: string; prompt: string; steps: st
 // time, and plays the one in the middle in a console underneath.
 export const MOTIVATION = {
   tagline: "From prompt to IPO.",
-  subtitle: "Stop working for your agents. Make them work for you.",
+  subtitle: "Stop working for agents. Make them work for you.",
   intro: [
     "usecode is a coding agent that comes with everything real software needs: " +
       "build, test, deploy, hosting and scaling, already wired in. Nothing to install. " +
