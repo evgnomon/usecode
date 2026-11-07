@@ -10,5 +10,5 @@
     "types": ["node"],
     "skipLibCheck": true
   },
-  "include": ["server", "test", "src/lib/safe-next.ts", "src/lib/hosts.ts"]
+  "include": ["server", "test", "src/lib/safe-next.ts", "src/lib/hosts.ts", "src/lib/palette.ts"]
 }

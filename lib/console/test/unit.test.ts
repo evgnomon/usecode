@@ -7,6 +7,7 @@ import { withApi } from "../server/app.js";
 import { load } from "../server/config.js";
 import { safeNext } from "../src/lib/safe-next.js";
 import { ago, duration, hostHealth, hostsPath, pageRange, type Host } from "../src/lib/hosts.js";
+import { filter, opensPalette, score } from "../src/lib/palette.js";
 import {
   endedWith,
   noShell,
@@ -121,4 +122,21 @@ test("a shell keeps the name you gave it in the address", () => {
   assert.equal(shellName("  build  "), "build");
   assert.equal(shellName(""), undefined);
   assert.equal(shellName("x".repeat(100))?.length, 64);
+});
+
+test("the palette finds a page by the letters you type", () => {
+  const pages = [{ label: "Home" }, { label: "Hosts" }, { label: "Workspaces", keywords: "shells terminal" }, { label: "Account" }];
+  const labels = (q: string) => filter(pages, q).map((p) => p.label);
+  assert.deepEqual(labels(""), ["Home", "Hosts", "Workspaces", "Account"], "nothing typed is everything, in order");
+  assert.deepEqual(labels("ho"), ["Home", "Hosts"]);
+  assert.deepEqual(labels("wsp"), ["Workspaces"], "letters in order, with gaps");
+  assert.deepEqual(labels("count"), ["Account"], "inside the name");
+  assert.deepEqual(labels("shell"), ["Workspaces"], "by its other words");
+  assert.deepEqual(labels("os"), ["Hosts", "Workspaces"], "whole before in pieces");
+  assert.deepEqual(labels("zz"), []);
+  assert.equal(score("Hosts", "H O"), 0, "spaces and case don't matter");
+  const key = { ctrlKey: true, metaKey: false, shiftKey: true, altKey: false };
+  assert.ok(opensPalette({ ...key, key: "P" }));
+  assert.ok(opensPalette({ ...key, ctrlKey: false, metaKey: true, key: "p" }), "Cmd on a Mac");
+  assert.ok(!opensPalette({ ...key, shiftKey: false, key: "p" }), "Ctrl+P is the browser's print");
 });

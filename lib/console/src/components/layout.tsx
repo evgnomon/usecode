@@ -6,6 +6,7 @@ import { LogOut, Menu, Monitor, Moon, Sun } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Kbd, KeyLegend } from "@/components/kbd";
+import { CommandPalette } from "@/components/palette";
 import { REPO_URL } from "@/content";
 import { post, useMe } from "@/lib/api";
 import { forWho, HOTKEYS, useHotkeys } from "@/lib/keys";
@@ -46,8 +47,8 @@ const ITEM = "flex w-full cursor-pointer items-center justify-between gap-6 px-3
  * The site's pages behind the burger at the left of the bar. A <details>, so
  * it opens on the prerendered pages before any JavaScript has run.
  */
-function SiteMenu({ hotkeys, onClose }: { hotkeys: boolean; onClose?: () => void }) {
-  const { me, refresh } = useMe();
+function SiteMenu({ hotkeys, onClose, onLogout }: { hotkeys: boolean; onClose?: () => void; onLogout: () => Promise<void> }) {
+  const { me } = useMe();
   const { path } = useLocation();
   const box = useRef<HTMLDetailsElement>(null);
   const [open, setOpen] = useState(false);
@@ -75,9 +76,7 @@ function SiteMenu({ hotkeys, onClose }: { hotkeys: boolean; onClose?: () => void
 
   const logout = async () => {
     shut();
-    await post("/auth/logout");
-    await refresh();
-    navigate("/");
+    await onLogout();
   };
 
   const member = me ? Boolean(me.user) : null;
@@ -160,13 +159,18 @@ export function TopBar({
   tone?: "shell";
   /** Whether the page takes the shortcut keys, so the menu shows them. */
   hotkeys?: boolean;
-  /** The menu closed: give the focus back to what had it. */
+  /** The menu or the command palette closed: give the focus back to what had it. */
   onMenuClose?: () => void;
   after?: ReactNode;
   className?: string;
   children?: ReactNode;
 }) {
-  const { me } = useMe();
+  const { me, refresh } = useMe();
+  const logout = useCallback(async () => {
+    await post("/auth/logout");
+    await refresh();
+    navigate("/");
+  }, [refresh]);
   return (
     <header
       className={cn(
@@ -175,9 +179,10 @@ export function TopBar({
         className,
       )}
     >
-      <SiteMenu hotkeys={hotkeys} onClose={onMenuClose} />
+      <SiteMenu hotkeys={hotkeys} onClose={onMenuClose} onLogout={logout} />
       <div className="flex min-w-0 items-center gap-3">{children ?? <Brand />}</div>
       <div className="ml-auto flex min-w-0 items-center gap-3">
+        <CommandPalette hotkeys={hotkeys} onClose={onMenuClose} onLogout={() => void logout()} />
         {after}
         {me && !me.user ? (
           <>
