@@ -32,19 +32,29 @@ const FONTS = [
 type KeyboardLock = { lock(keys?: string[]): Promise<void>; unlock(): void };
 const keyboard = () => (navigator as Navigator & { keyboard?: KeyboardLock }).keyboard;
 
+/** Locks the keyboard; whether it took. */
+const lockKeys = (kb: KeyboardLock | undefined) =>
+  kb ? kb.lock().then(() => true, () => false) : Promise.resolve(false);
+
 /**
- * Whether the page is full screen, and the way in and out. Browsers keep
- * Ctrl+W, Ctrl+T, Ctrl+N and such to themselves, so a shell never sees them;
- * the one way a page gets them is full screen with the keyboard locked. Then
- * they all go to the shell, and holding Esc leaves.
+ * Whether the page is full screen, whether the keyboard is locked, and the
+ * way in and out. Browsers keep Ctrl+W, Ctrl+T, Ctrl+N and such to
+ * themselves, so a shell never sees them; the one way a page gets them is
+ * full screen with the keyboard locked. Then they all go to the shell, Esc
+ * too (vim's), and only holding Esc leaves. Where the lock doesn't take
+ * (Firefox, Safari), Esc leaves full screen, and Ctrl+[ is Esc for the shell.
  */
 function useFullscreen(onChange: () => void) {
   const [full, setFull] = useState(false);
+  const [locked, setLocked] = useState(false);
   useEffect(() => {
     const changed = () => {
       const now = Boolean(document.fullscreenElement);
       setFull(now);
-      if (!now) keyboard()?.unlock();
+      if (!now) {
+        keyboard()?.unlock();
+        setLocked(false);
+      }
       onChange();
     };
     document.addEventListener("fullscreenchange", changed);
@@ -55,10 +65,22 @@ function useFullscreen(onChange: () => void) {
       await document.exitFullscreen().catch(() => {});
       return;
     }
-    await document.documentElement.requestFullscreen({ navigationUI: "hide" }).catch(() => {});
-    await keyboard()?.lock().catch(() => {});
+    const kb = keyboard();
+    // Lock first, in the same click as the full screen request: the lock
+    // waits for full screen, and that is what has Chrome hand Esc over
+    // rather than leave on it. keyboardLock is the same ask in the
+    // browsers that take it as a full screen option.
+    const early = lockKeys(kb);
+    const options = { navigationUI: "hide", keyboardLock: "browser" } as FullscreenOptions;
+    await document.documentElement.requestFullscreen(options).catch(() => {});
+    if (!document.fullscreenElement) {
+      kb?.unlock();
+      return;
+    }
+    const ok = (await early) || (await lockKeys(kb));
+    setLocked(ok && Boolean(document.fullscreenElement));
   }, []);
-  return { full, toggle };
+  return { full, locked, toggle };
 }
 
 export function Shell() {
@@ -79,7 +101,7 @@ export function Shell() {
   const [status, setStatus] = useState("Loading the terminal…");
   const [over, setOver] = useState<string | null>(null);
   const refocus = useCallback(() => term.current?.focus(), []);
-  const { full, toggle } = useFullscreen(refocus);
+  const { full, locked, toggle } = useFullscreen(refocus);
 
   // Out of full screen, Ctrl+W meant for the shell would close the tab: while
   // the shell is open, the browser asks first.
@@ -201,19 +223,30 @@ export function Shell() {
     <Frame
       title={name}
       actions={
-        <button
-          type="button"
-          onClick={() => void toggle()}
-          title={
-            full
-              ? "Leave full screen (or hold Esc)"
-              : "Full screen: Ctrl+W and the browser's other keys go to the shell"
-          }
-          className="ml-auto flex items-center gap-1.5 text-[#a89984] hover:text-[#ebdbb2]"
-        >
-          {full ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
-          {full ? "Exit full screen" : "Full screen"}
-        </button>
+        <>
+          {full ? (
+            <span className="ml-auto text-[#a89984]" role="status">
+              {locked
+                ? "Esc and Ctrl+W go to the shell; hold Esc to leave"
+                : "This browser keeps Esc to leave full screen; Ctrl+[ is Esc for the shell"}
+            </span>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => void toggle()}
+            title={
+              full
+                ? locked
+                  ? "Leave full screen (or hold Esc)"
+                  : "Leave full screen (or press Esc)"
+                : "Full screen: Esc, Ctrl+W and the browser's other keys go to the shell"
+            }
+            className={`${full ? "" : "ml-auto "}flex items-center gap-1.5 text-[#a89984] hover:text-[#ebdbb2]`}
+          >
+            {full ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
+            {full ? "Exit full screen" : "Full screen"}
+          </button>
+        </>
       }
     >
       <div ref={root} className="absolute inset-0 p-1.5" aria-label={`A shell in ${name}`} />

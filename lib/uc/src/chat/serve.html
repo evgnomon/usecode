@@ -22,7 +22,7 @@
 <body>
 <div id="terminal" aria-label="uc"></div>
 <div id="status">loading the terminal…</div>
-<button id="full" type="button" title="Full screen: Ctrl+W and the browser's other keys go to uc">full screen</button>
+<button id="full" type="button" title="Full screen: Esc, Ctrl+W and the browser's other keys go to uc">full screen</button>
 <script type="module">
 // restty (https://github.com/wiedymi/restty): libghostty-vt in WebAssembly,
 // drawn with WebGPU or WebGL2. Pinned, and checked against its hash.
@@ -133,21 +133,45 @@ addEventListener("focus", () => restty.focus());
 
 // Browsers keep Ctrl+W, Ctrl+T, Ctrl+N and such to themselves; the one way a
 // page gets them is full screen with the keyboard locked (Chrome, Edge,
-// Opera). Then they all go to uc, and holding Esc leaves.
+// Opera). Then they all go to uc, Esc too, and only holding Esc leaves.
+// Where the lock doesn't take (Firefox, Safari), Esc leaves full screen and
+// Ctrl+[ is Esc for uc.
 const full = document.getElementById("full");
+const lockKeys = () =>
+  navigator.keyboard ? navigator.keyboard.lock().then(() => true, () => false) : Promise.resolve(false);
+let locked = false;
+const label = () => {
+  const on = Boolean(document.fullscreenElement);
+  full.textContent = on ? "exit full screen" : "full screen";
+  full.title = !on
+    ? "Full screen: Esc, Ctrl+W and the browser's other keys go to uc"
+    : locked
+      ? "Leave full screen (or hold Esc)"
+      : "Leave full screen (or press Esc); this browser keeps Esc, Ctrl+[ is Esc for uc";
+};
 full.addEventListener("click", async () => {
   if (document.fullscreenElement) {
     await document.exitFullscreen().catch(() => {});
     return;
   }
-  await document.documentElement.requestFullscreen({ navigationUI: "hide" }).catch(() => {});
-  await navigator.keyboard?.lock().catch(() => {});
+  // Lock first, in the same click as the full screen request: the lock waits
+  // for full screen, and that is what has Chrome hand Esc over rather than
+  // leave on it. keyboardLock is the same ask where it is a full screen option.
+  const early = lockKeys();
+  await document.documentElement.requestFullscreen({ navigationUI: "hide", keyboardLock: "browser" }).catch(() => {});
+  if (!document.fullscreenElement) {
+    navigator.keyboard?.unlock();
+    return;
+  }
+  locked = (await early) || (await lockKeys());
+  label();
 });
 document.addEventListener("fullscreenchange", () => {
-  const on = Boolean(document.fullscreenElement);
-  if (!on) navigator.keyboard?.unlock();
-  full.textContent = on ? "exit full screen" : "full screen";
-  full.title = on ? "Leave full screen (or hold Esc)" : "Full screen: Ctrl+W and the browser's other keys go to uc";
+  if (!document.fullscreenElement) {
+    navigator.keyboard?.unlock();
+    locked = false;
+  }
+  label();
   restty.focus();
 });
 
