@@ -18,7 +18,7 @@ export interface Page {
   /** Built into HTML ahead of time (src/prerender.tsx), so it reads without JavaScript. */
   prerender?: boolean;
   /**
-   * Fills the window under the site's header, without the footer and the
+   * Fills the window and brings its own top bar, without the footer and the
    * shortcut keys, which would take the letters typed into a terminal.
    */
   fill?: boolean;

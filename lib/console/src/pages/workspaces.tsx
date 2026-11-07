@@ -2,8 +2,9 @@
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
 // Your workspaces (`uc ws`) and your shells in them, in one place, under the
-// site's header: a bar on the left to switch between shells, open another
-// in any workspace or close one, and the terminal in front filling the rest.
+// site's top bar (with the site's menu behind its burger): a bar on the left
+// to switch between shells, open another in any workspace or close one, and
+// the terminal in front filling the rest.
 // Each shell is a restty
 // (https://github.com/wiedymi/restty), libghostty-vt in WebAssembly drawn
 // with WebGPU or WebGL2, as `uc agent serve` has it, kept running while
@@ -15,6 +16,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Boxes, Maximize2, Minimize2, PanelLeft, Pencil, Plus, RotateCcw, SquareTerminal, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dot, type State } from "@/components/console";
+import { TopBar } from "@/components/layout";
 import { apiUrl, get, post, useMe } from "@/lib/api";
 import { navigate, useLocation, useTitle } from "@/lib/router";
 import {
@@ -336,13 +338,41 @@ export function Workspaces() {
 
   return (
     <div className="flex h-full flex-col bg-[#282828] text-[#d5c4a1]">
-      <div className="flex h-9 shrink-0 items-center gap-3 border-b border-white/10 px-3 text-xs">
+      <TopBar
+        tone="shell"
+        onMenuClose={refocus}
+        after={
+          <>
+            {full ? (
+              <span className="truncate" role="status">
+                {fullNote(locked)}
+              </span>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => void toggle()}
+              title={
+                full
+                  ? locked
+                    ? "Leave full screen (or hold Esc)"
+                    : "Leave full screen (or press Esc)"
+                  : "Full screen (F11): Esc, Ctrl+W and the browser's other keys go to the shell"
+              }
+              className="flex shrink-0 items-center gap-1.5 hover:text-bar-fg"
+            >
+              {full ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
+              {full ? "Exit full screen" : "Full screen"}
+              {full ? null : <kbd className="font-mono text-[10px] opacity-60">F11</kbd>}
+            </button>
+          </>
+        }
+      >
         <button
           type="button"
           onClick={toggleNav}
           title={navHidden ? "Show your shells" : "Hide the bar"}
           aria-label={navHidden ? "Show your shells" : "Hide the bar"}
-          className="text-[#a89984] hover:text-[#ebdbb2]"
+          className="shrink-0 hover:text-bar-fg"
         >
           <PanelLeft className="size-3.5" />
         </button>
@@ -353,42 +383,21 @@ export function Workspaces() {
             type="button"
             onDoubleClick={() => setEditing(front.id)}
             title="Double-click to rename this shell"
-            className="truncate font-mono text-[#ebdbb2]"
+            className="truncate font-mono text-bar-fg"
           >
             {labels.get(front.id)}
           </button>
         ) : (
-          <span className="truncate font-mono text-[#ebdbb2]">Shells</span>
+          <span className="truncate font-mono text-bar-fg">Shells</span>
         )}
         {front && (front.name || hostName(front.host)) ? (
-          <span className="truncate text-[#a89984]">
+          <span className="truncate">
             {front.name ? front.ws : null}
             {front.name && hostName(front.host) ? " " : null}
             {hostName(front.host) ? `on ${hostName(front.host)}` : null}
           </span>
         ) : null}
-        {full ? (
-          <span className="ml-auto truncate text-[#a89984]" role="status">
-            {fullNote(locked)}
-          </span>
-        ) : null}
-        <button
-          type="button"
-          onClick={() => void toggle()}
-          title={
-            full
-              ? locked
-                ? "Leave full screen (or hold Esc)"
-                : "Leave full screen (or press Esc)"
-              : "Full screen (F11): Esc, Ctrl+W and the browser's other keys go to the shell"
-          }
-          className={`${full ? "" : "ml-auto "}flex shrink-0 items-center gap-1.5 text-[#a89984] hover:text-[#ebdbb2]`}
-        >
-          {full ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
-          {full ? "Exit full screen" : "Full screen"}
-          {full ? null : <kbd className="font-mono text-[10px] opacity-60">F11</kbd>}
-        </button>
-      </div>
+      </TopBar>
 
       <div className="flex min-h-0 flex-1">
         {navHidden ? null : (
