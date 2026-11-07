@@ -60,7 +60,8 @@ function Header() {
   return (
     <header className="sticky top-0 z-10 border-b bg-background">
       <div className="wrap flex min-h-13 flex-wrap items-center justify-between gap-4 py-2 sm:py-0">
-        <Link href="/" className="py-1 font-medium">
+        <Link href="/" className="flex items-center gap-2 py-1 font-medium">
+          <img src="/icon.svg" alt="" width={22} height={22} className="size-5.5 rounded-[5px]" />
           usecode<span className="font-normal text-muted-foreground">.dev</span>
         </Link>
         <nav className="flex flex-wrap items-center gap-4">

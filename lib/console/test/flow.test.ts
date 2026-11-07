@@ -42,6 +42,8 @@ before(async () => {
   await writeFile(join(client, "pages/index.html"), "<!doctype html><html><head><title>home, prerendered</title></head></html>");
   await writeFile(join(client, "pages/404.html"), "<!doctype html><html><head><title>not found, prerendered</title></head></html>");
   await writeFile(join(client, "icon.svg"), "<svg/>");
+  await writeFile(join(client, "manifest.webmanifest"), "{}");
+  await writeFile(join(client, "sw.js"), "");
   app = createApp(cfg, client, fakeApi);
 });
 
@@ -68,6 +70,10 @@ test("pages are prerendered when they can be, and know where the API is", async 
   assert.match(await missing.text(), /not found, prerendered/);
 
   assert.equal((await get("/icon.svg")).status, 200);
+  const manifest = await get("/manifest.webmanifest");
+  assert.equal(manifest.status, 200, "the app is installable");
+  assert.match(manifest.headers.get("content-type") ?? "", /application\/manifest\+json/);
+  assert.match((await get("/sw.js")).headers.get("content-type") ?? "", /javascript/);
   assert.equal(await (await get("/healthz")).text(), "ok");
 });
 
