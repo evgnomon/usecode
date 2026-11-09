@@ -11,5 +11,7 @@ import { defineConfig } from "vite";
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
-  build: { outDir: "dist/client", emptyOutDir: true },
+  // The terminal (`restty`, ~3 MB) is already its own chunk, loaded with
+  // `import()` only when a workspace opens, so the limit sits above it.
+  build: { outDir: "dist/client", emptyOutDir: true, chunkSizeWarningLimit: 3200 },
 });
