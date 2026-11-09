@@ -10,6 +10,34 @@ use std::collections::HashMap;
 
 use crate::error::{Error, Result};
 
+/// Whether a command line asks for help: `-h`, `--help` or `-help`
+/// anywhere before a `--`. Commands check it before doing anything, so
+/// asking a command for help never runs it.
+pub fn wants_help(args: &[String]) -> bool {
+    args.iter()
+        .take_while(|arg| *arg != "--")
+        .any(|arg| matches!(arg.as_str(), "-h" | "--help" | "-help"))
+}
+
+/// The part of a usage text about one subcommand: every line starting
+/// with `start` (e.g. `"  enable "`), each with the more indented lines
+/// under it. Empty when the usage has no such line.
+pub fn usage_of(usage: &str, start: &str) -> String {
+    let mut out = String::new();
+    let mut inside = false;
+    for line in usage.lines() {
+        if line.starts_with(start) {
+            inside = true;
+        } else if !(inside && line.starts_with("   ")) {
+            inside = false;
+            continue;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
+}
+
 #[derive(Clone, Copy, PartialEq)]
 enum Kind {
     Str,
@@ -166,6 +194,27 @@ mod tests {
         assert_eq!(fs.nargs(), 3);
         assert_eq!(fs.arg(0), "NAME");
         assert_eq!(fs.get_str("config"), "");
+    }
+
+    #[test]
+    fn help_is_asked_for_anywhere_before_dashdash() {
+        assert!(wants_help(&argv(&["-h"])));
+        assert!(wants_help(&argv(&["web1", "--help"])));
+        assert!(wants_help(&argv(&["-config", "x", "-help"])));
+        assert!(!wants_help(&argv(&["web1", "--", "-h"])));
+        assert!(!wants_help(&argv(&["web1", "help"])));
+    }
+
+    #[test]
+    fn usage_of_takes_a_subcommands_lines() {
+        let usage = "usage: x COMMAND\n\n  enable HOST --to C\n      --version V   a release\n  \
+                     disable HOST\n      --purge\n  enable HOST --control\n\nHOST is a host.";
+        assert_eq!(
+            usage_of(usage, "  enable "),
+            "  enable HOST --to C\n      --version V   a release\n  enable HOST --control\n"
+        );
+        assert_eq!(usage_of(usage, "  disable "), "  disable HOST\n      --purge\n");
+        assert_eq!(usage_of(usage, "  nope "), "");
     }
 
     #[test]

@@ -54,11 +54,11 @@ pub fn cert_name(host: &str) -> String {
 
 fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|arg| arg == "-h" || arg == "--help") {
+        println!("{USAGE}");
+        exit(0);
+    }
     let action = match args.first().map(String::as_str) {
-        Some("-h" | "--help") => {
-            println!("{USAGE}");
-            exit(0);
-        }
         Some("--remove") => Action::Remove,
         Some("--list") => Action::List,
         _ => Action::Add,

@@ -23,6 +23,11 @@ pub struct Settings {
     // Address the HTTP server listens on.
     pub bind: String,
 
+    // Where the other instances reach this one, e.g. http://10.42.0.7:8000:
+    // a shell opened on one instance goes to the one its host's relay
+    // socket is on. Unset, it is this pod's own address and `bind`'s port.
+    pub internal_url: Option<String>,
+
     pub otp_length: usize,
     pub otp_ttl_seconds: i64,
     pub otp_resend_cooldown_seconds: i64,
@@ -212,6 +217,7 @@ impl Settings {
                 .unwrap_or_else(|| "https://api.stripe.com/v1".to_string()),
             node_name,
             bind: non_empty("BIND").unwrap_or_else(|| "0.0.0.0:8000".to_string()),
+            internal_url: non_empty("INTERNAL_URL").map(|u| u.trim_end_matches('/').to_string()),
             otp_length: parsed("OTP_LENGTH", 6)?,
             otp_ttl_seconds: parsed("OTP_TTL_SECONDS", 300)?,
             otp_resend_cooldown_seconds: parsed("OTP_RESEND_COOLDOWN_SECONDS", 60)?,

@@ -19,6 +19,7 @@ mod model_process;
 mod models;
 mod otp;
 mod providers;
+mod relay;
 mod routes;
 mod schema;
 mod server_tasks;
@@ -55,6 +56,8 @@ pub struct App {
     pub mailer: mail::Mailer,
     pub limits: accounts::Limits,
     pub http: reqwest::Client,
+    /// The hosts' relay sockets and the shells riding them, on this instance.
+    pub relay: relay::Hub,
 }
 
 impl App {
@@ -120,6 +123,10 @@ Settings come from USECODE_AGENT_* variables (and .env); see the README.";
 async fn run() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    if args.iter().any(|arg| matches!(*arg, "-h" | "--help")) {
+        println!("{USAGE}");
+        return Ok(());
+    }
     match args.as_slice() {
         [] | ["serve"] => serve(Settings::from_env()?).await,
         ["migrate"] => migrate::run(&Settings::from_env()?).await,
@@ -144,7 +151,10 @@ async fn serve(settings: Settings) -> Result<()> {
     let db = Arc::new(Db::connect(&settings).await?);
     db.seed_shard_ranges().await?;
 
+    let relay = relay::Hub::new(relay::internal_url(&settings).await);
+    tracing::info!("Other instances reach this one at {}", relay.internal_url);
     let app = Arc::new(App {
+        relay,
         cipher: crypto::Cipher::new(&settings.secret_key),
         store: Store::new(db.clone()),
         chat: chat_store::ChatStore::default(),

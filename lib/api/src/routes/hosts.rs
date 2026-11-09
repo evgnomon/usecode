@@ -46,7 +46,7 @@ const PAGE: i64 = 50;
 const MAX_PAGE: i64 = 200;
 
 /// How long a host may be silent and still be online.
-fn online_window() -> Duration {
+pub(crate) fn online_window() -> Duration {
     Duration::seconds((HEARTBEAT_SECONDS * MISSED_BEATS) as i64)
 }
 
@@ -132,11 +132,17 @@ async fn heartbeat(
     }
     let modules = serde_json::to_value(modules).map_err(anyhow::Error::from)?;
     let ip = client_ip(&headers);
+    let workspaces = payload
+        .workspaces
+        .map(super::workspaces::reported)
+        .transpose()?;
+    let cluster_id = clip(payload.cluster_id.as_deref().unwrap_or_default(), 64);
     let beat = Heartbeat {
         version: &clip(&payload.version, 64),
         modules: &modules,
         uptime_seconds: payload.uptime_seconds,
         ip: ip.as_deref(),
+        workspaces: workspaces.as_ref().map(|w| (w, cluster_id.as_str())),
     };
     let row = app
         .store
@@ -258,7 +264,7 @@ fn host_out(row: HostRow) -> HostOut {
 }
 
 /// The token in `Authorization: Bearer ...`.
-fn bearer(headers: &HeaderMap) -> Option<String> {
+pub(crate) fn bearer(headers: &HeaderMap) -> Option<String> {
     headers
         .get(header::AUTHORIZATION)?
         .to_str()
@@ -285,7 +291,7 @@ fn client_ip(headers: &HeaderMap) -> Option<String> {
 }
 
 /// `value` trimmed and cut to at most `max` characters.
-fn clip(value: &str, max: usize) -> String {
+pub(crate) fn clip(value: &str, max: usize) -> String {
     value.trim().chars().take(max).collect()
 }
 
@@ -481,6 +487,7 @@ mod tests {
                 modules: &modules,
                 uptime_seconds: Some(1),
                 ip: None,
+                workspaces: None,
             };
             app.store.host_heartbeat(&secret, beat).await.unwrap();
         }

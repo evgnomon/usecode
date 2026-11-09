@@ -21,6 +21,7 @@ use std::time::{Duration, Instant};
 use serde_yaml::{Mapping, Value};
 use uc_daemon::bundle::Bundle;
 use uc_daemon::error::{Context, Result};
+use uc_daemon::flags::{usage_of, wants_help};
 use uc_daemon::inventory::{self, Inventory};
 use uc_daemon::kube::{self, Settings};
 use uc_daemon::remote::{Target, inventory_host};
@@ -120,6 +121,13 @@ fn run(args: &[String]) -> Result<()> {
         }
         "help" | "-h" | "--help" => {
             println!("{USAGE}");
+            Ok(())
+        }
+        // sync, logs and usage answer -h themselves.
+        "enable" | "connect" | "status" | "disable" | "remove" | "replace" if wants_help(rest) => {
+            let section = usage_of(USAGE, &format!("  {cmd} "));
+            let host = USAGE.rsplit("\n\n").next().unwrap_or_default();
+            println!("usage: uc kube {cmd} ...\n\n{section}\n{host}");
             Ok(())
         }
         "enable" => enable(rest),

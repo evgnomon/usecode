@@ -6,6 +6,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
 <title>uc</title>
+<link rel="icon" type="image/svg+xml" href='data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Crect width="100" height="100" rx="22" fill="%2315181d"/%3E%3Cpath d="M30 24c-7 0-9 4-9 10v8c0 4-3 8-7 8 4 0 7 4 7 8v8c0 6 2 10 9 10M70 24c7 0 9 4 9 10v8c0 4 3 8 7 8-4 0-7 4-7 8v8c0 6-2 10-9 10" fill="none" stroke="%235eead4" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/%3E%3Cpath d="M38 38v12a12 12 0 0 0 24 0V38" fill="none" stroke="%23fff" stroke-width="8" stroke-linecap="round"/%3E%3C/svg%3E'>
 <style>
   html, body { margin: 0; height: 100%; background: #282828; overflow: hidden; }
   #terminal { position: fixed; inset: 0; padding: 6px; box-sizing: border-box; }
@@ -13,11 +14,24 @@
             font: 12px/1.4 "Cascadia Mono", ui-monospace, Menlo, Consolas, monospace; color: #a89984;
             background: #1d2021cc; padding: 2px 8px; border-radius: 4px; }
   #status:empty { display: none; }
+  #full { position: fixed; top: 8px; right: 10px; z-index: 10; cursor: pointer; opacity: .35;
+          font: 12px/1.4 "Cascadia Mono", ui-monospace, Menlo, Consolas, monospace; color: #a89984;
+          background: #1d2021cc; border: 1px solid #ffffff1a; padding: 2px 8px; border-radius: 4px; }
+  #full:hover, #full:focus-visible { opacity: 1; color: #ebdbb2; }
+  #tip { position: fixed; top: 36px; right: 10px; z-index: 10; max-width: min(90%, 60ch); display: flex;
+         gap: 10px; align-items: flex-start; font: 12px/1.4 "Cascadia Mono", ui-monospace, Menlo, Consolas, monospace;
+         color: #d5c4a1; background: #1d2021f2; border: 1px solid #d7992166; padding: 6px 10px; border-radius: 4px; }
+  #tip[hidden] { display: none; }
+  #tip b { color: #fabd2f; font-weight: normal; }
+  #tip button { background: none; border: 0; color: #a89984; cursor: pointer; font: inherit; font-size: 14px; padding: 0; }
+  #tip button:hover { color: #ebdbb2; }
 </style>
 </head>
 <body>
 <div id="terminal" aria-label="uc"></div>
 <div id="status">loading the terminal…</div>
+<button id="full" type="button" title="Full screen (F11): Esc, Ctrl+W and the browser's other keys go to uc">full screen</button>
+<div id="tip" role="note" hidden><b>tip:</b> <span></span><button type="button" aria-label="Dismiss the tip">×</button></div>
 <script type="module">
 // restty (https://github.com/wiedymi/restty): libghostty-vt in WebAssembly,
 // drawn with WebGPU or WebGL2. Pinned, and checked against its hash.
@@ -125,6 +139,101 @@ status.textContent = "connecting…";
 restty.connectPty(ws);
 addEventListener("pagehide", () => { wanted = false; });
 addEventListener("focus", () => restty.focus());
+
+// Browsers keep Ctrl+W, Ctrl+T, Ctrl+N and such to themselves; the one way a
+// page gets them is full screen with the keyboard locked (Chrome, Edge,
+// Opera). Then they all go to uc, Esc too, and only holding Esc leaves.
+// Where the lock doesn't take (Firefox, Safari), Esc leaves full screen and
+// Ctrl+[ is Esc for uc.
+const full = document.getElementById("full");
+const lockKeys = () =>
+  navigator.keyboard ? navigator.keyboard.lock().then(() => true, () => false) : Promise.resolve(false);
+let locked = false;
+const label = () => {
+  const on = Boolean(document.fullscreenElement);
+  full.textContent = on ? "exit full screen" : "full screen";
+  full.title = !on
+    ? "Full screen (F11): Esc, Ctrl+W and the browser's other keys go to uc"
+    : locked
+      ? "Every key goes to uc; leave full screen here or hold Esc"
+      : !navigator.keyboard && navigator.brave
+        // Brave's Shields take navigator.keyboard away (brave/brave-browser#50719).
+        ? "Leave full screen (or press Esc); Brave's Shields keep Esc: turn off fingerprint blocking for this site. Till then Ctrl+[ is Esc"
+        : "Leave full screen (or press Esc); this browser keeps Esc, Ctrl+[ is Esc for uc";
+};
+
+// What would keep the lock from working, looked for once, as a tip until
+// dismissed (and remembered dismissed, per kind).
+const TIPS = {
+  shields: "Brave's Shields keep Esc and Ctrl+W from uc, even in full screen. To let them through, click the lion in the address bar, turn off fingerprint blocking for this site, and reload.",
+  unsupported: "This browser keeps Esc and Ctrl+W from uc, even in full screen (Chrome and Edge let them through). Ctrl+[ is Esc for uc.",
+  blocked: "Keyboard lock is blocked for this site, so Esc and Ctrl+W stay with the browser in full screen. Allow it in the site's settings (the icon left of the address) and reload.",
+};
+const TIP_DISMISSED = "uc.lock-tip.dismissed";
+async function lockTrouble() {
+  if (!navigator.keyboard) return navigator.brave ? "shields" : "unsupported";
+  try {
+    const { state } = await navigator.permissions.query({ name: "keyboard-lock" });
+    if (state === "denied") return "blocked";
+  } catch {}
+  return null;
+}
+const tip = document.getElementById("tip");
+lockTrouble().then(kind => {
+  if (!kind || localStorage.getItem(TIP_DISMISSED) === kind) return;
+  tip.querySelector("span").textContent = TIPS[kind];
+  tip.hidden = false;
+  tip.querySelector("button").addEventListener("click", () => {
+    localStorage.setItem(TIP_DISMISSED, kind);
+    tip.hidden = true;
+    restty.focus();
+  });
+});
+
+async function toggle() {
+  if (document.fullscreenElement) {
+    await document.exitFullscreen().catch(() => {});
+    return;
+  }
+  // Lock first, in the same click as the full screen request: the lock waits
+  // for full screen, and that is what has Chrome hand Esc over rather than
+  // leave on it. keyboardLock is the same ask where it is a full screen option.
+  const early = lockKeys();
+  await document.documentElement.requestFullscreen({ navigationUI: "hide", keyboardLock: "browser" }).catch(() => {});
+  if (!document.fullscreenElement) {
+    navigator.keyboard?.unlock();
+    return;
+  }
+  locked = (await early) || (await lockKeys());
+  label();
+}
+full.addEventListener("click", toggle);
+// F11 goes into this full screen, the one with the keyboard locked, rather
+// than the browser's, which locks nothing. Only into it: in full screen every
+// key is uc's, F11 too, and holding Esc is the one way out.
+addEventListener("keydown", e => {
+  if (e.key !== "F11" || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
+  if (document.fullscreenElement) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  toggle();
+}, { capture: true });
+document.addEventListener("fullscreenchange", () => {
+  if (!document.fullscreenElement) {
+    navigator.keyboard?.unlock();
+    locked = false;
+  }
+  label();
+  restty.focus();
+});
+
+// Out of full screen, Ctrl+W meant for uc would close the tab: while it is
+// connected, the browser asks first.
+addEventListener("beforeunload", e => {
+  if (!restty.isPtyConnected()) return;
+  e.preventDefault();
+  e.returnValue = "";
+});
 </script>
 </body>
 </html>

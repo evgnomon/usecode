@@ -114,7 +114,33 @@
   --failed-soft: rgba(242, 128, 122, 0.1);
 }
 
+/* The bar along the top of every page, as an editor has: it follows the
+   theme, and .bar-shell gives it the shells' gruvbox. */
+.bar {
+  --bar-bg: var(--background);
+  --bar-fg: var(--foreground);
+  --bar-muted: var(--muted-foreground);
+  --bar-line: var(--border);
+  --bar-hover: var(--accent);
+  --bar-menu: var(--popover);
+}
+.bar-shell {
+  --bar-bg: #282828;
+  --bar-fg: #ebdbb2;
+  --bar-muted: #a89984;
+  --bar-line: rgb(255 255 255 / 0.1);
+  --bar-hover: rgb(255 255 255 / 0.08);
+  --bar-menu: #1d2021;
+}
+
 @theme inline {
+  --color-bar: var(--bar-bg);
+  --color-bar-fg: var(--bar-fg);
+  --color-bar-muted: var(--bar-muted);
+  --color-bar-line: var(--bar-line);
+  --color-bar-hover: var(--bar-hover);
+  --color-bar-menu: var(--bar-menu);
+
   /* Cascadia Mono Nerd Font everywhere: the site reads like a terminal,
      matching the uc chat box in the hero. */
   --font-sans: "CaskaydiaMono NF", "Cascadia Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;

@@ -24,7 +24,18 @@ function subscribe(listener: () => void) {
   };
 }
 
+/**
+ * Pages only ever loaded, and left, afresh: the server sends them other
+ * headers (the shells' CSP), and leaving with shells open asks first.
+ */
+const FRESH = ["/workspaces"];
+
 export function navigate(to: string, { replace = false } = {}) {
+  if (FRESH.includes(to.split("?", 1)[0] ?? "") || FRESH.includes(location.pathname)) {
+    if (replace) location.replace(to);
+    else location.assign(to);
+    return;
+  }
   if (replace) history.replaceState(null, "", to);
   else history.pushState(null, "", to);
   window.scrollTo(0, 0);

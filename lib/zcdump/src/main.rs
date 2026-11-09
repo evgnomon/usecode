@@ -42,7 +42,24 @@ fn fetch(remote: &str, local: &str) -> i32 {
     code(r, "ssh")
 }
 
+const USAGE: &str = "usage: uc secret cert p12 fetch
+
+Fetches the zygote CA certificate into ./ca_cert.pem and the user_1 and
+user_2 function certificates and keys from controller.zygote (over ssh,
+with sudo there) into ~/.config/zygote/certs/functions/, bundles each as
+PKCS#12 with `uc secret cert p12 KEYNAME`, then deletes the plaintext key.
+It takes no arguments.";
+
 fn main() {
+    if env::args().len() > 1 {
+        let help = env::args().skip(1).any(|arg| arg == "-h" || arg == "--help");
+        if help {
+            println!("{USAGE}");
+            exit(0);
+        }
+        eprintln!("{USAGE}");
+        exit(2);
+    }
     let home = env::var("HOME").unwrap_or_default();
     fetch(&format!("{CERT_DIR}/ca/ca_cert.pem"), "ca_cert.pem");
 

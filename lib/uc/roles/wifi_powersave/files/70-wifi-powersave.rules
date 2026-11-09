@@ -1,0 +1,8 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
+# Wi-Fi power saving follows the charger: off when plugged in, on when on
+# battery. The script looks at every charger and Wi-Fi card itself, so it
+# also sets a card that shows up after the charger events at boot.
+SUBSYSTEM=="power_supply", ATTR{type}=="Mains", RUN+="/usr/local/sbin/wifi-powersave"
+ACTION=="add", SUBSYSTEM=="net", TEST=="wireless", RUN+="/usr/local/sbin/wifi-powersave"

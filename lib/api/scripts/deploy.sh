@@ -57,13 +57,16 @@ rollout() {
   echo "rolling the API out at $tag on https://$host (live now: ${live##*:})"
   kubectl -n console set image statefulset/api "api=$registry/usecode-api:$tag"
   kubectl -n console rollout status statefulset/api --timeout=10m
+  # Quiet while it tries: a 502 or two while the ingress moves to the new
+  # pods is normal. Only giving up is worth saying.
   for _ in $(seq 30); do
-    if curl -fsS -o /dev/null "https://$host/health"; then
+    if curl -fs -o /dev/null "https://$host/health"; then
       echo "https://$host is up on $tag"
       return
     fi
     sleep 2
   done
+  curl -fsS -o /dev/null "https://$host/health" || true
   echo "https://$host/health doesn't answer; see kubectl -n console logs statefulset/api" >&2
   exit 1
 }

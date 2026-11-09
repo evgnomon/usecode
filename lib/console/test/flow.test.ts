@@ -42,6 +42,8 @@ before(async () => {
   await writeFile(join(client, "pages/index.html"), "<!doctype html><html><head><title>home, prerendered</title></head></html>");
   await writeFile(join(client, "pages/404.html"), "<!doctype html><html><head><title>not found, prerendered</title></head></html>");
   await writeFile(join(client, "icon.svg"), "<svg/>");
+  await writeFile(join(client, "manifest.webmanifest"), "{}");
+  await writeFile(join(client, "sw.js"), "");
   app = createApp(cfg, client, fakeApi);
 });
 
@@ -68,6 +70,10 @@ test("pages are prerendered when they can be, and know where the API is", async 
   assert.match(await missing.text(), /not found, prerendered/);
 
   assert.equal((await get("/icon.svg")).status, 200);
+  const manifest = await get("/manifest.webmanifest");
+  assert.equal(manifest.status, 200, "the app is installable");
+  assert.match(manifest.headers.get("content-type") ?? "", /application\/manifest\+json/);
+  assert.match((await get("/sw.js")).headers.get("content-type") ?? "", /javascript/);
   assert.equal(await (await get("/healthz")).text(), "ok");
 });
 
@@ -86,10 +92,31 @@ test("the account is for the logged in, the login for the others", async () => {
   assert.equal((await get("/account", "uc_session=good")).status, 200);
   assert.equal((await get("/hosts")).headers.get("location"), "/login?next=/hosts");
   assert.equal((await get("/hosts", "uc_session=good")).status, 200);
+  assert.equal((await get("/workspaces")).headers.get("location"), "/login?next=/workspaces");
+  assert.equal(
+    (await get("/workspaces?host=h&ws=dev")).headers.get("location"),
+    "/login?next=/workspaces%3Fhost%3Dh%26ws%3Ddev",
+    "back to the same shell after logging in",
+  );
+  const moved = await get("/shell?host=h&ws=dev");
+  assert.equal(moved.status, 301);
+  assert.equal(moved.headers.get("location"), "/workspaces?host=h&ws=dev", "old shell links still open their shells");
   const member = await get("/login", "uc_session=good");
   assert.equal(member.status, 302);
   assert.equal(member.headers.get("location"), "/account");
   assert.equal((await get("/signup")).status, 200);
+});
+
+test("only the shells' page may run WebAssembly and inline styles", async () => {
+  const csp = async (path: string) => (await get(path, "uc_session=good")).headers.get("content-security-policy") ?? "";
+  const shell = await csp("/workspaces?host=h&ws=dev");
+  assert.match(shell, /script-src 'self' 'wasm-unsafe-eval'/);
+  assert.match(shell, /style-src 'self' 'unsafe-inline'/);
+  assert.match(shell, /connect-src 'self' http:\/\/api.test ws:\/\/api.test/);
+  for (const path of ["/", "/account", "/hosts"]) {
+    const strict = await csp(path);
+    assert.doesNotMatch(strict, /wasm-unsafe-eval|unsafe-inline/, path);
+  }
 });
 
 test("when the API is down, nobody is sent anywhere", async () => {

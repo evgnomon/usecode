@@ -15,8 +15,9 @@
 //! What a host sends: the name it has in the inventory, a hash of its
 //! machine id (so the same machine registering again is the same host, not
 //! the id itself), the daemon's version, the architecture, the OS's name,
-//! the uptime and each module's `ok` or error. Nothing from the mesh, the
-//! firewall or Kubernetes' config.
+//! the uptime and each module's `ok` or error; a Kubernetes controller adds
+//! its cluster's id and the workspaces on it (name, state, user, image).
+//! Nothing from the mesh, the firewall or Kubernetes' config.
 
 use std::fs;
 use std::time::Duration;
@@ -290,15 +291,23 @@ pub struct ModuleStatus {
     pub detail: Option<String>,
 }
 
-/// Host: say it's alive. The answer is how often the API wants to hear
-/// from it.
-pub fn heartbeat(state: &State, modules: &[ModuleStatus]) -> Result<Answer<u64>> {
+/// Host: say it's alive, with the cluster's id and its workspaces from a
+/// controller. The answer is how often the API wants to hear from it.
+pub fn heartbeat(
+    state: &State,
+    modules: &[ModuleStatus],
+    workspaces: Option<(String, Vec<crate::relay::Workspace>)>,
+) -> Result<Answer<u64>> {
     let client = client()?;
-    let body = json!({
+    let mut body = json!({
         "version": env!("CARGO_PKG_VERSION"),
         "uptime_seconds": uptime(),
         "modules": modules,
     });
+    if let Some((cluster_id, workspaces)) = workspaces {
+        body["cluster_id"] = json!(cluster_id);
+        body["workspaces"] = json!(workspaces);
+    }
     let auth = format!("Bearer {}", state.secret);
     Ok(
         match post(
@@ -392,7 +401,7 @@ mod tests {
             status: "ok".into(),
             detail: None,
         }];
-        let Answer::Ok(seconds) = heartbeat(&state, &modules).unwrap() else {
+        let Answer::Ok(seconds) = heartbeat(&state, &modules, None).unwrap() else {
             panic!("the new secret was turned down");
         };
         assert!(seconds > 0);
@@ -405,7 +414,7 @@ mod tests {
             .unwrap();
         assert!(removed.status().is_success());
         assert!(matches!(
-            heartbeat(&state, &modules).unwrap(),
+            heartbeat(&state, &modules, None).unwrap(),
             Answer::Refused(_)
         ));
     }

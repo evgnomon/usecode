@@ -11,6 +11,7 @@ mod models;
 mod providers;
 mod servers;
 mod tasks;
+mod workspaces;
 
 use std::sync::Arc;
 
@@ -51,6 +52,7 @@ pub fn router(app: Arc<App>) -> Router {
         .merge(providers::router())
         .merge(servers::router())
         .merge(tasks::router())
+        .merge(workspaces::router())
         .merge(web::router())
         .fallback(|| async { AppError::not_found("Not Found") })
         .method_not_allowed_fallback(|| async {

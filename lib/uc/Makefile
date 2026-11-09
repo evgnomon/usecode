@@ -2,7 +2,7 @@
 # Copyright (C) The Usecode Authors (see AUTHORS)
 
 ROOT_DIR ?= $(abspath ../..)
-SOURCES := $(shell find src tests -type f -name "*.rs") Cargo.toml $(ROOT_DIR)/Cargo.lock
+SOURCES := $(shell find src tests -type f) Cargo.toml $(ROOT_DIR)/Cargo.lock
 include $(ROOT_DIR)/lib/profile.mk
 # The machine's own arch; TARGET=aarch64-unknown-linux-musl cross-builds for arm.
 TARGET ?= $(shell uname -m)-unknown-linux-musl

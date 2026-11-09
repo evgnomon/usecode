@@ -45,6 +45,26 @@ pub async fn fresh_database() -> Option<(String, PgConnectOptions)> {
 pub struct TestApp {
     pub app: Arc<App>,
     pub mail: Arc<Mutex<Vec<Sent>>>,
+    db: Arc<Db>,
+}
+
+impl TestApp {
+    /// Another instance of the API on the same databases, which the others
+    /// reach at `internal_url`.
+    pub fn sibling(&self, internal_url: &str) -> Arc<App> {
+        let settings = self.app.settings.clone();
+        Arc::new(App {
+            cipher: crypto::Cipher::new(&settings.secret_key),
+            store: Store::new(self.db.clone()),
+            chat: chat_store::ChatStore::default(),
+            templates: web::Templates::new().unwrap(),
+            mailer: Mailer::Memory(self.mail.clone()),
+            limits: accounts::Limits::default(),
+            http: reqwest::Client::new(),
+            relay: crate::relay::Hub::new(internal_url.into()),
+            settings,
+        })
+    }
 }
 
 pub async fn app(change: impl FnOnce(&mut Settings)) -> Option<TestApp> {
@@ -66,15 +86,16 @@ pub async fn app(change: impl FnOnce(&mut Settings)) -> Option<TestApp> {
     let _ = rustls_graviola::default_provider().install_default();
     let app = Arc::new(App {
         cipher: crypto::Cipher::new(&settings.secret_key),
-        store: Store::new(db),
+        store: Store::new(db.clone()),
         chat: chat_store::ChatStore::default(),
         templates: web::Templates::new().unwrap(),
         mailer: Mailer::Memory(mail.clone()),
         limits: accounts::Limits::default(),
         http: reqwest::Client::new(),
+        relay: crate::relay::Hub::new("http://127.0.0.1:8000".into()),
         settings,
     });
-    Some(TestApp { app, mail })
+    Some(TestApp { app, mail, db })
 }
 
 /// What came back from a request.

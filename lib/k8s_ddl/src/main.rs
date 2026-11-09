@@ -53,7 +53,23 @@ const STEPS: &[&[&str]] = &[
     &["idx", "add", "resources", "annotations"],
 ];
 
+const USAGE: &str = "usage: uc db resources schema
+
+Creates the Kubernetes `resources` table with `uc db pg`: database z, table
+resources with api_version, kind, name, namespace, tenant, and labels,
+annotations and spec as JSONB, and their indexes. Stops at the first step
+that fails. It takes no arguments.";
+
 fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if !args.is_empty() {
+        if args.iter().any(|arg| arg == "-h" || arg == "--help") {
+            println!("{USAGE}");
+            exit(0);
+        }
+        eprintln!("{USAGE}");
+        exit(2);
+    }
     for step in STEPS {
         let rc = match Command::new(PG).args(*step).status() {
             Ok(s) => s.code().unwrap_or_else(|| 128 + s.signal().unwrap_or(0)),

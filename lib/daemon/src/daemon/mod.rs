@@ -6,7 +6,7 @@
 //!
 //! What it does is the sum of its [`Module`]s. Each module owns one
 //! thing the host can do - the WireGuard mesh, the firewall, Kubernetes,
-//! calling home - and knows both what that thing needs and how to get the host there.
+//! calling home, the relay for shells - and knows both what that thing needs and how to get the host there.
 //! The daemon only drives them: it reconciles every module when it
 //! starts, again on SIGHUP (`systemctl reload usecode`) or a `reload` on
 //! its control socket ([`control`], `usecoded reload`, which also says
@@ -25,6 +25,7 @@ pub mod firewall;
 pub mod host;
 pub mod kube;
 pub mod mesh;
+pub mod relay;
 
 use std::os::unix::net::UnixStream;
 use std::sync::Mutex;
@@ -57,6 +58,7 @@ fn modules() -> Vec<Box<dyn Module>> {
         Box::new(mesh::Mesh::default()),
         Box::new(firewall::Firewall::default()),
         Box::new(kube::Kube::default()),
+        Box::new(relay::Relay::default()),
         // Last, so its heartbeat says how every other module just did.
         Box::new(callhome::CallHome::default()),
     ]

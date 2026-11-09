@@ -1,7 +1,7 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, CodeXml } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { KeyLegend } from "@/components/kbd";
@@ -57,14 +57,22 @@ export function Home() {
     <>
       <section className="pt-14 pb-10 text-center sm:pt-24 sm:pb-16">
         <div className="wrap max-w-[760px]">
-          <h1 className="mb-8 text-[clamp(28px,5.5vw,44px)] leading-[1.15] font-semibold tracking-[-0.02em]">
+          <h1 className="mb-4 text-[clamp(28px,5.5vw,44px)] leading-[1.15] font-semibold tracking-[-0.02em]">
             {MOTIVATION.tagline}
           </h1>
+          <p className="mb-8 text-[clamp(18px,3vw,24px)] leading-[1.3] font-medium tracking-[-0.01em]">{MOTIVATION.subtitle}</p>
           <div className="mx-auto mb-8 max-w-[60ch] space-y-3 text-base text-muted-foreground">
             {MOTIVATION.intro.map((line) => (
               <p key={line}>{line}</p>
             ))}
           </div>
+          <a
+            href={REPO_URL}
+            className="mb-4 inline-flex items-center gap-2 border border-primary bg-primary/10 px-3 py-1.5 text-sm font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
+          >
+            <CodeXml className="size-4" strokeWidth={1.75} />
+            {MOTIVATION.openSource}
+          </a>
           <ul className="mx-auto mb-8 flex flex-wrap justify-center gap-x-3 gap-y-2 text-sm font-medium">
             {MOTIVATION.pillars.map((p) => (
               <li key={p} className="border px-2.5 py-1">

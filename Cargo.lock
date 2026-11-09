@@ -4783,8 +4783,11 @@ dependencies = [
  "httparse",
  "log",
  "rand 0.9.5",
+ "rustls",
+ "rustls-pki-types",
  "sha1 0.10.7",
  "thiserror 2.0.21",
+ "webpki-roots 0.26.11",
 ]
 
 [[package]]
@@ -4858,6 +4861,7 @@ dependencies = [
  "sha2 0.11.0",
  "tempfile",
  "toml",
+ "tungstenite",
  "x25519-dalek",
 ]
 
@@ -4974,6 +4978,7 @@ dependencies = [
  "subtle",
  "thiserror 2.0.21",
  "tokio",
+ "tokio-tungstenite",
  "tower",
  "tower-http",
  "tracing",

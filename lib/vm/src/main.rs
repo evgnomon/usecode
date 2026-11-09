@@ -42,6 +42,16 @@ fn run(args: &[String]) -> Result<()> {
         _ => {}
     }
 
+    // Asking a command for help never runs it: `uc vm remove -h` must not
+    // take `-h` for a VM's name.
+    if wants_help(&args[2..]) {
+        match command_help(command) {
+            Some(help) => print!("{help}"),
+            None => print_help(),
+        }
+        return Ok(());
+    }
+
     // Load configuration
     let cfg = match Config::load_from_file("/etc/vm/config.yaml") {
         Ok(cfg) => cfg,
@@ -140,6 +150,144 @@ fn parse_or_exit<T, E: std::fmt::Display>(result: std::result::Result<T, E>, wha
             std::process::exit(1);
         }
     }
+}
+
+/// Whether a command's arguments ask for help: `-h` or `--help` anywhere.
+fn wants_help(args: &[String]) -> bool {
+    args.iter().any(|arg| arg == "-h" || arg == "--help")
+}
+
+/// The help of one command, for `uc vm <command> -h`.
+fn command_help(command: &str) -> Option<&'static str> {
+    Some(match command {
+        "create" => {
+            "\
+Usage: uc vm create <name> [options]
+
+Create a new VM from the base image, with cloud-init, start it and wait for
+its IP. An ssh_config entry makes `ssh <name>` reach it.
+
+Options:
+  --memory <size>                    Memory, e.g. 2GiB, 512MiB (default: 1GiB)
+  --vcpus <num>                      Number of vCPUs (default: 2)
+  --disk-size <size>                 Disk size, e.g. 20G (default: 10G)
+  --machine <type>                   Machine type (default: pc-q35-10.0)
+  --image <path>                     Use a custom base image
+  --no-start                         Create but don't start the VM
+  --no-wait-ip                       Don't wait for the IP address
+  --mount <host-path>[:<tag>]        Share a host directory over virtiofs
+                                     (tag defaults to the basename); repeatable
+
+Examples:
+  uc vm create myvm
+  uc vm create myvm --memory 2GiB --vcpus 4 --disk-size 20G
+  uc vm create myvm --mount /home/user/projects:src
+"
+        }
+        "list" => {
+            "\
+Usage: uc vm list [-a|--all]
+
+List the running VMs, or all of them with -a.
+"
+        }
+        "info" => {
+            "\
+Usage: uc vm info <name>
+
+Show a VM's information.
+"
+        }
+        "inspect" => {
+            "\
+Usage: uc vm inspect <name>
+
+Show a VM's details: memory, disk and IP.
+"
+        }
+        "start" => {
+            "\
+Usage: uc vm start <name>
+
+Start a VM.
+"
+        }
+        "stop" => {
+            "\
+Usage: uc vm stop <name> [--force]
+
+Shut a VM down; --force powers it off.
+"
+        }
+        "restart" => {
+            "\
+Usage: uc vm restart <name> [--force]
+
+Restart a VM; --force powers it off first.
+"
+        }
+        "remove" => {
+            "\
+Usage: uc vm remove <name> [--force]
+
+Remove a VM and its disk; --force also removes a running one.
+"
+        }
+        "ip" => {
+            "\
+Usage: uc vm ip <name>
+
+Print a VM's IP address.
+"
+        }
+        "snapshot" => {
+            "\
+Usage: uc vm snapshot create <name> <snap>      Create a snapshot
+       uc vm snapshot list <name>               List a VM's snapshots
+       uc vm snapshot restore <name> <snap>     Revert a VM to a snapshot
+       uc vm snapshot remove <name> <snap>      Remove a snapshot
+"
+        }
+        "fork" => {
+            "\
+Usage: uc vm fork <source> <new-name> [options]
+
+Make a new VM from an external snapshot of <source>'s disk.
+
+Options:
+  --memory <size>                    Memory, e.g. 2GiB (default: 1GiB)
+  --vcpus <num>                      Number of vCPUs (default: 2)
+  --no-start                         Fork but don't start the new VM
+  --no-wait-ip                       Don't wait for the IP address
+
+Examples:
+  uc vm fork myvm myvm-copy
+  uc vm fork myvm myvm-copy --memory 2GiB --vcpus 4
+"
+        }
+        "mount" => {
+            "\
+Usage: uc vm mount <name> <host-path> [--tag <tag>]
+
+Share a host directory into a VM over virtiofs. Inside the VM:
+  sudo mkdir -p /mnt/<tag> && sudo mount -t virtiofs <tag> /mnt/<tag>
+
+Options:
+  --tag <tag>                        Mount tag inside the VM (default: basename)
+"
+        }
+        "config" => {
+            "\
+Usage: uc vm config <name> --memory <size>
+
+Reconfigure an existing VM.
+
+Options:
+  --memory <size>                    Memory, e.g. 2GiB, 512MiB
+"
+        }
+        _ => return None,
+    })
 }
 
 fn print_usage(prog_name: &str) {

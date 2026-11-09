@@ -21,16 +21,19 @@ export type Hotkey = {
   href?: string;
   /** Only for the logged in, or only for the others. */
   for?: "members" | "visitors";
+  /** Other words the command palette (Ctrl+Shift+P) finds it by. */
+  keywords?: string;
 };
 
 /** The console's keys, in the order the footer lists them. */
 export const HOTKEYS: Hotkey[] = [
-  { key: "h", label: "Home", href: "/" },
-  { key: "p", label: "Pricing", href: "/pricing" },
-  { key: "o", label: "Hosts", href: "/hosts", for: "members" },
-  { key: "a", label: "Account", href: "/account", for: "members" },
-  { key: "l", label: "Log in", href: "/login", for: "visitors" },
-  { key: "s", label: "Sign up", href: "/signup", for: "visitors" },
+  { key: "h", label: "Home", href: "/", keywords: "start landing usecode" },
+  { key: "p", label: "Pricing", href: "/pricing", keywords: "plans price cost" },
+  { key: "o", label: "Hosts", href: "/hosts", for: "members", keywords: "machines servers nodes" },
+  { key: "w", label: "Workspaces", href: "/workspaces", for: "members", keywords: "shells terminal ws" },
+  { key: "a", label: "Account", href: "/account", for: "members", keywords: "profile settings billing" },
+  { key: "l", label: "Log in", href: "/login", for: "visitors", keywords: "sign in" },
+  { key: "s", label: "Sign up", href: "/signup", for: "visitors", keywords: "register create account" },
   { key: "t", label: "Theme" },
 ];
 

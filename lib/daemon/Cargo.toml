@@ -47,4 +47,7 @@ serde_yaml.workspace = true
 sha2 = "0.11"
 tempfile.workspace = true
 toml.workspace = true
+# The relay socket to the usecode API (see src/relay.rs), on the TLS provider
+# src/tls.rs installs, with the Mozilla roots built in.
+tungstenite = { version = "0.29", default-features = false, features = ["handshake", "rustls-tls-webpki-roots"] }
 x25519-dalek = { version = "3", features = ["static_secrets"] }

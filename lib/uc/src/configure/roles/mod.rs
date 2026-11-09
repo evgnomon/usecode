@@ -30,6 +30,7 @@ pub mod udev_hwdb;
 pub mod usecode;
 pub mod vim;
 pub mod webcam;
+pub mod wifi_powersave;
 pub mod windows;
 pub mod wsl_sudo;
 pub mod wslview;
@@ -102,6 +103,7 @@ pub fn plan(v: &Vars) -> Plan {
     sysctl::tasks(&mut plan, v);
     udev_hwdb::tasks(&mut plan, v);
     webcam::tasks(&mut plan, v);
+    wifi_powersave::tasks(&mut plan, v);
     gnome::tasks(&mut plan, v);
     fonts::tasks(&mut plan, v);
     mise::tasks(&mut plan, v);
@@ -153,6 +155,9 @@ mod tests {
             "sysctl/templates/sysctl.conf.j2",
             "udev_hwdb/files/61-keyboard-builtin-altwin.hwdb",
             "udev_hwdb/files/hid_apple.conf",
+            "wifi_powersave/files/70-wifi-powersave.rules",
+            "wifi_powersave/files/wifi-powersave",
+            "wifi_powersave/files/wifi-powersave.conf",
             "wslview/files/wslview",
             "yubikey/files/70-u2f.rules",
             "yubikey/files/90-pcscd.rules",

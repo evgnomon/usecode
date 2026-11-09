@@ -24,14 +24,22 @@ fn openssl_args(home: &str, key: &str) -> Vec<String> {
     ]
 }
 
+const USAGE: &str = "usage: uc secret cert p12 KEYNAME
+
+Bundles the zygote function key and certificate KEYNAME (e.g. user_1.zygote)
+with the zygote CA into a PKCS#12 file, with openssl:
+  ~/.config/zygote/certs/functions/KEYNAME/KEYNAME_cert.p12
+from KEYNAME_key.pem and KEYNAME_cert.pem there and
+~/.config/zygote/certs/ca/ca_cert.pem. openssl asks for the export password.";
+
 fn main() {
     let args: Vec<String> = env::args().collect();
+    if args[1..].iter().any(|arg| arg == "-h" || arg == "--help") {
+        println!("{USAGE}");
+        exit(0);
+    }
     if args.len() != 2 {
-        let arg0 = args
-            .first()
-            .map(String::as_str)
-            .unwrap_or("uc-secret-cert-p12-bundle");
-        println!("Usage: {arg0} <keyname>");
+        eprintln!("{USAGE}");
         exit(1);
     }
     let home = env::var("HOME").unwrap_or_default();
