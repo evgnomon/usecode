@@ -20,6 +20,7 @@ use sqlx::Connection;
 use sqlx::postgres::PgConnection;
 use uuid::Uuid;
 
+use crate::accounts::Created;
 use crate::config::Settings;
 use crate::db::Db;
 use crate::migrate;
@@ -69,14 +70,15 @@ pub async fn copy(store: &Store, src: &mut PgConnection) -> Result<Counts> {
         let id = match store.find_email_user(&email).await? {
             Some(user) => user.id,
             None => match store
-                .create_email_user(&email, &password_hash, created_at)
+                .create_email_user(&email, None, &password_hash, created_at)
                 .await?
             {
-                Some(id) => {
+                Created::Made(id) => {
                     counts.new_users += 1;
                     id
                 }
-                None => {
+                // Without a username to clash, only the email can.
+                Created::EmailTaken | Created::UsernameTaken => {
                     store
                         .find_email_user(&email)
                         .await?

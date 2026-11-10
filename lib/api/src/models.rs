@@ -100,6 +100,7 @@ pub struct AuthTokenOut {
 pub struct MeOut {
     pub phone: Option<String>,
     pub email: Option<String>,
+    pub username: Option<String>,
     pub created_at: f64,
 }
 

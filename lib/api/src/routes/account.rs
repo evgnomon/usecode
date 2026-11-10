@@ -25,7 +25,8 @@ use uuid::Uuid;
 
 use crate::App;
 use crate::accounts::{
-    self, CODE_MINUTES, Checked, Pending, Purpose, SESSION_DAYS, normalize_email, signup_problem,
+    self, CODE_MINUTES, Checked, Created, Pending, Picked, Purpose, SESSION_DAYS, normalize_email,
+    normalize_username, signup_problem, username_problem,
 };
 use crate::billing;
 use crate::config::Settings;
@@ -39,6 +40,7 @@ const VERIFY_PATH: &str = "/auth/email/verify";
 pub fn router() -> Router<Arc<App>> {
     Router::new()
         .route("/account", get(account))
+        .route("/account/username", post(pick_username))
         .route("/auth/email/signup", post(signup))
         .route("/auth/email/login", post(login))
         .route("/auth/email/reset", post(reset))
@@ -89,7 +91,11 @@ async fn account(
         Some(client) => {
             let sub = app.store.subscription(&client.user_id).await?;
             json!({
-                "user": {"email": client.email, "phone": client.phone},
+                "user": {
+                    "email": client.email,
+                    "phone": client.phone,
+                    "username": client.username,
+                },
                 "billing": billing,
                 "subscription": sub.as_ref().map(|s| json!({
                     "status": s.status,
@@ -109,13 +115,22 @@ struct Credentials {
     email: String,
     #[serde(default)]
     password: String,
+    /// Only a sign up picks one.
+    #[serde(default)]
+    username: String,
 }
 
 impl Credentials {
     fn email(&self) -> String {
         normalize_email(&self.email)
     }
+
+    fn username(&self) -> String {
+        normalize_username(&self.username)
+    }
 }
+
+const USERNAME_TAKEN: &str = "That username is taken. Try another.";
 
 /// Mail a code for `pending` and keep its token in a cookie; the browser
 /// then posts the code to the verify endpoint.
@@ -161,7 +176,10 @@ async fn signup(
     JsonBody(body): JsonBody<Credentials>,
 ) -> AppResult<Response> {
     let email = body.email();
-    if let Some(problem) = signup_problem(&email, &body.password) {
+    let username = body.username();
+    if let Some(problem) =
+        username_problem(&username).or_else(|| signup_problem(&email, &body.password))
+    {
         return Err(fail(StatusCode::UNPROCESSABLE_ENTITY, problem));
     }
     if app.store.find_email_user(&email).await?.is_some() {
@@ -169,6 +187,9 @@ async fn signup(
             StatusCode::CONFLICT,
             "That email already has an account. Try logging in.",
         ));
+    }
+    if app.store.find_username(&username).await?.is_some() {
+        return Err(fail(StatusCode::CONFLICT, USERNAME_TAKEN));
     }
     let password_hash = accounts::hash_password_async(body.password).await?;
     challenge(
@@ -178,6 +199,7 @@ async fn signup(
             email,
             user_id: None,
             password_hash: Some(password_hash),
+            username: Some(username),
         },
     )
     .await
@@ -211,6 +233,7 @@ async fn login(
             email: user.email,
             user_id: Some(user.id),
             password_hash: None,
+            username: None,
         },
     )
     .await
@@ -236,6 +259,7 @@ async fn reset(
             email,
             user_id: user.map(|u| u.id),
             password_hash: Some(password_hash),
+            username: None,
         },
     )
     .await
@@ -275,17 +299,25 @@ async fn verify(
     let user_id: Uuid = match pending.purpose {
         Purpose::Signup => {
             let hash = pending.password_hash.as_deref().unwrap_or_default();
+            let username = pending.username.as_deref();
             match app
                 .store
-                .create_email_user(&pending.email, hash, Utc::now())
+                .create_email_user(&pending.email, username, hash, Utc::now())
                 .await?
             {
-                Some(id) => id,
-                None => {
+                Created::Made(id) => id,
+                Created::EmailTaken => {
                     return Err(fail(
                         StatusCode::CONFLICT,
                         "That email already has an account. Try logging in.",
                     ));
+                }
+                Created::UsernameTaken => {
+                    let taken = fail(
+                        StatusCode::GONE,
+                        "Someone just took that username. Go back and pick another.",
+                    );
+                    return Ok(([(header::SET_COOKIE, clear_otp)], taken).into_response());
                 }
             }
         }
@@ -330,6 +362,33 @@ async fn verify(
 
 fn log_in_first() -> AppError {
     fail(StatusCode::UNAUTHORIZED, "Log in first.")
+}
+
+#[derive(Deserialize, Default)]
+struct UsernameIn {
+    #[serde(default)]
+    username: String,
+}
+
+/// An account made before there were usernames picks one, once.
+async fn pick_username(
+    State(app): State<Arc<App>>,
+    MaybeClient(client): MaybeClient,
+    JsonBody(body): JsonBody<UsernameIn>,
+) -> AppResult<Json<Value>> {
+    let client = client.ok_or_else(log_in_first)?;
+    let username = normalize_username(&body.username);
+    if let Some(problem) = username_problem(&username) {
+        return Err(fail(StatusCode::UNPROCESSABLE_ENTITY, problem));
+    }
+    match app.store.pick_username(&client.user_id, &username).await? {
+        Picked::Set => Ok(Json(json!({"username": username}))),
+        Picked::Taken => Err(fail(StatusCode::CONFLICT, USERNAME_TAKEN)),
+        Picked::HasOne => Err(fail(
+            StatusCode::CONFLICT,
+            "Your account has a username already, and it stays as it is.",
+        )),
+    }
 }
 
 /// Where to send the browser to subscribe: Stripe's checkout, or the
@@ -418,7 +477,7 @@ mod tests {
         let answer = browser
             .post(
                 "/auth/email/signup",
-                json!({"email": email, "password": password}),
+                json!({"username": email.split('@').next(), "email": email, "password": password}),
             )
             .await;
         assert_eq!(answer.status, StatusCode::ACCEPTED, "{}", answer.body);
@@ -439,7 +498,7 @@ mod tests {
         let answer = ada
             .post(
                 "/auth/email/signup",
-                json!({"email": " Ada@Example.com", "password": "0123456789"}),
+                json!({"username": "ada", "email": " Ada@Example.com", "password": "0123456789"}),
             )
             .await;
         assert_eq!(answer.status, StatusCode::ACCEPTED);
@@ -470,14 +529,14 @@ mod tests {
         let answer = other
             .post(
                 "/auth/email/signup",
-                json!({"email": ADA, "password": "0123456789"}),
+                json!({"username": "ada", "email": ADA, "password": "0123456789"}),
             )
             .await;
         assert_eq!(answer.status, StatusCode::CONFLICT);
         let answer = other
             .post(
                 "/auth/email/signup",
-                json!({"email": "nope", "password": "0123456789"}),
+                json!({"username": "ada", "email": "nope", "password": "0123456789"}),
             )
             .await;
         assert_eq!(answer.status, StatusCode::UNPROCESSABLE_ENTITY);
@@ -505,6 +564,7 @@ mod tests {
         let answer = other.post(VERIFY_PATH, json!({"code": code})).await;
         assert_eq!(answer.status, StatusCode::OK);
         assert_eq!(other.get("/account").await.body["user"]["email"], ADA);
+        assert_eq!(other.get("/account").await.body["user"]["username"], "ada");
 
         // A reset logs out everywhere and takes the new password.
         let mut forgot = Browser::new(&t.app);
@@ -557,6 +617,99 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_username_is_picked_once() {
+        let Some(t) = testing::app(|_| {}).await else {
+            return;
+        };
+        let mut ada = Browser::new(&t.app);
+        sign_up(&t, &mut ada, ADA, "0123456789").await;
+        assert_eq!(ada.get("/account").await.body["user"]["username"], "ada");
+
+        // Taken, or not a name: the sign up stops before any mail.
+        let mut bob = Browser::new(&t.app);
+        let before = mails(&t);
+        let signup = |username: &str| json!({"username": username, "email": "bob@example.com", "password": "0123456789"});
+        let answer = bob.post("/auth/email/signup", signup(" ADA ")).await;
+        assert_eq!(answer.status, StatusCode::CONFLICT);
+        assert_eq!(answer.body["detail"], USERNAME_TAKEN);
+        for wrong in ["", "-bob", "bob--b", "b", "bob_b", "admin"] {
+            let answer = bob.post("/auth/email/signup", signup(wrong)).await;
+            assert_eq!(answer.status, StatusCode::UNPROCESSABLE_ENTITY, "{wrong:?}");
+        }
+        assert_eq!(mails(&t), before);
+
+        // It never changes.
+        let answer = ada
+            .post("/account/username", json!({"username": "ada-2"}))
+            .await;
+        assert_eq!(answer.status, StatusCode::CONFLICT);
+        let answer = Browser::new(&t.app)
+            .post("/account/username", json!({"username": "ada-2"}))
+            .await;
+        assert_eq!(answer.status, StatusCode::UNAUTHORIZED);
+
+        // An account from before usernames picks one on the account page.
+        let hash = accounts::hash_password("0123456789").unwrap();
+        let made = t
+            .app
+            .store
+            .create_email_user("old@example.com", None, &hash, Utc::now())
+            .await
+            .unwrap();
+        assert!(matches!(made, Created::Made(_)));
+        let mut old = Browser::new(&t.app);
+        let answer = old
+            .post(
+                "/auth/email/login",
+                json!({"email": "old@example.com", "password": "0123456789"}),
+            )
+            .await;
+        assert_eq!(answer.status, StatusCode::ACCEPTED);
+        let code = last_code(&t, "old@example.com");
+        assert_eq!(
+            old.post(VERIFY_PATH, json!({"code": code})).await.status,
+            StatusCode::OK
+        );
+        assert_eq!(
+            old.get("/account").await.body["user"]["username"],
+            Value::Null
+        );
+        let answer = old
+            .post("/account/username", json!({"username": "ada"}))
+            .await;
+        assert_eq!(answer.status, StatusCode::CONFLICT);
+
+        // Bob's sign up waits for its code while the old account takes the
+        // name: the code then says so, and no account is made.
+        let answer = bob.post("/auth/email/signup", signup("old-timer")).await;
+        assert_eq!(answer.status, StatusCode::ACCEPTED, "{}", answer.body);
+        let answer = old
+            .post("/account/username", json!({"username": " Old-Timer "}))
+            .await;
+        assert_eq!(answer.status, StatusCode::OK, "{}", answer.body);
+        assert_eq!(answer.body["username"], "old-timer");
+        assert_eq!(
+            old.get("/account").await.body["user"]["username"],
+            "old-timer"
+        );
+        let code = last_code(&t, "bob@example.com");
+        let answer = bob.post(VERIFY_PATH, json!({"code": code})).await;
+        assert_eq!(answer.status, StatusCode::GONE);
+        assert!(
+            t.app
+                .store
+                .find_email_user("bob@example.com")
+                .await
+                .unwrap()
+                .is_none()
+        );
+        let answer = old
+            .post("/account/username", json!({"username": "old-timer-2"}))
+            .await;
+        assert_eq!(answer.status, StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
     async fn a_code_takes_five_guesses() {
         let Some(t) = testing::app(|_| {}).await else {
             return;
@@ -565,7 +718,7 @@ mod tests {
         browser
             .post(
                 "/auth/email/signup",
-                json!({"email": ADA, "password": "0123456789"}),
+                json!({"username": "ada", "email": ADA, "password": "0123456789"}),
             )
             .await;
         let code = last_code(&t, ADA);
@@ -590,7 +743,7 @@ mod tests {
         let answer = browser
             .post(
                 "/auth/email/signup",
-                json!({"email": ADA, "password": "0123456789"}),
+                json!({"username": "ada", "email": ADA, "password": "0123456789"}),
             )
             .await;
         assert_eq!(answer.status, StatusCode::FORBIDDEN);
@@ -602,7 +755,7 @@ mod tests {
         let answer = browser
             .post(
                 "/auth/email/signup",
-                json!({"email": ADA, "password": "0123456789"}),
+                json!({"username": "ada", "email": ADA, "password": "0123456789"}),
             )
             .await;
         assert_eq!(answer.status, StatusCode::ACCEPTED);

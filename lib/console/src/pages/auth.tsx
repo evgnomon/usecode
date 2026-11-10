@@ -10,6 +10,33 @@ import { post, useMe, type ApiError } from "@/lib/api";
 import { Link, navigate, useLocation } from "@/lib/router";
 import { safeNext } from "@/lib/safe-next";
 
+/** What the API takes as a username, for the browser to check first. */
+export const USERNAME_PATTERN = "[A-Za-z0-9](?:-?[A-Za-z0-9])+";
+
+/** The username field, on sign up and on the account page. */
+export function UsernameField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <div className="grid gap-1.5">
+      <Label htmlFor="username">Username</Label>
+      <Input
+        id="username"
+        required
+        autoCapitalize="none"
+        spellCheck={false}
+        minLength={2}
+        maxLength={39}
+        pattern={USERNAME_PATTERN}
+        title="Letters, digits and single dashes, 2 to 39 of them, starting and ending with a letter or digit."
+        value={value}
+        onChange={(e) => onChange(e.target.value.toLowerCase())}
+      />
+      <small className="text-xs text-muted-foreground">
+        Letters, digits and dashes. It's how you log in to things like git, and it can't be changed later.
+      </small>
+    </div>
+  );
+}
+
 const TEXT = {
   signup: {
     title: "Make an account",
@@ -40,6 +67,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" | "reset" }) {
   const fresh = mode !== "login";
   const { refresh } = useMe();
   const { query } = useLocation();
+  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
@@ -53,7 +81,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" | "reset" }) {
     setBusy(true);
     setError("");
     try {
-      const res = await post<{ email: string }>(text.api, { email, password });
+      const res = await post<{ email: string }>(text.api, mode === "signup" ? { username, email, password } : { email, password });
       setCode("");
       setSentTo(res.email);
     } catch (err) {
@@ -115,6 +143,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" | "reset" }) {
           </form>
         ) : (
           <form onSubmit={submit} className="grid gap-3">
+            {mode === "signup" ? <UsernameField value={username} onChange={setUsername} /> : null}
             <div className="grid gap-1.5">
               <Label htmlFor="email">Email</Label>
               <Input id="email" type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />

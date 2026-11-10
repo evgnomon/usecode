@@ -68,6 +68,7 @@ async fn me(Client(client): Client) -> Json<MeOut> {
     Json(MeOut {
         phone: client.phone,
         email: client.email,
+        username: client.username,
         created_at: client.created_at,
     })
 }

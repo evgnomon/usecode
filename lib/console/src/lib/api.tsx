@@ -8,7 +8,8 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 
 /** GET /account, as the API sends it. */
 export interface Me {
-  user: { email: string } | null;
+  /** `username` is null for an account from before usernames, until it picks one. */
+  user: { email: string; username: string | null } | null;
   billing: boolean;
   subscription: { status: string; currentPeriodEnd: string | null; cancelAtPeriodEnd: boolean } | null;
   subscribed: boolean;

@@ -76,6 +76,110 @@ pub fn signup_problem(email: &str, password: &str) -> Option<&'static str> {
     None
 }
 
+pub fn normalize_username(username: &str) -> String {
+    username.trim().to_lowercase()
+}
+
+/// The longest a username may be, as on GitHub.
+pub const USERNAME_MAX: usize = 39;
+
+/// Names a username can't be: they'd clash with the paths of the console or
+/// of what logs in with usecode.dev (Forgejo keeps these for itself), or
+/// pass for us.
+const RESERVED: &[&str] = &[
+    "about",
+    "account",
+    "admin",
+    "administrator",
+    "api",
+    "app",
+    "assets",
+    "attachments",
+    "auth",
+    "avatar",
+    "avatars",
+    "billing",
+    "captcha",
+    "commits",
+    "console",
+    "debug",
+    "docs",
+    "error",
+    "explore",
+    "forgejo",
+    "forgejo-actions",
+    "ghost",
+    "git",
+    "gitea",
+    "gitea-actions",
+    "help",
+    "hosts",
+    "info",
+    "issues",
+    "login",
+    "logout",
+    "mail",
+    "metrics",
+    "milestones",
+    "new",
+    "news",
+    "notifications",
+    "oauth",
+    "openid",
+    "org",
+    "postmaster",
+    "pricing",
+    "pulls",
+    "raw",
+    "repo",
+    "repo-avatars",
+    "root",
+    "search",
+    "security",
+    "settings",
+    "signup",
+    "ssh",
+    "staff",
+    "support",
+    "system",
+    "uc",
+    "usecode",
+    "user",
+    "users",
+    "v1",
+    "v2",
+    "webmaster",
+    "www",
+];
+
+/// Why `username` (already normalized) can't be one, or `None` when it can:
+/// 2 to 39 lowercase letters, digits and dashes, a letter or digit at each
+/// end and no two dashes in a row, so it is a name everywhere it goes.
+pub fn username_problem(username: &str) -> Option<&'static str> {
+    if username.is_empty() {
+        return Some("Pick a username.");
+    }
+    if username.len() < 2 {
+        return Some("Pick a username of at least 2 characters.");
+    }
+    if username.len() > USERNAME_MAX {
+        return Some("Pick a username of at most 39 characters.");
+    }
+    if !username
+        .bytes()
+        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+    {
+        return Some("A username can have letters, digits and dashes, nothing else.");
+    }
+    if username.starts_with('-') || username.ends_with('-') || username.contains("--") {
+        return Some("A username can't start or end with a dash, or have two in a row.");
+    }
+    if RESERVED.contains(&username) {
+        return Some("That username is kept for the site. Try another.");
+    }
+    None
+}
+
 fn derive(password: &str, salt: &[u8], log_n: u8, r: u32, p: u32) -> Result<Vec<u8>> {
     let params = scrypt::Params::new(log_n, r, p, KEY_LEN)
         .map_err(|err| anyhow::anyhow!("scrypt parameters: {err}"))?;
@@ -193,6 +297,8 @@ pub struct Pending {
     pub user_id: Option<Uuid>,
     /// The new password's hash, for a sign up or a reset.
     pub password_hash: Option<String>,
+    /// The username a sign up picked.
+    pub username: Option<String>,
 }
 
 #[derive(Debug)]
@@ -306,6 +412,23 @@ pub struct EmailUser {
     pub password_hash: Option<String>,
 }
 
+/// What making an account came to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Created {
+    Made(Uuid),
+    EmailTaken,
+    UsernameTaken,
+}
+
+/// What picking a username came to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Picked {
+    Set,
+    Taken,
+    /// The account has one already, and it never changes.
+    HasOne,
+}
+
 impl Store {
     /// The user with `email`, through the email directory.
     pub async fn find_email_user(&self, email: &str) -> Result<Option<EmailUser>> {
@@ -331,27 +454,43 @@ impl Store {
         }))
     }
 
-    /// A new account for `email`, or `None` when the address has one.
+    /// A new account for `email`, with `username` when the sign up picked
+    /// one, unless the address or the name is taken.
     pub async fn create_email_user(
         &self,
         email: &str,
+        username: Option<&str>,
         password_hash: &str,
         created_at: DateTime<Utc>,
-    ) -> Result<Option<Uuid>> {
+    ) -> Result<Created> {
         // The user row first, as for phones (see `get_or_create_user`): a
         // crash in between leaves an inert row, not a directory entry
         // pointing at nobody.
         let id = Uuid::new_v4();
         let users = self.pool_for_user(&id).await?;
         sqlx::query(
-            "INSERT INTO users (id, email, password_hash, created_at) VALUES ($1, $2, $3, $4)",
+            "INSERT INTO users (id, email, username, password_hash, created_at)
+             VALUES ($1, $2, $3, $4, $5)",
         )
         .bind(id)
         .bind(email)
+        .bind(username)
         .bind(password_hash)
         .bind(created_at)
         .execute(&users)
         .await?;
+        let forget_user = || async {
+            sqlx::query("DELETE FROM users WHERE id = $1")
+                .bind(id)
+                .execute(&users)
+                .await
+        };
+        if let Some(username) = username
+            && !self.claim_username(username, &id).await?
+        {
+            forget_user().await?;
+            return Ok(Created::UsernameTaken);
+        }
         let directory = self.pool_for_key(schema::EMAIL_DIRECTORY, email).await?;
         let registered: Option<Uuid> = sqlx::query_scalar(
             "INSERT INTO email_directory (email, user_id, created_at) VALUES ($1, $2, $3)
@@ -363,13 +502,100 @@ impl Store {
         .fetch_optional(&directory)
         .await?;
         if registered.is_some() {
-            return Ok(Some(id));
+            return Ok(Created::Made(id));
         }
-        sqlx::query("DELETE FROM users WHERE id = $1")
-            .bind(id)
+        if let Some(username) = username {
+            self.release_username(username, &id).await?;
+        }
+        forget_user().await?;
+        Ok(Created::EmailTaken)
+    }
+
+    /// Who has `username`, through the username directory.
+    pub async fn find_username(&self, username: &str) -> Result<Option<Uuid>> {
+        let directory = self
+            .pool_for_key(schema::USERNAME_DIRECTORY, username)
+            .await?;
+        Ok(
+            sqlx::query_scalar("SELECT user_id FROM username_directory WHERE username = $1")
+                .bind(username)
+                .fetch_optional(&directory)
+                .await?,
+        )
+    }
+
+    /// Enter `username` in the directory for `user_id`: whether it is
+    /// theirs now (or was already).
+    async fn claim_username(&self, username: &str, user_id: &Uuid) -> Result<bool> {
+        let directory = self
+            .pool_for_key(schema::USERNAME_DIRECTORY, username)
+            .await?;
+        sqlx::query(
+            "INSERT INTO username_directory (username, user_id, created_at) VALUES ($1, $2, $3)
+             ON CONFLICT (username) DO NOTHING",
+        )
+        .bind(username)
+        .bind(user_id)
+        .bind(Utc::now())
+        .execute(&directory)
+        .await?;
+        let owner: Option<Uuid> =
+            sqlx::query_scalar("SELECT user_id FROM username_directory WHERE username = $1")
+                .bind(username)
+                .fetch_optional(&directory)
+                .await?;
+        Ok(owner == Some(*user_id))
+    }
+
+    /// Take `username` out of the directory, if `user_id` holds it.
+    async fn release_username(&self, username: &str, user_id: &Uuid) -> Result<()> {
+        let directory = self
+            .pool_for_key(schema::USERNAME_DIRECTORY, username)
+            .await?;
+        sqlx::query("DELETE FROM username_directory WHERE username = $1 AND user_id = $2")
+            .bind(username)
+            .bind(user_id)
+            .execute(&directory)
+            .await?;
+        Ok(())
+    }
+
+    /// Give an account without a username `username`, once: one it has
+    /// already never changes.
+    pub async fn pick_username(&self, user_id: &Uuid, username: &str) -> Result<Picked> {
+        let users = self.pool_for_user(user_id).await?;
+        let current: Option<Option<String>> =
+            sqlx::query_scalar("SELECT username FROM users WHERE id = $1")
+                .bind(user_id)
+                .fetch_optional(&users)
+                .await?;
+        match current {
+            None => bail!("no user {user_id}"),
+            Some(Some(_)) => return Ok(Picked::HasOne),
+            Some(None) => {}
+        }
+        if !self.claim_username(username, user_id).await? {
+            return Ok(Picked::Taken);
+        }
+        let set = sqlx::query("UPDATE users SET username = $2 WHERE id = $1 AND username IS NULL")
+            .bind(user_id)
+            .bind(username)
             .execute(&users)
             .await?;
-        Ok(None)
+        if set.rows_affected() == 1 {
+            return Ok(Picked::Set);
+        }
+        // Another request picked one first; let this name go, unless it
+        // was the same one.
+        let now: Option<String> = sqlx::query_scalar("SELECT username FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_one(&users)
+            .await?;
+        if now.as_deref() == Some(username) {
+            return Ok(Picked::Set);
+        }
+        self.release_username(username, user_id).await?;
+        Ok(Picked::HasOne)
     }
 
     /// A new password, and every session of the user logged out.
@@ -429,14 +655,16 @@ impl Store {
         let now = Utc::now();
         sqlx::query(
             "INSERT INTO email_codes
-                 (token_hash, purpose, email, user_id, password_hash, code_hash, expires_at, created_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+                 (token_hash, purpose, email, user_id, password_hash, username, code_hash,
+                  expires_at, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
         )
         .bind(&token_hash)
         .bind(p.purpose.as_str())
         .bind(&p.email)
         .bind(p.user_id)
         .bind(&p.password_hash)
+        .bind(&p.username)
         .bind(code_hash(&token, &code))
         .bind(now + chrono::Duration::minutes(CODE_MINUTES))
         .bind(now)
@@ -461,18 +689,26 @@ impl Store {
         }
         let token_hash = hash(token);
         let pool = self.pool_for_key(schema::EMAIL_CODES, &token_hash).await?;
-        type Row = (String, String, Option<Uuid>, Option<String>, String, i32);
+        type Row = (
+            String,
+            String,
+            Option<Uuid>,
+            Option<String>,
+            Option<String>,
+            String,
+            i32,
+        );
         let row: Option<Row> = sqlx::query_as(
             "UPDATE email_codes SET attempts = attempts + 1
              WHERE token_hash = $1 AND expires_at > $2 AND attempts < $3
-             RETURNING purpose, email, user_id, password_hash, code_hash, attempts",
+             RETURNING purpose, email, user_id, password_hash, username, code_hash, attempts",
         )
         .bind(&token_hash)
         .bind(Utc::now())
         .bind(MAX_TRIES)
         .fetch_optional(&pool)
         .await?;
-        let Some((purpose, email, user_id, password_hash, want, attempts)) = row else {
+        let Some((purpose, email, user_id, password_hash, username, want, attempts)) = row else {
             return Ok(Checked::Gone);
         };
         let Some(purpose) = Purpose::parse(&purpose) else {
@@ -513,6 +749,7 @@ impl Store {
             email,
             user_id,
             password_hash,
+            username,
         }))
     }
 }
@@ -520,6 +757,29 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn usernames() {
+        for good in ["ada", "a1", "ada-lovelace", "0x", &"a".repeat(USERNAME_MAX)] {
+            assert_eq!(username_problem(good), None, "{good}");
+        }
+        for bad in [
+            "",
+            "a",
+            "-ada",
+            "ada-",
+            "ad--a",
+            "ada_l",
+            "ada.l",
+            "Ada",
+            "adá",
+            "admin",
+            &"a".repeat(USERNAME_MAX + 1),
+        ] {
+            assert!(username_problem(bad).is_some(), "{bad}");
+        }
+        assert_eq!(normalize_username("  Ada "), "ada");
+    }
 
     #[test]
     fn a_console_hash_still_checks() {

@@ -135,6 +135,7 @@ pub struct ApiKeyRecord {
     pub user_id: Uuid,
     pub phone: Option<String>,
     pub email: Option<String>,
+    pub username: Option<String>,
     // The database instance holding this *user's* partitioned rows; passed
     // to every partitioned store call made on their behalf. Not where the
     // api_keys row itself is — that one hashes on the key hash.
@@ -153,11 +154,12 @@ pub struct WebSessionRecord {
     pub created_at: f64,
 }
 
-/// Who a user is: their phone, their email, or both.
+/// Who a user is: their phone, their email, or both, and their username.
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct Who {
     pub phone: Option<String>,
     pub email: Option<String>,
+    pub username: Option<String>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -176,6 +178,7 @@ impl ApiKeyRow {
             user_id: self.user_id,
             phone: who.phone.clone(),
             email: who.email.clone(),
+            username: who.username.clone(),
             partition,
             label: self.label,
             created_at: ts(self.created_at),
@@ -669,10 +672,11 @@ impl Store {
         // call made on their behalf will use.
         let partition = self.db.partition_for_user(&row.user_id).await?;
         let users = self.db.pool(&partition).await?;
-        let who: Option<Who> = sqlx::query_as("SELECT phone, email FROM users WHERE id = $1")
-            .bind(row.user_id)
-            .fetch_optional(&users)
-            .await?;
+        let who: Option<Who> =
+            sqlx::query_as("SELECT phone, email, username FROM users WHERE id = $1")
+                .bind(row.user_id)
+                .fetch_optional(&users)
+                .await?;
         Ok(who.map(|who| row.record(&who, partition)))
     }
 
@@ -690,10 +694,11 @@ impl Store {
                 .bind(user_id)
                 .fetch_all(&users)
                 .await?;
-        let who: Option<Who> = sqlx::query_as("SELECT phone, email FROM users WHERE id = $1")
-            .bind(user_id)
-            .fetch_optional(&users)
-            .await?;
+        let who: Option<Who> =
+            sqlx::query_as("SELECT phone, email, username FROM users WHERE id = $1")
+                .bind(user_id)
+                .fetch_optional(&users)
+                .await?;
         let Some(who) = who else {
             return Ok(Vec::new());
         };

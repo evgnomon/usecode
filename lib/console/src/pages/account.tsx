@@ -1,14 +1,15 @@
 // License-Identifier: HGL
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Pill } from "@/components/console";
 import { KeyLegend } from "@/components/kbd";
 import { ErrorNote, Notice, Section } from "@/components/layout";
 import { HOSTED_PRICE, PLANS } from "@/content";
-import { goTo, useMe, type Me } from "@/lib/api";
+import { goTo, post, useMe, type Me } from "@/lib/api";
+import { UsernameField } from "@/pages/auth";
 import { Link, navigate, useLocation } from "@/lib/router";
 
 const date = (iso: string) =>
@@ -63,6 +64,42 @@ function Subscription({ me }: { me: Me }) {
   );
 }
 
+/** For an account from before usernames: it picks one, once. */
+function PickUsername({ refresh }: { refresh: () => Promise<void> }) {
+  const [username, setUsername] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const pick = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await post("/account/username", { username });
+      await refresh();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+    setBusy(false);
+  };
+  return (
+    <Card className="mb-8 gap-0 rounded-lg py-5 shadow-none">
+      <CardContent className="px-5">
+        <h3 className="mb-3">Pick a username</h3>
+        <p className="mb-3 text-muted-foreground">
+          Your account doesn't have one yet. You'll need it to log in with usecode.dev elsewhere, like our git.
+        </p>
+        {error ? <ErrorNote>{error}</ErrorNote> : null}
+        <form onSubmit={pick} className="grid max-w-[380px] gap-3">
+          <UsernameField value={username} onChange={setUsername} />
+          <Button type="submit" variant="outline" disabled={busy}>
+            Keep this username
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function Account() {
   const { me, refresh } = useMe();
   const { query } = useLocation();
@@ -85,10 +122,20 @@ export function Account() {
     <Section>
       <div className="wrap max-w-[680px]">
         <h1 className="mb-3 text-xl">Your account</h1>
-        <p className="mb-3 text-muted-foreground">Logged in as {me.user.email}</p>
+        <p className="mb-3 text-muted-foreground">
+          Logged in as{" "}
+          {me.user.username ? (
+            <>
+              <span className="text-foreground">{me.user.username}</span> ({me.user.email})
+            </>
+          ) : (
+            me.user.email
+          )}
+        </p>
         {justSubscribed && !me.subscribed ? (
           <Notice>Thanks! Your payment is being confirmed; this page catches up in a moment.</Notice>
         ) : null}
+        {me.user.username ? null : <PickUsername refresh={refresh} />}
         <Card className="mb-8 gap-0 rounded-lg py-5 shadow-none">
           <CardContent className="px-5">
             <h3 className="mb-3">Plan</h3>

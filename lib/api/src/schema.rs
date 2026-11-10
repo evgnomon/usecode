@@ -92,6 +92,7 @@ pub const LOCATION_MAPPINGS: &str = "location_mappings";
 pub const PROVIDER_RESOURCES: &str = "provider_resources";
 pub const EMAIL_DIRECTORY: &str = "email_directory";
 pub const EMAIL_CODES: &str = "email_codes";
+pub const USERNAME_DIRECTORY: &str = "username_directory";
 pub const STRIPE_CUSTOMERS: &str = "stripe_customers";
 pub const STRIPE_EVENTS: &str = "stripe_events";
 
@@ -193,6 +194,12 @@ pub const TABLES: &[Table] = &[
         // else; a sign up's has no user yet.
         name: EMAIL_CODES,
         placement: Placement::HashedOn("token_hash"),
+    },
+    Table {
+        // Username -> user id: what keeps a username unique across every
+        // instance, as `email_directory` does for emails.
+        name: USERNAME_DIRECTORY,
+        placement: Placement::HashedOn("username"),
     },
     Table {
         name: "subscriptions",
