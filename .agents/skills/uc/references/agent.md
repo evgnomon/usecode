@@ -16,6 +16,8 @@ uc agent skill                           # the skills, the ones on marked
 uc agent skill uc -agent-browser         # turn on, turn off; none for all off
 uc agent usage                           # OpenRouter credits, Claude subscription windows
 uc agent login claude | copilot          # interactive: give it to the user
+uc agent session                         # pick a saved session (date, dir, first line) and carry on in it
+uc agent session 2 | NAME                # the 2nd newest, or by name; no terminal: lists them
 uc agent import [FILE]                   # carry on from an exported conversation
 uc agent serve [--listen ADDR]           # uc in a web page on 127.0.0.1:4777 (keeps running)
 uc agent api                             # the HTTP backend (keeps running); migrate [--status]

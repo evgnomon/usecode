@@ -57,6 +57,10 @@
 //! session,
 //! `uc agent export [FILE]` writes the conversation to a file and `uc agent
 //! import [FILE]` carries on from one (typed in a shell, in a new session),
+//! every session is saved as it goes in `~/.local/state/usecode/sessions`
+//! (a cleared context starts a new one) and `uc agent session [N|NAME]`
+//! checks one out again, in the directory it was in, on its model (the
+//! picker picks it, with dates, without an argument),
 //! and `uc agent status` prints the model, the effort, the mode and how much
 //! of the model's context the conversation has taken: the
 //! message count, an estimate before the first turn, the real token count of
@@ -582,6 +586,15 @@ struct Session {
     /// The names of the skills on, in the order they were turned on: the
     /// ones found here go into the system prompt (see [`skills`]).
     skills: Vec<String>,
+    /// When the conversation's first line was typed: it names its file in
+    /// the sessions directory.
+    started: Option<chrono::DateTime<chrono::Local>>,
+    /// The file in the sessions directory the conversation is saved in,
+    /// once it has been; a cleared context starts another.
+    saved_as: Option<PathBuf>,
+    /// A hash of what was saved last, so an unchanged session isn't
+    /// written again.
+    saved: u64,
 }
 
 /// A command started by bash, followed with job_output and stopped with job_kill.
@@ -702,9 +715,11 @@ async fn run(
     SHELL.store(shell, Ordering::Relaxed);
     let mut session = Session::new(ask, output, commands, search).await?;
     let ai = AI.load(Ordering::Relaxed);
-    let import = IMPORT.lock().unwrap_or_else(|e| e.into_inner()).take();
-    if let Some(file) = import {
-        session.import_picked(&file)?;
+    let start = START.lock().unwrap_or_else(|e| e.into_inner()).take();
+    match start {
+        Some(Start::Import(file)) => session.import_picked(&file)?,
+        Some(Start::Checkout(path)) => session.checkout(&path.display().to_string())?,
+        None => {}
     }
     if shell || !ai {
         // Read the user's aliases while they type, not when the first line comes.
@@ -727,6 +742,8 @@ async fn run(
     });
     let mut shown: Option<String> = None;
     loop {
+        // What the last line did is in the session's file before the next.
+        session.save();
         let Some(line) = read_prompt(&prompt())? else {
             eprintln!();
             return Ok(());
@@ -783,6 +800,13 @@ async fn run(
                 Ok(path) => note!("exported to {}", path.display()),
                 Err(err) => note!("{err:#}"),
             }
+            continue;
+        }
+        if let Some(arg) = agent_arg(line, "session") {
+            if let Err(err) = session.checkout(arg) {
+                note!("{err:#}");
+            }
+            shown = Some(session.models());
             continue;
         }
         if let Some(arg) = agent_arg(line, "import") {
@@ -859,6 +883,7 @@ async fn run(
         // what the next line starts from.
         shown = Some(session.models());
         if CLEARED.swap(false, Ordering::Relaxed) {
+            session.save();
             session.forget();
             eprintln!("· context cleared");
         }
@@ -1339,7 +1364,7 @@ fn agent_command(line: &str) -> Option<&'static str> {
 }
 
 /// A typed `uc agent <name> [ARG]` for the commands that take an argument
-/// (`rewind`, `effort`, `skill`, `export`, `import`), which the chat takes itself:
+/// (`rewind`, `effort`, `skill`, `export`, `import`, `session`), which the chat takes itself:
 /// what comes after the name, trimmed.
 fn agent_arg<'l>(line: &'l str, name: &str) -> Option<&'l str> {
     line.strip_prefix("uc agent ")?
@@ -1349,7 +1374,7 @@ fn agent_arg<'l>(line: &'l str, name: &str) -> Option<&'l str> {
 }
 
 /// The `uc agent` commands with an argument that the prompt takes itself.
-const AGENT_ARG_COMMANDS: &[&str] = &["rewind", "effort", "skill", "export", "import"];
+const AGENT_ARG_COMMANDS: &[&str] = &["rewind", "effort", "skill", "export", "import", "session"];
 
 /// Whether the line is one of [`AGENT_ARG_COMMANDS`].
 fn agent_arg_line(line: &str) -> bool {
@@ -1364,7 +1389,11 @@ fn agent_arg_line(line: &str) -> bool {
 /// straight away looks like at the prompt.
 fn color_program(command: &str) -> String {
     let end = command.find(char::is_whitespace).unwrap_or(command.len());
-    format!("\x1b[1;36m{}\x1b[22;39m{}", &command[..end], &command[end..])
+    format!(
+        "\x1b[1;36m{}\x1b[22;39m{}",
+        &command[..end],
+        &command[end..]
+    )
 }
 
 /// The command line to run when what was typed is one rather than something for
@@ -2113,6 +2142,9 @@ impl Session {
             tokens: Tokens::default(),
             since: Instant::now(),
             asked: Vec::new(),
+            started: None,
+            saved_as: None,
+            saved: 0,
         })
     }
 
@@ -2232,10 +2264,14 @@ impl Session {
     }
 
     /// Forgets the conversation, as a fresh uc would: only the system message
-    /// stays, for the directory it is in now.
+    /// stays, for the directory it is in now. What comes next is another
+    /// session, saved in a file of its own.
     fn forget(&mut self) {
         self.messages.retain(|m| m["role"] == "system");
         self.asked.clear();
+        self.started = None;
+        self.saved_as = None;
+        self.saved = 0;
         self.instructed.clear();
         if let Ok(dir) = std::env::current_dir().and_then(|d| d.canonicalize()) {
             self.instructed = instruction_files(&dir);
@@ -2274,6 +2310,7 @@ impl Session {
 
     /// A line for the model: one turn, until it answers.
     async fn ask(&mut self, line: &str) -> Result<()> {
+        self.started.get_or_insert_with(chrono::Local::now);
         self.asked.push((self.messages.len(), line.to_string()));
         self.messages.push(json!({"role": "user", "content": line}));
         self.since = Instant::now();
@@ -2478,51 +2515,170 @@ impl Session {
         } else {
             expand_home(arg)
         };
-        let exported = Exported {
+        let mut exported = self.exported();
+        exported.updated = Some(chrono::Local::now().to_rfc3339());
+        write_session(&path, &exported)?;
+        Ok(path)
+    }
+
+    /// The conversation as a session file holds it. A tool call still
+    /// waiting for its answer (the model left uc with `chat exit`) is
+    /// answered in it, so the conversation can carry on from the file.
+    fn exported(&self) -> Exported {
+        let mut messages: Vec<Value> = self.messages.iter().skip(1).cloned().collect();
+        if let Some(at) = messages.iter().rposition(|m| m["role"] == "assistant") {
+            let answered: Vec<Value> = messages[at + 1..]
+                .iter()
+                .map(|m| m["tool_call_id"].clone())
+                .collect();
+            let calls = messages[at]["tool_calls"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default();
+            for call in calls.iter().filter(|c| !answered.contains(&c["id"])) {
+                messages.push(json!({
+                    "role": "tool",
+                    "tool_call_id": call["id"],
+                    "content": "the session ended here",
+                }));
+            }
+        }
+        Exported {
             usecode_session: 1,
             provider: self.provider.clone(),
             model: self.model.clone(),
             effort: self.effort.clone(),
             dir: std::env::current_dir().ok(),
-            messages: self.messages.iter().skip(1).cloned().collect(),
+            started: self.started.map(|t| t.to_rfc3339()),
+            updated: None,
+            messages,
             asked: self
                 .asked
                 .iter()
                 .map(|(at, line)| (at.saturating_sub(1), line.clone()))
                 .collect(),
-        };
-        if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
-            std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
         }
-        let text = serde_json::to_string_pretty(&exported)?;
-        std::fs::write(&path, text).with_context(|| format!("writing {}", path.display()))?;
-        Ok(path)
+    }
+
+    /// Saves the conversation in its file in the sessions directory, a new
+    /// one named by when its first line was typed if it has none yet, for
+    /// `uc agent session` to check out again. Nothing is written before the
+    /// first line, or when nothing changed since the last save.
+    fn autosave(&mut self) -> Result<()> {
+        if self.asked.is_empty() {
+            return Ok(());
+        }
+        let mut exported = self.exported();
+        let hash = {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            serde_json::to_string(&exported)?.hash(&mut hasher);
+            hasher.finish()
+        };
+        if hash == self.saved && self.saved_as.is_some() {
+            return Ok(());
+        }
+        let path = match &self.saved_as {
+            Some(path) => path.clone(),
+            None => {
+                let dir = sessions_dir().ok_or_else(|| anyhow!("no home directory to save in"))?;
+                let started = *self.started.get_or_insert_with(chrono::Local::now);
+                exported.started = Some(started.to_rfc3339());
+                let name = started.format("%Y%m%d-%H%M%S").to_string();
+                let mut path = dir.join(format!("{name}.json"));
+                for n in 2.. {
+                    if !path.exists() {
+                        break;
+                    }
+                    path = dir.join(format!("{name}-{n}.json"));
+                }
+                path
+            }
+        };
+        exported.updated = Some(chrono::Local::now().to_rfc3339());
+        write_session(&path, &exported)?;
+        self.saved_as = Some(path);
+        self.saved = hash;
+        Ok(())
+    }
+
+    /// [`autosave`](Self::autosave), saying so when it fails.
+    fn save(&mut self) {
+        if let Err(err) = self.autosave() {
+            note!("session not saved: {err:#}");
+        }
+    }
+
+    /// `uc agent session [N|NAME]` at the prompt: saves this conversation
+    /// and checks out a saved one in its place, the picker picking it
+    /// without an argument (the list without a terminal). The session goes
+    /// back to the directory it was in, and to its model and effort if they
+    /// are there; what is said from now on is saved in its file.
+    fn checkout(&mut self, arg: &str) -> Result<()> {
+        self.save();
+        let current = self.saved_as.clone();
+        let Some(path) = pick_session(arg, current.as_deref())? else {
+            return Ok(());
+        };
+        if current.as_deref() == Some(path.as_path()) {
+            note!("on session {} already", session_name(&path));
+            return Ok(());
+        }
+        let exported = read_session(&path)?;
+        if let Some(dir) = &exported.dir {
+            match std::env::set_current_dir(dir) {
+                Ok(()) => {}
+                Err(err) => note!("cd {}: {err}", dir.display()),
+            }
+        }
+        let started = exported
+            .started
+            .as_deref()
+            .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
+            .map(|t| t.with_timezone(&chrono::Local));
+        let choice = Choice::new(&exported.provider, &exported.model);
+        let usable =
+            self.pool.contains(&choice) && named(&self.providers, &choice.provider).is_some();
+        let effort = exported.effort.clone();
+        let lines = exported.asked.len();
+        self.import(exported);
+        if usable {
+            self.set_model(choice);
+        }
+        if !effort.is_empty() {
+            self.effort = effort;
+        }
+        self.started = started;
+        self.saved_as = Some(path.clone());
+        self.saved = 0;
+        let here = std::env::current_dir()
+            .map(|d| tilde(&d))
+            .unwrap_or_default();
+        note!(
+            "session {}: {lines} line{}, in {here}, {}",
+            session_name(&path),
+            if lines == 1 { "" } else { "s" },
+            self.models()
+        );
+        Ok(())
     }
 
     /// `uc agent import [FILE]`: the conversation of an exported file, picked
     /// from the sessions directory without one (the latest without a
-    /// terminal).
+    /// terminal). It goes on as a new session.
     fn import_picked(&mut self, arg: &str) -> Result<()> {
         let path = if arg.is_empty() {
             let saved = saved_sessions();
             if saved.is_empty() {
-                bail!("no exported sessions; `uc agent export` makes one");
+                bail!("no saved sessions yet");
             }
             if picker::available() && saved.len() > 1 {
-                let items = saved
-                    .iter()
-                    .map(|(path, shown)| picker::Item::new(shown, path.display().to_string()))
-                    .collect();
-                let picked = picker::Picker::new("import> ")
-                    .reverse()
-                    .select_one()
-                    .pick(items);
-                match picked.and_then(|p| p.values.into_iter().next()) {
-                    Some(path) => PathBuf::from(path),
+                match pick_saved(&saved, "import> ", "", None) {
+                    Some(path) => path,
                     None => return Ok(()),
                 }
             } else {
-                saved[0].0.clone()
+                saved[0].path.clone()
             }
         } else {
             let path = expand_home(arg);
@@ -2538,10 +2694,7 @@ impl Session {
                 _ => path,
             }
         };
-        let text = std::fs::read_to_string(&path)
-            .with_context(|| format!("reading {}", path.display()))?;
-        let exported: Exported = serde_json::from_str(&text)
-            .with_context(|| format!("{} is not an exported uc session", path.display()))?;
+        let exported = read_session(&path)?;
         let (lines, model) = (exported.asked.len(), exported.model.clone());
         self.import(exported);
         note!(
@@ -2690,6 +2843,7 @@ impl Session {
 
     /// Leaves uc: stops the jobs, puts the terminal back as it was and exits.
     fn exit(&mut self) -> Result<String> {
+        self.save();
         stop_jobs();
         restore_terminal(&mut saved());
         note!("leaving uc");
@@ -4189,8 +4343,9 @@ fn skill_picker(found: &[skills::Skill], on: &mut Vec<String>) -> Option<Vec<Str
     (!picked.values.is_empty()).then(|| skills::toggle(on, &picked.values))
 }
 
-/// A conversation as `uc agent export` writes it: the messages after the
-/// system prompt, and the lines typed with where each sits among them.
+/// A conversation as a session file holds it, the ones uc saves as it goes
+/// and the ones `uc agent export` writes: the messages after the system
+/// prompt, and the lines typed with where each sits among them.
 #[derive(serde::Serialize, serde::Deserialize)]
 struct Exported {
     usecode_session: u32,
@@ -4199,48 +4354,246 @@ struct Exported {
     effort: String,
     #[serde(default)]
     dir: Option<PathBuf>,
+    /// When its first line was typed, RFC 3339.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    started: Option<String>,
+    /// When it was saved, RFC 3339.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    updated: Option<String>,
     messages: Vec<Value>,
     #[serde(default)]
     asked: Vec<(usize, String)>,
 }
 
-/// Where `uc agent export` puts a conversation without a file named:
-/// `~/.local/state/usecode/sessions`.
+/// Reads a session file.
+fn read_session(path: &std::path::Path) -> Result<Exported> {
+    let text =
+        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    serde_json::from_str(&text)
+        .with_context(|| format!("{} is not a saved uc session", path.display()))
+}
+
+/// Writes a session file, only for the user to read: through a file beside
+/// it, so a reader never sees half of one.
+fn write_session(path: &std::path::Path, exported: &Exported) -> Result<()> {
+    use std::os::unix::fs::OpenOptionsExt;
+    if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+        std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+    }
+    let part = path.with_extension("json.part");
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(&part)
+        .with_context(|| format!("writing {}", part.display()))?;
+    file.write_all(serde_json::to_string_pretty(exported)?.as_bytes())
+        .with_context(|| format!("writing {}", part.display()))?;
+    drop(file);
+    std::fs::rename(&part, path).with_context(|| format!("writing {}", path.display()))
+}
+
+/// Where uc saves its sessions, and `uc agent export` puts a conversation
+/// without a file named: `~/.local/state/usecode/sessions`.
 fn sessions_dir() -> Option<PathBuf> {
     history_path().and_then(|h| h.parent().map(|d| d.join("sessions")))
 }
 
-/// The exported sessions there, newest first, each with what the picker
-/// shows: its name and the first line typed in it.
-fn saved_sessions() -> Vec<(PathBuf, String)> {
+/// A session's name: its file's, without `.json`.
+fn session_name(path: &std::path::Path) -> String {
+    path.file_stem()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned()
+}
+
+/// `path` with the home directory as `~`.
+fn tilde(path: &std::path::Path) -> String {
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    match home.as_deref().and_then(|h| path.strip_prefix(h).ok()) {
+        Some(rest) if rest.as_os_str().is_empty() => "~".into(),
+        Some(rest) => format!("~/{}", rest.display()),
+        None => path.display().to_string(),
+    }
+}
+
+/// What the list of sessions shows of one, read without its messages.
+#[derive(serde::Deserialize)]
+struct Summary {
+    #[serde(default)]
+    model: String,
+    #[serde(default)]
+    dir: Option<PathBuf>,
+    #[serde(default)]
+    updated: Option<String>,
+    #[serde(default)]
+    asked: Vec<(usize, String)>,
+}
+
+/// A saved session, as `uc agent session` lists it.
+struct Saved {
+    path: PathBuf,
+    /// When it was saved last.
+    when: chrono::DateTime<chrono::Local>,
+    model: String,
+    dir: Option<PathBuf>,
+    /// The lines typed in it, oldest first.
+    lines: Vec<String>,
+}
+
+impl Saved {
+    /// One line: when, where, how many lines and the first of them.
+    fn shown(&self) -> String {
+        let dir = self.dir.as_deref().map(tilde).unwrap_or_else(|| "?".into());
+        let first = self
+            .lines
+            .first()
+            .map(|l| l.replace('\n', " "))
+            .unwrap_or_default();
+        format!(
+            "{}  {dir}  ({})  {first}",
+            self.when.format("%a %Y-%m-%d %H:%M"),
+            self.lines.len()
+        )
+    }
+
+    /// What the picker shows beside it: the session, and the lines typed.
+    fn preview(&self) -> String {
+        let model = self.model.rsplit('/').next().unwrap_or(&self.model);
+        let dir = self.dir.as_deref().map(tilde).unwrap_or_else(|| "?".into());
+        let mut text = format!(
+            "{}  {}\n{dir}  {model}\n\n",
+            session_name(&self.path),
+            self.when.format("%a %Y-%m-%d %H:%M")
+        );
+        for line in &self.lines {
+            text.push_str(&format!("> {}\n", line.replace('\n', "\n  ")));
+        }
+        text
+    }
+}
+
+/// The saved sessions, the last saved first.
+fn saved_sessions() -> Vec<Saved> {
     let Some(dir) = sessions_dir() else {
         return Vec::new();
     };
-    let mut found: Vec<(std::time::SystemTime, PathBuf)> = std::fs::read_dir(dir)
+    let mut found: Vec<Saved> = std::fs::read_dir(dir)
         .into_iter()
         .flatten()
         .flatten()
         .filter(|e| e.path().extension().is_some_and(|x| x == "json"))
-        .map(|e| {
-            let when = e.metadata().and_then(|m| m.modified()).ok();
-            (when.unwrap_or(std::time::UNIX_EPOCH), e.path())
+        .filter_map(|e| {
+            let path = e.path();
+            let summary: Summary =
+                serde_json::from_str(&std::fs::read_to_string(&path).ok()?).ok()?;
+            let modified = e.metadata().and_then(|m| m.modified()).ok();
+            let when = summary
+                .updated
+                .as_deref()
+                .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
+                .map(|t| t.with_timezone(&chrono::Local))
+                .or_else(|| modified.map(chrono::DateTime::from))
+                .unwrap_or_default();
+            Some(Saved {
+                path,
+                when,
+                model: summary.model,
+                dir: summary.dir,
+                lines: summary.asked.into_iter().map(|(_, line)| line).collect(),
+            })
         })
         .collect();
-    found.sort_by_key(|f| std::cmp::Reverse(f.0));
+    found.sort_by_key(|s| std::cmp::Reverse(s.when));
     found
-        .into_iter()
-        .map(|(_, path)| {
-            let first = std::fs::read_to_string(&path)
-                .ok()
-                .and_then(|t| serde_json::from_str::<Exported>(&t).ok())
-                .and_then(|e| e.asked.into_iter().next())
-                .map(|(_, line)| line.replace('\n', " "))
-                .unwrap_or_default();
-            let name = path.file_stem().unwrap_or_default().to_string_lossy();
-            let shown = format!("{name}  {first}");
-            (path, shown)
+}
+
+/// The picker over `saved`, starting on `query`, the `current` one marked;
+/// the path picked.
+fn pick_saved(
+    saved: &[Saved],
+    prompt: &str,
+    query: &str,
+    current: Option<&std::path::Path>,
+) -> Option<PathBuf> {
+    let previews: std::collections::HashMap<String, String> = saved
+        .iter()
+        .map(|s| (s.path.display().to_string(), s.preview()))
+        .collect();
+    let items = saved
+        .iter()
+        .map(|s| {
+            let mark = if current == Some(s.path.as_path()) {
+                "* "
+            } else {
+                "  "
+            };
+            picker::Item::new(format!("{mark}{}", s.shown()), s.path.display().to_string())
         })
-        .collect()
+        .collect();
+    let picked = picker::Picker::new(prompt)
+        .reverse()
+        .query(query)
+        .preview(move |path| previews.get(path).cloned().unwrap_or_default())
+        .pick(items)?;
+    picked.values.into_iter().next().map(PathBuf::from)
+}
+
+/// The numbered list of `saved`, the newest 1, the `current` one marked.
+fn session_list(saved: &[Saved], current: Option<&std::path::Path>) -> String {
+    let mut lines = String::new();
+    for (i, s) in saved.iter().enumerate() {
+        let mark = if current == Some(s.path.as_path()) {
+            "*"
+        } else {
+            " "
+        };
+        lines.push_str(&format!("{mark} {} {}\n", i + 1, s.shown()));
+    }
+    lines
+}
+
+/// The session `arg` names: a number in the list, a session's name, a
+/// file, or with a terminal what the picker picks, starting on `arg` (all
+/// of them without one). Without a terminal and without `arg`, the list
+/// is printed and none is picked.
+fn pick_session(arg: &str, current: Option<&std::path::Path>) -> Result<Option<PathBuf>> {
+    let saved = saved_sessions();
+    if saved.is_empty() {
+        bail!("no saved sessions yet: uc saves one once a line has gone to the model");
+    }
+    if let Ok(n) = arg.parse::<usize>() {
+        return match saved.get(n.wrapping_sub(1)) {
+            Some(s) => Ok(Some(s.path.clone())),
+            None => bail!("no session {n}: there are {}", saved.len()),
+        };
+    }
+    if !arg.is_empty() {
+        if let Some(s) = saved.iter().find(|s| session_name(&s.path) == arg) {
+            return Ok(Some(s.path.clone()));
+        }
+        let path = expand_home(arg);
+        if path.is_file() {
+            return Ok(Some(path));
+        }
+    }
+    if picker::available() {
+        return Ok(pick_saved(&saved, "session> ", arg, current));
+    }
+    let wanted = arg.to_lowercase();
+    let matching: Vec<&Saved> = saved
+        .iter()
+        .filter(|s| s.shown().to_lowercase().contains(&wanted))
+        .collect();
+    match matching.as_slice() {
+        [one] if !arg.is_empty() => Ok(Some(one.path.clone())),
+        [] => bail!("no session {arg}; `uc agent session` lists them"),
+        _ => {
+            out::raw(&session_list(&saved, current));
+            Ok(None)
+        }
+    }
 }
 
 /// `path` with a leading `~/` as the home directory.
@@ -4251,13 +4604,49 @@ fn expand_home(path: &str) -> PathBuf {
     }
 }
 
-/// The session `uc agent import` typed in a shell starts with.
-static IMPORT: Mutex<Option<String>> = Mutex::new(None);
+/// What a session started from a shell begins with.
+enum Start {
+    /// `uc agent import`: a copy of an exported conversation, as a new session.
+    Import(String),
+    /// `uc agent session`: a saved session, checked out to carry on in it.
+    Checkout(PathBuf),
+}
+
+/// The session `uc agent import` or `uc agent session` typed in a shell
+/// starts with.
+static START: Mutex<Option<Start>> = Mutex::new(None);
 
 /// `uc agent import [FILE]` in a shell: a new uc session that carries on
 /// from an exported one. Its flags come from `UC_*` and the user config.
 pub fn resume(file: String) -> ExitCode {
-    *IMPORT.lock().unwrap_or_else(|e| e.into_inner()) = Some(file);
+    start_with(Start::Import(file))
+}
+
+/// `uc agent session [N|NAME]` in a shell: uc on a saved session, in the
+/// directory it was in; the picker picks it without an argument, and
+/// without a terminal the sessions are listed.
+pub fn agent_session(arg: &str) -> ExitCode {
+    match pick_session(arg, None) {
+        Ok(Some(path)) => {
+            let dir = read_session(&path).ok().and_then(|e| e.dir);
+            if let Some(dir) = dir
+                && let Err(err) = std::env::set_current_dir(&dir)
+            {
+                eprintln!("· cd {}: {err}", dir.display());
+            }
+            start_with(Start::Checkout(path))
+        }
+        Ok(None) => ExitCode::SUCCESS,
+        Err(err) => {
+            eprintln!("uc agent session: {err:#}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// uc, with the flags from `UC_*` and the user config, beginning with `start`.
+fn start_with(start: Start) -> ExitCode {
+    *START.lock().unwrap_or_else(|e| e.into_inner()) = Some(start);
     let has = |flag: &str| crate::flag::on(&[], flag);
     crate::claude::LONG_CACHE.store(has("--long-cache"), Ordering::Relaxed);
     let search = [
@@ -5532,6 +5921,9 @@ mod tests {
             cache_key: "uc-test".into(),
             asked: Vec::new(),
             skills: Vec::new(),
+            started: None,
+            saved_as: None,
+            saved: 0,
         }
     }
 
@@ -5566,6 +5958,27 @@ mod tests {
         assert_eq!(Tokens::default().done(3), None);
         assert_eq!(short(25_400), "25k");
         assert_eq!(short(1_250_000), "1.2M");
+    }
+
+    #[test]
+    fn a_saved_session_answers_the_call_it_left_on() {
+        let mut session = session();
+        session.messages = vec![
+            json!({"role": "system", "content": "prompt"}),
+            json!({"role": "user", "content": "bye"}),
+            json!({"role": "assistant", "content": "", "tool_calls": [
+                {"id": "a", "type": "function", "function": {"name": "chat", "arguments": "{}"}}]}),
+        ];
+        session.asked = vec![(1, "bye".into())];
+        let exported = session.exported();
+        assert_eq!(exported.messages.len(), 3, "no system prompt, the call answered");
+        assert_eq!(exported.messages[2]["tool_call_id"], "a");
+        assert_eq!(exported.asked, [(0, "bye".to_string())]);
+        let text = serde_json::to_string(&exported).unwrap();
+        let summary: Summary = serde_json::from_str(&text).unwrap();
+        assert_eq!(summary.asked.len(), 1);
+        session.forget();
+        assert!(session.saved_as.is_none() && session.started.is_none());
     }
 
     #[test]

@@ -373,6 +373,11 @@ pub static AGENT: Group = Group {
             run: Run::Builtin(agent_export),
         },
         Sub {
+            name: "session",
+            summary: "the sessions uc saved, with when and where: check one out again, in the directory it was in",
+            run: Run::Builtin(agent_session),
+        },
+        Sub {
             name: "import",
             summary: "carry on from an exported conversation: in a new session, or the one at the prompt",
             run: Run::Builtin(agent_import),
@@ -568,6 +573,35 @@ fn agent_import(args: &[OsString]) -> ExitCode {
         };
     }
     crate::chat::resume(args.into_iter().next().unwrap_or_default())
+}
+
+/// `uc agent session [N|NAME]` in a shell: uc on a saved session, see
+/// [`crate::chat::agent_session`].
+fn agent_session(args: &[OsString]) -> ExitCode {
+    let args: Vec<String> = args
+        .iter()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
+    if args.iter().any(|a| a == "-h" || a == "--help") || args.len() > 1 {
+        println!("usage: uc agent session [N|NAME|FILE|WORDS]\n");
+        println!("uc saves every session as it goes, in ~/.local/state/usecode/sessions, one");
+        println!("file each, named by when its first line was typed; clearing the context");
+        println!("(Ctrl-L, `chat clear`) starts a new one. This checks one out again: uc");
+        println!("starts in the directory the session was in, on its model and effort, with");
+        println!("its conversation, and carries on saving into it.");
+        println!();
+        println!("With no argument the picker picks it, the last saved first, with the date,");
+        println!("the directory, how many lines and the first line; without a terminal the");
+        println!("sessions are listed, numbered. N is a number from that list, NAME a");
+        println!("session's name, and other words start the picker filtered on them.");
+        println!("Typed at a uc prompt it saves that session and switches to the one picked.");
+        return if args.len() > 1 {
+            ExitCode::from(2)
+        } else {
+            ExitCode::SUCCESS
+        };
+    }
+    crate::chat::agent_session(args.first().map(String::as_str).unwrap_or_default())
 }
 
 fn agent_rewind(args: &[OsString]) -> ExitCode {

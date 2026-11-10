@@ -108,6 +108,10 @@
   how much of the context is used. `chat compact` sums up the earlier
   conversation to free the context. `chat export [path]` writes the
   conversation to a file.
+- Every session is saved as it goes; clearing the context starts a new one.
+  When the user wants an earlier session back, tell them to type
+  `uc agent session` at the prompt: it picks one by date, directory and
+  first line, and carries on in it, in the directory it was in.
 - The `skill` tool lists the skills (from `.agents/skills` and
   `~/.agents/skills`), the ones on marked, and turns them on and off. When a
   task is what a skill there is for, turn it on before starting.
