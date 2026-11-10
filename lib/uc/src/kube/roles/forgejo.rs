@@ -52,7 +52,8 @@
 //! It wears usecode's colours: the console's icon is the logo and favicon
 //! (from the `forgejo-brand` ConfigMap, over Forgejo's own in
 //! `$GITEA_CUSTOM/public/assets/img`), and someone not logged in lands on
-//! the login page rather than Forgejo's home page.
+//! the login page rather than Forgejo's home page. The footer doesn't say
+//! "Powered by Forgejo" or which version it runs.
 //!
 //! The admin password is made once, at random, and kept in
 //! forgejo/forgejo-admin: the secret is the source of truth, so changing it
@@ -255,6 +256,8 @@ impl Settings {
                     "service": {"DISABLE_REGISTRATION": true},
                     // Not the old OpenID 2.0 logins, ever.
                     "openid": {"ENABLE_OPENID_SIGNIN": false, "ENABLE_OPENID_SIGNUP": false},
+                    // No "Powered by Forgejo" and no version in the footer.
+                    "other": {"SHOW_FOOTER_POWERED_BY": false, "SHOW_FOOTER_VERSION": false},
                 },
             },
             "ingress": {
@@ -1065,6 +1068,8 @@ mod tests {
         let v = settings(None).values();
         assert_eq!(v["gitea"]["config"]["APP_NAME"], "usecode");
         assert_eq!(v["gitea"]["config"]["server"]["LANDING_PAGE"], "login");
+        assert_eq!(v["gitea"]["config"]["other"]["SHOW_FOOTER_POWERED_BY"], false);
+        assert_eq!(v["gitea"]["config"]["other"]["SHOW_FOOTER_VERSION"], false);
         let brand = &v["extraDeploy"][1];
         assert_eq!(brand["kind"], "ConfigMap");
         assert!(brand["data"]["logo.svg"].as_str().unwrap().contains("<svg"));
