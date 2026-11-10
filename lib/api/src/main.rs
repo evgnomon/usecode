@@ -17,6 +17,7 @@ mod migrate;
 mod model_config;
 mod model_process;
 mod models;
+mod oidc;
 mod otp;
 mod providers;
 mod relay;

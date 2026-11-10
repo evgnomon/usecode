@@ -26,6 +26,8 @@ futures = "0.3"
 hmac = "0.12"
 mail-send = { version = "0.6", default-features = false, features = ["builder", "tls12"] }
 minijinja.workspace = true
+# ES256 for the OpenID Connect tokens: pure Rust, deterministic signatures.
+p256 = { version = "0.13", features = ["ecdsa"] }
 rand = "0.9"
 reqwest = { workspace = true, features = ["json", "query", "form", "rustls-no-provider", "charset", "http2"] }
 rustls-graviola = "0.4"
@@ -42,6 +44,7 @@ tokio = { workspace = true, features = ["macros", "rt-multi-thread", "process", 
 tower-http = { version = "0.6", features = ["cors"] }
 tracing = "0.1"
 unicode-normalization = "0.1"
+url = "2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { workspace = true, features = ["v4", "serde"] }
 

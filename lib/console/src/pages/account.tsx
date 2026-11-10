@@ -8,7 +8,8 @@ import { Pill } from "@/components/console";
 import { KeyLegend } from "@/components/kbd";
 import { ErrorNote, Notice, Section } from "@/components/layout";
 import { HOSTED_PRICE, PLANS } from "@/content";
-import { goTo, post, useMe, type Me } from "@/lib/api";
+import { apiUrl, goTo, post, useMe, type Me } from "@/lib/api";
+import { safeNext } from "@/lib/safe-next";
 import { UsernameField } from "@/pages/auth";
 import { Link, navigate, useLocation } from "@/lib/router";
 
@@ -64,8 +65,11 @@ function Subscription({ me }: { me: Me }) {
   );
 }
 
-/** For an account from before usernames: it picks one, once. */
-function PickUsername({ refresh }: { refresh: () => Promise<void> }) {
+/**
+ * For an account from before usernames: it picks one, once. Sent here by a
+ * login for another site, it goes on with it after (`next`).
+ */
+function PickUsername({ refresh, next }: { refresh: () => Promise<void>; next: string | null }) {
   const [username, setUsername] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -76,6 +80,7 @@ function PickUsername({ refresh }: { refresh: () => Promise<void> }) {
     try {
       await post("/account/username", { username });
       await refresh();
+      if (next) navigate(safeNext(next, "/account", apiUrl()), { replace: true });
     } catch (err) {
       setError((err as Error).message);
     }
@@ -135,7 +140,7 @@ export function Account() {
         {justSubscribed && !me.subscribed ? (
           <Notice>Thanks! Your payment is being confirmed; this page catches up in a moment.</Notice>
         ) : null}
-        {me.user.username ? null : <PickUsername refresh={refresh} />}
+        {me.user.username ? null : <PickUsername refresh={refresh} next={query.get("next")} />}
         <Card className="mb-8 gap-0 rounded-lg py-5 shadow-none">
           <CardContent className="px-5">
             <h3 className="mb-3">Plan</h3>

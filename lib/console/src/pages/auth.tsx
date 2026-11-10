@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ErrorNote, Section } from "@/components/layout";
-import { post, useMe, type ApiError } from "@/lib/api";
+import { apiUrl, post, useMe, type ApiError } from "@/lib/api";
 import { Link, navigate, useLocation } from "@/lib/router";
 import { safeNext } from "@/lib/safe-next";
 
@@ -97,7 +97,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" | "reset" }) {
     try {
       await post("/auth/email/verify", { code });
       await refresh();
-      navigate(safeNext(query.get("next")), { replace: true });
+      navigate(safeNext(query.get("next"), "/account", apiUrl()), { replace: true });
     } catch (err) {
       // A code that ran out takes them back to the password, for a new one.
       if ((err as ApiError).status === 410) setSentTo("");

@@ -31,7 +31,8 @@ function subscribe(listener: () => void) {
 const FRESH = ["/workspaces"];
 
 export function navigate(to: string, { replace = false } = {}) {
-  if (FRESH.includes(to.split("?", 1)[0] ?? "") || FRESH.includes(location.pathname)) {
+  // Another site's address (the API's login for one) is a page load.
+  if (/^https?:\/\//.test(to) || FRESH.includes(to.split("?", 1)[0] ?? "") || FRESH.includes(location.pathname)) {
     if (replace) location.replace(to);
     else location.assign(to);
     return;

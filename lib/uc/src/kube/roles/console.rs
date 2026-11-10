@@ -63,6 +63,12 @@
 //! The database password is made once, at random, and kept in
 //! console/console-db: the secret is the source of truth. So is the key the
 //! API encrypts what it stores for users with, in console/api-secret.
+//!
+//! The sites that log in with usecode.dev over OpenID Connect are the keys
+//! of console/oidc-clients, one per client, mounted into the API, which
+//! reads them on each login. This role doesn't make it: each site's role
+//! adds its own client (as [`forgejo`](super::forgejo) does with
+//! `forgejo_oidc`). The issuer is `https://api.<console_host>`.
 
 use crate::configure::ctx::Ctx;
 use crate::configure::engine::{Outcome, Plan, Task};
@@ -79,7 +85,7 @@ use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-const NAMESPACE: &str = "console";
+pub(super) const NAMESPACE: &str = "console";
 const NAME: &str = "console";
 const DB: &str = "console-db";
 const DB_IMAGE: &str = "postgres:17-alpine";
@@ -103,6 +109,10 @@ const API_PORT: u16 = 8000;
 const API_TLS_SECRET: &str = "api-tls";
 /// The key the API encrypts users' stored secrets with; made once.
 const API_SECRET: &str = "api-secret";
+/// The OpenID Connect clients, one key each; their roles add them.
+pub(super) const OIDC_CLIENTS: &str = "oidc-clients";
+/// Where the API finds them.
+const OIDC_CLIENTS_DIR: &str = "/etc/usecode/oidc-clients";
 const ISSUER: &str = "letsencrypt";
 const PORT: u16 = 8080;
 const DB_PORT: u16 = 5432;
@@ -475,6 +485,8 @@ impl Settings {
             json!({"name": "USECODE_AGENT_SECRET_KEY", "valueFrom": secret(API_SECRET, "secret_key", false)}),
             json!({"name": "USECODE_AGENT_CONSOLE_URL", "value": format!("https://{host}")}),
             json!({"name": "USECODE_AGENT_COOKIE_DOMAIN", "value": host}),
+            json!({"name": "USECODE_AGENT_PUBLIC_URL", "value": format!("https://{}", self.api_host())}),
+            json!({"name": "USECODE_AGENT_OIDC_CLIENTS_DIR", "value": OIDC_CLIENTS_DIR}),
             // Only the console's pages call it from a browser.
             json!({"name": "USECODE_AGENT_CORS_ORIGINS", "value": "[]"}),
             json!({"name": "USECODE_AGENT_DEBUG_EXPOSE_OTP", "value": "false"}),
@@ -519,12 +531,15 @@ impl Settings {
                             "whenUnsatisfiable": "ScheduleAnyway",
                             "labelSelector": {"matchLabels": {"app": API}},
                         }],
+                        // Optional: no site logs in with usecode.dev until one adds itself.
+                        "volumes": [{"name": OIDC_CLIENTS, "secret": {"secretName": OIDC_CLIENTS, "optional": true}}],
                         "containers": [{
                             "name": API,
                             "image": self.api_image,
                             "imagePullPolicy": if self.api_image.ends_with(":latest") { "Always" } else { "IfNotPresent" },
                             "ports": [{"containerPort": API_PORT, "name": "http"}],
                             "env": env,
+                            "volumeMounts": [{"name": OIDC_CLIENTS, "mountPath": OIDC_CLIENTS_DIR, "readOnly": true}],
                             "readinessProbe": probe,
                             "livenessProbe": {
                                 "httpGet": {"path": "/health", "port": API_PORT},
@@ -945,7 +960,12 @@ async fn pull_secret(ctx: &Ctx, cluster: &Cluster, s: &Settings) -> Result<Outco
 
 /// One field of a secret, decoded, if the secret has it. kubectl runs
 /// directly, not through the task's logged runner.
-async fn secret_field(cluster: &Cluster, namespace: &str, name: &str, key: &str) -> Option<String> {
+pub(super) async fn secret_field(
+    cluster: &Cluster,
+    namespace: &str,
+    name: &str,
+    key: &str,
+) -> Option<String> {
     use base64::Engine;
     let key = key.replace('.', "\\.");
     let out = tokio::process::Command::new("kubectl")
@@ -1462,7 +1482,19 @@ mod tests {
             "https://usecode.dev"
         );
         assert_eq!(get("USECODE_AGENT_COOKIE_DOMAIN")["value"], "usecode.dev");
+        assert_eq!(
+            get("USECODE_AGENT_PUBLIC_URL")["value"],
+            "https://api.usecode.dev"
+        );
         assert_eq!(get("USECODE_AGENT_DEBUG_EXPOSE_OTP")["value"], "false");
+        // The OpenID Connect clients, from the secret their roles fill.
+        let pod = &api["spec"]["template"]["spec"];
+        assert_eq!(pod["volumes"][0]["secret"]["secretName"], OIDC_CLIENTS);
+        assert_eq!(pod["volumes"][0]["secret"]["optional"], true);
+        assert_eq!(
+            container["volumeMounts"][0]["mountPath"],
+            get("USECODE_AGENT_OIDC_CLIENTS_DIR")["value"]
+        );
         assert_eq!(
             get("USECODE_AGENT_STRIPE_SECRET_KEY")["valueFrom"]["secretKeyRef"]["key"],
             "STRIPE_SECRET_KEY"

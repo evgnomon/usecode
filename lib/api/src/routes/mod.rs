@@ -8,6 +8,7 @@ pub(crate) mod account;
 mod auth;
 mod hosts;
 mod models;
+mod oidc;
 mod providers;
 mod servers;
 mod tasks;
@@ -49,6 +50,7 @@ pub fn router(app: Arc<App>) -> Router {
         .merge(auth::router())
         .merge(hosts::router())
         .merge(models::router())
+        .merge(oidc::router())
         .merge(providers::router())
         .merge(servers::router())
         .merge(tasks::router())

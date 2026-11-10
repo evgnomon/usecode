@@ -93,6 +93,7 @@ pub const PROVIDER_RESOURCES: &str = "provider_resources";
 pub const EMAIL_DIRECTORY: &str = "email_directory";
 pub const EMAIL_CODES: &str = "email_codes";
 pub const USERNAME_DIRECTORY: &str = "username_directory";
+pub const OAUTH_CODES: &str = "oauth_codes";
 pub const STRIPE_CUSTOMERS: &str = "stripe_customers";
 pub const STRIPE_EVENTS: &str = "stripe_events";
 
@@ -200,6 +201,12 @@ pub const TABLES: &[Table] = &[
         // instance, as `email_directory` does for emails.
         name: USERNAME_DIRECTORY,
         placement: Placement::HashedOn("username"),
+    },
+    Table {
+        // An OpenID Connect code, found by its hash and nothing else: the
+        // site swapping it doesn't know whose it is.
+        name: OAUTH_CODES,
+        placement: Placement::HashedOn("code_hash"),
     },
     Table {
         name: "subscriptions",

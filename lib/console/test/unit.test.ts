@@ -26,6 +26,14 @@ test("a login only sends you somewhere on this site", () => {
   assert.equal(safeNext("/\\evil.example"), "/account");
   assert.equal(safeNext("https://evil.example"), "/account");
   assert.equal(safeNext(undefined), "/account");
+  // The API's login for another site, and only that, once the API is known.
+  const api = "https://api.usecode.dev";
+  const login = `${api}/oauth/authorize?client_id=forgejo&state=x`;
+  assert.equal(safeNext(login, "/account", api), login);
+  assert.equal(safeNext(login), "/account");
+  assert.equal(safeNext(`${api}/account`, "/account", api), "/account");
+  assert.equal(safeNext("https://api.usecode.dev.evil.example/oauth/authorize?x", "/account", api), "/account");
+  assert.equal(safeNext(login, "/account", "https://api.usecode.dev/x"), "/account");
 });
 
 test("the API is where the settings say, inside the cluster too", () => {

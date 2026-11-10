@@ -54,6 +54,15 @@ pub struct Settings {
     // The domain the session cookie is set for, e.g. `usecode.dev`, so the
     // console's own server sees it too; unset, it stays with this host.
     pub cookie_domain: Option<String>,
+    // Where this API is for the world, e.g. https://api.usecode.dev: the
+    // issuer of the OpenID Connect logins it gives other sites. Unset, it
+    // is `api.` in front of an https:// console's host.
+    pub public_url: String,
+    // The sites that log in with usecode.dev, one file per client named by
+    // its id: `{"secret": "...", "redirect_uris": ["..."]}`. Read on each
+    // login, so a client added to the mounted secret works without a
+    // restart.
+    pub oidc_clients_dir: String,
     // Mail for the sign up and log in codes; without it the codes go to the
     // log on an http:// console, and can't go out at all on an https:// one.
     pub smtp: Option<Smtp>,
@@ -205,11 +214,21 @@ impl Settings {
             _ => None,
         };
 
+        let console_url = non_empty("CONSOLE_URL")
+            .unwrap_or_else(|| "http://localhost:8080".to_string())
+            .trim_end_matches('/')
+            .to_string();
+        let public_url = non_empty("PUBLIC_URL")
+            .map(|u| u.trim().trim_end_matches('/').to_string())
+            .unwrap_or_else(|| match console_url.strip_prefix("https://") {
+                Some(host) => format!("https://api.{host}"),
+                None => "http://localhost:8000".to_string(),
+            });
         Ok(Self {
-            console_url: non_empty("CONSOLE_URL")
-                .unwrap_or_else(|| "http://localhost:8080".to_string())
-                .trim_end_matches('/')
-                .to_string(),
+            console_url,
+            public_url,
+            oidc_clients_dir: non_empty("OIDC_CLIENTS_DIR")
+                .unwrap_or_else(|| "/etc/usecode/oidc-clients".to_string()),
             cookie_domain: non_empty("COOKIE_DOMAIN"),
             smtp,
             stripe,

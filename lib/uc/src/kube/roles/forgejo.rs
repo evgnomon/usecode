@@ -37,10 +37,21 @@
 //! * `forgejo_dns_zone`: the Cloudflare zone of `forgejo_host` (default: the
 //!   host without its first label).
 //! * `forgejo_version`: the chart version.
+//! * `forgejo_oidc`: an OpenID Connect issuer to log in and sign up with,
+//!   e.g. `https://api.usecode.dev` (the console's API, see
+//!   [`console`](super::console)). Forgejo then makes no accounts of its
+//!   own: a new account comes only from a first login there, named by the
+//!   username there. The admin keeps its password. Without it, nobody signs
+//!   up, and the admin makes the accounts.
+//! * `forgejo_oidc_namespace`: where the issuer reads its clients from, the
+//!   `oidc-clients` secret (default: `console`, on the same cluster).
 //!
 //! The admin password is made once, at random, and kept in
 //! forgejo/forgejo-admin: the secret is the source of truth, so changing it
-//! is editing the secret and restarting the deployment.
+//! is editing the secret and restarting the deployment. So is the client
+//! secret Forgejo logs in to the issuer with, in forgejo/forgejo-oauth-usecode;
+//! the role hands it to the issuer as the `forgejo` key of its
+//! `oidc-clients` secret, with the address to send people back to.
 
 use crate::configure::ctx::Ctx;
 use crate::configure::engine::{Outcome, Plan, Task};
@@ -48,6 +59,7 @@ use crate::configure::modules::copy;
 use crate::configure::vars::Vars;
 use crate::kube::cloudflare::{self, Cloudflare};
 use crate::kube::cluster::{CONTROL_PLANE, Cluster, Node};
+use crate::kube::roles::console::{NAMESPACE as CONSOLE_NAMESPACE, OIDC_CLIENTS, secret_field};
 use crate::kube::roles::hcloud_csi::{
     DRIVER, GENERIC_CLASS, LOCATION_LABEL, PROVIDER, PROVIDER_KEY, TOPOLOGY_KEY,
 };
@@ -71,6 +83,13 @@ const TLS_SECRET: &str = "forgejo-tls";
 const ISSUER: &str = "letsencrypt";
 /// The port SSH listens on inside the rootless image.
 const SSH_LISTEN_PORT: u16 = 2222;
+/// The OpenID Connect login source: its name is in the callback's path and
+/// on the button.
+const OIDC_SOURCE: &str = "usecode";
+/// The client id Forgejo has with the issuer, and its key in oidc-clients.
+const OIDC_CLIENT_ID: &str = "forgejo";
+/// The client id and secret, as the chart reads them (`key`, `secret`).
+const OAUTH_SECRET: &str = "forgejo-oauth-usecode";
 
 /// What the user decided, from the variables.
 #[derive(Debug, Clone, Default)]
@@ -85,6 +104,10 @@ pub struct Settings {
     /// The CNAME target for `host`, when the role manages its record.
     pub dns_target: Option<String>,
     pub dns_zone: String,
+    /// The OpenID Connect issuer that logs people in and makes accounts.
+    pub oidc: Option<String>,
+    /// Where the issuer reads its clients from.
+    pub oidc_namespace: String,
 }
 
 impl Settings {
@@ -107,6 +130,15 @@ impl Settings {
                 .map_or(host, |(_, zone)| zone)
                 .to_string()
         });
+        let oidc: Option<String> = var(vars, "forgejo_oidc")?;
+        let oidc = oidc
+            .map(|u| u.trim().trim_end_matches('/').to_string())
+            .filter(|u| !u.is_empty());
+        if let Some(issuer) = &oidc
+            && !issuer.starts_with("https://")
+        {
+            bail!("forgejo_oidc has to be an https:// URL, not {issuer:?}");
+        }
         let ssh_port: Option<u16> = var(vars, "forgejo_ssh_port")?;
         if ssh_port == Some(22) {
             bail!("forgejo_ssh_port can't be 22: the nodes' own sshd listens there");
@@ -122,7 +154,16 @@ impl Settings {
             version: var(vars, "forgejo_version")?.unwrap_or_else(|| CHART_VERSION.into()),
             dns_target,
             dns_zone,
+            oidc,
+            oidc_namespace: var(vars, "forgejo_oidc_namespace")?
+                .unwrap_or_else(|| CONSOLE_NAMESPACE.into()),
         })
+    }
+
+    /// Where the issuer sends people back to after they log in.
+    pub fn callback(&self) -> String {
+        let host = self.host.as_deref().unwrap_or_default();
+        format!("https://{host}/user/oauth2/{OIDC_SOURCE}/callback")
     }
 
     /// The chart values.
@@ -167,6 +208,8 @@ impl Settings {
                     "APP_NAME": "Forgejo",
                     "server": server,
                     "service": {"DISABLE_REGISTRATION": true},
+                    // Not the old OpenID 2.0 logins, ever.
+                    "openid": {"ENABLE_OPENID_SIGNIN": false, "ENABLE_OPENID_SIGNUP": false},
                 },
             },
             "ingress": {
@@ -195,6 +238,32 @@ impl Settings {
         });
         if let Some(port) = self.ssh_port {
             values["service"] = json!({"ssh": {"type": "LoadBalancer", "port": port}});
+        }
+        if let Some(issuer) = &self.oidc {
+            let gitea = &mut values["gitea"];
+            gitea["oauth"] = json!([{
+                "name": OIDC_SOURCE,
+                "provider": "openidConnect",
+                "existingSecret": OAUTH_SECRET,
+                "autoDiscoverUrl": format!("{issuer}/.well-known/openid-configuration"),
+            }]);
+            // Accounts come only from a first login at the issuer.
+            gitea["config"]["service"] = json!({
+                "DISABLE_REGISTRATION": false,
+                "ALLOW_ONLY_EXTERNAL_REGISTRATION": true,
+                "SHOW_REGISTRATION_BUTTON": false,
+            });
+            gitea["config"]["oauth2_client"] = json!({
+                "ENABLE_AUTO_REGISTRATION": true,
+                // The issuer's username, which never changes there.
+                "USERNAME": "nickname",
+                // The issuer checked the email already.
+                "REGISTER_EMAIL_CONFIRM": false,
+                // A name or email Forgejo has already: log in to that
+                // account to link it, rather than taking it over.
+                "ACCOUNT_LINKING": "login",
+                "OPENID_CONNECT_SCOPES": "email profile",
+            });
         }
         values
     }
@@ -243,6 +312,21 @@ pub fn tasks(plan: &mut Plan, cluster: &Arc<Cluster>, vars: &Vars) -> Result<()>
         .run(move |ctx| async move { admin(&ctx, &c, &s).await }),
     );
 
+    let (c, s) = (cluster.clone(), settings.clone());
+    plan.add(
+        Task::new(
+            "forgejo/oidc",
+            "Give the OpenID Connect issuer Forgejo's client",
+        )
+        .tags(&["git"])
+        .after(["forgejo/namespace"])
+        .when(
+            settings.oidc.is_some(),
+            "forgejo_oidc is not set; Forgejo keeps to its own logins",
+        )
+        .run(move |ctx| async move { oidc_client(&ctx, &c, &s).await }),
+    );
+
     let s = settings.clone();
     plan.add(
         Task::new("forgejo/dns", "Point the name at the workers on Cloudflare")
@@ -277,6 +361,7 @@ pub fn tasks(plan: &mut Plan, cluster: &Arc<Cluster>, vars: &Vars) -> Result<()>
             .tags(&["git"])
             .after([
                 "forgejo/admin",
+                "forgejo/oidc",
                 "forgejo/files",
                 // cert-manager asks Let's Encrypt as soon as the Ingress is
                 // there, so the name has to resolve by then.
@@ -312,6 +397,12 @@ async fn report(ctx: &Ctx, cluster: &Cluster, s: &Settings) -> Result<Outcome> {
         "https://{host}, {} on {} (claim {NAMESPACE}/{CLAIM}), admin {} <{}>",
         s.size, s.class, s.admin, s.admin_email
     ));
+    ctx.note(&match &s.oidc {
+        Some(issuer) => {
+            format!("accounts come only from logging in at {issuer}; the admin keeps its password")
+        }
+        None => "nobody signs up; the admin makes the accounts (or set forgejo_oidc)".into(),
+    });
     ctx.note(&match s.ssh_port {
         Some(port) => format!("git over SSH: ssh://git@{host}:{port}/<owner>/<repo>.git"),
         None => "git over SSH is off; set forgejo_ssh_port to turn it on".into(),
@@ -563,6 +654,104 @@ async fn admin(ctx: &Ctx, cluster: &Cluster, s: &Settings) -> Result<Outcome> {
     Ok(Outcome::Changed)
 }
 
+/// Forgejo's client with the issuer: its secret made once, in
+/// forgejo/forgejo-oauth-usecode, and handed to the issuer with the address
+/// to send people back to, as the `forgejo` key of its oidc-clients secret.
+async fn oidc_client(ctx: &Ctx, cluster: &Cluster, s: &Settings) -> Result<Outcome> {
+    let ns = s.oidc_namespace.as_str();
+    let issuer_ns = kubectl(ctx, cluster)
+        .args(["get", "namespace", ns, "-o", "name"])
+        .any_code()
+        .read_only()
+        .output()
+        .await?;
+    if !issuer_ns.success() {
+        bail!(
+            "there is no {ns} namespace for the issuer to read its clients from: \
+             set up the console first (uc kube sync -t console), or set forgejo_oidc_namespace"
+        );
+    }
+
+    let mut outcome = Outcome::Ok;
+    let secret = match secret_field(cluster, NAMESPACE, OAUTH_SECRET, "secret").await {
+        Some(secret) => secret,
+        None => {
+            if ctx.check() {
+                return Ok(Outcome::Changed);
+            }
+            let secret = password::generate(
+                48,
+                Charset {
+                    letters: true,
+                    digits: true,
+                    symbols: false,
+                },
+            )?;
+            // `create`, not `apply`, as for the admin's password.
+            let manifest = json!({
+                "apiVersion": "v1",
+                "kind": "Secret",
+                "metadata": {"name": OAUTH_SECRET, "namespace": NAMESPACE},
+                "stringData": {"key": OIDC_CLIENT_ID, "secret": secret},
+            });
+            kubectl(ctx, cluster)
+                .args(["create", "-f", "-"])
+                .stdin(manifest.to_string())
+                .output()
+                .await?;
+            ctx.log(&format!(
+                "made the client secret in {NAMESPACE}/{OAUTH_SECRET}"
+            ));
+            outcome = Outcome::Changed;
+            secret
+        }
+    };
+
+    let want = json!({"secret": secret, "redirect_uris": [s.callback()]});
+    let have = secret_field(cluster, ns, OIDC_CLIENTS, OIDC_CLIENT_ID)
+        .await
+        .and_then(|v| serde_json::from_str::<Value>(&v).ok());
+    if have.as_ref() == Some(&want) {
+        return Ok(outcome);
+    }
+    if ctx.check() {
+        return Ok(Outcome::Changed);
+    }
+    let clients = kubectl(ctx, cluster)
+        .args(["-n", ns, "get", "secret", OIDC_CLIENTS, "-o", "name"])
+        .any_code()
+        .read_only()
+        .output()
+        .await?;
+    let data = json!({OIDC_CLIENT_ID: want.to_string()});
+    if clients.success() {
+        // Only this client's key: the other sites' stay as they are.
+        kubectl(ctx, cluster)
+            .args(["-n", ns, "patch", "secret", OIDC_CLIENTS, "--type", "merge"])
+            .args(["--patch-file", "/dev/stdin"])
+            .stdin(json!({"stringData": data}).to_string())
+            .output()
+            .await?;
+    } else {
+        let manifest = json!({
+            "apiVersion": "v1",
+            "kind": "Secret",
+            "metadata": {"name": OIDC_CLIENTS, "namespace": ns},
+            "stringData": data,
+        });
+        kubectl(ctx, cluster)
+            .args(["create", "-f", "-"])
+            .stdin(manifest.to_string())
+            .output()
+            .await?;
+    }
+    ctx.log(&format!(
+        "{ns}/{OIDC_CLIENTS} has the {OIDC_CLIENT_ID} client, back to {}",
+        s.callback()
+    ));
+    Ok(Outcome::Changed)
+}
+
 async fn install(
     ctx: &Ctx,
     cluster: &Cluster,
@@ -802,7 +991,48 @@ mod tests {
             version: CHART_VERSION.into(),
             dns_target: None,
             dns_zone: "example.com".into(),
+            oidc: None,
+            oidc_namespace: "console".into(),
         }
+    }
+
+    #[test]
+    fn accounts_come_only_from_the_issuer() {
+        let v = settings(None).values();
+        assert_eq!(
+            v["gitea"]["config"]["service"]["DISABLE_REGISTRATION"],
+            true
+        );
+        assert_eq!(v["gitea"]["oauth"], Value::Null);
+        assert_eq!(
+            v["gitea"]["config"]["openid"]["ENABLE_OPENID_SIGNUP"],
+            false
+        );
+
+        let s = Settings {
+            oidc: Some("https://api.example.com".into()),
+            ..settings(None)
+        };
+        let v = s.values();
+        let source = &v["gitea"]["oauth"][0];
+        assert_eq!(source["name"], OIDC_SOURCE);
+        assert_eq!(source["provider"], "openidConnect");
+        assert_eq!(source["existingSecret"], OAUTH_SECRET);
+        assert_eq!(
+            source["autoDiscoverUrl"],
+            "https://api.example.com/.well-known/openid-configuration"
+        );
+        let service = &v["gitea"]["config"]["service"];
+        assert_eq!(service["DISABLE_REGISTRATION"], false);
+        assert_eq!(service["ALLOW_ONLY_EXTERNAL_REGISTRATION"], true);
+        assert_eq!(service["SHOW_REGISTRATION_BUTTON"], false);
+        let client = &v["gitea"]["config"]["oauth2_client"];
+        assert_eq!(client["ENABLE_AUTO_REGISTRATION"], true);
+        assert_eq!(client["ACCOUNT_LINKING"], "login");
+        assert_eq!(
+            s.callback(),
+            "https://git.example.com/user/oauth2/usecode/callback"
+        );
     }
 
     #[test]
