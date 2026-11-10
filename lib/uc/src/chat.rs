@@ -583,6 +583,10 @@ struct Session {
     /// The lines typed for the model, oldest first, with where each sits in
     /// `messages`: what `uc agent rewind` goes back to.
     asked: Vec<(usize, String)>,
+    /// Every line typed for the model, with when, oldest first, including
+    /// the ones a rewind or a compaction dropped: what Up finds in this
+    /// session, and only in it.
+    prompts: Vec<(u64, String)>,
     /// The names of the skills on, in the order they were turned on: the
     /// ones found here go into the system prompt (see [`skills`]).
     skills: Vec<String>,
@@ -682,9 +686,17 @@ async fn group_gone(group: i32, secs: u64) -> bool {
     }
 }
 
+/// On the way out of uc: stops the jobs, and drops what was typed on the
+/// terminal and not read yet, so a prompt typed ahead isn't run by the
+/// shell uc leaves to.
 fn stop_jobs() {
     for group in std::mem::take(&mut *GROUPS.lock().unwrap()) {
         signal_group(group, libc::SIGTERM);
+    }
+    // SAFETY: tcflush only discards the input queue of fd 0; on a file or
+    // pipe it fails and changes nothing.
+    unsafe {
+        libc::tcflush(libc::STDIN_FILENO, libc::TCIFLUSH);
     }
 }
 
@@ -744,10 +756,13 @@ async fn run(
     loop {
         // What the last line did is in the session's file before the next.
         session.save();
+        follow_session(&session.prompts);
         let Some(line) = read_prompt(&prompt())? else {
             eprintln!();
             return Ok(());
         };
+        // Kept in bash's history, unless it goes to the model below.
+        let mut typed = TypedLine::new(&line);
         // Ctrl-L comes while the line is typed, so the line goes fresh.
         if CLEARED.swap(false, Ordering::Relaxed) {
             session.forget();
@@ -832,6 +847,11 @@ async fn run(
         let command = direct_command(line).filter(|_| !(spaced && ai));
         if command.is_none() && !ai {
             continue;
+        }
+        // A prompt stays in its session; a command goes everywhere.
+        match command {
+            Some(_) => typed.command(),
+            None => typed.prompt(&mut session),
         }
         // The model the line goes to, printed when it is new; the same
         // again stays silent.
@@ -2142,6 +2162,7 @@ impl Session {
             tokens: Tokens::default(),
             since: Instant::now(),
             asked: Vec::new(),
+            prompts: Vec::new(),
             started: None,
             saved_as: None,
             saved: 0,
@@ -2269,6 +2290,7 @@ impl Session {
     fn forget(&mut self) {
         self.messages.retain(|m| m["role"] == "system");
         self.asked.clear();
+        self.prompts.clear();
         self.started = None;
         self.saved_as = None;
         self.saved = 0;
@@ -2557,6 +2579,7 @@ impl Session {
                 .iter()
                 .map(|(at, line)| (at.saturating_sub(1), line.clone()))
                 .collect(),
+            prompts: self.prompts.clone(),
         }
     }
 
@@ -2709,6 +2732,7 @@ impl Session {
     /// prompt of this session. The model and effort stay what they are.
     fn import(&mut self, exported: Exported) {
         self.forget();
+        self.prompts = exported.prompts();
         self.messages.extend(
             exported
                 .messages
@@ -4017,13 +4041,25 @@ static EDITOR: Mutex<Option<Editor<Completion, DefaultHistory>>> = Mutex::new(No
 /// How many earlier lines Up and Down go through: all of them, in practice.
 const HISTORY_SIZE: usize = 1_000_000;
 
-/// Where the lines typed at the main prompt are kept between sessions.
-fn history_path() -> Option<PathBuf> {
+/// uc's own directory for what it keeps: `~/.local/state/usecode`.
+fn state_dir() -> Option<PathBuf> {
     let state = std::env::var_os("XDG_STATE_HOME")
         .filter(|d| !d.is_empty())
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/state")))?;
-    Some(state.join("usecode/chat_history"))
+    Some(state.join("usecode"))
+}
+
+/// The commands typed at the main prompt before uc kept them in bash's
+/// history, the ones of the old `chat_history` (see [`move_old_history`]).
+fn history_path() -> Option<PathBuf> {
+    state_dir().map(|d| d.join("command_history"))
+}
+
+/// Where uc used to keep every line typed at the main prompt, prompts and
+/// commands alike.
+fn old_history_path() -> Option<PathBuf> {
+    state_dir().map(|d| d.join("chat_history"))
 }
 
 /// Where bash keeps what the user typed in it; `~/.bash_history` if bash
@@ -4052,53 +4088,79 @@ fn timed_lines(text: &str) -> Vec<(u64, String)> {
     lines
 }
 
-/// Bash's lines and uc's in the order they were typed, oldest first, so Up
-/// in uc goes back through what was typed in bash as well.
-fn merged_lines(bash: &str, uc: &str) -> Vec<String> {
+/// The commands, bash's and uc's older ones, and the prompts of the session
+/// on now, in the order they were typed, oldest first, so Up in uc goes back
+/// through what was typed in bash as well.
+fn merged_lines(bash: &str, uc: &str, prompts: &[(u64, String)]) -> Vec<String> {
     let mut lines = timed_lines(bash);
     lines.extend(timed_lines(uc));
+    lines.extend(prompts.iter().cloned());
     // Stable: lines typed in the same second keep their order.
     lines.sort_by_key(|(time, _)| *time);
     lines.into_iter().map(|(_, line)| line).collect()
 }
 
-/// Every earlier line, bash's and uc's, oldest first.
+/// Every earlier line Up and Ctrl-R find, oldest first: every command, typed
+/// in bash or in uc, and the prompts of this session, not another's.
 fn past_lines() -> Vec<String> {
     let read = |path: Option<PathBuf>| {
         let text = path.and_then(|p| std::fs::read(p).ok()).unwrap_or_default();
         String::from_utf8_lossy(&text).into_owned()
     };
-    merged_lines(&read(bash_history_path()), &read(history_path()))
+    let prompts = PROMPTS.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    merged_lines(&read(bash_history_path()), &read(history_path()), &prompts)
 }
 
-/// Keeps a line typed at the main prompt the way bash would, after a `#` line
-/// with the time, so it reads back in order with bash's.
-fn keep_line(line: &str) -> std::io::Result<()> {
-    let path = history_path().ok_or(std::io::ErrorKind::NotFound)?;
-    std::fs::create_dir_all(path.parent().unwrap_or(&path))?;
-    let now = std::time::SystemTime::now()
+/// Now, in seconds since 1970, the way bash's history keeps the time.
+fn epoch_now() -> u64 {
+    std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs());
+        .map_or(0, |d| d.as_secs())
+}
+
+/// A command typed at the main prompt, kept in bash's history the way bash
+/// keeps one, after a `#` line with the time: it is there in bash too, and
+/// in every uc session after. One write, so it doesn't mix with a line a
+/// bash appends meanwhile.
+fn keep_command(time: u64, line: &str) -> std::io::Result<()> {
+    let path = bash_history_path().ok_or(std::io::ErrorKind::NotFound)?;
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(path)?;
-    writeln!(file, "#{now}\n{}", line.replace('\n', " "))
+    file.write_all(format!("#{time}\n{}\n", line.replace('\n', " ")).as_bytes())
 }
 
-/// Rewrites a history file from before uc kept the time, rustyline's `#V2`
-/// one, the way bash keeps it.
-fn upgrade_history() -> std::io::Result<()> {
-    let path = history_path().ok_or(std::io::ErrorKind::NotFound)?;
-    let text = std::fs::read_to_string(&path)?;
-    if !text.starts_with("#V2\n") {
+/// uc kept every line typed at the main prompt in `chat_history`, prompts
+/// too, so they came up in every session. Its commands move to
+/// `command_history`, the prompts stay only in their sessions' files; the
+/// old file is kept beside it as `chat_history.old`. Once.
+fn move_old_history() -> std::io::Result<()> {
+    let (Some(old), Some(new)) = (old_history_path(), history_path()) else {
+        return Ok(());
+    };
+    if new.exists() || !old.exists() {
         return Ok(());
     }
-    let lines: String = history_lines(&text)
-        .iter()
-        .map(|l| format!("{}\n", l.replace('\n', " ")))
-        .collect();
-    std::fs::write(path, lines)
+    let text = std::fs::read_to_string(&old)?;
+    std::fs::write(&new, old_commands(&text, |l| typed_command(l).is_some()))?;
+    std::fs::rename(&old, old.with_extension("old"))
+}
+
+/// The lines of an old `chat_history` that `is_command` takes for commands,
+/// the way bash keeps them. The rustyline `#V2` one from before uc kept the
+/// time has none: they come first.
+fn old_commands(text: &str, is_command: impl Fn(&str) -> bool) -> String {
+    let lines = if text.starts_with("#V2\n") {
+        history_lines(text).into_iter().map(|l| (0, l)).collect()
+    } else {
+        timed_lines(text)
+    };
+    lines
+        .into_iter()
+        .filter(|(_, line)| is_command(line))
+        .map(|(time, line)| format!("#{time}\n{}\n", line.replace('\n', " ")))
+        .collect()
 }
 
 /// A line typed at the main prompt; Up and Down go through the earlier ones,
@@ -4114,9 +4176,61 @@ fn read_prompt(prompt: &str) -> Result<Option<String>> {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .insert(line.to_string());
-        let _ = keep_line(line);
     }
     Ok(line)
+}
+
+/// The prompts typed in the session on now, with when: Up and Ctrl-R find
+/// them beside the commands, but not another session's.
+static PROMPTS: Mutex<Vec<(u64, String)>> = Mutex::new(Vec::new());
+
+/// The line editor's history is another session's: it is read again before
+/// the next line.
+static STALE: AtomicBool = AtomicBool::new(false);
+
+/// Up and Ctrl-R go through the prompts of the session with `prompts` from
+/// the next line on: after one is checked out, imported or cleared.
+fn follow_session(prompts: &[(u64, String)]) {
+    let mut current = PROMPTS.lock().unwrap_or_else(|e| e.into_inner());
+    if *current != prompts {
+        *current = prompts.to_vec();
+        STALE.store(true, Ordering::Relaxed);
+    }
+}
+
+/// A line typed at the main prompt, kept in the history once it is known
+/// what it is: a command, unless it goes to the model. One that isn't taken
+/// for a prompt is kept as a command when it goes.
+struct TypedLine(Option<(u64, String)>);
+
+impl TypedLine {
+    fn new(line: &str) -> Self {
+        Self(Some((epoch_now(), line.trim().to_string())).filter(|(_, l)| !l.is_empty()))
+    }
+
+    /// It is a command: into bash's history now, before it runs.
+    fn command(&mut self) {
+        if let Some((time, line)) = self.0.take() {
+            let _ = keep_command(time, &line);
+        }
+    }
+
+    /// It is a prompt: kept by the session, and for Up in it.
+    fn prompt(&mut self, session: &mut Session) {
+        if let Some(prompt) = self.0.take() {
+            PROMPTS
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(prompt.clone());
+            session.prompts.push(prompt);
+        }
+    }
+}
+
+impl Drop for TypedLine {
+    fn drop(&mut self) {
+        self.command();
+    }
 }
 
 /// Ctrl-R picks an earlier line with the picker, newest first, like fzf does
@@ -4363,6 +4477,29 @@ struct Exported {
     messages: Vec<Value>,
     #[serde(default)]
     asked: Vec<(usize, String)>,
+    /// Every line typed for the model, with when (seconds since 1970): what
+    /// Up finds in the session. Files from before it have only `asked`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    prompts: Vec<(u64, String)>,
+}
+
+impl Exported {
+    /// The prompts Up finds in the session: `prompts`, or in a file from
+    /// before it the lines of `asked`, at the time the session started.
+    fn prompts(&self) -> Vec<(u64, String)> {
+        if !self.prompts.is_empty() {
+            return self.prompts.clone();
+        }
+        let started = self
+            .started
+            .as_deref()
+            .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
+            .map_or(0, |t| t.timestamp().max(0) as u64);
+        self.asked
+            .iter()
+            .map(|(_, line)| (started, line.clone()))
+            .collect()
+    }
 }
 
 /// Reads a session file.
@@ -4397,7 +4534,7 @@ fn write_session(path: &std::path::Path, exported: &Exported) -> Result<()> {
 /// Where uc saves its sessions, and `uc agent export` puts a conversation
 /// without a file named: `~/.local/state/usecode/sessions`.
 fn sessions_dir() -> Option<PathBuf> {
-    history_path().and_then(|h| h.parent().map(|d| d.join("sessions")))
+    state_dir().map(|d| d.join("sessions"))
 }
 
 /// A session's name: its file's, without `.json`.
@@ -4689,6 +4826,18 @@ pub(crate) fn agent_effort(level: Option<&str>) -> Result<()> {
 /// went back to.
 static PREFILL: Mutex<Option<String>> = Mutex::new(None);
 
+/// Puts every earlier line Up finds in the editor's history, in place of
+/// what was there: the commands and the prompts of the session on now.
+fn fill_history(editor: &mut Editor<Completion, DefaultHistory>) {
+    let _ = editor.clear_history();
+    let mut typed = TYPED.lock().unwrap_or_else(|e| e.into_inner());
+    typed.clear();
+    for line in past_lines() {
+        let _ = editor.add_history_entry(line.as_str());
+        typed.insert(line);
+    }
+}
+
 /// A line from stdin after `prompt`; None at end of input. Ctrl-C quits uc,
 /// or stops the model when it is working on a line.
 fn read_line(prompt: &str) -> Result<Option<String>> {
@@ -4701,13 +4850,8 @@ fn read_line(prompt: &str) -> Result<Option<String>> {
             .build();
         let mut new = Editor::with_config(config).context("opening the terminal")?;
         new.set_helper(Some(Completion));
-        let _ = upgrade_history();
-        let mut typed = TYPED.lock().unwrap_or_else(|e| e.into_inner());
-        for line in past_lines() {
-            let _ = new.add_history_entry(line.as_str());
-            typed.insert(line);
-        }
-        drop(typed);
+        let _ = move_old_history();
+        STALE.store(true, Ordering::Relaxed);
         new.bind_sequence(
             KeyEvent::ctrl('R'),
             EventHandler::Conditional(Box::new(PickHistory)),
@@ -4729,6 +4873,9 @@ fn read_line(prompt: &str) -> Result<Option<String>> {
             EventHandler::Conditional(Box::new(voice::HoldToTalk)),
         );
         *editor = Some(new);
+    }
+    if let Some(editor) = editor.as_mut().filter(|_| STALE.swap(false, Ordering::Relaxed)) {
+        fill_history(editor);
     }
     BROWSING.store(false, Ordering::Relaxed);
     let prefill = PREFILL.lock().unwrap_or_else(|e| e.into_inner()).take();
@@ -5676,11 +5823,38 @@ mod tests {
     #[test]
     fn merges_bash_and_uc_by_time() {
         let bash = "old\n#100\nls\n#300\ngit push\n";
-        let uc = "#200\nfix the tests\n#300\nmake it faster\n";
+        let uc = "#200\nmake\n#300\ncargo test\n";
+        let prompts = [(150, "fix the tests".into()), (300, "make it faster".into())];
         assert_eq!(
-            merged_lines(bash, uc),
-            ["old", "ls", "fix the tests", "git push", "make it faster"]
+            merged_lines(bash, uc, &prompts),
+            ["old", "ls", "fix the tests", "make", "git push", "cargo test", "make it faster"]
         );
+    }
+
+    #[test]
+    fn the_old_history_keeps_only_commands() {
+        let is_command = |l: &str| l.starts_with("git") || l.starts_with("ls");
+        assert_eq!(
+            old_commands("#100\ngit status\n#200\nfix the tests\nls\n", is_command),
+            "#100\ngit status\n#200\nls\n"
+        );
+        assert_eq!(
+            old_commands("#V2\nls\nmake it\\nfaster\n", is_command),
+            "#0\nls\n"
+        );
+    }
+
+    #[test]
+    fn an_old_session_has_its_asked_lines_for_prompts() {
+        let mut exported: Exported = serde_json::from_value(json!({
+            "usecode_session": 1, "provider": "p", "model": "m", "effort": "",
+            "started": "2026-01-01T00:00:00+00:00",
+            "messages": [], "asked": [[0, "hi"]],
+        }))
+        .unwrap();
+        assert_eq!(exported.prompts(), [(1767225600, "hi".to_string())]);
+        exported.prompts = vec![(5, "hello".into())];
+        assert_eq!(exported.prompts(), [(5, "hello".to_string())]);
     }
 
     #[test]
@@ -5920,6 +6094,7 @@ mod tests {
             prompted: Vec::new(),
             cache_key: "uc-test".into(),
             asked: Vec::new(),
+            prompts: Vec::new(),
             skills: Vec::new(),
             started: None,
             saved_as: None,
