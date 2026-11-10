@@ -47,6 +47,12 @@
 //!   Without it, nobody signs up, and the admin makes the accounts.
 //! * `forgejo_oidc_namespace`: where the issuer reads its clients from, the
 //!   `oidc-clients` secret (default: `console`, on the same cluster).
+//! * `forgejo_name`: the site's name in titles and mails (default: `usecode`).
+//!
+//! It wears usecode's colours: the console's icon is the logo and favicon
+//! (from the `forgejo-brand` ConfigMap, over Forgejo's own in
+//! `$GITEA_CUSTOM/public/assets/img`), and someone not logged in lands on
+//! the login page rather than Forgejo's home page.
 //!
 //! The admin password is made once, at random, and kept in
 //! forgejo/forgejo-admin: the secret is the source of truth, so changing it
@@ -92,6 +98,38 @@ const OIDC_SOURCE: &str = "usecode";
 const OIDC_CLIENT_ID: &str = "forgejo";
 /// The client id and secret, as the chart reads them (`key`, `secret`).
 const OAUTH_SECRET: &str = "forgejo-oauth-usecode";
+/// The ConfigMap with the logo and favicons, and where Forgejo looks for
+/// them (`$GITEA_CUSTOM` is /data/gitea in the chart).
+const BRAND: &str = "forgejo-brand";
+const BRAND_DIR: &str = "/data/gitea/public/assets/img";
+/// The console's icon, built into uc.
+const ICON_SVG: &str = include_str!("../../../../console/public/icon.svg");
+const ICON_192: &[u8] = include_bytes!("../../../../console/public/icon-192.png");
+const ICON_512: &[u8] = include_bytes!("../../../../console/public/icon-512.png");
+const APPLE_TOUCH_ICON: &[u8] =
+    include_bytes!("../../../../console/public/apple-touch-icon.png");
+
+/// The ConfigMap Forgejo takes its logo and favicons from: the SVG for the
+/// header and browsers, PNGs where an SVG won't do (link previews, mails,
+/// home screens).
+fn brand() -> Value {
+    use base64::Engine;
+    let b64 = |b: &[u8]| base64::engine::general_purpose::STANDARD.encode(b);
+    json!({
+        "apiVersion": "v1",
+        "kind": "ConfigMap",
+        "metadata": {"name": BRAND, "namespace": NAMESPACE},
+        "data": {
+            "logo.svg": ICON_SVG,
+            "favicon.svg": ICON_SVG,
+        },
+        "binaryData": {
+            "logo.png": b64(ICON_512),
+            "favicon.png": b64(ICON_192),
+            "apple-touch-icon.png": b64(APPLE_TOUCH_ICON),
+        },
+    })
+}
 
 /// What the user decided, from the variables.
 #[derive(Debug, Clone, Default)]
@@ -110,6 +148,8 @@ pub struct Settings {
     pub oidc: Option<String>,
     /// Where the issuer reads its clients from.
     pub oidc_namespace: String,
+    /// The site's name (`APP_NAME`).
+    pub name: String,
 }
 
 impl Settings {
@@ -159,6 +199,7 @@ impl Settings {
             oidc,
             oidc_namespace: var(vars, "forgejo_oidc_namespace")?
                 .unwrap_or_else(|| CONSOLE_NAMESPACE.into()),
+            name: var(vars, "forgejo_name")?.unwrap_or_else(|| "usecode".into()),
         })
     }
 
@@ -176,6 +217,8 @@ impl Settings {
             "ROOT_URL": format!("https://{host}/"),
             "SSH_DOMAIN": host,
             "SSH_LISTEN_PORT": SSH_LISTEN_PORT,
+            // Someone not logged in starts at the login page.
+            "LANDING_PAGE": "login",
         });
         match self.ssh_port {
             Some(port) => server["SSH_PORT"] = json!(port),
@@ -207,7 +250,7 @@ impl Settings {
                     "passwordMode": "keepUpdated",
                 },
                 "config": {
-                    "APP_NAME": "Forgejo",
+                    "APP_NAME": self.name,
                     "server": server,
                     "service": {"DISABLE_REGISTRATION": true},
                     // Not the old OpenID 2.0 logins, ever.
@@ -232,7 +275,12 @@ impl Settings {
                 "kind": "Middleware",
                 "metadata": {"name": "redirect-https", "namespace": NAMESPACE},
                 "spec": {"redirectScheme": {"scheme": "https", "permanent": true}},
-            }],
+            }, brand()],
+            // usecode's logo and favicons over Forgejo's.
+            "extraVolumes": [{"name": "brand", "configMap": {"name": BRAND}}],
+            "extraContainerVolumeMounts": [
+                {"name": "brand", "mountPath": BRAND_DIR, "readOnly": true}
+            ],
             "resources": {
                 "requests": {"cpu": "100m", "memory": "256Mi"},
                 "limits": {"memory": "1Gi"},
@@ -1008,7 +1056,24 @@ mod tests {
             dns_zone: "example.com".into(),
             oidc: None,
             oidc_namespace: "console".into(),
+            name: "usecode".into(),
         }
+    }
+
+    #[test]
+    fn wears_usecode_colours() {
+        let v = settings(None).values();
+        assert_eq!(v["gitea"]["config"]["APP_NAME"], "usecode");
+        assert_eq!(v["gitea"]["config"]["server"]["LANDING_PAGE"], "login");
+        let brand = &v["extraDeploy"][1];
+        assert_eq!(brand["kind"], "ConfigMap");
+        assert!(brand["data"]["logo.svg"].as_str().unwrap().contains("<svg"));
+        assert_eq!(brand["data"]["favicon.svg"], brand["data"]["logo.svg"]);
+        for png in ["logo.png", "favicon.png", "apple-touch-icon.png"] {
+            assert!(brand["binaryData"][png].as_str().unwrap().starts_with("iVBOR"));
+        }
+        assert_eq!(v["extraVolumes"][0]["configMap"]["name"], BRAND);
+        assert_eq!(v["extraContainerVolumeMounts"][0]["mountPath"], BRAND_DIR);
     }
 
     #[test]
