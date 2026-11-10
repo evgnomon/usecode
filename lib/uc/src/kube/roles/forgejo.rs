@@ -25,8 +25,12 @@
 //! * `forgejo_size`: the volume size (default: 10Gi, Hetzner's smallest). It
 //!   can grow later, never shrink: a bigger volume keeps its size.
 //! * `forgejo_storage_class`: (default: `hcloud-volumes`).
-//! * `forgejo_admin`, `forgejo_admin_email`: the admin login (default:
-//!   `usecode`, `admin@<forgejo_host>`).
+//! * `forgejo_admin`: who runs the site. With `forgejo_oidc`, an account
+//!   from the issuer, e.g. `evgnomon`: once it has logged in for the first
+//!   time, the role makes it the site admin (default: nobody). Without it,
+//!   the local admin login (default: `usecode`).
+//! * `forgejo_admin_email`: the local admin's email, without `forgejo_oidc`
+//!   only (default: `admin@<forgejo_host>`).
 //! * `forgejo_ssh_port`: serve git over SSH on this port of every node, e.g.
 //!   2222 (default: off; clone over HTTPS). Not 22, which the nodes' own
 //!   sshd has.
@@ -42,9 +46,10 @@
 //!   [`console`](super::console)). Forgejo then has no logins or accounts
 //!   of its own: no password form, no password over HTTP, and a new account
 //!   comes only from a first login there, named by the username there. Git
-//!   over HTTPS takes an access token. The local admin is for the command
-//!   line only (`kubectl -n forgejo exec deploy/forgejo -- forgejo admin`).
-//!   Without it, nobody signs up, and the admin makes the accounts.
+//!   over HTTPS takes an access token. There is no local admin then: the
+//!   admin is `forgejo_admin`'s account from the issuer, and the command
+//!   line (`kubectl -n forgejo exec deploy/forgejo -- forgejo admin`) needs
+//!   none. Without it, nobody signs up, and the admin makes the accounts.
 //! * `forgejo_oidc_namespace`: where the issuer reads its clients from, the
 //!   `oidc-clients` secret (default: `console`, on the same cluster).
 //! * `forgejo_name`: the site's name in titles and mails (default: `usecode`).
@@ -55,8 +60,8 @@
 //! the login page rather than Forgejo's home page. The footer doesn't say
 //! "Powered by Forgejo" or which version it runs.
 //!
-//! The admin password is made once, at random, and kept in
-//! forgejo/forgejo-admin: the secret is the source of truth, so changing it
+//! Without `forgejo_oidc`, the admin password is made once, at random, and
+//! kept in forgejo/forgejo-admin: the secret is the source of truth, so changing it
 //! is editing the secret and restarting the deployment. So is the client
 //! secret Forgejo logs in to the issuer with, in forgejo/forgejo-oauth-usecode;
 //! the role hands it to the issuer as the `forgejo` key of its
@@ -107,8 +112,7 @@ const BRAND_DIR: &str = "/data/gitea/public/assets/img";
 const ICON_SVG: &str = include_str!("../../../../console/public/icon.svg");
 const ICON_192: &[u8] = include_bytes!("../../../../console/public/icon-192.png");
 const ICON_512: &[u8] = include_bytes!("../../../../console/public/icon-512.png");
-const APPLE_TOUCH_ICON: &[u8] =
-    include_bytes!("../../../../console/public/apple-touch-icon.png");
+const APPLE_TOUCH_ICON: &[u8] = include_bytes!("../../../../console/public/apple-touch-icon.png");
 
 /// The ConfigMap Forgejo takes its logo and favicons from: the SVG for the
 /// header and browsers, PNGs where an SVG won't do (link previews, mails,
@@ -138,7 +142,9 @@ pub struct Settings {
     pub host: Option<String>,
     pub size: String,
     pub class: String,
-    pub admin: String,
+    /// The local admin's login, or with `oidc` the issuer's account that
+    /// is made the site admin.
+    pub admin: Option<String>,
     pub admin_email: String,
     pub ssh_port: Option<u16>,
     pub version: String,
@@ -186,13 +192,18 @@ impl Settings {
         if ssh_port == Some(22) {
             bail!("forgejo_ssh_port can't be 22: the nodes' own sshd listens there");
         }
+        let admin: Option<String> = var(vars, "forgejo_admin")?;
+        let admin = admin
+            .map(|a| a.trim().to_string())
+            .filter(|a| !a.is_empty())
+            .or_else(|| oidc.is_none().then(|| "usecode".into()));
         Ok(Settings {
+            admin,
             admin_email: var(vars, "forgejo_admin_email")?
                 .unwrap_or_else(|| format!("admin@{}", host.as_deref().unwrap_or("localhost"))),
             host,
             size: var(vars, "forgejo_size")?.unwrap_or_else(|| "10Gi".into()),
             class: var(vars, "forgejo_storage_class")?.unwrap_or_else(|| GENERIC_CLASS.into()),
-            admin: var(vars, "forgejo_admin")?.unwrap_or_else(|| "usecode".into()),
             ssh_port: ssh_port.filter(|p| *p != 0),
             version: var(vars, "forgejo_version")?.unwrap_or_else(|| CHART_VERSION.into()),
             dns_target,
@@ -294,6 +305,8 @@ impl Settings {
         }
         if let Some(issuer) = &self.oidc {
             let gitea = &mut values["gitea"];
+            // No local admin: the site admin is an account from the issuer.
+            gitea["admin"] = json!({"existingSecret": null, "username": "", "email": ""});
             gitea["oauth"] = json!([{
                 "name": OIDC_SOURCE,
                 "provider": "openidConnect",
@@ -366,6 +379,10 @@ pub fn tasks(plan: &mut Plan, cluster: &Arc<Cluster>, vars: &Vars) -> Result<()>
         )
         .tags(&["git"])
         .after(["forgejo/namespace"])
+        .when(
+            settings.oidc.is_none(),
+            "with forgejo_oidc there is no local admin",
+        )
         .run(move |ctx| async move { admin(&ctx, &c, &s).await }),
     );
 
@@ -440,6 +457,21 @@ pub fn tasks(plan: &mut Plan, cluster: &Arc<Cluster>, vars: &Vars) -> Result<()>
         .run(move |ctx| async move { verify(&ctx, &c, &s).await }),
     );
 
+    let (c, s) = (cluster.clone(), settings.clone());
+    plan.add(
+        Task::new(
+            "forgejo/site-admin",
+            "Make forgejo_admin's account from the issuer the site admin",
+        )
+        .tags(&["git"])
+        .after(["forgejo/verify"])
+        .when(
+            settings.oidc.is_some() && settings.admin.is_some(),
+            "forgejo_oidc or forgejo_admin is not set",
+        )
+        .run(move |ctx| async move { site_admin(&ctx, &c, &s).await }),
+    );
+
     plan.gate(
         start,
         settings.host.is_some(),
@@ -451,16 +483,22 @@ pub fn tasks(plan: &mut Plan, cluster: &Arc<Cluster>, vars: &Vars) -> Result<()>
 async fn report(ctx: &Ctx, cluster: &Cluster, s: &Settings) -> Result<Outcome> {
     let host = s.host.clone().unwrap_or_default();
     ctx.note(&format!(
-        "https://{host}, {} on {} (claim {NAMESPACE}/{CLAIM}), admin {} <{}>",
-        s.size, s.class, s.admin, s.admin_email
+        "https://{host}, {} on {} (claim {NAMESPACE}/{CLAIM})",
+        s.size, s.class
     ));
+    let admin = s.admin.as_deref().unwrap_or_default();
     ctx.note(&match &s.oidc {
-        Some(issuer) => {
-            format!(
-                "logins and accounts come only from {issuer}; the admin is for the command line"
-            )
-        }
-        None => "nobody signs up; the admin makes the accounts (or set forgejo_oidc)".into(),
+        Some(issuer) if s.admin.is_some() => format!(
+            "logins and accounts come only from {issuer}; its account {admin} is the site admin"
+        ),
+        Some(issuer) => format!(
+            "logins and accounts come only from {issuer}; nobody is the site admin \
+             (set forgejo_admin to an account there)"
+        ),
+        None => format!(
+            "nobody signs up; the admin {admin} <{}> makes the accounts (or set forgejo_oidc)",
+            s.admin_email
+        ),
     });
     ctx.note(&match s.ssh_port {
         Some(port) => format!("git over SSH: ssh://git@{host}:{port}/<owner>/<repo>.git"),
@@ -1028,18 +1066,185 @@ async fn verify(ctx: &Ctx, cluster: &Cluster, s: &Settings) -> Result<Outcome> {
     }
     ctx.log(&format!("https://{host} is up"));
     if let Some(issuer) = &s.oidc {
-        ctx.note(&format!(
-            "log in with {issuer}; the admin {} is for kubectl -n {NAMESPACE} exec deploy/forgejo -- forgejo admin",
-            s.admin
-        ));
+        ctx.note(&format!("log in with {issuer}"));
     } else {
         ctx.note(&format!(
             "log in as {}: kubectl -n {NAMESPACE} get secret {ADMIN_SECRET} \
              -o jsonpath='{{.data.password}}' | base64 -d",
-            s.admin
+            s.admin.as_deref().unwrap_or_default()
         ));
     }
     Ok(Outcome::Ok)
+}
+
+/// `forgejo` on the command line of the running pod.
+async fn forgejo(ctx: &Ctx, cluster: &Cluster, args: &[&str], read_only: bool) -> Result<String> {
+    let cmd = kubectl(ctx, cluster)
+        .args([
+            "-n",
+            NAMESPACE,
+            "exec",
+            "deploy/forgejo",
+            "-c",
+            "forgejo",
+            "--",
+            "forgejo",
+        ])
+        .args(args.iter().copied());
+    let cmd = if read_only { cmd.read_only() } else { cmd };
+    Ok(cmd.output().await?.stdout)
+}
+
+/// The usernames in `forgejo admin user list`'s table, which may have log
+/// lines above it.
+fn usernames(table: &str) -> Vec<String> {
+    table
+        .lines()
+        .skip_while(|l| {
+            let mut words = l.split_whitespace();
+            !(words.next() == Some("ID") && words.next() == Some("Username"))
+        })
+        .skip(1)
+        .filter_map(|l| l.split_whitespace().nth(1).map(str::to_lowercase))
+        .collect()
+}
+
+/// Makes `forgejo_admin`, an account the issuer made, the site admin.
+/// Forgejo's command line can't change an account, so a local admin made
+/// for this alone does it over the API with a token, and goes again.
+async fn site_admin(ctx: &Ctx, cluster: &Cluster, s: &Settings) -> Result<Outcome> {
+    let (Some(admin), Some(issuer)) = (s.admin.as_deref(), s.oidc.as_deref()) else {
+        return Ok(Outcome::Ok);
+    };
+    let host = s.host.as_deref().unwrap_or_default();
+    let name = admin.to_lowercase();
+    let list = |admins: bool| async move {
+        let mut args = vec!["admin", "user", "list"];
+        if admins {
+            args.push("--admin");
+        }
+        forgejo(ctx, cluster, &args, true)
+            .await
+            .map(|t| usernames(&t))
+    };
+    if list(true).await?.contains(&name) {
+        return Ok(Outcome::Ok);
+    }
+    if !list(false).await?.contains(&name) {
+        ctx.note(&format!(
+            "{admin} has no account yet: log in once at https://{host} with {issuer}, \
+             then run this again to make it the site admin"
+        ));
+        return Ok(Outcome::Ok);
+    }
+    if ctx.check() {
+        return Ok(Outcome::Changed);
+    }
+
+    let helper = format!(
+        "uc-admin-{}",
+        password::generate(
+            8,
+            Charset {
+                letters: true,
+                digits: true,
+                symbols: false,
+            },
+        )?
+        .to_lowercase()
+    );
+    let email = format!("{helper}@{host}");
+    forgejo(
+        ctx,
+        cluster,
+        &[
+            "admin",
+            "user",
+            "create",
+            "--username",
+            &helper,
+            "--email",
+            &email,
+            "--random-password",
+            "--admin",
+            "--must-change-password=false",
+        ],
+        false,
+    )
+    .await?;
+    let promoted = async {
+        let out = forgejo(
+            ctx,
+            cluster,
+            &[
+                "admin",
+                "user",
+                "generate-access-token",
+                "--username",
+                &helper,
+                "--token-name",
+                "uc",
+                "--scopes",
+                "write:admin,read:user",
+                "--raw",
+            ],
+            false,
+        )
+        .await?;
+        let token = out.lines().rev().map(str::trim).find(|l| !l.is_empty());
+        let token = token.ok_or_else(|| anyhow::anyhow!("forgejo printed no access token"))?;
+        promote(host, token, admin).await
+    }
+    .await;
+    // Its token goes with it.
+    let deleted = forgejo(
+        ctx,
+        cluster,
+        &["admin", "user", "delete", "--username", &helper],
+        false,
+    )
+    .await;
+    promoted?;
+    deleted?;
+    ctx.log(&format!("{admin} is the site admin"));
+    Ok(Outcome::Changed)
+}
+
+/// Sets the admin flag on `name` through Forgejo's API, keeping the login
+/// source it has (the API wants it with every change).
+async fn promote(host: &str, token: &str, name: &str) -> Result<()> {
+    let auth = format!("token {token}");
+    let url = format!("https://{host}/api/v1/users/{name}");
+    let reply = cloudflare::send(&format!("GET {url}"), || {
+        cloudflare::client()
+            .get(&url)
+            .header("Authorization", &auth)
+    })
+    .await?;
+    let status = reply.status();
+    let user: Value = reply.json().await?;
+    if !status.is_success() {
+        bail!("GET {url}: HTTP {status}: {user}");
+    }
+    let body = json!({
+        "admin": true,
+        "login_name": user["login_name"],
+        "source_id": user["source_id"],
+    });
+    let url = format!("https://{host}/api/v1/admin/users/{name}");
+    let reply = cloudflare::send(&format!("PATCH {url}"), || {
+        cloudflare::client()
+            .patch(&url)
+            .header("Authorization", &auth)
+            .json(&body)
+    })
+    .await?;
+    let status = reply.status();
+    let user: Value = reply.json().await.unwrap_or(Value::Null);
+    if !status.is_success() || user["is_admin"] != true {
+        bail!("PATCH {url}: HTTP {status}: {user}");
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1051,7 +1256,7 @@ mod tests {
             host: Some("git.example.com".into()),
             size: "10Gi".into(),
             class: GENERIC_CLASS.into(),
-            admin: "usecode".into(),
+            admin: Some("usecode".into()),
             admin_email: "admin@git.example.com".into(),
             ssh_port,
             version: CHART_VERSION.into(),
@@ -1068,14 +1273,22 @@ mod tests {
         let v = settings(None).values();
         assert_eq!(v["gitea"]["config"]["APP_NAME"], "usecode");
         assert_eq!(v["gitea"]["config"]["server"]["LANDING_PAGE"], "login");
-        assert_eq!(v["gitea"]["config"]["other"]["SHOW_FOOTER_POWERED_BY"], false);
+        assert_eq!(
+            v["gitea"]["config"]["other"]["SHOW_FOOTER_POWERED_BY"],
+            false
+        );
         assert_eq!(v["gitea"]["config"]["other"]["SHOW_FOOTER_VERSION"], false);
         let brand = &v["extraDeploy"][1];
         assert_eq!(brand["kind"], "ConfigMap");
         assert!(brand["data"]["logo.svg"].as_str().unwrap().contains("<svg"));
         assert_eq!(brand["data"]["favicon.svg"], brand["data"]["logo.svg"]);
         for png in ["logo.png", "favicon.png", "apple-touch-icon.png"] {
-            assert!(brand["binaryData"][png].as_str().unwrap().starts_with("iVBOR"));
+            assert!(
+                brand["binaryData"][png]
+                    .as_str()
+                    .unwrap()
+                    .starts_with("iVBOR")
+            );
         }
         assert_eq!(v["extraVolumes"][0]["configMap"]["name"], BRAND);
         assert_eq!(v["extraContainerVolumeMounts"][0]["mountPath"], BRAND_DIR);
@@ -1116,6 +1329,13 @@ mod tests {
         let client = &v["gitea"]["config"]["oauth2_client"];
         assert_eq!(client["ENABLE_AUTO_REGISTRATION"], true);
         assert_eq!(client["ACCOUNT_LINKING"], "login");
+        // No local admin; the chart makes none with an empty username.
+        assert_eq!(v["gitea"]["admin"]["username"], "");
+        assert_eq!(v["gitea"]["admin"]["existingSecret"], Value::Null);
+        assert_eq!(
+            settings(None).values()["gitea"]["admin"]["existingSecret"],
+            ADMIN_SECRET
+        );
         assert_eq!(
             s.callback(),
             "https://git.example.com/user/oauth2/usecode/callback"
@@ -1146,6 +1366,16 @@ mod tests {
         assert!(exprs.contains(&json!(
             {"key": PROVIDER_KEY, "operator": "In", "values": [PROVIDER]}
         )));
+    }
+
+    #[test]
+    fn reads_the_user_table() {
+        let table = "2025/01/01 WARN something\n\
+                     ID   Username Email               IsActive IsAdmin 2FA\n\
+                     1    usecode  admin@git.example.com true   true    false\n\
+                     2    Evgnomon e@example.com         true   false   false\n";
+        assert_eq!(usernames(table), ["usecode", "evgnomon"]);
+        assert!(usernames("no table").is_empty());
     }
 
     #[test]
