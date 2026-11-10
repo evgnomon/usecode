@@ -39,10 +39,12 @@
 //! * `forgejo_version`: the chart version.
 //! * `forgejo_oidc`: an OpenID Connect issuer to log in and sign up with,
 //!   e.g. `https://api.usecode.dev` (the console's API, see
-//!   [`console`](super::console)). Forgejo then makes no accounts of its
-//!   own: a new account comes only from a first login there, named by the
-//!   username there. The admin keeps its password. Without it, nobody signs
-//!   up, and the admin makes the accounts.
+//!   [`console`](super::console)). Forgejo then has no logins or accounts
+//!   of its own: no password form, no password over HTTP, and a new account
+//!   comes only from a first login there, named by the username there. Git
+//!   over HTTPS takes an access token. The local admin is for the command
+//!   line only (`kubectl -n forgejo exec deploy/forgejo -- forgejo admin`).
+//!   Without it, nobody signs up, and the admin makes the accounts.
 //! * `forgejo_oidc_namespace`: where the issuer reads its clients from, the
 //!   `oidc-clients` secret (default: `console`, on the same cluster).
 //!
@@ -247,11 +249,15 @@ impl Settings {
                 "existingSecret": OAUTH_SECRET,
                 "autoDiscoverUrl": format!("{issuer}/.well-known/openid-configuration"),
             }]);
-            // Accounts come only from a first login at the issuer.
+            // Logins and accounts come only from the issuer.
             gitea["config"]["service"] = json!({
                 "DISABLE_REGISTRATION": false,
                 "ALLOW_ONLY_EXTERNAL_REGISTRATION": true,
                 "SHOW_REGISTRATION_BUTTON": false,
+                // No password form on the login page,
+                "ENABLE_INTERNAL_SIGNIN": false,
+                // nor passwords over HTTP Basic; access tokens still work.
+                "ENABLE_BASIC_AUTHENTICATION": false,
             });
             gitea["config"]["oauth2_client"] = json!({
                 "ENABLE_AUTO_REGISTRATION": true,
@@ -399,7 +405,9 @@ async fn report(ctx: &Ctx, cluster: &Cluster, s: &Settings) -> Result<Outcome> {
     ));
     ctx.note(&match &s.oidc {
         Some(issuer) => {
-            format!("accounts come only from logging in at {issuer}; the admin keeps its password")
+            format!(
+                "logins and accounts come only from {issuer}; the admin is for the command line"
+            )
         }
         None => "nobody signs up; the admin makes the accounts (or set forgejo_oidc)".into(),
     });
@@ -968,11 +976,18 @@ async fn verify(ctx: &Ctx, cluster: &Cluster, s: &Settings) -> Result<Outcome> {
         bail!("{}\n\n{}", problems.join("\n"), logs(ctx, cluster).await);
     }
     ctx.log(&format!("https://{host} is up"));
-    ctx.note(&format!(
-        "log in as {}: kubectl -n {NAMESPACE} get secret {ADMIN_SECRET} \
-         -o jsonpath='{{.data.password}}' | base64 -d",
-        s.admin
-    ));
+    if let Some(issuer) = &s.oidc {
+        ctx.note(&format!(
+            "log in with {issuer}; the admin {} is for kubectl -n {NAMESPACE} exec deploy/forgejo -- forgejo admin",
+            s.admin
+        ));
+    } else {
+        ctx.note(&format!(
+            "log in as {}: kubectl -n {NAMESPACE} get secret {ADMIN_SECRET} \
+             -o jsonpath='{{.data.password}}' | base64 -d",
+            s.admin
+        ));
+    }
     Ok(Outcome::Ok)
 }
 
@@ -1026,6 +1041,8 @@ mod tests {
         assert_eq!(service["DISABLE_REGISTRATION"], false);
         assert_eq!(service["ALLOW_ONLY_EXTERNAL_REGISTRATION"], true);
         assert_eq!(service["SHOW_REGISTRATION_BUTTON"], false);
+        assert_eq!(service["ENABLE_INTERNAL_SIGNIN"], false);
+        assert_eq!(service["ENABLE_BASIC_AUTHENTICATION"], false);
         let client = &v["gitea"]["config"]["oauth2_client"];
         assert_eq!(client["ENABLE_AUTO_REGISTRATION"], true);
         assert_eq!(client["ACCOUNT_LINKING"], "login");
