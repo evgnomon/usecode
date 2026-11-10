@@ -14,6 +14,21 @@ RUN apt-get update \
       ripgrep rsync sudo tar tini tmux unzip vim wget xz-utils zip \
  && rm -rf /var/lib/apt/lists/*
 
+# forgejo-runner, to run Forgejo Actions from the workspace
+# (`forgejo-runner register`, then `forgejo-runner daemon`). The release
+# binary, checked against its checksum.
+ARG TARGETARCH
+ARG FORGEJO_RUNNER_VERSION=13.2.1
+ARG FORGEJO_RUNNER_SHA256_amd64=bb369fe1ecb50fdc983c0b1d993f19b0920df6e5864511892b3cdbf16d858b34
+ARG FORGEJO_RUNNER_SHA256_arm64=eeddb7902f79abe488972f4189fbe3ea02762ee827d1b406b469420bf0d62dd9
+RUN arch="${TARGETARCH:-$(dpkg --print-architecture)}" \
+ && eval "sum=\${FORGEJO_RUNNER_SHA256_${arch}}" \
+ && curl -fsSL -o /usr/local/bin/forgejo-runner \
+      "https://code.forgejo.org/forgejo/runner/releases/download/v${FORGEJO_RUNNER_VERSION}/forgejo-runner-${FORGEJO_RUNNER_VERSION}-linux-${arch}" \
+ && echo "${sum}  /usr/local/bin/forgejo-runner" | sha256sum -c - \
+ && chmod 755 /usr/local/bin/forgejo-runner \
+ && forgejo-runner --version
+
 # A quiet login: no uname line or Debian notice, and a UTF-8 locale for
 # every session. Your laptop's LANG and LC_* stay home, so a locale the box
 # doesn't have never warns; en_US.UTF-8 is there if you set it yourself.

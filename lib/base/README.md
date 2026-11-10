@@ -9,7 +9,9 @@ A comfy Debian trixie dev box in a container, the one `uc workspace` (or
 `uc ws`) runs for you on your cluster. You SSH in as yourself, the same
 login name and uid you have on your laptop, sudo needs no password, and the usual suspects are already there: git, build-essential,
 python3, curl, jq, ripgrep, tmux, vim and friends. VS Code's Remote - SSH
-works out of the box.
+works out of the box. `forgejo-runner` is there too, so a workspace can run
+your Forgejo Actions: `forgejo-runner register` with a token from your
+Forgejo, then `forgejo-runner daemon`.
 
 ```sh
 uc ws up          # your workspace, as you, with the keys in ~/.ssh/*.pub
@@ -37,7 +39,7 @@ your config; anything with sshd on port 22 that starts the way
 
 ## What's inside
 
-* `Containerfile`: the packages; no users.
+* `Containerfile`: the packages and `forgejo-runner`; no users.
 * `entrypoint.sh`: makes the user from `USECODE_USER` and `USECODE_UID`
   (`uc ws up` sets them to you, `--user` to someone else) with sudo, fills
   its home from `/etc/skel` on a new volume, makes
