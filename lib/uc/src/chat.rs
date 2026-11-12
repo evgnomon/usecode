@@ -367,8 +367,9 @@ fn common_name(model: &str) -> String {
         .collect()
 }
 
-/// A model list from the cache under `key`, unless `refresh`; else from
-/// `fetch`, and kept in the cache.
+/// A model list from the cache under `key`, unless `refresh` or it was
+/// fetched more than a day ago; else from `fetch`, and kept in the cache.
+/// When the fetch fails, a stale list is still taken.
 async fn cached_list<F>(key: &str, refresh: bool, fetch: F) -> Result<Vec<String>>
 where
     F: std::future::Future<Output = Result<Vec<String>>>,
@@ -377,12 +378,22 @@ where
         .then(|| cache_get(key))
         .flatten()
         .and_then(|v| serde_json::from_value::<Vec<String>>(v).ok());
-    if let Some(models) = cached {
-        return Ok(models);
+    match cached {
+        Some(models) if cache_fresh(key) => Ok(models),
+        stale => match fetch.await {
+            Ok(models) => {
+                cache_set(key, json!(models));
+                Ok(models)
+            }
+            Err(err) => match stale {
+                Some(models) => {
+                    note!("{key}'s models: {err:#}; taking the list from before");
+                    Ok(models)
+                }
+                None => Err(err),
+            },
+        },
     }
-    let models = fetch.await?;
-    cache_set(key, json!(models));
-    Ok(models)
 }
 
 /// The models of every provider that can be talked to: the ones each
@@ -526,8 +537,23 @@ fn start_provider(providers: &[Provider]) -> Option<&Provider> {
 
 /// The model a session on `start` starts on: `UC_MODEL`, else `model:` in
 /// `agent.yaml` when it was saved for that provider, else the provider's
-/// default.
-fn start_model(start: &Provider, pool: &[Choice]) -> String {
+/// default. An alias (`UC_MODEL=opus`) is the model it means on `start`.
+fn start_model(start: &Provider, pool: &[Choice], prefer: &Prefer) -> String {
+    let named = named_start_model(start, pool);
+    if prefer.resolve(&named).eq_ignore_ascii_case(named.trim()) {
+        return named;
+    }
+    let on_start: Vec<Choice> = pool
+        .iter()
+        .filter(|c| c.provider == start.name)
+        .cloned()
+        .collect();
+    choice_named(&on_start, &named, prefer, &start.name)
+        .map(|c| c.model)
+        .unwrap_or_else(|| prefer.resolve(&named))
+}
+
+fn named_start_model(start: &Provider, pool: &[Choice]) -> String {
     let settings = providers::settings();
     env("UC_MODEL")
         .or_else(|| {
@@ -539,6 +565,19 @@ fn start_model(start: &Provider, pool: &[Choice]) -> String {
             })
         })
         .unwrap_or_else(|| default_model(start, pool))
+}
+
+/// The models `subagent_models:` gives the kinds, said when it names one
+/// that isn't.
+fn start_sub_models() -> Vec<(String, String)> {
+    let models = providers::settings().subagent_models.clone();
+    for (kind, _) in models.iter().filter(|(k, _)| !sub::is_kind(k)) {
+        note!(
+            "subagent_models: there is no kind of subagent {kind}; one of {}",
+            sub::kinds()
+        );
+    }
+    models
 }
 
 /// What to say when no provider can be talked to.
@@ -559,6 +598,8 @@ struct Session {
     model: String,
     /// What `uc agent model` lists and picks from.
     pool: Vec<Choice>,
+    /// Which provider a model several serve is taken from.
+    prefer: Prefer,
     ask: bool,
     /// OpenRouter's reasoning effort: low, medium or high.
     effort: String,
@@ -588,6 +629,9 @@ struct Session {
     /// else `subagent_model:` in `agent.yaml`, until `uc agent model --sub`
     /// switches it; empty for each kind's own.
     sub_model: String,
+    /// A kind and the model it runs on, over `sub_model`: `subagent_models:`
+    /// in `agent.yaml`, until `uc agent model --sub KIND=MODEL` switches it.
+    sub_models: Vec<(String, String)>,
     /// The subagents' conversations not saved yet: they go beside the
     /// session's file once it has one.
     transcripts: Vec<Value>,
@@ -812,7 +856,9 @@ async fn run(
                 drop(session.switch_sub(sub));
                 continue;
             }
-            if name.is_empty() || choice_named(&session.pool, name, &session.provider).is_none() {
+            if name.is_empty()
+                || choice_named(&session.pool, name, &session.prefer, &session.provider).is_none()
+            {
                 session.pick_model(name)
             } else {
                 session.switch_and_save(name);
@@ -1462,9 +1508,7 @@ fn direct_command(line: &str) -> Option<&str> {
 /// otherwise the chat wouldn't know `uc a skill` and the `a` reads as prose.
 fn agent_alias(line: &str) -> std::borrow::Cow<'_, str> {
     match line.strip_prefix("uc a") {
-        Some(rest) if rest.is_empty() || rest.starts_with(' ') => {
-            format!("uc agent{rest}").into()
-        }
+        Some(rest) if rest.is_empty() || rest.starts_with(' ') => format!("uc agent{rest}").into(),
         _ => line.into(),
     }
 }
@@ -1487,6 +1531,86 @@ fn sub_model_arg(rest: &str) -> Option<&str> {
         .strip_prefix("--sub")
         .filter(|r| r.is_empty() || r.starts_with(' '))
         .map(str::trim)
+}
+
+/// `explore=haiku edit=opus copilot` after `--sub`: each kind and the model
+/// named for it, the words after one up to the next kind's. `None` when
+/// the words don't start with a kind and `=`, so they name one model for
+/// all.
+fn kind_args(arg: &str) -> Result<Option<Vec<(String, String)>>> {
+    if !arg
+        .split_whitespace()
+        .next()
+        .is_some_and(|w| w.contains('='))
+    {
+        return Ok(None);
+    }
+    let mut pairs: Vec<(String, String)> = Vec::new();
+    for word in arg.split_whitespace() {
+        match (word.split_once('='), pairs.last_mut()) {
+            (Some((kind, model)), _) => {
+                if !sub::is_kind(kind) {
+                    bail!(
+                        "there is no kind of subagent {kind}; one of {}",
+                        sub::kinds()
+                    );
+                }
+                pairs.push((kind.to_ascii_lowercase(), model.to_string()));
+            }
+            (None, Some((_, model))) => {
+                model.push(' ');
+                model.push_str(word);
+            }
+            (None, None) => return Ok(None),
+        }
+    }
+    Ok(Some(pairs))
+}
+
+/// The models `pairs` names for their kinds, checked as `--sub` checks one:
+/// `None` for `default`, the kind's own again.
+fn checked_kind_models(
+    parent: &sub::Parent<'_>,
+    pairs: &[(String, String)],
+) -> Result<Vec<(String, Option<String>)>> {
+    pairs
+        .iter()
+        .map(|(kind, model)| {
+            let model = model.trim();
+            if model.is_empty() {
+                bail!("no model for {kind}: --sub {kind}=MODEL, or {kind}=default");
+            }
+            let value = match model.eq_ignore_ascii_case("default") {
+                true => None,
+                false => Some(sub::named_model(parent, model)?),
+            };
+            Ok((kind.clone(), value))
+        })
+        .collect()
+}
+
+/// Puts the models `set` names for their kinds into `models` and saves them
+/// as `subagent_models:` for new sessions; what to say about the saving.
+fn save_kind_models(
+    models: &mut Vec<(String, String)>,
+    set: &[(String, Option<String>)],
+) -> String {
+    let mut said = String::new();
+    for (kind, value) in set {
+        models.retain(|(k, _)| k != kind);
+        if let Some(value) = value {
+            models.push((kind.clone(), value.clone()));
+        }
+        said = match providers::save_subagent_model_for(kind, value.as_deref()) {
+            Ok(path) => format!(", saved in {} for new `uc` sessions", path.display()),
+            Err(err) => format!(" (not saved: {err:#})"),
+        };
+        let var = format!("UC_SUBAGENT_MODEL_{}", kind.to_ascii_uppercase());
+        if env(&var).is_some() {
+            note!("{var} is set in this environment and wins over it");
+        }
+    }
+    said
 }
 
 /// `uc agent compact`, `status`, `exit` or `quit` typed at the prompt: the
@@ -2204,7 +2328,8 @@ fn all_tools() -> Value {
                                     one serves it, by the name the list shows beside it"),
                 "for": string("for action model, subagents to switch the model the \
                                subagents run on instead of yours: a model, or fast, \
-                               balanced, strong, same or default"),
+                               balanced, strong, same or default; model KIND=MODEL \
+                               (edit=opus) sets one kind's"),
                 "effort": string("for action effort, the level: low, medium, high and the \
                                   others the list shows"),
                 "path": string("for action export, the file to write"),
@@ -2277,9 +2402,18 @@ impl Session {
         let start = start_provider(&providers).cloned();
         AI.store(start.is_some(), Ordering::Relaxed);
         let pool = pool(&providers, false).await;
+        let prefer = Prefer::load();
+        let known: Vec<String> = providers::load()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|p| p.name)
+            .collect();
+        for line in prefer.problems(&known, &pool) {
+            note!("{line}");
+        }
         let model = start
             .as_ref()
-            .map(|p| start_model(p, &pool))
+            .map(|p| start_model(p, &pool, &prefer))
             .unwrap_or_default();
         let effort = start_effort();
         let instructed = std::env::current_dir()
@@ -2304,6 +2438,7 @@ impl Session {
             providers,
             provider: start.map(|p| p.name).unwrap_or_default(),
             pool,
+            prefer,
             model,
             ask,
             effort,
@@ -2321,6 +2456,7 @@ impl Session {
             sub_model: crate::flag::value(None, "--subagent-model")
                 .or_else(|| providers::settings().subagent_model.clone())
                 .unwrap_or_default(),
+            sub_models: start_sub_models(),
             transcripts: Vec::new(),
             since: Instant::now(),
             asked: Vec::new(),
@@ -2980,7 +3116,7 @@ impl Session {
         if name.is_empty() {
             return say(self.model_list());
         }
-        match choice_named(&self.pool, name, &self.provider) {
+        match choice_named(&self.pool, name, &self.prefer, &self.provider) {
             Some(choice) if named(&self.providers, &choice.provider).is_none() => say(format!(
                 "· {} has no key for {} in {}, so it is off\n",
                 choice.provider,
@@ -3000,7 +3136,7 @@ impl Session {
     /// sessions on the machine follow the one choice. A model on a provider
     /// with no key switches nowhere and saves nothing.
     fn switch_and_save(&mut self, name: &str) {
-        let saved = choice_named(&self.pool, name, &self.provider)
+        let saved = choice_named(&self.pool, name, &self.prefer, &self.provider)
             .filter(|c| named(&self.providers, &c.provider).is_some());
         drop(self.switch(name));
         let Some(choice) = saved else {
@@ -3210,10 +3346,7 @@ impl Session {
                     );
                 }
             }
-            Ok(None) => note!(
-                "model {}'s window isn't on OpenRouter's list",
-                self.model
-            ),
+            Ok(None) => note!("model {}'s window isn't on OpenRouter's list", self.model),
             Err(err) => note!("OpenRouter's model list: {err:#}"),
         }
         lines.join("\n")
@@ -3300,10 +3433,12 @@ impl Session {
         sub::Parent {
             providers: &self.providers,
             pool: &self.pool,
+            prefer: &self.prefer,
             choice: Choice::new(&self.provider, &self.model),
             cache_key: &self.cache_key,
             search: &self.search,
             sub_model: &self.sub_model,
+            sub_models: &self.sub_models,
             allow_all: self.allow_all || self.allow_turn,
         }
     }
@@ -3335,6 +3470,21 @@ impl Session {
         let name = name.trim();
         if name.is_empty() {
             return say(format!("· subagents: {}\n", sub::plan(&self.parent())));
+        }
+        let pairs = match kind_args(name) {
+            Ok(pairs) => pairs,
+            Err(err) => return say(format!("· {err:#}\n")),
+        };
+        if let Some(pairs) = pairs {
+            let set = match checked_kind_models(&self.parent(), &pairs) {
+                Ok(set) => set,
+                Err(err) => return say(format!("· {err:#}\n")),
+            };
+            let saved = save_kind_models(&mut self.sub_models, &set);
+            return say(format!(
+                "· subagents: {}{saved}\n",
+                sub::plan(&self.parent())
+            ));
         }
         let value = if name.eq_ignore_ascii_case("default") {
             None
@@ -5152,7 +5302,10 @@ fn read_line(prompt: &str) -> Result<Option<String>> {
         );
         *editor = Some(new);
     }
-    if let Some(editor) = editor.as_mut().filter(|_| STALE.swap(false, Ordering::Relaxed)) {
+    if let Some(editor) = editor
+        .as_mut()
+        .filter(|_| STALE.swap(false, Ordering::Relaxed))
+    {
         fill_history(editor);
     }
     BROWSING.store(false, Ordering::Relaxed);
@@ -5191,10 +5344,17 @@ pub(crate) fn label(_pool: &[Choice], choice: &Choice) -> String {
 
 /// The model `uc agent model <name> [provider]` means: its number in `pool`, the one
 /// listed there whose id has `name` in it, or `name` itself when it is an id
-/// (it has a `/`, or a provider is named). A model more than one provider
-/// serves is taken on the provider named, else on `prefer`, else on the
-/// first listed.
-pub(crate) fn choice_named(pool: &[Choice], name: &str, prefer: &str) -> Option<Choice> {
+/// (it has a `/`, or a provider is named); an alias of `prefer`'s as the
+/// model it means. A model more than one provider
+/// serves is taken on the provider named, else as `prefer` ranks them, with
+/// `session` the session's provider (see [`Prefer::best`]). An id that
+/// isn't listed is taken on `session`.
+pub(crate) fn choice_named(
+    pool: &[Choice],
+    name: &str,
+    prefer: &Prefer,
+    session: &str,
+) -> Option<Choice> {
     // `opus copilot` and `opus (Copilot)`, as the list shows it, both name one,
     // quoted or not.
     let name = name.trim().trim_matches(|c| c == '"' || c == '\'');
@@ -5212,7 +5372,8 @@ pub(crate) fn choice_named(pool: &[Choice], name: &str, prefer: &str) -> Option<
     if only.is_some() {
         words.pop();
     }
-    let name = words.join(" ");
+    // `opus` may mean `claude-opus-5.5`: the aliases first.
+    let name = prefer.resolve(&words.join(" "));
     if let Ok(n) = name.parse::<usize>() {
         return pool.get(n.checked_sub(1)?).cloned();
     }
@@ -5224,18 +5385,21 @@ pub(crate) fn choice_named(pool: &[Choice], name: &str, prefer: &str) -> Option<
     let found: Vec<&Choice> = listed
         .iter()
         .copied()
-        .filter(|c| c.model.to_lowercase().contains(&lower))
+        // `claude-opus-5.5` is also Copilot's `claude-opus-5-5`.
+        .filter(|c| {
+            c.model.to_lowercase().contains(&lower)
+                || (!lower.contains('/') && common_name(&c.model).contains(&common_name(&lower)))
+        })
         .collect();
     // One model on several providers is still one model.
-    let best = |of: Vec<&Choice>| {
-        of.iter()
-            .find(|c| c.provider.eq_ignore_ascii_case(prefer))
-            .or(of.first())
-            .map(|c| (*c).clone())
-    };
+    let best = |of: Vec<&Choice>| prefer.best(of, session);
     let names: BTreeSet<String> = found.iter().map(|c| common_name(&c.model)).collect();
     if names.len() == 1 {
         return best(found);
+    }
+    // `opus` and `claude-opus` are the newest Claude Opus anyone serves.
+    if let Some(newest) = newest(&found, &lower).and_then(best) {
+        return Some(newest);
     }
     // `opus` is the picked Opus, not every Opus OpenRouter has ever served.
     let picked: Vec<&Choice> = found.iter().copied().filter(|c| !c.extra).collect();
@@ -5250,7 +5414,7 @@ pub(crate) fn choice_named(pool: &[Choice], name: &str, prefer: &str) -> Option<
         return best(picked);
     }
     if name.contains('/') || (only.is_some() && found.is_empty() && !name.is_empty()) {
-        return Some(Choice::new(only.as_deref().unwrap_or(prefer), &name));
+        return Some(Choice::new(only.as_deref().unwrap_or(session), &name));
     }
     // `glm` is GLM Flash and GLM 5.3: the exact name after the vendor wins.
     best(
@@ -5259,6 +5423,240 @@ pub(crate) fn choice_named(pool: &[Choice], name: &str, prefer: &str) -> Option<
             .filter(|c| common_name(&c.model) == common_name(&lower))
             .collect(),
     )
+}
+
+/// A model's family and version: `anthropic/claude-opus-5.5` and Copilot's
+/// `claude-opus-5-5` are `claude-opus` 5.5, `claude-opus-4-20250514` is
+/// `claude-opus` 4 (a date is no version), and `glm-5.3-flash` has none:
+/// only a version at the end counts.
+fn family(model: &str) -> (String, Vec<u64>) {
+    let common = common_name(model);
+    let version = |v: &str| {
+        !v.is_empty()
+            && v.split('.')
+                .all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
+    };
+    match common.rsplit_once('-') {
+        Some((family, v)) if !family.is_empty() && version(v) => {
+            let numbers = v
+                .split('.')
+                .filter(|p| p.len() < 6)
+                .filter_map(|p| p.parse().ok())
+                .collect();
+            (family.to_string(), numbers)
+        }
+        _ => (common, Vec::new()),
+    }
+}
+
+/// The newest of `found` when `query` names a family, not a version:
+/// `glm` is the family `glm`, else `opus` the one family with versions that
+/// ends in it, `claude-opus`. Every provider's newest, for
+/// [`Prefer::best`] to pick one of; `None` when `query` has a version or
+/// names no one family.
+fn newest<'c>(found: &[&'c Choice], query: &str) -> Option<Vec<&'c Choice>> {
+    let (query, version) = family(query);
+    if !version.is_empty() {
+        return None;
+    }
+    let of = |pick: &dyn Fn(&str) -> bool| -> Vec<&'c Choice> {
+        found
+            .iter()
+            .copied()
+            .filter(|c| pick(&family(&c.model).0))
+            .collect()
+    };
+    let mut of_family = of(&|f| f == query);
+    if of_family.is_empty() {
+        let near: BTreeSet<String> = found
+            .iter()
+            .map(|c| family(&c.model))
+            .filter(|(f, v)| {
+                // Not a family it starts: `gemini-` is many families.
+                !v.is_empty() && f.ends_with(&format!("-{query}"))
+            })
+            .map(|(f, _)| f)
+            .collect();
+        if near.len() != 1 {
+            return None;
+        }
+        let only = near.into_iter().next()?;
+        of_family = of(&|f| f == only);
+    }
+    let top = of_family.iter().map(|c| family(&c.model).1).max()?;
+    Some(
+        of_family
+            .into_iter()
+            .filter(|c| family(&c.model).1 == top)
+            .collect(),
+    )
+}
+
+/// What the user means by a model's name and which provider it is taken
+/// from when more than one serves it: `model_aliases:` says what a name
+/// means, `model_providers:` pins a model to one provider, `provider_order:`
+/// ranks them; see [`crate::providers`].
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Prefer {
+    /// The providers to take a model from, first first.
+    pub(crate) order: Vec<String>,
+    /// A model, by any name or alias, and the one provider it is taken from.
+    pub(crate) pins: Vec<(String, String)>,
+    /// A name and the model, or another alias, it means.
+    pub(crate) aliases: Vec<(String, String)>,
+}
+
+/// The most aliases one name goes through, so a loop ends.
+const ALIAS_DEPTH: usize = 16;
+
+impl Prefer {
+    /// From `--provider-order` (`UC_PROVIDER_ORDER`) and `agent.yaml`.
+    pub(crate) fn load() -> Prefer {
+        let settings = providers::settings();
+        Prefer {
+            aliases: settings.model_aliases.clone(),
+            ..Prefer::new(
+                providers::provider_order(),
+                settings.model_providers.clone(),
+            )
+        }
+    }
+
+    pub(crate) fn new(order: Vec<String>, pins: Vec<(String, String)>) -> Prefer {
+        Prefer {
+            order,
+            pins,
+            aliases: Vec::new(),
+        }
+    }
+
+    /// The names `name` goes through, itself first: `opus`, `claude-opus`,
+    /// `claude-opus-5.5`. A loop ends at the name before it comes back.
+    fn chain(&self, name: &str) -> Vec<String> {
+        let mut names = vec![name.trim().to_string()];
+        while names.len() <= ALIAS_DEPTH {
+            let last = names.last().map(String::as_str).unwrap_or_default();
+            let Some((_, to)) = self
+                .aliases
+                .iter()
+                .find(|(f, _)| f.eq_ignore_ascii_case(last))
+            else {
+                break;
+            };
+            if names.iter().any(|n| n.eq_ignore_ascii_case(to)) {
+                break;
+            }
+            names.push(to.trim().to_string());
+        }
+        names
+    }
+
+    /// What `name` means, its aliases followed: `opus` is `claude-opus-5.5`.
+    pub(crate) fn resolve(&self, name: &str) -> String {
+        self.chain(name).pop().unwrap_or_default()
+    }
+
+    /// The provider `model` is pinned to, by any of its names or aliases.
+    fn pinned(&self, model: &str) -> Option<&str> {
+        let name = common_name(model);
+        self.pins
+            .iter()
+            .find(|(m, _)| common_name(&self.resolve(m)) == name)
+            .map(|(_, p)| p.as_str())
+    }
+
+    /// How far down `provider` comes: the ones in the order by their place
+    /// in it, then the session's, then the rest.
+    pub(crate) fn rank(&self, provider: &str, session: &str) -> usize {
+        self.order
+            .iter()
+            .position(|o| o.eq_ignore_ascii_case(provider))
+            .unwrap_or(if provider.eq_ignore_ascii_case(session) {
+                self.order.len()
+            } else {
+                self.order.len() + 1
+            })
+    }
+
+    /// `of` without the models taken from another provider than the one
+    /// they are pinned to, when that one has them too.
+    pub(crate) fn keep_pinned<'c>(&self, of: Vec<&'c Choice>) -> Vec<&'c Choice> {
+        let on = |provider: &str, model: &str| {
+            of.iter().any(|o| {
+                o.provider.eq_ignore_ascii_case(provider)
+                    && common_name(&o.model) == common_name(model)
+            })
+        };
+        of.iter()
+            .copied()
+            .filter(|c| match self.pinned(&c.model) {
+                Some(p) if !c.provider.eq_ignore_ascii_case(p) => !on(p, &c.model),
+                _ => true,
+            })
+            .collect()
+    }
+
+    /// The one of `of`, one model on several providers, to take: on the
+    /// provider it is pinned to, else the first by [`Prefer::rank`], else
+    /// the first in `of`.
+    pub(crate) fn best(&self, of: Vec<&Choice>, session: &str) -> Option<Choice> {
+        self.keep_pinned(of)
+            .into_iter()
+            .min_by_key(|c| self.rank(&c.provider, session))
+            .cloned()
+    }
+
+    /// What in the order, the pins and the aliases can't be followed: a
+    /// provider that isn't in the file (`known`), a pinned model its
+    /// provider doesn't list, an alias that loops or means no model listed.
+    pub(crate) fn problems(&self, known: &[String], pool: &[Choice]) -> Vec<String> {
+        let path = providers::path();
+        let known = |p: &str| known.iter().any(|k| k.eq_ignore_ascii_case(p));
+        let mut lines: Vec<String> = self
+            .order
+            .iter()
+            .filter(|p| !known(p))
+            .map(|p| {
+                format!(
+                    "provider_order: {p} is not under providers: in {}",
+                    path.display()
+                )
+            })
+            .collect();
+        for (model, provider) in &self.pins {
+            let model = self.resolve(model);
+            if !known(provider) {
+                lines.push(format!(
+                    "model_providers: {model} is on {provider}, which is not under providers: in {}",
+                    path.display()
+                ));
+            } else if !pool.iter().any(|c| {
+                c.provider.eq_ignore_ascii_case(provider)
+                    && common_name(&c.model) == common_name(&model)
+            }) {
+                lines.push(format!(
+                    "model_providers: {provider} has no {model} (or no key), so it comes \
+                     from the provider_order instead"
+                ));
+            }
+        }
+        for (name, _) in &self.aliases {
+            let chain = self.chain(name);
+            let last = chain.last().map(String::as_str).unwrap_or_default();
+            let looped = self
+                .aliases
+                .iter()
+                .any(|(f, _)| f.eq_ignore_ascii_case(last));
+            if looped {
+                lines.push(format!("model_aliases: {} loops", chain.join(" → ")));
+            } else if choice_named(pool, last, self, "").is_none() {
+                lines.push(format!(
+                    "model_aliases: {name} means {last}, which no provider with a key lists"
+                ));
+            }
+        }
+        lines
+    }
 }
 
 /// The text of a message, be it a plain string or what OpenRouter sends as
@@ -5295,8 +5693,29 @@ fn cache_get(key: &str) -> Option<Value> {
     }
 }
 
-/// Keeps `value` in the cache under `key`, next to the rest. A cache that
-/// can't be written is no loss: the next run fetches again.
+/// How old a model list in the cache may get before it is fetched again,
+/// so a new model shows up, and `opus` finds the newest Opus, within a day.
+const MODELS_MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
+
+/// The seconds since the epoch.
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or_default()
+}
+
+/// The cache keeps `key` fetched less than [`MODELS_MAX_AGE`] ago: when it
+/// was is kept beside it, under `key@`. One kept before that was is stale.
+fn cache_fresh(key: &str) -> bool {
+    cache_get(&format!("{key}@"))
+        .and_then(|at| at.as_u64())
+        .is_some_and(|at| now_secs().saturating_sub(at) < MODELS_MAX_AGE.as_secs())
+}
+
+/// Keeps `value` in the cache under `key`, next to the rest, and when, under
+/// `key@`. A cache that can't be written is no loss: the next run fetches
+/// again.
 fn cache_set(key: &str, value: Value) {
     let Some(path) = cache_path() else { return };
     let mut cache = std::fs::read_to_string(&path)
@@ -5305,6 +5724,7 @@ fn cache_set(key: &str, value: Value) {
         .filter(Value::is_object)
         .unwrap_or_else(|| json!({}));
     cache[key] = value;
+    cache[format!("{key}@")] = json!(now_secs());
     let write = || -> std::io::Result<()> {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
@@ -5322,7 +5742,8 @@ fn cache_set(key: &str, value: Value) {
 static OPENROUTER_LIST: Mutex<Option<Arc<Vec<Value>>>> = Mutex::new(None);
 
 /// The models' context windows, read off OpenRouter's list: from
-/// the cache if it has one, else fetched and cached. `model_info` takes the
+/// the cache if it has one fetched in the last day, else fetched and
+/// cached; when that fails, the stale one. `model_info` takes the
 /// field of the `model` whose `id` or `canonical_slug` matches, if it is in
 /// the list.
 async fn models() -> Result<Arc<Vec<Value>>> {
@@ -5333,12 +5754,20 @@ async fn models() -> Result<Arc<Vec<Value>>> {
         Value::Array(list) if !list.is_empty() => Some(list),
         _ => None,
     });
+    let keep = |list: Vec<Value>| {
+        let list = Arc::new(list);
+        *OPENROUTER_LIST.lock().unwrap() = Some(list.clone());
+        list
+    };
     match cached {
-        Some(list) => {
-            let list = Arc::new(list);
-            *OPENROUTER_LIST.lock().unwrap() = Some(list.clone());
-            Ok(list)
-        }
+        Some(list) if cache_fresh("openrouter") => Ok(keep(list)),
+        Some(list) => match refresh_models().await {
+            Ok(fresh) => Ok(fresh),
+            Err(err) => {
+                note!("OpenRouter's models: {err:#}; taking the list from before");
+                Ok(keep(list))
+            }
+        },
         None => refresh_models().await,
     }
 }
@@ -5348,6 +5777,7 @@ async fn models() -> Result<Arc<Vec<Value>>> {
 async fn refresh_models() -> Result<Arc<Vec<Value>>> {
     let list: Value = client()
         .get("https://openrouter.ai/api/v1/models")
+        .timeout(Duration::from_secs(20))
         .send()
         .await?
         .error_for_status()?
@@ -5742,7 +6172,8 @@ pub(crate) async fn agent_model(args: &[OsString]) -> Result<()> {
         .collect();
     if args.iter().any(|arg| arg == "-h" || arg == "--help") {
         println!("usage: uc agent model [<number|name|id> [provider]]");
-        println!("       uc agent model --sub [fast|balanced|strong|same|default|<name>]\n");
+        println!("       uc agent model --sub [fast|balanced|strong|same|default|<name>]");
+        println!("       uc agent model --sub KIND=MODEL [KIND=MODEL ...]\n");
         println!("With no model named: the models of every provider with a key, the");
         println!("current one marked, as typing `uc agent model` in the chat lists them.");
         println!("With one named: makes it the model new `uc` sessions start on, saved");
@@ -5753,10 +6184,22 @@ pub(crate) async fn agent_model(args: &[OsString]) -> Result<()> {
         println!("a listed id or any id of the provider. A session already running keeps");
         println!("its model: type `uc agent model` at that session's prompt to switch it.");
         println!("With --sub: the model the subagents run on instead, saved as");
-        println!("subagent_model:. fast, balanced and strong are taken on the session's");
-        println!("provider when it has one; same is the session's own model; default is");
-        println!("each kind's own (fast to explore and run, balanced to research and edit).");
-        println!("UC_SUBAGENT_MODEL (or --subagent-model) wins over it.");
+        println!("subagent_model:. fast, balanced and strong are taken on the first");
+        println!("provider that has one: by provider_order:, then the session's, then the");
+        println!("rest; same is the session's own model; default is each kind's own (fast");
+        println!("to explore and run, balanced to research and edit). UC_SUBAGENT_MODEL (or");
+        println!("--subagent-model) wins over it.");
+        println!("With --sub KIND=MODEL: one kind's own (explore, research, run or edit), over");
+        println!("the one for all, saved under subagent_models:; KIND=default takes it out.");
+        println!("UC_SUBAGENT_MODEL_<KIND> (or --subagent-model-<kind>) wins over it.");
+        println!("A model more than one provider serves comes from the provider named after");
+        println!("it, else the one model_providers: names for it, else the first of");
+        println!("provider_order: that has it, else the session's. In the same file:");
+        println!("  provider_order: [claude, copilot, openrouter]");
+        println!("  model_providers: {{claude-opus-5.5: copilot}}");
+        println!("UC_PROVIDER_ORDER=claude,openrouter (or --provider-order) wins over the order.");
+        println!("model_aliases: says what a name means wherever a model is named, an alias");
+        println!("may name another: {{opus: claude-opus, claude-opus: claude-opus-5.5}}.");
         return Ok(());
     }
     let providers = providers::usable();
@@ -5764,7 +6207,8 @@ pub(crate) async fn agent_model(args: &[OsString]) -> Result<()> {
         bail!("{}", no_provider());
     };
     let pool = pool(&providers, false).await;
-    let current = Choice::new(&start.name, &start_model(start, &pool));
+    let prefer = Prefer::load();
+    let current = Choice::new(&start.name, &start_model(start, &pool, &prefer));
     let name = args.join(" ");
     if let Some(sub) = sub_model_arg(&name) {
         let search = Engine::DuckDuckGo;
@@ -5772,17 +6216,33 @@ pub(crate) async fn agent_model(args: &[OsString]) -> Result<()> {
             .subagent_model
             .clone()
             .unwrap_or_default();
+        let kinds = start_sub_models();
+        let changed: Vec<(String, String)>;
         let mut parent = sub::Parent {
             providers: &providers,
             pool: &pool,
+            prefer: &prefer,
             choice: current.clone(),
             cache_key: "",
             search: &search,
             sub_model: &saved,
+            sub_models: &kinds,
             allow_all: false,
         };
         if sub.is_empty() {
             println!("· subagents: {}", sub::plan(&parent));
+            return Ok(());
+        }
+        if let Some(pairs) = kind_args(sub)? {
+            let set = checked_kind_models(&parent, &pairs)?;
+            let said = {
+                let mut updated = kinds.clone();
+                let said = save_kind_models(&mut updated, &set);
+                changed = updated;
+                said
+            };
+            parent.sub_models = &changed;
+            println!("· subagents: {}{said}", sub::plan(&parent));
             return Ok(());
         }
         let value = match sub.eq_ignore_ascii_case("default") {
@@ -5806,7 +6266,7 @@ pub(crate) async fn agent_model(args: &[OsString]) -> Result<()> {
         }
         return Ok(());
     }
-    let choice = choice_named(&pool, &name, &start.name)
+    let choice = choice_named(&pool, &name, &prefer, &start.name)
         .ok_or_else(|| anyhow!("no model {name}; `uc agent model` lists them"))?;
     if named(&providers, &choice.provider).is_none() {
         bail!(
@@ -6141,10 +6601,21 @@ mod tests {
     fn merges_bash_and_uc_by_time() {
         let bash = "old\n#100\nls\n#300\ngit push\n";
         let uc = "#200\nmake\n#300\ncargo test\n";
-        let prompts = [(150, "fix the tests".into()), (300, "make it faster".into())];
+        let prompts = [
+            (150, "fix the tests".into()),
+            (300, "make it faster".into()),
+        ];
         assert_eq!(
             merged_lines(bash, uc, &prompts),
-            ["old", "ls", "fix the tests", "make", "git push", "cargo test", "make it faster"]
+            [
+                "old",
+                "ls",
+                "fix the tests",
+                "make",
+                "git push",
+                "cargo test",
+                "make it faster"
+            ]
         );
     }
 
@@ -6261,7 +6732,8 @@ mod tests {
     #[test]
     fn model_named_takes_a_number_part_of_an_id_or_an_id() {
         let pool = openrouter_pool();
-        let named = |name: &str| choice_named(&pool, name, "openrouter").map(|c| c.model);
+        let none = Prefer::default();
+        let named = |name: &str| choice_named(&pool, name, &none, "openrouter").map(|c| c.model);
         assert_eq!(named("2").as_deref(), Some("anthropic/claude-haiku-5.5"));
         assert_eq!(named("0"), None);
         assert_eq!(named("9"), None);
@@ -6270,7 +6742,7 @@ mod tests {
             Some("anthropic/claude-haiku-5.5")
         );
         assert_eq!(named("glm-5.3").as_deref(), Some("z-ai/glm-5.3"));
-        assert_eq!(named("glm"), None);
+        assert_eq!(named("glm").as_deref(), Some("z-ai/glm-5.3"));
         assert_eq!(named("opus").as_deref(), Some("anthropic/claude-opus-5.5"));
         assert_eq!(named("luna").as_deref(), Some("openai/gpt-6-luna"));
         assert_eq!(named("openai/gpt-5").as_deref(), Some("openai/gpt-5"));
@@ -6280,7 +6752,8 @@ mod tests {
     #[test]
     fn a_model_on_several_providers_is_taken_on_the_one_named_or_preferred() {
         let pool = every_pool();
-        let named = |name: &str, prefer| choice_named(&pool, name, prefer);
+        let none = Prefer::default();
+        let named = |name: &str, session| choice_named(&pool, name, &none, session);
         let opus = |provider, model: &str| Some(Choice::new(provider, model));
         assert_eq!(
             named("opus", "openrouter"),
@@ -6307,6 +6780,201 @@ mod tests {
         assert_eq!(
             named("8", "openrouter"),
             opus("claude", DEFAULT_CLAUDE_MODEL)
+        );
+    }
+
+    #[test]
+    fn the_provider_order_beats_the_sessions_and_a_pin_beats_the_order() {
+        let pool = every_pool();
+        let order = |o: &[&str]| o.iter().map(|p| p.to_string()).collect::<Vec<_>>();
+        let pin = |m: &str, p: &str| vec![(m.to_string(), p.to_string())];
+        let opus = |prefer: &Prefer, name: &str, session: &str| {
+            choice_named(&pool, name, prefer, session).map(|c| c.provider)
+        };
+        let ordered = Prefer::new(order(&["copilot", "claude"]), Vec::new());
+        assert_eq!(
+            opus(&ordered, "opus", "openrouter").as_deref(),
+            Some("copilot")
+        );
+        let claude_first = Prefer::new(order(&["claude"]), Vec::new());
+        assert_eq!(
+            opus(&claude_first, "opus", "copilot").as_deref(),
+            Some("claude")
+        );
+        // Not in the order: the session's provider comes next.
+        let elsewhere = Prefer::new(order(&["groq"]), Vec::new());
+        assert_eq!(
+            opus(&elsewhere, "opus", "claude").as_deref(),
+            Some("claude")
+        );
+        // Copilot's `claude-opus-5-5` is the pinned `anthropic/claude-opus-5.5`.
+        let pinned = Prefer::new(
+            order(&["claude", "openrouter"]),
+            pin("anthropic/claude-opus-5.5", "copilot"),
+        );
+        assert_eq!(opus(&pinned, "opus", "claude").as_deref(), Some("copilot"));
+        assert_eq!(
+            opus(&pinned, "claude-opus-5.5", "claude").as_deref(),
+            Some("copilot")
+        );
+        // The provider named still wins over the pin.
+        assert_eq!(
+            opus(&pinned, "opus openrouter", "claude").as_deref(),
+            Some("openrouter")
+        );
+        // A pin to a provider without the model falls back to the order.
+        let nowhere = Prefer::new(order(&["openrouter"]), pin("claude-opus-5.5", "groq"));
+        assert_eq!(
+            opus(&nowhere, "opus", "claude").as_deref(),
+            Some("openrouter")
+        );
+        let known = order(&["openrouter", "claude", "copilot", "groq"]);
+        let problems = nowhere.problems(&known, &pool);
+        assert_eq!(problems.len(), 1, "{problems:?}");
+        assert!(problems[0].contains("groq has no claude-opus-5.5"));
+        let unknown = Prefer::new(order(&["nope"]), pin("glm-5.3", "gone"));
+        assert_eq!(unknown.problems(&known, &pool).len(), 2);
+        assert!(pinned.problems(&known, &pool).is_empty());
+    }
+
+    #[test]
+    fn sub_takes_a_model_for_each_kind() {
+        let pairs = |arg: &str| kind_args(arg).unwrap();
+        assert_eq!(pairs("opus"), None);
+        assert_eq!(pairs("opus copilot"), None);
+        assert_eq!(
+            pairs("edit=opus copilot Explore=haiku"),
+            Some(vec![
+                ("edit".into(), "opus copilot".into()),
+                ("explore".into(), "haiku".into())
+            ])
+        );
+        assert_eq!(
+            pairs("run=default"),
+            Some(vec![("run".into(), "default".into())])
+        );
+        assert!(kind_args("build=opus").is_err());
+        assert!(kind_args("edit=opus x=y").is_err());
+    }
+
+    #[test]
+    fn a_family_is_the_newest_of_it_anyone_serves() {
+        assert_eq!(
+            family("anthropic/claude-opus-5.5"),
+            ("claude-opus".into(), vec![5, 5])
+        );
+        assert_eq!(
+            family("claude-opus-5-5"),
+            ("claude-opus".into(), vec![5, 5])
+        );
+        assert_eq!(
+            family("claude-opus-4-20250514"),
+            ("claude-opus".into(), vec![4])
+        );
+        assert_eq!(
+            family("z-ai/glm-5.3-flash"),
+            ("glm-5.3-flash".into(), vec![])
+        );
+        assert_eq!(
+            family("anthropic/claude-3-opus"),
+            ("claude-3-opus".into(), vec![])
+        );
+        let mut pool = every_pool();
+        for old in [
+            "anthropic/claude-3-opus",
+            "anthropic/claude-opus-4",
+            "anthropic/claude-opus-4.1",
+        ] {
+            pool.push(Choice::extra("openrouter", old));
+        }
+        pool.push(Choice::new("copilot", "claude-opus-4-20250514"));
+        let none = Prefer::default();
+        let named = |pool: &[Choice], name: &str| choice_named(pool, name, &none, "claude");
+        let opus55 = Some(Choice::new("claude", "anthropic/claude-opus-5.5"));
+        assert_eq!(named(&pool, "opus"), opus55);
+        assert_eq!(named(&pool, "claude-opus"), opus55);
+        assert_eq!(named(&pool, "Claude-Opus"), opus55);
+        // A newer one, even only in OpenRouter's whole list, wins.
+        pool.push(Choice::extra("openrouter", "anthropic/claude-opus-5.6"));
+        let opus56 = Some(Choice::new("openrouter", "anthropic/claude-opus-5.6"));
+        assert_eq!(named(&pool, "opus"), opus56);
+        assert_eq!(named(&pool, "anthropic/claude-opus"), opus56);
+        // A version named is that one.
+        assert_eq!(named(&pool, "claude-opus-5.5"), opus55);
+        assert_eq!(
+            named(&pool, "opus-4.1").map(|c| c.model),
+            Some("anthropic/claude-opus-4.1".into())
+        );
+        // An alias to a family is its newest too.
+        let aliased = Prefer {
+            aliases: vec![("big".into(), "claude-opus".into())],
+            ..Prefer::default()
+        };
+        assert_eq!(choice_named(&pool, "big", &aliased, "claude"), opus56);
+        // `glm` is GLM, not GLM Flash; `claude` is no one family.
+        assert_eq!(
+            named(&pool, "glm").map(|c| c.model),
+            Some("z-ai/glm-5.3".into())
+        );
+        assert_eq!(named(&pool, "claude"), None);
+        pool.push(Choice::extra("openrouter", "google/gemini-nano-banana-2.1"));
+        pool.push(Choice::extra("openrouter", "google/gemini-3-pro"));
+        assert_eq!(named(&pool, "gemini"), None);
+    }
+
+    #[test]
+    fn an_alias_is_the_model_it_means_through_other_aliases() {
+        let pool = every_pool();
+        let alias = |pairs: &[(&str, &str)]| -> Vec<(String, String)> {
+            pairs
+                .iter()
+                .map(|(a, b)| (a.to_string(), b.to_string()))
+                .collect()
+        };
+        let prefer = Prefer {
+            aliases: alias(&[
+                ("opus", "claude-opus"),
+                ("Claude-Opus", "claude-opus-5.5"),
+                ("fav", "glm-5.3"),
+            ]),
+            ..Prefer::new(Vec::new(), alias(&[("opus", "copilot")]))
+        };
+        assert_eq!(prefer.resolve("OPUS"), "claude-opus-5.5");
+        assert_eq!(prefer.resolve("haiku"), "haiku");
+        let named = |name: &str| choice_named(&pool, name, &prefer, "openrouter");
+        // The pin on the alias is the pin on the model it means.
+        assert_eq!(
+            named("opus"),
+            Some(Choice::new("copilot", "claude-opus-5-5"))
+        );
+        assert_eq!(
+            named("claude-opus"),
+            Some(Choice::new("copilot", "claude-opus-5-5"))
+        );
+        assert_eq!(
+            named("opus openrouter"),
+            Some(Choice::new("openrouter", "anthropic/claude-opus-5.5"))
+        );
+        assert_eq!(
+            named("fav"),
+            Some(Choice::new("openrouter", "z-ai/glm-5.3"))
+        );
+        let known: Vec<String> = ["openrouter", "claude", "copilot"]
+            .iter()
+            .map(|p| p.to_string())
+            .collect();
+        assert!(prefer.problems(&known, &pool).is_empty());
+        let looped = Prefer {
+            aliases: alias(&[("a", "b"), ("b", "a"), ("x", "no-such-model")]),
+            ..Prefer::default()
+        };
+        assert_eq!(looped.resolve("a"), "b");
+        let problems = looped.problems(&known, &pool);
+        assert_eq!(problems.len(), 3, "{problems:?}");
+        assert!(problems[0].contains("a → b loops"), "{problems:?}");
+        assert!(
+            problems[2].contains("x means no-such-model"),
+            "{problems:?}"
         );
     }
 
@@ -6393,6 +7061,7 @@ mod tests {
             provider: "openrouter".into(),
             model: String::new(),
             pool: openrouter_pool(),
+            prefer: Prefer::default(),
             ask: false,
             effort: String::new(),
             messages: Vec::new(),
@@ -6408,6 +7077,7 @@ mod tests {
             tokens: Tokens::default(),
             subs: BTreeMap::new(),
             sub_model: String::new(),
+            sub_models: Vec::new(),
             transcripts: Vec::new(),
             since: Instant::now(),
             instructed: Vec::new(),
@@ -6466,7 +7136,11 @@ mod tests {
         ];
         session.asked = vec![(1, "bye".into())];
         let exported = session.exported();
-        assert_eq!(exported.messages.len(), 3, "no system prompt, the call answered");
+        assert_eq!(
+            exported.messages.len(),
+            3,
+            "no system prompt, the call answered"
+        );
         assert_eq!(exported.messages[2]["tool_call_id"], "a");
         assert_eq!(exported.asked, [(0, "bye".to_string())]);
         let text = serde_json::to_string(&exported).unwrap();

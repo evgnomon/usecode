@@ -54,6 +54,16 @@
 //! model: anthropic/claude-opus-5.5 # and its model; uc agent model sets both
 //! effort: high                    # minimal, low, medium, high, xhigh or max; uc agent effort sets it
 //! subagent_model: fast            # fast, balanced, strong, same or a model; uc agent model --sub sets it
+//! subagent_models:                # one kind's own, over subagent_model:; uc agent model --sub edit=opus sets it
+//!   explore: haiku
+//!   edit: opus
+//! provider_order: [claude, copilot, openrouter]  # take a model from the first of these that serves it
+//! model_providers:                # exceptions: this model only from this provider
+//!   claude-opus-5.5: copilot
+//!   glm-5.3: openrouter
+//! model_aliases:                  # what a name means, wherever a model is named
+//!   opus: claude-opus
+//!   claude-opus: claude-opus-5.5
 //! search:                         # web_search: Parallel, else Exa, else DuckDuckGo
 //!   parallel: {api_key: ...}
 //!   exa: {api_key: ...}
@@ -67,6 +77,27 @@
 //!
 //! `UC_PROVIDER`, `UC_MODEL` and `UC_EFFORT` still override the first three
 //! for one run; keys are only ever read from the file.
+//!
+//! When more than one provider serves a model (Opus on the Claude
+//! subscription, Copilot and OpenRouter), it is taken from the one
+//! `model_providers:` names for it, else the first in `provider_order:`
+//! that serves it, else the session's provider, else the first in the file.
+//! Models are matched by the name they go by anywhere, so
+//! `anthropic/claude-opus-5.5` and Copilot's `claude-opus-5-5` are both
+//! `claude-opus-5.5`. The providers left out of `provider_order:` come after
+//! the ones in it, in the file's order, and a session with no `provider:`
+//! starts on the first. `UC_PROVIDER_ORDER=claude,openrouter` (or
+//! `--provider-order`, or `provider_order:` under `uc:` in `config.yaml`)
+//! overrides the order for one run.
+//!
+//! `model_aliases:` says what a name means: `opus` is `claude-opus`, and
+//! `claude-opus` the latest, `claude-opus-5.5`. An alias may name another,
+//! and is followed until a name isn't one, wherever a model is named:
+//! `uc agent model opus`, `model:`, `UC_MODEL`, the subagents' models and
+//! the keys of `model_providers:`. A name with no version, after them, is
+//! the newest of its family any provider lists: `opus` and `claude-opus`
+//! are the newest `claude-opus-X.Y`. The lists are fetched again once
+//! they are a day old.
 
 use anyhow::{Context, Result, anyhow, bail};
 use serde::Deserialize;
@@ -192,6 +223,14 @@ pub struct Settings {
     pub effort: Option<String>,
     /// The model the subagents run on, `subagent_model:`: a tier or a name.
     pub subagent_model: Option<String>,
+    /// A kind of subagent and the model it runs on, `subagent_models:`.
+    pub subagent_models: Vec<(String, String)>,
+    /// The providers to take a model from, first first, `provider_order:`.
+    pub provider_order: Vec<String>,
+    /// A model and the one provider it is taken from, `model_providers:`.
+    pub model_providers: Vec<(String, String)>,
+    /// A name and the model it means, `model_aliases:`.
+    pub model_aliases: Vec<(String, String)>,
     /// The skills new sessions start with on, `skills:`.
     pub skills: Vec<String>,
     pub parallel_key: Option<String>,
@@ -212,6 +251,10 @@ impl Default for Settings {
             model: None,
             effort: None,
             subagent_model: None,
+            subagent_models: Vec::new(),
+            provider_order: Vec::new(),
+            model_providers: Vec::new(),
+            model_aliases: Vec::new(),
             skills: Vec::new(),
             parallel_key: None,
             exa_key: None,
@@ -236,6 +279,14 @@ struct File {
     model: Option<String>,
     effort: Option<String>,
     subagent_model: Option<String>,
+    #[serde(default)]
+    subagent_models: BTreeMap<String, String>,
+    #[serde(default)]
+    provider_order: Vec<String>,
+    #[serde(default)]
+    model_providers: BTreeMap<String, String>,
+    #[serde(default)]
+    model_aliases: BTreeMap<String, String>,
     #[serde(default)]
     skills: Vec<String>,
     #[serde(default)]
@@ -306,6 +357,11 @@ pub fn parse_settings(text: &str) -> Result<Settings> {
     };
     let key = |k: Option<Keyed>| some(k.and_then(|k| k.api_key));
     let cloudflare = file.fetch.cloudflare.unwrap_or_default();
+    let pairs = |map: BTreeMap<String, String>| -> Vec<(String, String)> {
+        map.into_iter()
+            .filter_map(|(k, v)| Some((some(Some(k))?, some(Some(v))?)))
+            .collect()
+    };
     let voice_terms = match file.voice.terms {
         None | Some(Terms::On(true)) => Some(Vec::new()),
         Some(Terms::On(false)) => None,
@@ -323,6 +379,17 @@ pub fn parse_settings(text: &str) -> Result<Settings> {
         model: some(file.model),
         effort: some(file.effort),
         subagent_model: some(file.subagent_model),
+        subagent_models: pairs(file.subagent_models)
+            .into_iter()
+            .map(|(kind, model)| (kind.to_ascii_lowercase(), model))
+            .collect(),
+        provider_order: file
+            .provider_order
+            .into_iter()
+            .filter_map(|p| some(Some(p)))
+            .collect(),
+        model_providers: pairs(file.model_providers),
+        model_aliases: pairs(file.model_aliases),
         skills: file
             .skills
             .into_iter()
@@ -446,11 +513,40 @@ pub fn load() -> Result<Vec<Provider>> {
     }
 }
 
-/// The providers that can be talked to; a file that can't be read is said
-/// and taken as none.
+/// The providers to take a model from first: `--provider-order`
+/// (`UC_PROVIDER_ORDER`, comma separated), else `provider_order:`.
+pub fn provider_order() -> Vec<String> {
+    match crate::flag::value(None, "--provider-order") {
+        Some(list) => list
+            .split([',', ' '])
+            .map(str::trim)
+            .filter(|p| !p.is_empty())
+            .map(String::from)
+            .collect(),
+        None => settings().provider_order.clone(),
+    }
+}
+
+/// `providers` with the ones `order` names first, in its order, and the
+/// rest after them in theirs.
+pub fn ordered(mut providers: Vec<Provider>, order: &[String]) -> Vec<Provider> {
+    providers.sort_by_key(|p| {
+        order
+            .iter()
+            .position(|o| o.eq_ignore_ascii_case(&p.name))
+            .unwrap_or(order.len())
+    });
+    providers
+}
+
+/// The providers that can be talked to, in `provider_order:`'s order; a
+/// file that can't be read is said and taken as none.
 pub fn usable() -> Vec<Provider> {
     match load() {
-        Ok(providers) => providers.into_iter().filter(Provider::usable).collect(),
+        Ok(providers) => ordered(
+            providers.into_iter().filter(Provider::usable).collect(),
+            &provider_order(),
+        ),
         Err(err) => {
             eprintln!("uc: {err:#}");
             Vec::new()
@@ -535,6 +631,27 @@ pub fn save_subagent_model(model: Option<&str>) -> Result<PathBuf> {
         };
         Ok(())
     })
+}
+
+/// Makes `model` the one subagents of `kind` run on in new sessions, under
+/// `subagent_models:`; `None` takes the kind out, and the last one the map.
+pub fn save_subagent_model_for(kind: &str, model: Option<&str>) -> Result<PathBuf> {
+    update(|top| set_subagent_model_for(top, kind, model))
+}
+
+fn set_subagent_model_for(top: &mut Mapping, kind: &str, model: Option<&str>) -> Result<()> {
+    let empty = {
+        let kinds = mapping(top, "subagent_models")?;
+        match model {
+            Some(model) => kinds.insert(kind.into(), model.into()),
+            None => kinds.remove(kind),
+        };
+        kinds.is_empty()
+    };
+    if empty {
+        top.remove("subagent_models");
+    }
+    Ok(())
 }
 
 /// Makes `skills` the skills new sessions start with on; none takes
@@ -724,6 +841,72 @@ mod tests {
         assert_eq!(words.voice_terms, Some(vec!["a".into(), "b".into()]));
         assert_eq!(parse_settings("").unwrap(), Settings::default());
         assert!(parse_settings("typo: 1\n").is_err());
+    }
+
+    #[test]
+    fn a_kinds_own_subagent_model_is_saved_and_taken_out() {
+        let set = |text: &str, kind: &str, model: Option<&str>| {
+            changed(text, |top| set_subagent_model_for(top, kind, model)).unwrap()
+        };
+        let text = set("subagent_model: fast\n", "edit", Some("opus"));
+        let text = set(&text, "explore", Some("haiku"));
+        let settings = parse_settings(&text).unwrap();
+        assert_eq!(settings.subagent_model.as_deref(), Some("fast"));
+        assert_eq!(
+            settings.subagent_models,
+            [
+                ("edit".to_string(), "opus".to_string()),
+                ("explore".to_string(), "haiku".to_string())
+            ]
+        );
+        let text = set(&text, "edit", None);
+        let text = set(&text, "explore", None);
+        assert!(!text.contains("subagent_models"), "{text}");
+        let read = parse_settings("subagent_models: {Run: flash}\n").unwrap();
+        assert_eq!(read.subagent_models, [("run".into(), "flash".into())]);
+    }
+
+    #[test]
+    fn the_provider_order_and_the_models_pinned_to_one_are_read() {
+        let settings = parse_settings(
+            "provider_order: [claude, ' copilot', '']\n\
+             model_providers:\n  claude-opus-5.5: copilot\n  glm-5.3: openrouter\n\
+             model_aliases: {opus: claude-opus, '': x}\n",
+        )
+        .unwrap();
+        assert_eq!(
+            settings.model_aliases,
+            [("opus".to_string(), "claude-opus".to_string())]
+        );
+        assert_eq!(settings.provider_order, ["claude", "copilot"]);
+        assert_eq!(
+            settings.model_providers,
+            [
+                ("claude-opus-5.5".to_string(), "copilot".to_string()),
+                ("glm-5.3".to_string(), "openrouter".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn the_providers_in_the_order_come_first_the_rest_after_in_theirs() {
+        let all = parse(
+            "providers:\n  openrouter: {api_key: a}\n  claude: {api_key: b}\n\
+             \x20 groq: {base_url: u}\n  copilot: {api_key: c}\n",
+        )
+        .unwrap();
+        let names = |order: &[&str]| -> Vec<String> {
+            let order: Vec<String> = order.iter().map(|o| o.to_string()).collect();
+            ordered(all.clone(), &order)
+                .into_iter()
+                .map(|p| p.name)
+                .collect()
+        };
+        assert_eq!(
+            names(&["Copilot", "claude", "nowhere"]),
+            ["copilot", "claude", "openrouter", "groq"]
+        );
+        assert_eq!(names(&[]), ["openrouter", "claude", "groq", "copilot"]);
     }
 
     #[test]

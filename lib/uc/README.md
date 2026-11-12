@@ -123,6 +123,66 @@ want. `uc` starts on the first provider in the file that has a key;
 the subscription's 5-hour and weekly windows you have used, next to the
 OpenRouter spend when both keys are set.
 
+With several providers, you can say which one a model should come from
+when more than one has it. List the providers you'd rather use in order,
+and pin the odd model to one of them:
+
+```yaml
+provider_order: [claude, copilot, openrouter] # the first that has the model wins
+model_providers:                              # these always come from here
+  claude-opus-5.5: copilot
+  glm-5.3: openrouter
+```
+
+That goes for everything that picks a model by name: `uc agent model opus`,
+the model a session starts on, and the subagents' `fast`, `balanced` and
+`strong`, which otherwise stay on the provider you're chatting on. Names
+match however a provider spells them, so `claude-opus-5.5` is also
+Copilot's `claude-opus-5-5`. A provider named after the model
+(`uc agent model opus openrouter`) still wins over all of it, and
+`--provider-order claude,openrouter` (or `UC_PROVIDER_ORDER`) tries another
+order for one run. A pin `uc` can't follow, say to a provider without a key,
+is mentioned when the session starts and the order is used instead.
+
+And you can say what you mean by a name. An alias can point to another
+one, so `opus` means `claude-opus`, and `claude-opus` means whichever Opus
+is newest. When a new one comes out, you change one line:
+
+```yaml
+model_aliases:
+  opus: claude-opus
+  claude-opus: claude-opus-5.5
+  sonnet: claude-sonnet-5.5
+  glm: glm-5.3
+```
+
+Aliases work wherever you name a model: `uc agent model opus`,
+`model:` and `UC_MODEL`, the subagents' models, and the keys of
+`model_providers:`, so `opus: copilot` pins whatever `opus` means right
+now. An alias that loops or names a model no provider has is mentioned
+when the session starts.
+
+You often don't need an alias at all. A name without a version is
+the newest of that family any of your providers serves: `opus` and
+`claude-opus` are the newest Claude Opus, `glm` the newest GLM, and
+`claude-opus-4.7` is just that one. The model lists behind this are kept in
+`~/.cache/usecode/models.json` and fetched again once they're a day old
+(or right away with `uc agent model-update`); if a provider can't be
+reached, yesterday's list still works.
+
+`uc` hands work to subagents: `explore` and `run` on a fast model,
+`research` and `edit` on a balanced one. `uc agent model --sub opus` puts
+them all on one, and each kind can have its own:
+
+```sh
+uc agent model --sub edit=opus explore=haiku  # saved as subagent_models: in agent.yaml
+uc agent model --sub edit=default             # back to edit's own
+uc agent model --sub                          # what each one runs on now
+```
+
+A kind's own model wins over the one for all of them, and
+`UC_SUBAGENT_MODEL_EDIT` (or `--subagent-model-edit`) over both, for one run.
+
 One command everywhere: `uc agent model`. Typed at a session's prompt it
 switches that session — `uc agent model` picks one in the picker, `uc agent
 model opus claude` goes straight to it — and saves the choice as `provider:`

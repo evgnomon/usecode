@@ -33,3 +33,23 @@ Flags of uc itself: `--ask`, `--output`, `--commands`, `--no-shell`,
 `--long-cache`, `--parallel`/`--exa`/`--duckduckgo`; each also `UC_<FLAG>`
 or under `uc:` in `config.yaml`. `provider:`, `model:` and `effort:` in
 agent.yaml (or `UC_PROVIDER`, `UC_MODEL`, `UC_EFFORT`) pick the start.
+
+A model more than one provider serves comes from the provider named after
+it (`uc agent model opus copilot`), else the one `model_providers:` in
+agent.yaml pins it to (`{claude-opus-5.5: copilot}`), else the first of
+`provider_order:` (`[claude, copilot, openrouter]`, or
+`UC_PROVIDER_ORDER`/`--provider-order` for one run) that has it, else the
+session's provider. The subagent tiers (`fast`, `balanced`, `strong`)
+follow the same order. `uc agent model --sub` shows what each kind runs on.
+`model_aliases:` in agent.yaml says what a name means, followed through
+other aliases (`{opus: claude-opus, claude-opus: claude-opus-5.5}`),
+wherever a model is named, including the keys of `model_providers:`.
+A name without a version, after aliases, is the newest of its family any
+provider serves (`opus`, `claude-opus` → the newest `claude-opus-X.Y`). The
+model lists are cached a day in `~/.cache/usecode/models.json`;
+`uc agent model-update` fetches them now.
+
+Each kind of subagent can have its own model: `uc agent model --sub
+edit=opus explore=haiku` saves them as `subagent_models:` in agent.yaml
+(`edit=default` takes one out). A kind's own wins over `subagent_model:`
+and `UC_SUBAGENT_MODEL`; `UC_SUBAGENT_MODEL_<KIND>` wins over it.

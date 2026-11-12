@@ -21,9 +21,12 @@
 //! the call: `--subagent-model-<kind>` (`UC_SUBAGENT_MODEL_EXPLORE`), else the
 //! session's (`--subagent-model`, `subagent_model:` in `agent.yaml`, or `uc
 //! agent model --sub`), else the kind's own tier. A tier is taken on the
-//! session's provider first, so a Claude subscription runs its subagents on
-//! Haiku rather than on another bill, then on the other providers with a
-//! key, else the session's own model. `--subagent-effort`
+//! first provider with one of its models: the ones in `provider_order:` by
+//! their place there, then the session's, so a Claude subscription runs its
+//! subagents on Haiku rather than on another bill, then the other providers
+//! with a key; else the session's own model. A model `model_providers:`
+//! pins to a provider is only taken there, when that one has it.
+//! `--subagent-effort`
 //! (`UC_SUBAGENT_EFFORT`) is how hard it thinks, `low` by default. A child
 //! that only looks and fails or runs out of requests on a tier is tried once
 //! more on the next one up.
@@ -236,12 +239,16 @@ pub(super) fn at_work(n: usize) -> String {
 pub(super) struct Parent<'a> {
     pub(super) providers: &'a [Provider],
     pub(super) pool: &'a [Choice],
+    /// Which provider a model several serve is taken from.
+    pub(super) prefer: &'a Prefer,
     /// The model the session runs on.
     pub(super) choice: Choice,
     pub(super) cache_key: &'a str,
     pub(super) search: &'a Engine,
     /// The session's model for its subagents, empty for each kind's own.
     pub(super) sub_model: &'a str,
+    /// The model for one kind, over `sub_model`: `subagent_models:`.
+    pub(super) sub_models: &'a [(String, String)],
     /// Commands run without asking: an `edit` child gets a shell.
     pub(super) allow_all: bool,
 }
@@ -254,11 +261,33 @@ pub(super) struct Used {
     pub(super) transcript: Value,
 }
 
-/// The model a call asks for: its own, else the user's for the kind, else
-/// the session's for all, else the kind's tier.
-fn asked(spec: &Spec, task: &Task, sub_model: &str) -> String {
-    let flag = crate::flag::value(None, &format!("--subagent-model-{}", spec.name));
-    asked_from(spec, &task.model, flag, sub_model)
+/// The model a call asks for: its own, else the user's for the kind
+/// (`--subagent-model-<kind>`, else `subagent_models:`), else the session's
+/// for all, else the kind's tier.
+fn asked(spec: &Spec, task: &Task, parent: &Parent<'_>) -> String {
+    let flag = crate::flag::value(None, &format!("--subagent-model-{}", spec.name))
+        .or_else(|| kind_model(parent.sub_models, spec.name));
+    asked_from(spec, &task.model, flag, parent.sub_model)
+}
+
+/// The model `subagent_models:` gives `kind`.
+fn kind_model(models: &[(String, String)], kind: &str) -> Option<String> {
+    models
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case(kind))
+        .map(|(_, m)| m.clone())
+}
+
+/// Whether `name` is a kind of subagent: explore, research, run or edit.
+pub(super) fn is_kind(name: &str) -> bool {
+    KINDS
+        .iter()
+        .any(|k| k.name.eq_ignore_ascii_case(name.trim()))
+}
+
+/// The kinds of subagent, for what to say.
+pub(super) fn kinds() -> String {
+    KINDS.iter().map(|k| k.name).collect::<Vec<_>>().join(", ")
 }
 
 fn asked_from(spec: &Spec, model: &str, flag: Option<String>, sub_model: &str) -> String {
@@ -290,34 +319,41 @@ fn next_tier(name: &str) -> Option<&'static str> {
 }
 
 /// The model `asked` means for a child, and a line to say when it isn't the
-/// one asked for. A tier is taken on the session's provider first, then on
-/// the others in `agent.yaml`'s order; a name as `uc agent model` takes it,
-/// on a provider with a key; else the session's own model.
+/// one asked for. A tier is taken on the first provider with one of its
+/// models, by [`Prefer::rank`] and then the pool's order, the tier's first
+/// model first on each; a name as `uc agent model` takes it. Either on a
+/// provider with a key, and a pinned model only on its provider when that
+/// one has it; else the session's own model.
 fn pick(parent: &Parent<'_>, asked: &str) -> (Choice, Option<String>) {
     let asked = asked.trim();
     if asked.eq_ignore_ascii_case("same") {
         return (parent.choice.clone(), None);
     }
     let keyed = |c: &Choice| named(parent.providers, &c.provider).is_some();
+    let session = parent.choice.provider.as_str();
     let found = match tier(asked) {
         Some(names) => {
-            let first = std::iter::once(parent.choice.provider.as_str());
-            let others = parent
-                .providers
+            let place = |c: &Choice| names.iter().position(|n| common_name(&c.model) == *n);
+            let first_of = |provider: &str| parent.pool.iter().position(|c| c.provider == provider);
+            let of: Vec<&Choice> = parent
+                .pool
                 .iter()
-                .map(|p| p.name.as_str())
-                .filter(|p| *p != parent.choice.provider);
-            first.chain(others).find_map(|provider| {
-                names.iter().find_map(|name| {
-                    parent
-                        .pool
-                        .iter()
-                        .find(|c| c.provider == provider && common_name(&c.model) == *name)
-                        .cloned()
+                .filter(|c| place(c).is_some() && keyed(c))
+                .collect();
+            parent
+                .prefer
+                .keep_pinned(of)
+                .into_iter()
+                .min_by_key(|c| {
+                    (
+                        parent.prefer.rank(&c.provider, session),
+                        first_of(&c.provider),
+                        place(c),
+                    )
                 })
-            })
+                .cloned()
         }
-        None => choice_named(parent.pool, asked, &parent.choice.provider),
+        None => choice_named(parent.pool, asked, parent.prefer, session),
     };
     match found.filter(keyed) {
         Some(choice) => (choice, None),
@@ -338,7 +374,7 @@ pub(super) fn named_model(parent: &Parent<'_>, name: &str) -> Result<String> {
     if tier(name).is_some() || name.eq_ignore_ascii_case("same") {
         return Ok(name.to_ascii_lowercase());
     }
-    let choice = choice_named(parent.pool, name, &parent.choice.provider)
+    let choice = choice_named(parent.pool, name, parent.prefer, &parent.choice.provider)
         .filter(|c| named(parent.providers, &c.provider).is_some())
         .ok_or_else(|| {
             anyhow!("no model {name} on a provider with a key; `uc agent model` lists them")
@@ -356,7 +392,7 @@ pub(super) fn plan(parent: &Parent<'_>) -> String {
                 prompt: String::new(),
                 model: String::new(),
             };
-            let (choice, _) = pick(parent, &asked(spec, &task, parent.sub_model));
+            let (choice, _) = pick(parent, &asked(spec, &task, parent));
             format!("{} on {}", spec.name, short_model(&choice.model))
         })
         .collect::<Vec<_>>()
@@ -744,7 +780,7 @@ async fn looks(
     spec: &'static Spec,
     task: &Task,
 ) -> (Result<String>, Vec<Used>) {
-    let mut asked = asked(spec, task, parent.sub_model);
+    let mut asked = asked(spec, task, parent);
     let mut used = Vec::new();
     let mut tried: Vec<Choice> = Vec::new();
     loop {
@@ -789,7 +825,7 @@ async fn edit(
     spec: &'static Spec,
     task: &Task,
 ) -> (Result<String>, Vec<Used>) {
-    let (choice, why) = pick(parent, &asked(spec, task, parent.sub_model));
+    let (choice, why) = pick(parent, &asked(spec, task, parent));
     if let Some(why) = why {
         out::note(&why);
     }
@@ -836,7 +872,7 @@ pub(super) async fn run_here(session: &mut Session, task: &Task) -> (Result<Stri
     };
     let child = {
         let parent = session.parent();
-        let (choice, why) = pick(&parent, &asked(spec, task, parent.sub_model));
+        let (choice, why) = pick(&parent, &asked(spec, task, &parent));
         if let Some(why) = why {
             out::note(&why);
         }
@@ -1094,22 +1130,85 @@ mod tests {
         pool
     }
 
-    fn parent<'a>(providers: &'a [Provider], pool: &'a [Choice], on: Choice) -> Parent<'a> {
+    fn parent<'a>(
+        providers: &'a [Provider],
+        pool: &'a [Choice],
+        prefer: &'a Prefer,
+        on: Choice,
+    ) -> Parent<'a> {
         Parent {
             providers,
             pool,
+            prefer,
             choice: on,
             cache_key: "uc-test",
             search: &Engine::DuckDuckGo,
             sub_model: "",
+            sub_models: &[],
             allow_all: true,
         }
     }
 
     fn picked(providers: &[Provider], on: Choice, asked: &str) -> (String, String, bool) {
+        picked_by(providers, &Prefer::default(), on, asked)
+    }
+
+    fn picked_by(
+        providers: &[Provider],
+        prefer: &Prefer,
+        on: Choice,
+        asked: &str,
+    ) -> (String, String, bool) {
         let pool = pool();
-        let (choice, why) = pick(&parent(providers, &pool, on), asked);
+        let (choice, why) = pick(&parent(providers, &pool, prefer, on), asked);
         (choice.provider, choice.model, why.is_some())
+    }
+
+    #[test]
+    fn a_tier_is_taken_by_the_provider_order_and_the_pins() {
+        let all = [
+            provider("openrouter", Kind::OpenRouter),
+            provider("claude", Kind::Claude),
+            provider("copilot", Kind::Copilot),
+        ];
+        let on = Choice::new("claude", "anthropic/claude-opus-5.5");
+        let order = |o: &[&str]| o.iter().map(|p| p.to_string()).collect::<Vec<_>>();
+        let openrouter_first = Prefer::new(order(&["openrouter"]), Vec::new());
+        assert_eq!(
+            picked_by(&all, &openrouter_first, on.clone(), "fast"),
+            s("openrouter", "z-ai/glm-5.3-flash", false)
+        );
+        let copilot_first = Prefer::new(order(&["copilot", "openrouter"]), Vec::new());
+        assert_eq!(
+            picked_by(&all, &copilot_first, on.clone(), "strong"),
+            s("copilot", "claude-opus-5-5", false)
+        );
+        // Copilot has no Sonnet or GLM: the next in the order has GLM 5.3.
+        assert_eq!(
+            picked_by(&all, &copilot_first, on.clone(), "balanced"),
+            s("openrouter", "z-ai/glm-5.3", false)
+        );
+        // Out of the order, the session's provider comes next.
+        let only_copilot = Prefer::new(order(&["copilot"]), Vec::new());
+        assert_eq!(
+            picked_by(&all, &only_copilot, on.clone(), "balanced"),
+            s("claude", "anthropic/claude-sonnet-5.5", false)
+        );
+        // A pin says where a model comes from, not which of the tier's.
+        let pinned = Prefer::new(
+            order(&["claude", "copilot"]),
+            vec![("claude-haiku-5.5".into(), "copilot".into())],
+        );
+        assert_eq!(
+            picked_by(&all, &pinned, on, "fast"),
+            s("copilot", "claude-haiku-5-5", false)
+        );
+        let unordered = Prefer::new(Vec::new(), pinned.pins.clone());
+        let session_on_openrouter = Choice::new("openrouter", "anthropic/claude-opus-5.5");
+        assert_eq!(
+            picked_by(&all, &unordered, session_on_openrouter, "fast"),
+            s("openrouter", "z-ai/glm-5.3-flash", false)
+        );
     }
 
     fn s(provider: &str, model: &str, fell_back: bool) -> (String, String, bool) {
@@ -1193,9 +1292,11 @@ mod tests {
             provider("claude", Kind::Claude),
         ];
         let pool = pool();
+        let none = Prefer::default();
         let parent = parent(
             &all,
             &pool,
+            &none,
             Choice::new("claude", "anthropic/claude-opus-5.5"),
         );
         assert_eq!(named_model(&parent, "Fast").unwrap(), "fast");
@@ -1223,6 +1324,36 @@ mod tests {
             asked_from(explore, "same", Some("haiku".into()), "strong"),
             "same"
         );
+    }
+
+    #[test]
+    fn a_kinds_own_model_wins_over_the_one_for_all() {
+        let all = [
+            provider("openrouter", Kind::OpenRouter),
+            provider("claude", Kind::Claude),
+        ];
+        let pool = pool();
+        let none = Prefer::default();
+        let own = [("edit".to_string(), "opus".to_string())];
+        let mut parent = parent(
+            &all,
+            &pool,
+            &none,
+            Choice::new("claude", "anthropic/claude-opus-5.5"),
+        );
+        parent.sub_models = &own;
+        parent.sub_model = "haiku";
+        let task = |kind: &str| Task {
+            kind: kind.into(),
+            prompt: String::new(),
+            model: String::new(),
+        };
+        assert_eq!(asked(kind("edit"), &task("edit"), &parent), "opus");
+        assert_eq!(asked(kind("explore"), &task("explore"), &parent), "haiku");
+        let plan = plan(&parent);
+        assert!(plan.contains("edit on claude-opus-5.5"), "{plan}");
+        assert!(plan.contains("explore on claude-haiku-5.5"), "{plan}");
+        assert!(is_kind("Edit") && !is_kind("build"));
     }
 
     #[test]

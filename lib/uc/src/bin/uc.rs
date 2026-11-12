@@ -40,10 +40,12 @@ const SEARCH_FLAGS: &[(&str, Search)] = &[
 
 /// The agent's flags that take a value, `--subagent-model haiku` or
 /// `--subagent-model=haiku`: the subagents' model, for all kinds or one
-/// (`--subagent-model-explore`), and their effort.
+/// (`--subagent-model-explore`), and their effort; and the providers to take
+/// a model from first (`--provider-order claude,openrouter`).
 fn is_value_flag(flag: &str) -> bool {
     flag == "--subagent-effort"
         || flag == "--subagent-model"
+        || flag == "--provider-order"
         || flag
             .strip_prefix("--subagent-model-")
             .is_some_and(|kind| !kind.is_empty() && kind.chars().all(|c| c.is_ascii_lowercase()))
@@ -136,7 +138,7 @@ fn main() -> ExitCode {
 
 fn print_usage() {
     println!(
-        "Usage: uc [--ask] [--output] [--commands] [--no-shell] [--long-cache] [--no-subagents] [--subagent-model MODEL] [--subagent-effort LEVEL] [--parallel|--exa|--duckduckgo] | <command> [<args>]\n"
+        "Usage: uc [--ask] [--output] [--commands] [--no-shell] [--long-cache] [--no-subagents] [--subagent-model MODEL] [--subagent-effort LEVEL] [--provider-order P1,P2] [--parallel|--exa|--duckduckgo] | <command> [<args>]\n"
     );
     println!("With no command, uc is a coding agent: talk to it and it runs commands and");
     println!("edits files for you, through the providers in ~/.config/usecode/agent.yaml:");
@@ -144,7 +146,10 @@ fn print_usage() {
     println!("claude`) or GitHub Copilot (`uc agent login copilot`). `uc agent model` lists");
     println!("the models of each one with a key; provider:, model: and effort: in the same");
     println!("file (or UC_PROVIDER, UC_MODEL, UC_EFFORT) pick what it starts on, and naming");
-    println!("a model there or in the chat saves it. It runs them straight away; `uc --ask`");
+    println!("a model there or in the chat saves it. A model more than one provider serves");
+    println!("comes from the one model_providers: names for it, else the first of");
+    println!("provider_order: (or `--provider-order claude,openrouter`) that has it.");
+    println!("It runs them straight away; `uc --ask`");
     println!("confirms each one first.");
     println!("You see its answers; `uc --output` also shows what the commands print.");
     println!("Each command it runs shows as a few words on what it does, like");
