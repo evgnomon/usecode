@@ -21,9 +21,15 @@ pub(super) fn tty() -> bool {
     std::io::stderr().is_terminal()
 }
 
-/// A status line: `· text` on the terminal.
+/// A status line: `· text` on the terminal, over the spinner when one is
+/// turning (subagents note what they do while it does); it comes back on
+/// the line after.
 pub(super) fn note(text: &str) {
-    eprintln!("· {text}");
+    if tty() {
+        eprintln!("\r\x1b[2K· {text}");
+    } else {
+        eprintln!("· {text}");
+    }
 }
 
 /// Text that is already laid out, like a list of models.

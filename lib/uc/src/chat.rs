@@ -114,6 +114,7 @@ mod out;
 pub mod serve;
 mod shell;
 mod skills;
+mod sub;
 mod voice;
 
 /// A status line, `· text` on the terminal; see [`out::note`].
@@ -159,6 +160,8 @@ const MAX_KEPT: usize = 1 << 20;
 const DELETES: &[&str] = &["rm", "rmdir", "unlink", "shred", "-delete"];
 /// Always in the system prompt: how commands run, jobs, what needs asking.
 const MAIN_SKILL: &str = include_str!("chat/main.md");
+/// In the system prompt unless subagents are off: when to use `task`.
+const SUBAGENTS_SKILL: &str = include_str!("chat/subagents.md");
 /// Builtins worth running when typed at the prompt; `cd` changes uc's own
 /// directory, and `source`, `export`, `alias` and the like change the shell
 /// state later commands run with. Keywords like `if` and `for` are left out:
@@ -202,6 +205,14 @@ static CLEARED: AtomicBool = AtomicBool::new(false);
 /// The AI is on and typed commands run straight away: what the prompt loop
 /// decides from, kept for the line editor to color the line the same way.
 static AI: AtomicBool = AtomicBool::new(false);
+/// `--no-subagents`: no `task` tool, and compaction on the session's own
+/// model; set once at start, by `uc` or [`start_with`].
+pub static NO_SUBAGENTS: AtomicBool = AtomicBool::new(false);
+
+/// Whether subagents are on: the `task` tool, and compaction on a faster model.
+fn subagents() -> bool {
+    !NO_SUBAGENTS.load(Ordering::Relaxed)
+}
 static SHELL: AtomicBool = AtomicBool::new(false);
 
 /// The last command the user typed failed: the ₿ turns red, like in bash.
@@ -569,6 +580,17 @@ struct Session {
     last_usage: Option<Value>,
     /// The tokens every request has billed so far, shown beside the spinner.
     tokens: Tokens,
+    /// What the subagents' requests took, by kind and model (`explore on
+    /// claude-haiku-5.5`): also in `tokens`, and on lines of their own in
+    /// `uc agent status`.
+    subs: BTreeMap<String, Tokens>,
+    /// The model the subagents run on, a tier or a name: `--subagent-model`,
+    /// else `subagent_model:` in `agent.yaml`, until `uc agent model --sub`
+    /// switches it; empty for each kind's own.
+    sub_model: String,
+    /// The subagents' conversations not saved yet: they go beside the
+    /// session's file once it has one.
+    transcripts: Vec<Value>,
     /// When the line being worked on was typed: the spinner counts from it.
     since: Instant,
     /// The AGENTS.md files in the system prompt, outermost first: the ones
@@ -786,6 +808,10 @@ async fn run(
         }
         if let Some(rest) = agent_model_line(line) {
             let name = rest.trim();
+            if let Some(sub) = sub_model_arg(name) {
+                drop(session.switch_sub(sub));
+                continue;
+            }
             if name.is_empty() || choice_named(&session.pool, name, &session.provider).is_none() {
                 session.pick_model(name)
             } else {
@@ -1018,6 +1044,85 @@ async fn send(provider: &Provider, body: &Value) -> Result<Value> {
         );
     }
     Ok(value)
+}
+
+/// The whole request posted to `provider`, in its own API; its reply is
+/// OpenAI's. The session and its subagents all go through here, each with
+/// the provider it runs on.
+async fn send_on(provider: &Provider, body: &Value) -> Result<Value> {
+    match provider.kind {
+        Kind::OpenRouter => send(provider, body).await,
+        Kind::OpenAi => send(provider, &plain_request(body)).await,
+        Kind::Claude => claude::send(&provider.key, body).await,
+        Kind::Copilot => copilot::send(&provider.key, body).await,
+    }
+}
+
+/// The request streamed to `provider`: the reply comes as OpenAI's SSE
+/// chunks, whichever API it was asked in.
+async fn stream_on(provider: &Provider, body: &Value) -> Result<claude::Bytes> {
+    let bytes = |response: reqwest::Response| -> claude::Bytes {
+        Box::pin(
+            response
+                .bytes_stream()
+                .map(|bytes| bytes.map(|b| b.to_vec()).map_err(std::io::Error::other)),
+        )
+    };
+    Ok(match provider.kind {
+        Kind::OpenRouter => bytes(open(provider, body).await?),
+        Kind::OpenAi => bytes(open(provider, &plain_request(body)).await?),
+        Kind::Claude => claude::stream(&provider.key, body).await?,
+        Kind::Copilot => copilot::stream(&provider.key, body).await?,
+    })
+}
+
+/// `messages` as a request to a `kind` of provider running `model` takes
+/// them: with cache breakpoints for the ones that take them (see
+/// [`cached`]), and without Claude's own blocks for any but Claude, which
+/// may turn a field they don't know away.
+fn for_provider(kind: Option<Kind>, model: &str, messages: &[Value]) -> Vec<Value> {
+    let mut messages = if matches!(kind, Some(Kind::OpenRouter | Kind::Claude)) {
+        cached(model, messages)
+    } else {
+        messages.to_vec()
+    };
+    if kind != Some(Kind::Claude) {
+        for message in &mut messages {
+            if let Some(message) = message.as_object_mut() {
+                message.remove(claude::CONTENT);
+            }
+        }
+    }
+    messages
+}
+
+/// Reads a streamed reply to its end; `on_text` gets each piece of text as
+/// it comes, for the terminal.
+async fn read_reply(mut stream: claude::Bytes, mut on_text: impl FnMut(&str)) -> Result<Reply> {
+    let mut pending = Vec::new();
+    let mut reply = Reply::default();
+    'stream: while let Some(bytes) = stream.next().await {
+        pending.extend_from_slice(&bytes.context("reading the model's reply")?);
+        while let Some(end) = pending.iter().position(|b| *b == b'\n') {
+            let line: Vec<u8> = pending.drain(..=end).collect();
+            let line = String::from_utf8_lossy(&line);
+            // Comments (": OPENROUTER PROCESSING") keep the connection alive.
+            let Some(data) = line.trim().strip_prefix("data:").map(str::trim) else {
+                continue;
+            };
+            if data == "[DONE]" {
+                break 'stream;
+            }
+            let Ok(chunk) = serde_json::from_str::<Value>(data) else {
+                continue;
+            };
+            let text = reply.add(&chunk)?;
+            if !text.is_empty() {
+                on_text(&text);
+            }
+        }
+    }
+    Ok(reply)
 }
 
 /// The chat's request as a plain OpenAI-style API takes it: without
@@ -1308,7 +1413,7 @@ fn name_of(call: &Value) -> String {
 fn is_reading(name: &str) -> bool {
     matches!(
         name,
-        "web_search" | "fetch_url" | "src" | "read_file" | "grep" | "glob"
+        "web_search" | "fetch_url" | "src" | "read_file" | "grep" | "glob" | "task"
     )
 }
 
@@ -1373,6 +1478,15 @@ fn agent_model_line(line: &str) -> Option<&str> {
     }
     line.strip_prefix("uc agent model")
         .filter(|rest| rest.is_empty() || rest.starts_with(' '))
+}
+
+/// What follows `--sub` in `uc agent model --sub [NAME]`: the subagents'
+/// model, not the session's.
+fn sub_model_arg(rest: &str) -> Option<&str> {
+    rest.trim()
+        .strip_prefix("--sub")
+        .filter(|r| r.is_empty() || r.starts_with(' '))
+        .map(str::trim)
 }
 
 /// `uc agent compact`, `status`, `exit` or `quit` typed at the prompt: the
@@ -1922,9 +2036,11 @@ fn system_prompt(
     // What is the same in every session comes first and what isn't after
     // [`claude::SESSION`], so the provider caches the first part (with the
     // tools before it) once for every session, in any directory.
+    let subagents = if subagents() { SUBAGENTS_SKILL } else { "" };
     format!(
         "You are uc, the usecode coding agent, running in a terminal on the user's machine. \
-         Use the tools to look around, run commands and change files.\n\n{MAIN_SKILL}{}\
+         Use the tools to look around, run commands and change files.\n\n{MAIN_SKILL}\
+         {subagents}{}\
          You run on the model {model}. The working directory is {cwd}. Commands: {confirms}. \
          {sees}{}{}",
         claude::SESSION,
@@ -1933,8 +2049,8 @@ fn system_prompt(
     )
 }
 
-/// The tools the model has.
-fn tools() -> Value {
+/// Every tool there is; [`tools`] are the ones the model has.
+fn all_tools() -> Value {
     let tool = |name: &str, description: &str, properties: Value, required: &[&str]| {
         json!({"type": "function", "function": {
             "name": name,
@@ -2086,6 +2202,9 @@ fn tools() -> Value {
                                  the list, part of a listed id or any id of the provider"),
                 "provider": string("for action model, which provider runs it when more than \
                                     one serves it, by the name the list shows beside it"),
+                "for": string("for action model, subagents to switch the model the \
+                               subagents run on instead of yours: a model, or fast, \
+                               balanced, strong, same or default"),
                 "effort": string("for action effort, the level: low, medium, high and the \
                                   others the list shows"),
                 "path": string("for action export, the file to write"),
@@ -2106,7 +2225,45 @@ fn tools() -> Value {
             }),
             &[],
         ),
+        tool(
+            "task",
+            "Hand big work to a subagent: a model of its own, faster and cheaper, does it in \
+             a conversation of its own and gives back only its answer, so what it read and \
+             ran doesn't fill your context. A simple task is yours to do; don't hand it \
+             off. explore finds things out on this machine with src, read_file, grep and \
+             glob; research on the web with web_search and fetch_url; run runs commands in \
+             your shell (a build, the tests) and gives back the outcome and the errors that \
+             matter; edit is only for several large changes side by side, on files that \
+             don't overlap: each is made in your own tree, in place, and left uncommitted \
+             for you to look at with git diff. explore, research and edit calls in \
+             one reply run side by side; run goes one at a time. It sees nothing of this \
+             conversation, so say all it needs, and ask for exact paths and line numbers. \
+             If it fails, do the work yourself.",
+            json!({
+                "prompt": string("the task, with all it needs to know, and what to give back"),
+                "kind": {
+                    "type": "string",
+                    "enum": ["explore", "research", "run", "edit"],
+                    "description": "what it does, explore if left out",
+                },
+                "model": string("fast, balanced, strong or same (yours), or a model's name as \
+                                 chat model takes it; if left out, what the user set, else \
+                                 the kind's own"),
+            }),
+            &["prompt"],
+        ),
     ])
+}
+
+/// The tools the model has: all of them, but `task` when subagents are off.
+fn tools() -> Value {
+    let mut all = all_tools();
+    if !subagents()
+        && let Some(list) = all.as_array_mut()
+    {
+        list.retain(|t| t["function"]["name"] != "task");
+    }
+    all
 }
 
 impl Session {
@@ -2160,6 +2317,11 @@ impl Session {
             waiting: None,
             last_usage: None,
             tokens: Tokens::default(),
+            subs: BTreeMap::new(),
+            sub_model: crate::flag::value(None, "--subagent-model")
+                .or_else(|| providers::settings().subagent_model.clone())
+                .unwrap_or_default(),
+            transcripts: Vec::new(),
             since: Instant::now(),
             asked: Vec::new(),
             prompts: Vec::new(),
@@ -2301,33 +2463,9 @@ impl Session {
         self.settle();
     }
 
-    /// The whole request posted to the provider; its reply is OpenAI's.
-    async fn send(&self, body: &Value) -> Result<Value> {
-        let provider = self.current()?;
-        match provider.kind {
-            Kind::OpenRouter => send(provider, body).await,
-            Kind::OpenAi => send(provider, &plain_request(body)).await,
-            Kind::Claude => claude::send(&provider.key, body).await,
-            Kind::Copilot => copilot::send(&provider.key, body).await,
-        }
-    }
-
     /// The request streamed: the reply comes as OpenAI's SSE chunks.
     async fn stream(&self, body: &Value) -> Result<claude::Bytes> {
-        let provider = self.current()?;
-        let bytes = |response: reqwest::Response| -> claude::Bytes {
-            Box::pin(
-                response
-                    .bytes_stream()
-                    .map(|bytes| bytes.map(|b| b.to_vec()).map_err(std::io::Error::other)),
-            )
-        };
-        Ok(match provider.kind {
-            Kind::OpenRouter => bytes(open(provider, body).await?),
-            Kind::OpenAi => bytes(open(provider, &plain_request(body)).await?),
-            Kind::Claude => claude::stream(&provider.key, body).await?,
-            Kind::Copilot => copilot::stream(&provider.key, body).await?,
-        })
+        stream_on(self.current()?, body).await
     }
 
     /// A line for the model: one turn, until it answers.
@@ -2599,7 +2737,7 @@ impl Session {
             hasher.finish()
         };
         if hash == self.saved && self.saved_as.is_some() {
-            return Ok(());
+            return self.save_transcripts();
         }
         let path = match &self.saved_as {
             Some(path) => path.clone(),
@@ -2622,6 +2760,29 @@ impl Session {
         write_session(&path, &exported)?;
         self.saved_as = Some(path);
         self.saved = hash;
+        self.save_transcripts()
+    }
+
+    /// Writes the subagents' conversations not saved yet beside the
+    /// session's file: `20261112-104800.subagents/01-explore.json` and on.
+    fn save_transcripts(&mut self) -> Result<()> {
+        let Some(path) = self
+            .saved_as
+            .as_ref()
+            .filter(|_| !self.transcripts.is_empty())
+        else {
+            return Ok(());
+        };
+        let dir = path.with_extension("subagents");
+        std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
+        let mut n = std::fs::read_dir(&dir).map(|d| d.count()).unwrap_or(0);
+        for transcript in std::mem::take(&mut self.transcripts) {
+            n += 1;
+            let kind = transcript["kind"].as_str().unwrap_or("task");
+            let file = dir.join(format!("{n:02}-{kind}.json"));
+            std::fs::write(&file, serde_json::to_string_pretty(&transcript)?)
+                .with_context(|| format!("writing {}", file.display()))?;
+        }
         Ok(())
     }
 
@@ -2932,8 +3093,14 @@ impl Session {
 
     /// What the model makes of `messages`, in a few paragraphs.
     async fn summarize(&mut self, messages: &[Value]) -> Result<String> {
+        // A faster model sums up as well, for less; with subagents off the
+        // session's own does.
+        let (provider, model) = match subagents() {
+            true => sub::summarizer(&self.parent())?,
+            false => (self.current()?.clone(), self.model.clone()),
+        };
         let body = json!({
-            "model": self.model,
+            "model": model,
             "messages": [
                 {"role": "system", "content": SUMMARY_PROMPT},
                 {"role": "user", "content": transcript(messages)},
@@ -2941,8 +3108,18 @@ impl Session {
             "reasoning": {"effort": "low"},
         });
         let _clock = clock(self.who(), self.since);
-        let value = self.send(&body).await?;
-        self.tokens.add(&value["usage"]);
+        let value = send_on(&provider, &body).await?;
+        if provider.name == self.provider && model == self.model {
+            self.tokens.add(&value["usage"]);
+        } else {
+            let mut tokens = Tokens::default();
+            tokens.add(&value["usage"]);
+            self.count(vec![sub::Used {
+                who: format!("compact on {}", sub::short_model(&model)),
+                tokens,
+                transcript: Value::Null,
+            }]);
+        }
         value["choices"][0]["message"]["content"]
             .as_str()
             .map(str::trim)
@@ -3013,6 +3190,14 @@ impl Session {
         if let Some(line) = self.tokens.cache_line() {
             note!("{line}");
         }
+        if subagents() {
+            note!("subagents: {}", sub::plan(&self.parent()));
+        } else {
+            note!("subagents off (--no-subagents)");
+        }
+        for (who, tokens) in &self.subs {
+            note!("subagents: {who}, {}", tokens.sub_line());
+        }
         match info {
             Ok(Some(window)) => {
                 if let (Some(window), Some(total)) = (window, tokens) {
@@ -3065,12 +3250,20 @@ impl Session {
                 return Ok(text);
             }
             // Looking around changes nothing, so a batch of it runs at once.
-            if calls.len() > 1 && calls.iter().all(|c| is_reading(&name_of(c))) {
-                let outputs = futures_util::future::join_all(
-                    calls.iter().map(|call| read_only(&self.search, call)),
-                )
-                .await;
-                for (call, output) in calls.iter().zip(outputs) {
+            // Subagents leave the session's files and shell as they are (but
+            // `run`'s, which has the shell), so they run beside each other too.
+            if calls.len() > 1
+                && calls
+                    .iter()
+                    .all(|c| is_reading(&name_of(c)) && !sub::in_session(c))
+            {
+                let tasks = calls.iter().filter(|c| name_of(c) == "task").count();
+                let clock = (tasks > 0).then(|| clock(sub::at_work(tasks), self.since));
+                let outputs =
+                    futures_util::future::join_all(calls.iter().map(|call| self.look(call))).await;
+                drop(clock);
+                for (call, (output, used)) in calls.iter().zip(outputs) {
+                    self.count(used);
                     let output = self.touched(call, truncate(output));
                     self.messages.push(json!({
                         "role": "tool",
@@ -3092,25 +3285,82 @@ impl Session {
         }
     }
 
-    /// One request to the model; its text is printed as it arrives.
-    async fn complete(&mut self) -> Result<Value> {
-        let messages = &self.messages;
-        // OpenRouter and Claude take cache breakpoints; the others, plain
-        // messages.
-        let mut messages = if !matches!(self.kind(), Some(Kind::OpenRouter | Kind::Claude)) {
-            messages.clone()
-        } else {
-            cached(&self.model, messages)
-        };
-        // Claude's own blocks are for Claude; the others may turn a field
-        // they don't know away.
-        if self.kind() != Some(Kind::Claude) {
-            for message in &mut messages {
-                if let Some(message) = message.as_object_mut() {
-                    message.remove(claude::CONTENT);
-                }
+    /// Runs a tool call that leaves the session as it is: one of the looking
+    /// tools, or a subagent but `run`, with what that one's requests took.
+    async fn look(&self, call: &Value) -> (String, Vec<sub::Used>) {
+        if name_of(call) != "task" {
+            return (read_only(&self.search, call).await, Vec::new());
+        }
+        let (answer, used) = sub::run(&self.parent(), &sub::Task::of(call)).await;
+        (answer.unwrap_or_else(|err| format!("error: {err:#}")), used)
+    }
+
+    /// What a subagent needs of the session.
+    fn parent(&self) -> sub::Parent<'_> {
+        sub::Parent {
+            providers: &self.providers,
+            pool: &self.pool,
+            choice: Choice::new(&self.provider, &self.model),
+            cache_key: &self.cache_key,
+            search: &self.search,
+            sub_model: &self.sub_model,
+            allow_all: self.allow_all || self.allow_turn,
+        }
+    }
+
+    /// Adds what subagents' requests took to the session's count and to
+    /// their own lines in `uc agent status`, and keeps their conversations
+    /// to save.
+    fn count(&mut self, used: Vec<sub::Used>) {
+        for used in used {
+            self.tokens.absorb(&used.tokens);
+            self.subs.entry(used.who).or_default().absorb(&used.tokens);
+            if !used.transcript.is_null() {
+                self.transcripts.push(used.transcript);
             }
         }
+    }
+
+    /// `uc agent model --sub [NAME]`, and the chat tool's model action for
+    /// subagents: the model they run on, switched and saved for new sessions
+    /// when one is named. `default` goes back to each kind's own.
+    fn switch_sub(&mut self, name: &str) -> String {
+        let say = |line: String| {
+            out::raw(&line);
+            line
+        };
+        if !subagents() {
+            return say("· subagents are off (--no-subagents)\n".into());
+        }
+        let name = name.trim();
+        if name.is_empty() {
+            return say(format!("· subagents: {}\n", sub::plan(&self.parent())));
+        }
+        let value = if name.eq_ignore_ascii_case("default") {
+            None
+        } else {
+            match sub::named_model(&self.parent(), name) {
+                Ok(value) => Some(value),
+                Err(err) => return say(format!("· {err:#}\n")),
+            }
+        };
+        self.sub_model = value.clone().unwrap_or_default();
+        let saved = match providers::save_subagent_model(value.as_deref()) {
+            Ok(path) => format!(", saved in {} for new `uc` sessions", path.display()),
+            Err(err) => format!(" (not saved: {err:#})"),
+        };
+        if env("UC_SUBAGENT_MODEL").is_some() {
+            note!("UC_SUBAGENT_MODEL is set in this environment and wins over it in new sessions");
+        }
+        say(format!(
+            "· subagents: {}{saved}\n",
+            sub::plan(&self.parent())
+        ))
+    }
+
+    /// One request to the model; its text is printed as it arrives.
+    async fn complete(&mut self) -> Result<Value> {
+        let messages = for_provider(self.kind(), &self.model, &self.messages);
         let mut body = json!({
             "model": self.model,
             "messages": messages,
@@ -3126,37 +3376,18 @@ impl Session {
             body["prompt_cache_key"] = json!(self.cache_key);
         }
         let mut clock = clock(self.who(), self.since);
-        let mut stream = self.stream(&body).await?;
-        let mut pending = Vec::new();
-        let mut reply = Reply::default();
+        let stream = self.stream(&body).await?;
         let mut shown = false;
-        'stream: while let Some(bytes) = stream.next().await {
-            pending.extend_from_slice(&bytes.context("reading the model's reply")?);
-            while let Some(end) = pending.iter().position(|b| *b == b'\n') {
-                let line: Vec<u8> = pending.drain(..=end).collect();
-                let line = String::from_utf8_lossy(&line);
-                // Comments (": OPENROUTER PROCESSING") keep the connection alive.
-                let Some(data) = line.trim().strip_prefix("data:").map(str::trim) else {
-                    continue;
-                };
-                if data == "[DONE]" {
-                    break 'stream;
-                }
-                let Ok(chunk) = serde_json::from_str::<Value>(data) else {
-                    continue;
-                };
-                let mut text = reply.add(&chunk)?;
-                if !shown {
-                    text = text.trim_start().to_string();
-                }
-                if text.is_empty() {
-                    continue;
-                }
-                clock = None;
-                shown = true;
-                out::text(&text);
+        let reply = read_reply(stream, |text| {
+            let text = if shown { text } else { text.trim_start() };
+            if text.is_empty() {
+                return;
             }
-        }
+            clock = None;
+            shown = true;
+            out::text(text);
+        })
+        .await?;
         drop(clock);
         if shown {
             out::reply_end();
@@ -3212,6 +3443,19 @@ impl Session {
             "web_search" | "fetch_url" | "src" | "read_file" | "grep" | "glob" => {
                 return read_only(&self.search, call).await;
             }
+            "task" => {
+                let (output, used) = if sub::in_session(call) {
+                    // It runs commands, which show and ask as the session's
+                    // own do: no spinner over them.
+                    sub::run_here(self, &sub::Task::of(call)).await
+                } else {
+                    let _clock = clock(sub::at_work(1), self.since);
+                    let (answer, used) = sub::run(&self.parent(), &sub::Task::of(call)).await;
+                    (answer, used)
+                };
+                self.count(used);
+                return output.unwrap_or_else(|err| format!("error: {err:#}"));
+            }
             "write_file" => self.write_file(&arg("path"), &arg("content")),
             "skill" => match arg("skills").trim() {
                 "" => {
@@ -3222,6 +3466,9 @@ impl Session {
             },
             "edit_file" => self.edit_file(&arg("path"), &arg("old_text"), &arg("new_text")),
             "chat" => match arg("action").trim() {
+                "model" if arg("for").trim() == "subagents" => {
+                    Ok(self.switch_sub(format!("{} {}", arg("model"), arg("provider")).trim()))
+                }
                 "model" => {
                     Ok(self.switch_tool(format!("{} {}", arg("model"), arg("provider")).trim()))
                 }
@@ -3928,6 +4175,36 @@ impl Tokens {
             new: prompt.saturating_sub(cached),
             output,
         });
+    }
+
+    /// Adds `other`'s requests, a subagent's, to these and to the turn's;
+    /// `last` and `window` stay this conversation's own.
+    fn absorb(&mut self, other: &Tokens) {
+        self.input += other.input;
+        self.cached += other.cached;
+        self.written += other.written;
+        self.output += other.output;
+        self.turn.requests += other.turn.requests;
+        self.turn.input += other.input;
+        self.turn.cached += other.cached;
+        self.turn.written += other.written;
+        self.turn.output += other.output;
+    }
+
+    /// A subagent's requests, for `uc agent status`: `9 requests, 310k in,
+    /// 84% from the cache, 41k written, 3k out`.
+    fn sub_line(&self) -> String {
+        let total = self.input + self.cached + self.written;
+        let pct = |n: u64| 100.0 * n as f64 / total.max(1) as f64;
+        let s = if self.turn.requests == 1 { "" } else { "s" };
+        format!(
+            "{} request{s}, {} in, {:.0}% from the cache, {} written, {} out",
+            self.turn.requests,
+            short(total),
+            pct(self.cached),
+            short(self.written),
+            short(self.output)
+        )
     }
 
     /// How the session's prompts were read, for `uc agent status`: `362k
@@ -4786,6 +5063,7 @@ fn start_with(start: Start) -> ExitCode {
     *START.lock().unwrap_or_else(|e| e.into_inner()) = Some(start);
     let has = |flag: &str| crate::flag::on(&[], flag);
     crate::claude::LONG_CACHE.store(has("--long-cache"), Ordering::Relaxed);
+    NO_SUBAGENTS.store(has("--no-subagents"), Ordering::Relaxed);
     let search = [
         ("--parallel", Search::Parallel),
         ("--exa", Search::Exa),
@@ -5463,7 +5741,8 @@ pub(crate) async fn agent_model(args: &[OsString]) -> Result<()> {
         .map(|arg| arg.to_string_lossy().into_owned())
         .collect();
     if args.iter().any(|arg| arg == "-h" || arg == "--help") {
-        println!("usage: uc agent model [<number|name|id> [provider]]\n");
+        println!("usage: uc agent model [<number|name|id> [provider]]");
+        println!("       uc agent model --sub [fast|balanced|strong|same|default|<name>]\n");
         println!("With no model named: the models of every provider with a key, the");
         println!("current one marked, as typing `uc agent model` in the chat lists them.");
         println!("With one named: makes it the model new `uc` sessions start on, saved");
@@ -5473,6 +5752,11 @@ pub(crate) async fn agent_model(args: &[OsString]) -> Result<()> {
         );
         println!("a listed id or any id of the provider. A session already running keeps");
         println!("its model: type `uc agent model` at that session's prompt to switch it.");
+        println!("With --sub: the model the subagents run on instead, saved as");
+        println!("subagent_model:. fast, balanced and strong are taken on the session's");
+        println!("provider when it has one; same is the session's own model; default is");
+        println!("each kind's own (fast to explore and run, balanced to research and edit).");
+        println!("UC_SUBAGENT_MODEL (or --subagent-model) wins over it.");
         return Ok(());
     }
     let providers = providers::usable();
@@ -5482,6 +5766,39 @@ pub(crate) async fn agent_model(args: &[OsString]) -> Result<()> {
     let pool = pool(&providers, false).await;
     let current = Choice::new(&start.name, &start_model(start, &pool));
     let name = args.join(" ");
+    if let Some(sub) = sub_model_arg(&name) {
+        let search = Engine::DuckDuckGo;
+        let saved = providers::settings()
+            .subagent_model
+            .clone()
+            .unwrap_or_default();
+        let mut parent = sub::Parent {
+            providers: &providers,
+            pool: &pool,
+            choice: current.clone(),
+            cache_key: "",
+            search: &search,
+            sub_model: &saved,
+            allow_all: false,
+        };
+        if sub.is_empty() {
+            println!("· subagents: {}", sub::plan(&parent));
+            return Ok(());
+        }
+        let value = match sub.eq_ignore_ascii_case("default") {
+            true => None,
+            false => Some(sub::named_model(&parent, sub)?),
+        };
+        let path = providers::save_subagent_model(value.as_deref())?;
+        let value = value.unwrap_or_default();
+        parent.sub_model = &value;
+        println!(
+            "· subagents: {}, saved in {} for new `uc` sessions",
+            sub::plan(&parent),
+            path.display()
+        );
+        return Ok(());
+    }
     if name.is_empty() {
         for (i, choice) in pool.iter().enumerate() {
             let mark = if *choice == current { "*" } else { " " };
@@ -6089,6 +6406,9 @@ mod tests {
             waiting: None,
             last_usage: None,
             tokens: Tokens::default(),
+            subs: BTreeMap::new(),
+            sub_model: String::new(),
+            transcripts: Vec::new(),
             since: Instant::now(),
             instructed: Vec::new(),
             prompted: Vec::new(),

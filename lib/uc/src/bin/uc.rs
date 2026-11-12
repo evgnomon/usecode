@@ -25,6 +25,7 @@ const CHAT_FLAGS: &[&str] = &[
     "--commands",
     "--no-shell",
     "--long-cache",
+    "--no-subagents",
     "--parallel",
     "--exa",
     "--duckduckgo",
@@ -37,14 +38,65 @@ const SEARCH_FLAGS: &[(&str, Search)] = &[
     ("--duckduckgo", Search::DuckDuckGo),
 ];
 
+/// The agent's flags that take a value, `--subagent-model haiku` or
+/// `--subagent-model=haiku`: the subagents' model, for all kinds or one
+/// (`--subagent-model-explore`), and their effort.
+fn is_value_flag(flag: &str) -> bool {
+    flag == "--subagent-effort"
+        || flag == "--subagent-model"
+        || flag
+            .strip_prefix("--subagent-model-")
+            .is_some_and(|kind| !kind.is_empty() && kind.chars().all(|c| c.is_ascii_lowercase()))
+}
+
+/// Environment variables to set: names and values.
+type Vars = Vec<(String, String)>;
+
+/// `args` without the agent's flags that take a value, and those as the
+/// `UC_<FLAG>` variables they stand for; `None` when one has no value.
+fn split_values(args: &[String]) -> Option<(Vec<String>, Vars)> {
+    let (mut rest, mut values) = (Vec::new(), Vec::new());
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        let (flag, value) = match arg.split_once('=') {
+            Some((flag, value)) if is_value_flag(flag) => (flag, value.to_string()),
+            _ if is_value_flag(arg) => (arg.as_str(), args.next()?.clone()),
+            _ => {
+                rest.push(arg.clone());
+                continue;
+            }
+        };
+        let name = flag
+            .trim_start_matches('-')
+            .replace('-', "_")
+            .to_uppercase();
+        values.push((format!("UC_{name}"), value));
+    }
+    Some((rest, values))
+}
+
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    // The agent's flags with a value go in the environment, where
+    // `uc::flag::value` reads them, the command line winning over what was
+    // there; only for the agent, not for a command they came before.
+    if let Some((rest, values)) = split_values(&args)
+        && !values.is_empty()
+        && rest.iter().all(|a| CHAT_FLAGS.contains(&a.as_str()))
+    {
+        for (name, value) in values {
+            // SAFETY: at the start of main, before any other thread runs.
+            unsafe { std::env::set_var(name, value) };
+        }
+        args = rest;
+    }
     // No command is the agent. Each of its flags may also come from
     // `UC_<FLAG>` or the user config, see `uc::flag`.
     if args.iter().all(|a| CHAT_FLAGS.contains(&a.as_str())) {
         let has = |flag: &str| uc::flag::on(&args, flag);
         let search = SEARCH_FLAGS.iter().find(|(f, _)| has(f)).map(|(_, s)| *s);
         uc::claude::LONG_CACHE.store(has("--long-cache"), std::sync::atomic::Ordering::Relaxed);
+        uc::chat::NO_SUBAGENTS.store(has("--no-subagents"), std::sync::atomic::Ordering::Relaxed);
         return uc::chat::main(
             has("--ask"),
             has("--output"),
@@ -84,7 +136,7 @@ fn main() -> ExitCode {
 
 fn print_usage() {
     println!(
-        "Usage: uc [--ask] [--output] [--commands] [--no-shell] [--long-cache] [--parallel|--exa|--duckduckgo] | <command> [<args>]\n"
+        "Usage: uc [--ask] [--output] [--commands] [--no-shell] [--long-cache] [--no-subagents] [--subagent-model MODEL] [--subagent-effort LEVEL] [--parallel|--exa|--duckduckgo] | <command> [<args>]\n"
     );
     println!("With no command, uc is a coding agent: talk to it and it runs commands and");
     println!("edits files for you, through the providers in ~/.config/usecode/agent.yaml:");
@@ -101,6 +153,10 @@ fn print_usage() {
     println!("away; `uc --no-shell` sends every line to the model instead.");
     println!("Your Claude subscription keeps the conversation cached for an hour; Claude on");
     println!("OpenRouter for five minutes, and `uc --long-cache` makes that an hour too.");
+    println!("It hands looking around, web research, test runs and big changes side by");
+    println!("side to subagents on a faster model, so your context stays small and cheap;");
+    println!("`--subagent-model` (fast, balanced, strong, same or a model) and");
+    println!("`--subagent-effort` pick theirs, and `uc --no-subagents` keeps it all on one.");
     println!("Every flag can also be set as UC_<FLAG> (UC_NO_SHELL=1) or under `uc:` in");
     println!("config.yaml (no_shell: true); the command line wins, then the environment.");
     println!("It searches the web with Parallel, else Exa (their keys under search: in");
@@ -164,4 +220,32 @@ fn discover() -> BTreeSet<String> {
         }
     }
     commands
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn words(line: &str) -> Vec<String> {
+        line.split_whitespace().map(String::from).collect()
+    }
+
+    #[test]
+    fn the_subagent_flags_with_a_value_go_to_the_environment() {
+        let line = "--ask --subagent-model haiku --subagent-effort=medium";
+        let (rest, values) = split_values(&words(line)).unwrap();
+        assert_eq!(rest, ["--ask"]);
+        assert_eq!(
+            values,
+            [
+                ("UC_SUBAGENT_MODEL".to_string(), "haiku".to_string()),
+                ("UC_SUBAGENT_EFFORT".to_string(), "medium".to_string()),
+            ]
+        );
+        let (_, values) = split_values(&words("--subagent-model-research strong")).unwrap();
+        assert_eq!(values[0].0, "UC_SUBAGENT_MODEL_RESEARCH");
+        assert!(split_values(&words("--subagent-model")).is_none());
+        let (rest, values) = split_values(&words("vm create --name x")).unwrap();
+        assert_eq!((rest.len(), values.len()), (4, 0));
+    }
 }

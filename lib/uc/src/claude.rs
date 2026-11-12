@@ -416,7 +416,11 @@ pub fn request(body: &Value, stream: bool) -> Value {
             .rposition(|m| m["role"] == "assistant")
             .and_then(|i| i.checked_sub(1));
         let last = messages.len().checked_sub(1);
-        for i in [previous, last].into_iter().flatten() {
+        // `cache_history: false`, a subagent's first request: its question
+        // is read once, so only the system prompt every one of them shares
+        // is worth writing.
+        let history = body["cache_history"] != false;
+        for i in [previous, last].into_iter().flatten().filter(|_| history) {
             if let Some(block) = messages[i]["content"]
                 .as_array_mut()
                 .and_then(|c| c.last_mut())
@@ -1048,6 +1052,16 @@ mod tests {
         assert_eq!(request(&body, true)["output_config"]["effort"], "xhigh");
         body["reasoning"] = json!({"effort": "minimal"});
         assert_eq!(request(&body, true)["output_config"]["effort"], "low");
+    }
+
+    #[test]
+    fn a_first_request_of_a_subagent_caches_only_the_system_prompt() {
+        let mut body = chat();
+        body["cache_history"] = json!(false);
+        let r = request(&body, true);
+        assert_eq!(r["system"][1]["cache_control"]["ttl"], "1h");
+        assert!(!r["messages"].to_string().contains("cache_control"));
+        assert!(r.get("cache_history").is_none());
     }
 
     #[test]

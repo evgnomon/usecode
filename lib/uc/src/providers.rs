@@ -53,6 +53,7 @@
 //! provider: claude                # the one a session starts on
 //! model: anthropic/claude-opus-5.5 # and its model; uc agent model sets both
 //! effort: high                    # minimal, low, medium, high, xhigh or max; uc agent effort sets it
+//! subagent_model: fast            # fast, balanced, strong, same or a model; uc agent model --sub sets it
 //! search:                         # web_search: Parallel, else Exa, else DuckDuckGo
 //!   parallel: {api_key: ...}
 //!   exa: {api_key: ...}
@@ -189,6 +190,8 @@ pub struct Settings {
     pub provider: Option<String>,
     pub model: Option<String>,
     pub effort: Option<String>,
+    /// The model the subagents run on, `subagent_model:`: a tier or a name.
+    pub subagent_model: Option<String>,
     /// The skills new sessions start with on, `skills:`.
     pub skills: Vec<String>,
     pub parallel_key: Option<String>,
@@ -208,6 +211,7 @@ impl Default for Settings {
             provider: None,
             model: None,
             effort: None,
+            subagent_model: None,
             skills: Vec::new(),
             parallel_key: None,
             exa_key: None,
@@ -231,6 +235,7 @@ struct File {
     provider: Option<String>,
     model: Option<String>,
     effort: Option<String>,
+    subagent_model: Option<String>,
     #[serde(default)]
     skills: Vec<String>,
     #[serde(default)]
@@ -317,6 +322,7 @@ pub fn parse_settings(text: &str) -> Result<Settings> {
         provider: some(file.provider),
         model: some(file.model),
         effort: some(file.effort),
+        subagent_model: some(file.subagent_model),
         skills: file
             .skills
             .into_iter()
@@ -515,6 +521,18 @@ pub fn save_choice(provider: &str, model: &str) -> Result<PathBuf> {
 pub fn save_effort(effort: &str) -> Result<PathBuf> {
     update(|top| {
         top.insert("effort".into(), effort.into());
+        Ok(())
+    })
+}
+
+/// Makes `model` (a tier or a model's name) the one the subagents of new
+/// sessions run on; `None` takes `subagent_model:` out, for the defaults.
+pub fn save_subagent_model(model: Option<&str>) -> Result<PathBuf> {
+    update(|top| {
+        match model {
+            Some(model) => top.insert("subagent_model".into(), model.into()),
+            None => top.remove("subagent_model"),
+        };
         Ok(())
     })
 }
