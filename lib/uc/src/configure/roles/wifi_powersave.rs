@@ -17,12 +17,15 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
     let workstation = v.profile == Profile::Workstation;
 
     plan.add(
-        Task::new("wifi_powersave/iw", "Install iw, which switches power saving")
-            .tags(&["wifi_powersave"])
-            .sudo()
-            .after([apt_role::UPDATE])
-            .when(workstation, WORKSTATION_ONLY)
-            .run(|ctx| async move { apt::install(&ctx, &["iw".to_string()], None).await }),
+        Task::new(
+            "wifi_powersave/iw",
+            "Install iw, which switches power saving",
+        )
+        .tags(&["wifi_powersave"])
+        .sudo()
+        .after([apt_role::UPDATE])
+        .when(workstation, WORKSTATION_ONLY)
+        .run(|ctx| async move { apt::install(&ctx, &["iw".to_string()], None).await }),
     );
 
     plan.add(

@@ -138,5 +138,4 @@ mod tests {
         );
         assert_eq!(reg_dword("", "AppsUseLightTheme"), None);
     }
-
 }

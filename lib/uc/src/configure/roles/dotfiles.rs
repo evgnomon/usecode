@@ -160,8 +160,9 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
         // VS Code's settings name its themes, so `-t theme` puts them in too.
         let tags: &[&str] = if group == "vscode" { &["theme"] } else { &[] };
         plan.add(
-            Task::new(dot(group), format!("Copy the {group} dotfiles")).tags(tags).run(
-                move |ctx| async move {
+            Task::new(dot(group), format!("Copy the {group} dotfiles"))
+                .tags(tags)
+                .run(move |ctx| async move {
                     let home = &ctx.vars().home;
                     let mut outcome = Outcome::Ok;
                     for entry in entries {
@@ -186,8 +187,7 @@ pub fn tasks(plan: &mut Plan, v: &Vars) {
                         outcome = outcome.and(step);
                     }
                     Ok(outcome)
-                },
-            ),
+                }),
         );
     }
 

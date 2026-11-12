@@ -143,7 +143,9 @@ pub fn main() -> ExitCode {
             }
             Some(command) => {
                 // The command's own help, and what a cloud provider changes.
-                let _ = Command::new("uc-vm-local").args([command, "--help"]).status();
+                let _ = Command::new("uc-vm-local")
+                    .args([command, "--help"])
+                    .status();
                 if CLOUD_COMMANDS.contains(&command) {
                     print!("\n{}", cloud_command_help(command));
                 } else if ["snapshot", "fork", "mount", "config"].contains(&command) {

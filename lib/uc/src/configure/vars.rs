@@ -216,7 +216,10 @@ impl UserConfig {
             && !theme_sets().contains_key(set)
         {
             let known: Vec<&str> = theme_sets().keys().map(String::as_str).collect();
-            bail!("theme_set: uc has no set {set}; it has {}", known.join(", "));
+            bail!(
+                "theme_set: uc has no set {set}; it has {}",
+                known.join(", ")
+            );
         }
         for tool in self.themes.keys() {
             if !THEMES.contains(&tool.as_str()) {
@@ -750,7 +753,10 @@ mod tests {
 
         let typo: UserConfig = serde_yaml::from_str("themes: {alacrity: x}\n").unwrap();
         let err = typo.check_themes().unwrap_err().to_string();
-        assert!(err.contains("alacrity") && err.contains("alacritty"), "{err}");
+        assert!(
+            err.contains("alacrity") && err.contains("alacritty"),
+            "{err}"
+        );
     }
 
     #[test]
@@ -776,7 +782,8 @@ mod tests {
                 assert!(THEMES.contains(&tool.as_str()), "{name}: {tool}");
                 if tool == "alacritty" {
                     for theme in [&pair.dark, &pair.light].into_iter().flatten() {
-                        let file = Path::new("alacritty/files/themes").join(format!("{theme}.toml"));
+                        let file =
+                            Path::new("alacritty/files/themes").join(format!("{theme}.toml"));
                         assert!(assets.is_file(&file), "{name}: {theme}");
                     }
                 }
