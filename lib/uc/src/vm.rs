@@ -14,6 +14,8 @@
 //! providers are driven through their REST APIs, with the credentials
 //! from the repository's secrets.
 
+mod firewall;
+
 use crate::http;
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
@@ -60,6 +62,11 @@ Cloud providers:
                                      else username and password under
                                      upcloud.prod.
 
+Cloud commands:
+  firewall [NAME]                    Show the provider's own firewall in front
+                                     of the VMs, or of VM NAME (read only; see
+                                     'uc vm firewall -h')
+
 Cloud options for 'create':
   --location <code>                  Hetzner location, DigitalOcean region,
                                      OVHcloud region such as GRA11 or UpCloud
@@ -76,6 +83,7 @@ Cloud examples:
   uc vm create uc4 --vcpus 2 --memory 8GiB --provider ovh --location GRA11
   uc vm create uc5 --vcpus 2 --memory 4GiB --provider upcloud --location de-fra1
   uc vm remove uc3 --provider hetzner --force
+  uc vm firewall uc3 --provider hetzner
 ";
 
 /// The commands a cloud provider has; the rest are local only.
@@ -136,6 +144,8 @@ pub fn main() -> ExitCode {
     // remove -h` must not take `-h` for a VM's name.
     if args.iter().any(|arg| arg == "-h" || arg == "--help") {
         match args.first().map(String::as_str) {
+            // Cloud only: uc-vm-local has no such command.
+            Some("firewall") => print!("{}", firewall::HELP),
             Some("-h" | "--help") | None => {
                 // uc-vm-local's own help, followed by what `uc vm` adds to it.
                 let _ = Command::new("uc-vm-local").arg("--help").status();
@@ -159,6 +169,13 @@ pub fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
     let Some(provider) = provider else {
+        if args.first().is_some_and(|arg| arg == "firewall") {
+            eprintln!(
+                "uc vm: 'firewall' is for cloud VMs: give --provider \
+                 <hetzner|digitalocean|upcloud> (the host firewall is 'uc net firewall')"
+            );
+            return ExitCode::from(2);
+        }
         let args: Vec<OsString> = args.into_iter().map(OsString::from).collect();
         return crate::groups::VM.run(&args);
     };
@@ -1294,6 +1311,7 @@ fn run(provider: Provider, args: &[String]) -> Result<()> {
             )
         }
         "remove" => remove(api, &find(api, name()?)?, force()?),
+        "firewall" => firewall::run(api, rest),
         other => bail!("unknown command '{other}'; see 'uc vm --help'"),
     }
 }

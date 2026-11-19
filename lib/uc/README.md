@@ -740,6 +740,23 @@ title prefix or UUID), log in with the SSH keys of the cloud-init user-data,
 and are stopped before `remove --force` removes them with their disks. Cloud
 VMs need no sudo.
 
+Want to know what the provider itself lets through, before traffic ever
+reaches your host? `uc vm firewall` shows the provider's own firewall, read
+only, so you can check the outer layer next to the host firewall of
+`uc net firewall`:
+
+```sh
+uc vm firewall --provider hetzner              # every firewall of the project
+uc vm firewall uc3 --provider hetzner          # just the ones on uc3, applied or pending
+uc vm firewall uc5 --provider upcloud --json   # the provider's own objects
+```
+
+Each firewall shows what it applies to (servers, tags, label selectors), its
+rules and what happens to traffic no rule matches. It works on Hetzner Cloud
+firewalls, DigitalOcean Cloud Firewalls and UpCloud's per-server rules.
+OVHcloud filters with OpenStack security groups, which its API doesn't show,
+so it isn't covered yet.
+
 A group's commands are tables in `src/groups.rs`; a command either runs a
 tool, with arguments of its own put in front of the user's, opens a nested
 group, or calls into this crate. A tool is found next to `uc` first, then on
