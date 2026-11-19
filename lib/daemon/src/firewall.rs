@@ -28,6 +28,8 @@ use crate::error::{Context, Result};
 use crate::kube;
 use crate::net::parse_cidr;
 
+pub mod report;
+
 /// Where the firewall settings live on a host.
 pub const SETTINGS_PATH: &str = "/etc/uc/firewall.toml";
 

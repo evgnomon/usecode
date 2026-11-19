@@ -55,7 +55,7 @@ pub const API_PORT: u16 = 6443;
 
 /// The interfaces pods reach the host through (the CNI bridge and
 /// flannel's tunnels), which the firewall has to let in.
-const POD_INTERFACES: [&str; 3] = ["cni0", "flannel.1", "flannel-wg"];
+pub const POD_INTERFACES: [&str; 3] = ["cni0", "flannel.1", "flannel-wg"];
 
 /// What `uc kube` asks of a host.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

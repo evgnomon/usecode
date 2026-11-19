@@ -72,7 +72,9 @@ break the mesh or the host's own network.
 Open a port, or move SSH off 22, from wherever you run `uc`:
 
 ```sh
-uc net firewall status edge                 # what's open, and the live rules
+uc net firewall status                      # every host: what they all share, then the rest
+uc net firewall status edge                 # what gets in, from where and why
+uc net firewall status edge --raw           # the same, plus the iptables rules
 uc net firewall allow edge tcp:443          # from anywhere
 uc net firewall allow edge udp:8000-8100:10.0.0.0/8
 uc net firewall allow edge tcp:443:2001:db8::/32   # IPv6 source

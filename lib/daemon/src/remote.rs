@@ -21,6 +21,7 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::time::Duration;
 
 use tempfile::TempDir;
 
@@ -56,15 +57,32 @@ impl Target {
     /// How to reach `name` the way `uc daemon reload` does: through the
     /// inventory if it is there, as an ssh destination if not.
     pub fn reach(name: &str) -> Result<Target> {
+        Target::reach_within(name, None)
+    }
+
+    /// [`Target::reach`] without anyone at the terminal, for asking many
+    /// hosts at once: ssh may not prompt, its messages are kept for the
+    /// error rather than printed, and a host that hasn't let us in within
+    /// `deadline` (down, or waiting for a login check in a browser) is
+    /// given up on.
+    pub fn reach_unattended(name: &str, deadline: Duration) -> Result<Target> {
+        Target::reach_within(name, Some(deadline))
+    }
+
+    fn reach_within(name: &str, deadline: Option<Duration>) -> Result<Target> {
         match inventory_host(name) {
-            Some(host) => Target::for_host(&host),
-            None => Target::ssh(name),
+            Some(host) => Target::for_host_within(&host, deadline),
+            None => Target::ssh_within(name, deadline),
         }
     }
 
     /// How to reach an inventory host, the way ansible would: a local
     /// connection for the control node, ssh otherwise.
     pub fn for_host(host: &Host) -> Result<Target> {
+        Target::for_host_within(host, None)
+    }
+
+    fn for_host_within(host: &Host, deadline: Option<Duration>) -> Result<Target> {
         if host.ansible_connection == "local" {
             return Ok(Target::Local);
         }
@@ -73,8 +91,8 @@ impl Target {
             a => a,
         };
         match host.ansible_user.as_str() {
-            "" => Target::ssh(addr),
-            user => Target::ssh(&format!("{user}@{addr}")),
+            "" => Target::ssh_within(addr, deadline),
+            user => Target::ssh_within(&format!("{user}@{addr}"), deadline),
         }
     }
 
@@ -84,30 +102,82 @@ impl Target {
     /// terminal), then puts itself in the background with no remote
     /// command (-N -f) and waits for commands to be multiplexed onto it.
     pub fn ssh(host: &str) -> Result<Target> {
+        Target::ssh_within(host, None)
+    }
+
+    /// [`Target::ssh`], unattended within `deadline` when there is one
+    /// (see [`Target::reach_unattended`]).
+    fn ssh_within(host: &str, deadline: Option<Duration>) -> Result<Target> {
         let dir = tempfile::Builder::new()
             .prefix("uc-net-mesh-ssh-")
             .tempdir()
             .ctx("create control directory")?;
         let ctl = dir.path().join("ctl");
 
-        let status = Command::new("ssh")
+        let mut cmd = Command::new("ssh");
+        cmd.args([
+            "-o",
+            "ControlMaster=yes",
+            "-o",
+            &format!("ControlPath={}", ctl.display()),
+            "-o",
+            "ControlPersist=60",
+        ]);
+        let Some(deadline) = deadline else {
+            let status = cmd
+                .args(["-N", "-f", host])
+                .status()
+                .with_ctx(|| format!("connect to {host}"))?;
+            if !status.success() {
+                bail!("connect to {host}: ssh exited with {status}");
+            }
+            return Ok(Target::Ssh(Session {
+                host: host.to_string(),
+                ctl,
+                _dir: dir,
+            }));
+        };
+
+        // ssh's messages go to a file, not a pipe: the master it leaves
+        // in the background keeps its stderr open for good.
+        let log_path = dir.path().join("ssh.log");
+        let log = fs::File::create(&log_path).ctx("create the ssh log")?;
+        let mut child = cmd
             .args([
                 "-o",
-                "ControlMaster=yes",
+                "BatchMode=yes",
                 "-o",
-                &format!("ControlPath={}", ctl.display()),
-                "-o",
-                "ControlPersist=60",
+                &format!("ConnectTimeout={}", deadline.as_secs().clamp(1, 10)),
                 "-N",
                 "-f",
                 host,
             ])
-            .status()
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(log)
+            .spawn()
             .with_ctx(|| format!("connect to {host}"))?;
+        let started = std::time::Instant::now();
+        let status = loop {
+            if let Some(status) = child.try_wait().ctx("wait for ssh")? {
+                break status;
+            }
+            if started.elapsed() >= deadline {
+                let _ = child.kill();
+                let _ = child.wait();
+                bail!("no answer within {}s", deadline.as_secs());
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        };
         if !status.success() {
-            bail!("connect to {host}: ssh exited with {status}");
+            let said = fs::read_to_string(&log_path).unwrap_or_default();
+            let last = said
+                .lines()
+                .rev()
+                .find(|line| !line.trim().is_empty() && !line.starts_with("Pseudo-terminal"))
+                .unwrap_or("ssh failed");
+            bail!("{}", last.trim());
         }
-
         Ok(Target::Ssh(Session {
             host: host.to_string(),
             ctl,
