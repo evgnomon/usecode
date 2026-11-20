@@ -214,7 +214,7 @@ export const AGI = {
   // The line the section is about, set apart.
   owner:
     "AGI is not something one entity builds and owns, unless that entity is " +
-    "no one, or everyone.",
+    "no one and/or everyone.",
   ownerNote:
     "No one owning it doesn’t mean nobody holds the controls; something " +
     "without an owner is taken by whoever is quickest. HGL/z has owners: " +
