@@ -31,7 +31,7 @@ function Toolbox() {
   );
 }
 
-/** Why "Make AGI.": now, next, who owns it, and the principles. */
+/** Why "Use Code and Make AGI.": now, next, who owns it, and the principles. */
 function WhyAgi() {
   const column = (c: { heading: string; points: string[] }) => (
     <div>
