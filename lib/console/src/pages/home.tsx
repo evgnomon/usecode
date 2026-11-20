@@ -162,7 +162,7 @@ export function Home() {
             <p className="mb-4 max-w-[60ch] text-base">{MOTIVATION.team}</p>
             <p className="mb-4 text-base font-semibold">{MOTIVATION.ship}</p>
             <p className="max-w-[60ch] text-base text-muted-foreground">
-              usecode is open source and freely distributed.{" "}
+              usecode is freely distributed.{" "}
               <a href={REPO_URL} className="text-primary hover:underline">
                 Have a look on GitHub
               </a>
@@ -174,7 +174,7 @@ export function Home() {
       </Section>
       <Section>
         <div className="wrap">
-          <h2 className="mb-6 text-base">What you get</h2>
+          <h2 className="mb-6 text-base">What you get.</h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {FEATURES.map((f) => (
               <Card key={f.title} className="gap-2 py-5 shadow-none">
@@ -190,7 +190,7 @@ export function Home() {
       </Section>
       <Section className="border-y bg-card">
         <div className="wrap">
-          <h2 className="mb-6 text-base">Up and running in three steps</h2>
+          <h2 className="mb-6 text-base">Up and running in three steps.</h2>
           <ol className="grid gap-6 sm:grid-cols-3">
             {STEPS.map((s, i) => (
               <li key={s.title}>

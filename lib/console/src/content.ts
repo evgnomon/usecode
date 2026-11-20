@@ -21,10 +21,10 @@ export const PLANS = {
     price: "Free",
     note: "All of usecode, on your own nodes, run by you and your agents.",
     points: [
-      "Every feature, open source",
-      "Unlimited nodes, edge or Kubernetes",
-      "A private WireGuard mesh between your nodes",
-      "API access for your agents",
+      "Every feature, freely distributed.",
+      "Unlimited nodes, edge or Kubernetes.",
+      "A private WireGuard mesh between your nodes.",
+      "API access for your agents.",
     ],
   },
   hosted: {
@@ -32,10 +32,10 @@ export const PLANS = {
     price: HOSTED_PRICE.amount,
     note: "The same usecode, with the heavy parts run by us, outside your cluster.",
     points: [
-      "Monitoring and alerts, watched from outside your nodes",
-      "An audit log of what changed, kept where no one can rewrite it",
-      "Backups stored off your nodes",
-      "Upgrades and uptime of what we host are on us",
+      "Monitoring and alerts, watched from outside your nodes.",
+      "An audit log of what changed, kept where no one can rewrite it.",
+      "Backups stored off your nodes.",
+      "Upgrades and uptime of what we host are on us.",
     ],
   },
   enterprise: {
@@ -43,11 +43,11 @@ export const PLANS = {
     price: "Let's talk",
     note: PROMISE,
     points: [
-      "Everything in Hosted",
-      "We review what your agents plan to change in production",
-      "We keep it working through upgrades and changes upstream",
-      "Someone who knows your setup answers when it breaks",
-      "A contract, invoicing and terms that fit your company",
+      "Everything in Hosted.",
+      "We review what your agents plan to change in production.",
+      "We keep it working through upgrades and changes upstream.",
+      "Someone who knows your setup answers when it breaks.",
+      "A contract, invoicing and terms that fit your company.",
     ],
   },
 };
@@ -71,9 +71,9 @@ export const MOTIVATION = {
       "Open a browser, say what you want, and get an app that’s live today and ready for whatever comes next.",
   ],
   // Highlighted above the pillars, a link to the code.
-  openSource: "Freely distributed and open source, under HGL",
+  openSource: "Freely distributed.",
   // The three things that set it apart, as a row under the intro.
-  pillars: ["Batteries included", "Runs entirely in your browser", "Convention over configuration"],
+  pillars: ["Batteries included.", "Runs entirely in your browser.", "Convention over configuration."],
   journeys: [
     {
       from: "From one agent to a team,",
@@ -154,8 +154,8 @@ export const MOTIVATION = {
       steps: ["Plans and prices set up", "Checkout page added", "Receipts and invoices on", "First customer paid"],
     },
   ] as Journey[],
-  close: "Built so you never start over",
-  kicker: "How a prompt gets you there",
+  close: "Built so you never start over.",
+  kicker: "How a prompt gets you there.",
   body:
     "Most software gets rebuilt on the way up: the laptop demo moves to a " +
     "hosting service, that moves to a cloud, and the cloud gets a platform " +
@@ -181,7 +181,7 @@ const BLOG = "https://evgnomon.org/posts";
  * evgnomon.org, linked in `reading`.
  */
 export const AGI = {
-  kicker: "Why make AGI",
+  kicker: "Why we make AGI.",
   title: "AGI is coming either way. What matters is whose it is.",
   now: {
     heading: "Now",
@@ -219,11 +219,11 @@ export const AGI = {
     "No one owning it doesn’t mean nobody holds the controls; something " +
     "without an owner is taken by whoever is quickest. HGL/z has owners: " +
     "everyone who builds it. What nobody owns is its nature.",
-  principlesTitle: "How we get there",
+  principlesTitle: "How we get there.",
   principles: [
     {
       tag: "HGL",
-      title: "Open, and it stays open",
+      title: "Open, and it stays open.",
       body:
         "Anyone may copy and change it. Once you distribute it, the whole " +
         "source goes to every user, free, under HGL, with no extra " +
@@ -231,7 +231,7 @@ export const AGI = {
     },
     {
       tag: "z",
-      title: "One branch, never built twice",
+      title: "One branch, never built twice.",
       body:
         "Every fork starts from Z and every useful fork merges back. Need a " +
         "new function? Add the next block instead of starting a new project. " +
@@ -239,7 +239,7 @@ export const AGI = {
     },
     {
       tag: "protocol",
-      title: "Built on, not taken over",
+      title: "Built on, not taken over.",
       body:
         "Many repositories work as one when they speak the same interface " +
         "and protocol, wherever their code lives. You build on HGL/z the way " +
@@ -247,7 +247,7 @@ export const AGI = {
     },
     {
       tag: "use",
-      title: "Use is develop",
+      title: "Use is develop.",
       body:
         "You develop what you use and use what you develop. When a tool is " +
         "missing, you or your agent adds it to uc, and the next person " +
@@ -255,7 +255,7 @@ export const AGI = {
     },
     {
       tag: "nodes",
-      title: "No single off switch",
+      title: "No single off switch.",
       body:
         "It runs on your own nodes, at home, at the edge or in any cloud. " +
         "One switch for everyone is power over everyone, so there isn’t one " +
@@ -263,7 +263,7 @@ export const AGI = {
     },
     {
       tag: "btc",
-      title: "Protected by BTC",
+      title: "Protected by BTC.",
       body:
         "Building HGL/z is paid in BTC, money no printer can dilute and no " +
         "one can easily take. It secures the time to build more, without " +
@@ -294,7 +294,7 @@ export const TOOLS = [
 export const FEATURES = [
   {
     tag: "uc",
-    title: "Every tool, one command",
+    title: "Every tool, one command.",
     body:
       "Machines, networks, Kubernetes, images, DNS, mail, storage, databases " +
       "and secrets, all behind uc. Your agent doesn't have to glue five " +
@@ -302,7 +302,7 @@ export const FEATURES = [
   },
   {
     tag: "team",
-    title: "Built for a team",
+    title: "Built for a team.",
     body:
       "You and your agents use the same uc, on the same nodes, each with keys " +
       "of your own. What one of you sets up is there for everyone else, so " +
@@ -310,21 +310,21 @@ export const FEATURES = [
   },
   {
     tag: "nodes",
-    title: "Bring any node",
+    title: "Bring any node.",
     body:
       "A box under your desk, a VPS, a rack in a shop or a cloud VM. Each one " +
       "runs one small daemon, usecoded, and that's all it needs.",
   },
   {
     tag: "mesh",
-    title: "A private network between them",
+    title: "A private network between them.",
     body:
       "Your nodes join a WireGuard mesh, so they talk to each other privately " +
       "wherever they are: at home, at the edge or in a cloud.",
   },
   {
     tag: "watch",
-    title: "Looked after around the clock",
+    title: "Looked after around the clock.",
     body:
       "Each node's daemon puts drift right on its own. On Hosted, usecode.dev " +
       "also watches your nodes from outside, so when a whole cluster goes " +
@@ -332,18 +332,18 @@ export const FEATURES = [
   },
   {
     tag: "open",
-    title: "Open source, no node meter",
+    title: "Freely distributed, no node meter.",
     body:
-      "usecode is open source under HGL and freely distributed. Your own account is " +
+      "usecode is freely distributed. Your own account is " +
       "free with two nodes or two hundred. You pay only for what we host or " +
       "look after for you, never per node.",
   },
 ];
 
 export const STEPS = [
-  { title: "Make an account", body: "An email and a password. Takes a few seconds, and it's free." },
-  { title: "Put an agent to work", body: "uc comes with its own agent. Or hand a key to Claude Code, Cursor, Codex or whatever you already use." },
-  { title: "Add your nodes", body: "Edge boxes or Kubernetes nodes. usecode.dev takes it from there." },
+  { title: "Make an account.", body: "An email and a password. Takes a few seconds, and it's free." },
+  { title: "Put an agent to work.", body: "uc comes with its own agent. Or hand a key to Claude Code, Cursor, Codex or whatever you already use." },
+  { title: "Add your nodes.", body: "Edge boxes or Kubernetes nodes. usecode.dev takes it from there." },
 ];
 
 export const FAQS = [
@@ -365,7 +365,7 @@ export const FAQS = [
   {
     q: "Is it really free?",
     a:
-      "Yes. Every feature is open source and free, however many nodes you " +
+      "Yes. Every feature is freely distributed, however many nodes you " +
       "add. You pay only if you'd like us to host the heavy parts, " +
       HOSTED_PRICE.amount + " " + HOSTED_PRICE.period + ", or to make sure " +
       "it doesn't break, which we work out together.",
@@ -386,7 +386,7 @@ export const FAQS = [
   {
     q: "Can I run it all myself instead?",
     a:
-      "Sure, usecode is open source, and everything we host you can run " +
+      "Sure, usecode is freely distributed, and everything we host you can run " +
       "yourself. It just takes machines, storage and someone watching them. " +
       "If you'd rather we make sure it doesn't break, we're happy to talk.",
   },

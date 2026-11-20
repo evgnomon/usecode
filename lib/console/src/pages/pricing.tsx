@@ -103,7 +103,7 @@ export function Pricing() {
   return (
     <>
       <PageHead title={PROMISE}>
-        Every feature is free and open source, however many nodes you add. Hosted runs the heavy parts for you, like
+        Every feature is freely distributed, however many nodes you add. Hosted runs the heavy parts for you, like
         monitoring, the audit log and backups, for {HOSTED_PRICE.amount} {HOSTED_PRICE.period}. Enterprise is us
         making sure your setup doesn't break; get in touch and we'll work it out together.
       </PageHead>
@@ -123,7 +123,7 @@ export function Pricing() {
         </div>
         <div className="wrap mt-10 max-w-[680px]">
           <h3 className="mb-3">Rather run it yourself?</h3>
-          <p className="mb-3 font-semibold">usecode is open source and freely distributed.</p>
+          <p className="mb-3 font-semibold">usecode is freely distributed.</p>
           <p className="text-muted-foreground">
             Grab it from{" "}
             <a href={REPO_URL} className="text-primary hover:underline">

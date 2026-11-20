@@ -227,7 +227,7 @@ export function EmptyNodes({ children }: { children?: ReactNode }) {
   return (
     <div className="rounded-lg border border-dashed border-border-strong bg-card px-6 py-8 text-center">
       <Server className="mx-auto mb-3 size-6 text-muted-foreground" strokeWidth={1.5} />
-      <h3 className="mb-2 text-base">Add a node, we'll handle the rest</h3>
+      <h3 className="mb-2 text-base">Add a node, we'll handle the rest.</h3>
       <p className="mx-auto mb-4 max-w-[44ch] text-muted-foreground last:mb-0">
         Any Linux box, VM or Kubernetes node. It joins your mesh, gets set up and shows up here, settled.
       </p>
