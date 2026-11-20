@@ -61,7 +61,7 @@ export type Journey = { from: string; without: string; prompt: string; steps: st
 // The opening of the landing page. The hero rolls the journeys three at a
 // time, and plays the one in the middle in a console underneath.
 export const MOTIVATION = {
-  tagline: "Use Code and Make AGI.",
+  tagline: "Use Code and/or Make AGI.",
   intro: [
     "usecode is part of HGL/z: one platform as code, under HGL, that every " +
       "contribution merges back into. HGL/z is the AGI we can all build, and " +
@@ -176,7 +176,7 @@ export const MOTIVATION = {
 const BLOG = "https://evgnomon.org/posts";
 
 /**
- * Why "Use Code and Make AGI.", under the hero: where AI stands now, where it goes, who
+ * Why "Use Code and/or Make AGI.", under the hero: where AI stands now, where it goes, who
  * may own it, and the principles HGL/z is built on. From the blog at
  * evgnomon.org, linked in `reading`.
  */
@@ -348,7 +348,7 @@ export const STEPS = [
 
 export const FAQS = [
   {
-    q: "What does “Use Code and Make AGI” mean?",
+    q: "What does “Use Code and/or Make AGI” mean?",
     a:
       "HGL/z is AGI: one platform as code that observes, decides and acts, " +
       "built by everyone who uses it, in one branch everything merges back " +
