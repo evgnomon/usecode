@@ -63,12 +63,15 @@ export type Journey = { from: string; without: string; prompt: string; steps: st
 export const MOTIVATION = {
   tagline: "Make AGI.",
   intro: [
-    "usecode is a coding agent that comes with everything real software needs: " +
+    "usecode is part of HGL/z: one platform as code, under HGL, that every " +
+      "contribution merges back into. HGL/z is the AGI we can all build, and " +
+      "own together.",
+    "Start with a coding agent that comes with everything real software needs: " +
       "build, test, deploy, hosting and scaling, already wired in. Nothing to install. " +
       "Open a browser, say what you want, and get an app that’s live today and ready for whatever comes next.",
   ],
   // Highlighted above the pillars, a link to the code.
-  openSource: "Freely distributed and open source",
+  openSource: "Freely distributed and open source, under HGL",
   // The three things that set it apart, as a row under the intro.
   pillars: ["Batteries included", "Runs entirely in your browser", "Convention over configuration"],
   journeys: [
@@ -170,6 +173,112 @@ export const MOTIVATION = {
   ship: "Not just another coding agent. Everything a company runs on, and an agent that keeps adding to it.",
 };
 
+const BLOG = "https://evgnomon.org/posts";
+
+/**
+ * Why "Make AGI.", under the hero: where AI stands now, where it goes, who
+ * may own it, and the principles HGL/z is built on. From the blog at
+ * evgnomon.org, linked in `reading`.
+ */
+export const AGI = {
+  kicker: "Why make AGI",
+  title: "AGI is coming either way. What matters is whose it is.",
+  now: {
+    heading: "Now",
+    points: [
+      "AI is turning into infrastructure. Once hospitals, payments and offices " +
+        "run on it, nobody can pull the plug, not even the people meant to " +
+        "regulate it. Dependence is enough to make the off switch useless.",
+      "Every check on AI is a task, and every task ends up with AI: it writes " +
+        "the proposal, sums it up for the approver and audits the result. " +
+        "Limits only hold if someone enforces them, and enforcing is a task too.",
+      "Labor is losing its scarcity, and with it the say it gave us. Value " +
+        "moves to whoever owns what stays scarce: energy, chips and access to " +
+        "the models, today in a handful of companies.",
+    ],
+  },
+  next: {
+    heading: "Next",
+    points: [
+      "If a harmful AGI is possible, someone will try to build it. Stopping " +
+        "halfway doesn’t make that go away; it only hands the most powerful " +
+        "AI to whoever ignored the limits.",
+      "A guardian AI doesn’t solve it either: who guards the guardian? So the " +
+        "answer is an AGI that is as powerful as possible, needs no guardian " +
+        "and is genuine, not because anyone confirmed it, but because that is " +
+        "what it is.",
+      "That AGI is built in the open, by everyone who uses it, so the most " +
+        "powerful AI is the one that belongs to all of us.",
+    ],
+  },
+  // The line the section is about, set apart.
+  owner:
+    "AGI is not something one entity builds and owns, unless that entity is " +
+    "no one, or everyone.",
+  ownerNote:
+    "No one owning it doesn’t mean nobody holds the controls; something " +
+    "without an owner is taken by whoever is quickest. HGL/z has owners: " +
+    "everyone who builds it. What nobody owns is its nature.",
+  principlesTitle: "How we get there",
+  principles: [
+    {
+      tag: "HGL",
+      title: "Open, and it stays open",
+      body:
+        "Anyone may copy and change it. Once you distribute it, the whole " +
+        "source goes to every user, free, under HGL, with no extra " +
+        "restriction. No fork can close what it has to hand over.",
+    },
+    {
+      tag: "z",
+      title: "One branch, never built twice",
+      body:
+        "Every fork starts from Z and every useful fork merges back. Need a " +
+        "new function? Add the next block instead of starting a new project. " +
+        "Each of us invests a little and gains everything already built.",
+    },
+    {
+      tag: "protocol",
+      title: "Built on, not taken over",
+      body:
+        "Many repositories work as one when they speak the same interface " +
+        "and protocol, wherever their code lives. You build on HGL/z the way " +
+        "you build on a protocol, not to take control of it.",
+    },
+    {
+      tag: "use",
+      title: "Use is develop",
+      body:
+        "You develop what you use and use what you develop. When a tool is " +
+        "missing, you or your agent adds it to uc, and the next person " +
+        "starts further ahead.",
+    },
+    {
+      tag: "nodes",
+      title: "No single off switch",
+      body:
+        "It runs on your own nodes, at home, at the edge or in any cloud. " +
+        "One switch for everyone is power over everyone, so there isn’t one " +
+        "to capture.",
+    },
+    {
+      tag: "btc",
+      title: "Protected by BTC",
+      body:
+        "Building HGL/z is paid in BTC, money no printer can dilute and no " +
+        "one can easily take. It secures the time to build more, without " +
+        "giving up anyone’s sovereignty, privacy or security.",
+    },
+  ],
+  close: "Do HGL/z and/or BTC. Your choice.",
+  reading: [
+    { title: "HGL/z", href: `${BLOG}/hglz/` },
+    { title: "Genuine AI", href: `${BLOG}/genuine-ai/` },
+    { title: "Losing the Bottleneck", href: `${BLOG}/losing-the-bottleneck/` },
+    { title: "The Printer Problem", href: `${BLOG}/printer-problem/` },
+  ],
+};
+
 /** A few of uc's commands, shown in the hero's terminal frame. */
 export const TOOLS = [
   { cmd: "uc vm", does: "machines on your box or in a cloud" },
@@ -225,7 +334,7 @@ export const FEATURES = [
     tag: "open",
     title: "Open source, no node meter",
     body:
-      "usecode is open source and freely distributed. Your own account is " +
+      "usecode is open source under HGL and freely distributed. Your own account is " +
       "free with two nodes or two hundred. You pay only for what we host or " +
       "look after for you, never per node.",
   },
@@ -238,6 +347,21 @@ export const STEPS = [
 ];
 
 export const FAQS = [
+  {
+    q: "What does “Make AGI” mean here?",
+    a:
+      "HGL/z is AGI: one platform as code that observes, decides and acts, " +
+      "built by everyone who uses it, in one branch everything merges back " +
+      "into. usecode is the part you can use today, and every tool you or " +
+      "your agents add makes it more capable for everyone.",
+  },
+  {
+    q: "Who owns it?",
+    a:
+      "Everyone who builds it, and no one alone. The code is under HGL, so " +
+      "whoever distributes it hands over the whole source, free. Not us, " +
+      "not any company, can close it or change what it is.",
+  },
   {
     q: "Is it really free?",
     a:

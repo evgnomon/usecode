@@ -7,7 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { KeyLegend } from "@/components/kbd";
 import { Journeys } from "@/components/journeys";
 import { Section } from "@/components/layout";
-import { FAQS, FEATURES, MOTIVATION, REPO_URL, STEPS, TOOLS } from "@/content";
+import { AGI, FAQS, FEATURES, MOTIVATION, REPO_URL, STEPS, TOOLS } from "@/content";
 import { useMe } from "@/lib/api";
 import { Link } from "@/lib/router";
 
@@ -28,6 +28,62 @@ function Toolbox() {
         ))}
       </dl>
     </div>
+  );
+}
+
+/** Why "Make AGI.": now, next, who owns it, and the principles. */
+function WhyAgi() {
+  const column = (c: { heading: string; points: string[] }) => (
+    <div>
+      <h3 className="mb-3 font-mono text-xs tracking-wide text-muted-foreground uppercase">{c.heading}</h3>
+      <ul className="space-y-3">
+        {c.points.map((p) => (
+          <li key={p} className="border-l-2 pl-3 text-sm text-muted-foreground">
+            {p}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+  return (
+    <Section className="border-t">
+      <div className="wrap">
+        <p className="mb-2 text-sm font-medium text-primary">{AGI.kicker}</p>
+        <h2 className="mb-8 max-w-[28ch] text-[clamp(22px,3.4vw,28px)] leading-[1.2] tracking-[-0.02em]">{AGI.title}</h2>
+        <div className="mb-10 grid gap-8 md:grid-cols-2">
+          {column(AGI.now)}
+          {column(AGI.next)}
+        </div>
+        <blockquote className="mb-10 border border-primary bg-primary/5 px-5 py-4">
+          <p className="mb-2 text-[clamp(17px,2.4vw,20px)] leading-snug font-semibold">{AGI.owner}</p>
+          <p className="max-w-[70ch] text-sm text-muted-foreground">{AGI.ownerNote}</p>
+        </blockquote>
+        <h3 className="mb-6 text-base">{AGI.principlesTitle}</h3>
+        <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {AGI.principles.map((p) => (
+            <Card key={p.title} className="gap-2 py-5 shadow-none">
+              <CardContent className="px-5">
+                <span className="mb-3 inline-block border px-1.5 font-mono text-[11px] text-muted-foreground">{p.tag}</span>
+                <h4 className="mb-2">{p.title}</h4>
+                <p className="text-[13px] text-muted-foreground">{p.body}</p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        <p className="mb-2 text-base font-semibold">{AGI.close}</p>
+        <p className="text-sm text-muted-foreground">
+          Read more:{" "}
+          {AGI.reading.map((r, i) => (
+            <span key={r.href}>
+              {i > 0 && " · "}
+              <a href={r.href} className="text-primary hover:underline">
+                {r.title}
+              </a>
+            </span>
+          ))}
+        </p>
+      </div>
+    </Section>
   );
 }
 
@@ -96,6 +152,7 @@ export function Home() {
           </div>
         </div>
       </section>
+      <WhyAgi />
       <Section className="border-y bg-card">
         <div className="wrap grid items-center gap-10 md:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
           <div>
