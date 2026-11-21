@@ -67,7 +67,7 @@ export const MOTIVATION = {
       "contribution merges back into. HGL/z is the AGI we can all build, and " +
       "own together.",
     "Start with a coding agent that comes with everything real software needs: " +
-      "build, test, deploy, hosting and scaling, already wired in. Nothing to install. " +
+      "build, test, deploy, hosting and scaling, already wired in, under a free license. Nothing to install. " +
       "Open a browser, say what you want, and get an app that’s live today and ready for whatever comes next.",
   ],
   // Highlighted above the pillars, a link to the code.
