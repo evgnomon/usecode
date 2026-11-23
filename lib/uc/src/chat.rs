@@ -791,17 +791,25 @@ async fn run(
     search: Option<Search>,
 ) -> Result<()> {
     SHELL.store(shell, Ordering::Relaxed);
+    // Read PATH and the user's aliases while the session starts and they type,
+    // not when the first key or line comes: the prompt colors nothing till then.
+    std::thread::spawn(move || {
+        path_index();
+        if shell {
+            user_shell();
+        }
+        WARM.store(true, Ordering::Relaxed);
+    });
     let mut session = Session::new(ask, output, commands, search).await?;
     let ai = AI.load(Ordering::Relaxed);
+    if !shell && !ai {
+        std::thread::spawn(user_shell);
+    }
     let start = START.lock().unwrap_or_else(|e| e.into_inner()).take();
     match start {
         Some(Start::Import(file)) => session.import_picked(&file)?,
         Some(Start::Checkout(path)) => session.checkout(&path.display().to_string())?,
         None => {}
-    }
-    if shell || !ai {
-        // Read the user's aliases while they type, not when the first line comes.
-        std::thread::spawn(user_shell);
     }
     tokio::spawn(async {
         while tokio::signal::ctrl_c().await.is_ok() {
@@ -1663,21 +1671,75 @@ fn typed_command(line: &str) -> Option<&str> {
         return None;
     }
     let first = line.split_whitespace().next()?;
-    let known = BUILTINS.contains(&first) || runnable(first) || user_shell().knows(first);
+    let known = BUILTINS.contains(&first) || runnable(first) || user_shell_knows(first);
     known.then_some(line.trim_end())
 }
 
 /// Whether a program by this name is on PATH, or at this path when it has a /.
+/// Asked for every key typed in the first word of a line, so PATH is read once
+/// into an index, not stat'ed again for each key: with a long PATH that took
+/// tens of milliseconds a key and the typing lagged.
 fn runnable(name: &str) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-    let executable = |path: &std::path::Path| {
-        std::fs::metadata(path).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
-    };
     if name.contains('/') {
         return executable(std::path::Path::new(name));
     }
-    std::env::var_os("PATH")
-        .is_some_and(|path| std::env::split_paths(&path).any(|dir| executable(&dir.join(name))))
+    path_index().names.contains(name)
+}
+
+fn executable(path: &std::path::Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+}
+
+/// The programs on PATH, and when they were read.
+struct PathIndex {
+    names: std::collections::HashSet<String>,
+    path: Option<OsString>,
+    at: Instant,
+}
+
+/// How long the index is used before PATH is read again, behind the typing.
+const PATH_INDEX_TTL: Duration = Duration::from_secs(5);
+
+fn read_path_index() -> PathIndex {
+    let path = std::env::var_os("PATH");
+    let mut names = std::collections::HashSet::new();
+    for dir in path.iter().flat_map(std::env::split_paths) {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            if let Some(name) = entry.file_name().to_str()
+                && !names.contains(name)
+                && executable(&entry.path())
+            {
+                names.insert(name.to_string());
+            }
+        }
+    }
+    PathIndex {
+        names,
+        path,
+        at: Instant::now(),
+    }
+}
+
+/// The index of PATH, read the first time and again in the background when
+/// it is old or PATH has changed, so a key never waits for it.
+fn path_index() -> Arc<PathIndex> {
+    static INDEX: OnceLock<RwLock<Arc<PathIndex>>> = OnceLock::new();
+    static READING: AtomicBool = AtomicBool::new(false);
+    let cell = INDEX.get_or_init(|| RwLock::new(Arc::new(read_path_index())));
+    let current = cell.read().unwrap_or_else(|e| e.into_inner()).clone();
+    let stale = current.at.elapsed() > PATH_INDEX_TTL || current.path != std::env::var_os("PATH");
+    if stale && !READING.swap(true, Ordering::Relaxed) {
+        std::thread::spawn(move || {
+            let index = Arc::new(read_path_index());
+            *cell.write().unwrap_or_else(|e| e.into_inner()) = index;
+            READING.store(false, Ordering::Relaxed);
+        });
+    }
+    current
 }
 
 /// The user's bash aliases and functions, read from an interactive bash at
@@ -1887,6 +1949,11 @@ impl rustyline::hint::Hinter for Completion {
 /// typed, so it shows before Enter whether the line goes to bash or the model.
 impl rustyline::highlight::Highlighter for Completion {
     fn highlight<'l>(&self, line: &'l str, _: usize) -> std::borrow::Cow<'l, str> {
+        // PATH and the aliases are still being read: a key never waits for
+        // them, the line is colored once they are in.
+        if !WARM.load(Ordering::Relaxed) {
+            return std::borrow::Cow::Borrowed(line);
+        }
         // The chat takes `uc agent model` and the like itself; not bash lines.
         let full = agent_alias(line);
         if agent_model_line(&full).is_some()
@@ -1925,6 +1992,10 @@ impl rustyline::validate::Validator for Completion {}
 
 impl rustyline::Helper for Completion {}
 
+/// Set once PATH and the user's shell are read, in the background from the
+/// start: till then the prompt colors nothing instead of waiting for them.
+static WARM: AtomicBool = AtomicBool::new(false);
+
 /// The user's shell as it is now: read on first use, empty when bash can't
 /// tell in time, then as the last command they typed left it.
 fn user_shell() -> UserShell {
@@ -1932,6 +2003,16 @@ fn user_shell() -> UserShell {
         .read()
         .unwrap_or_else(|e| e.into_inner())
         .clone()
+}
+
+/// Whether the user's shell knows `name` as an alias or function. Looks under
+/// the lock instead of copying the shell, which holds every function body and
+/// is run for each key typed.
+fn user_shell_knows(name: &str) -> bool {
+    user_shell_cell()
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .knows(name)
 }
 
 fn user_shell_cell() -> &'static RwLock<UserShell> {
