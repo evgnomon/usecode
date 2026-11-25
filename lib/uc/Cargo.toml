@@ -145,6 +145,10 @@ path = "src/bin/uc-forward.rs"
 name = "uc-workspace"
 path = "src/bin/uc-workspace.rs"
 
+[[bin]]
+name = "uc-try"
+path = "src/bin/uc-try.rs"
+
 [dependencies]
 aes = "0.9"
 ansible_vault = { path = "../ansible_vault" }

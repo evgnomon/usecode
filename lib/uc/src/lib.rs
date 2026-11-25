@@ -28,7 +28,9 @@
 //! `uc kube usage`, its CPU, memory, disk and network, [`openrouter`] is
 //! `uc agent usage`, the OpenRouter usage of the coding agent's own key (and
 //! the Claude subscription's, see [`claude`]), and
-//! [`workspace`] is `uc workspace` (`uc ws`), dev containers on the cluster.
+//! [`workspace`] is `uc workspace` (`uc ws`), dev containers on the cluster,
+//! and [`tries`] is `uc try`, dated scratch directories behind the `try`
+//! shell function.
 
 pub mod backup;
 pub mod chat;
@@ -54,6 +56,7 @@ pub mod profile;
 pub mod providers;
 pub mod registry;
 pub mod secret;
+pub mod tries;
 pub mod usage;
 pub mod vm;
 pub mod workspace;
