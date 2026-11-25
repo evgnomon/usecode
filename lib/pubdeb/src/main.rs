@@ -2,8 +2,8 @@
 // Copyright (C) The Usecode Authors (see AUTHORS)
 
 //! Publish ./dist/*.deb to the apt repository: sync it from `shadow`, add the
-//! packages with reprepro (trixie), sync it back and push it to the archive
-//! with rclone. Stops at the first failing step (set -euo pipefail).
+//! packages with reprepro (trixie), sync it back and copy it to the archive
+//! with `uc fs cp`. Stops at the first failing step (set -euo pipefail).
 
 use std::env;
 use std::fs;
@@ -55,7 +55,8 @@ Publishes ./dist/*.deb to the apt repository:
   1. rsync -avP --delete shadow:~/.cache/blueprint/apt/ to here
   2. reprepro includedeb trixie ./dist/*.deb, then export
   3. rsync it back to shadow, with --delete
-  4. on shadow, rclone sync it to archive:$USER/debian/
+  4. uc fs cp -r its dists and pool to archive:debian/, the bucket
+     archive.usecode.dev serves (only the files that changed are sent)
 Stops at the first step that fails. It takes no arguments.";
 
 fn main() {
@@ -87,13 +88,13 @@ fn main() {
 
     step("rsync", &s(&["-avP", "--delete", &repo, &remote]));
 
-    let user = required("USER");
-    let err = Command::new("ssh")
-        .args(["shadow", &format!("{home}/.local/bin/rclone"), "-v", "sync"])
-        .arg(&repo)
-        .arg(format!("archive:{user}/debian/"))
+    let parts = [format!("{repo}dists"), format!("{repo}pool")];
+    let err = Command::new("uc")
+        .args(["fs", "cp", "-r"])
+        .args(&parts)
+        .arg("archive:debian/")
         .exec();
-    eprintln!("uc-deb-publish: ssh: {err}");
+    eprintln!("uc-deb-publish: uc: {err}");
     exit(if err.kind() == io::ErrorKind::NotFound {
         127
     } else {

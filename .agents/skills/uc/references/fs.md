@@ -22,7 +22,9 @@ uc fs rb backups                         # remove a bucket once it's empty
 ```
 
 `<bucket>:` or `<bucket>:<prefix>/` as the destination keeps the names;
-`<bucket>:<key>` renames.
+`<bucket>:<key>` renames. `cp` skips a file the destination already has with
+the same content (MD5 = ETag), so copying a directory again sends only what
+changed. Nothing is deleted at the destination.
 
 Another S3 than the cluster's:
 

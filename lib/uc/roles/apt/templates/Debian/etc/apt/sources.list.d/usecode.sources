@@ -2,7 +2,7 @@
 # Copyright (C) The Usecode Authors (see AUTHORS)
 
 Types: deb
-URIs: https://archive.evgnomon.org/debian
+URIs: https://archive.usecode.dev/debian
 Suites: trixie
 Components: main
 Signed-By: /etc/apt/keyrings/evgnomon.asc

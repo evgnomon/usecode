@@ -181,9 +181,12 @@ const OPTIONAL_REPOS: &[(&[&str], &str)] = &[(
 /// in `/etc/apt/keyrings` and only signs the source naming it; one-line
 /// `.list` files became deb822 `.sources`. On Debian, extrepo hands over
 /// docker, dotnet and mullvad itself, so only files no source uses go here.
+/// `evgnomon.sources` became `usecode.sources`, pointing at
+/// archive.usecode.dev.
 fn stale(distro: &str) -> &'static [&'static str] {
     match distro {
         "Ubuntu" => &[
+            "/etc/apt/sources.list.d/evgnomon.sources",
             "/etc/apt/sources.list.d/azure.list",
             "/etc/apt/sources.list.d/docker.list",
             "/etc/apt/sources.list.d/ms.list",
@@ -196,6 +199,7 @@ fn stale(distro: &str) -> &'static [&'static str] {
             "/etc/apt/trusted.gpg.d/mullvad-keyring.gpg",
         ],
         "Debian" => &[
+            "/etc/apt/sources.list.d/evgnomon.sources",
             "/etc/apt/trusted.gpg.d/evgnomon.asc",
             "/etc/apt/trusted.gpg.d/mysql.gpg",
         ],

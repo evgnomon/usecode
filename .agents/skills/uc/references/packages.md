@@ -15,7 +15,9 @@ directory copied to the package root (`./pkg-root/usr/bin/myapp` installs
 `/usr/bin/myapp`).
 
 `uc deb publish` takes no arguments (`-h` prints what it does). It rsyncs the repository from `shadow` with `--delete`, adds the
-packages with reprepro (trixie), rsyncs it back and syncs it to the archive.
+packages with reprepro (trixie), rsyncs it back and copies its `dists` and
+`pool` with `uc fs cp -r` to `archive:debian/`, the bucket
+https://archive.usecode.dev serves (unchanged files are skipped).
 It needs the user's SSH key (often a security key to touch). Only run it when
 the user asked to publish: `ask: true`.
 

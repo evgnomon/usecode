@@ -7,7 +7,7 @@ use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use uc::fs::{Store, human, remote, split};
+use uc::fs::{Store, human, md5_hex, remote, split};
 use uc::kube;
 
 /// Buckets and objects on your S3 object storage.
@@ -41,6 +41,10 @@ enum Command {
     /// Remove an empty bucket.
     Rb { bucket: String },
     /// Copy files and directories to and from buckets, like cp.
+    ///
+    /// A file the destination already has with the same content (its MD5 is
+    /// the object's ETag) is skipped, so copying a directory again sends
+    /// only what changed.
     Cp {
         /// What to copy: `<bucket>:<key>` in a bucket, a local path
         /// otherwise.
@@ -240,8 +244,10 @@ async fn copy(store: &Store, sources: &[String], dest: &str, recursive: bool) ->
                     })
                 }
             };
-            let size = transfer(store, from, &to).await?;
-            eprintln!("{from} -> {to} ({})", human(size));
+            match transfer(store, from, &to).await? {
+                Some(size) => eprintln!("{from} -> {to} ({})", human(size)),
+                None => eprintln!("{from} = {to} (the same, skipped)"),
+            }
         }
     }
     Ok(())
@@ -352,26 +358,40 @@ async fn prefix_or_object(
     Ok(None)
 }
 
-/// Copies one file, and returns its size.
-async fn transfer(store: &Store, from: &Place, to: &Place) -> Result<u64> {
+/// Copies one file, and returns its size; `None` when the destination
+/// already has the same content (its MD5 is the object's ETag), so nothing
+/// was copied.
+async fn transfer(store: &Store, from: &Place, to: &Place) -> Result<Option<u64>> {
     match (from, to) {
         (Place::Remote(bucket, key), Place::Local(dest)) => {
-            download(store, bucket, key, dest).await
+            if let Ok(local) = tokio::fs::read(dest).await
+                && store.etag(bucket, key).await?.as_deref() == Some(&md5_hex(&local))
+            {
+                return Ok(None);
+            }
+            Ok(Some(download(store, bucket, key, dest).await?))
         }
         (_, Place::Remote(bucket, key)) => {
+            let there = store.etag(bucket, key).await?;
             let body = match from {
                 Place::Local(path) => tokio::fs::read(path)
                     .await
                     .with_context(|| format!("reading {}", path.display()))?,
                 Place::Remote(b, k) => {
+                    if there.is_some() && store.etag(b, k).await? == there {
+                        return Ok(None);
+                    }
                     let mut body = Vec::new();
                     store.get(b, k, &mut body).await?;
                     body
                 }
             };
+            if there.as_deref() == Some(&md5_hex(&body)) {
+                return Ok(None);
+            }
             let size = body.len() as u64;
             store.put(bucket, key, body).await?;
-            Ok(size)
+            Ok(Some(size))
         }
         (Place::Local(_), Place::Local(_)) => bail!("{from} and {to} are both local"),
     }

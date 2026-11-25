@@ -135,6 +135,31 @@ impl Store {
         body: Vec<u8>,
     ) -> Result<reqwest::Response> {
         let what = format!("{method} {path}");
+        let reply = self.send(method, path, query, body).await?;
+        if reply.status().is_success() {
+            return Ok(reply);
+        }
+        let status = reply.status();
+        let text = reply.text().await.unwrap_or_default();
+        let why = tag(&text, "Message")
+            .or_else(|| tag(&text, "Code"))
+            .unwrap_or_else(|| text.trim().to_string());
+        if status == StatusCode::NOT_FOUND && why.is_empty() {
+            bail!("{what}: not found");
+        }
+        bail!("{what}: HTTP {status}: {why}")
+    }
+
+    /// Sends a signed request for `path` and gives back the reply, whatever
+    /// its status.
+    async fn send(
+        &self,
+        method: Method,
+        path: &str,
+        query: &[(&str, &str)],
+        body: Vec<u8>,
+    ) -> Result<reqwest::Response> {
+        let what = format!("{method} {path}");
         let uri = encode_path(path);
         let query = canonical_query(query);
         let host = self
@@ -148,7 +173,7 @@ impl Store {
         if !query.is_empty() {
             url = format!("{url}?{query}");
         }
-        let reply = client()
+        client()
             .request(method, &url)
             .header("x-amz-date", amz_date)
             .header("x-amz-content-sha256", payload)
@@ -156,19 +181,7 @@ impl Store {
             .body(body)
             .send()
             .await
-            .with_context(|| format!("{what} on {}", self.endpoint))?;
-        if reply.status().is_success() {
-            return Ok(reply);
-        }
-        let status = reply.status();
-        let text = reply.text().await.unwrap_or_default();
-        let why = tag(&text, "Message")
-            .or_else(|| tag(&text, "Code"))
-            .unwrap_or_else(|| text.trim().to_string());
-        if status == StatusCode::NOT_FOUND && why.is_empty() {
-            bail!("{what}: not found");
-        }
-        bail!("{what}: HTTP {status}: {why}")
+            .with_context(|| format!("{what} on {}", self.endpoint))
     }
 
     /// The `x-amz-date` and `authorization` headers for a request.
@@ -274,6 +287,24 @@ impl Store {
         self.call(Method::PUT, &format!("/{bucket}/{key}"), &[], body)
             .await?;
         Ok(())
+    }
+
+    /// The object's ETag without its quotes, or `None` when there is no such
+    /// object. For an object put in one piece, it is the MD5 of its content.
+    pub async fn etag(&self, bucket: &str, key: &str) -> Result<Option<String>> {
+        let path = format!("/{bucket}/{key}");
+        let reply = self.send(Method::HEAD, &path, &[], Vec::new()).await?;
+        if reply.status() == StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        if !reply.status().is_success() {
+            bail!("HEAD {path}: HTTP {}", reply.status());
+        }
+        Ok(reply
+            .headers()
+            .get(reqwest::header::ETAG)
+            .and_then(|v| v.to_str().ok())
+            .map(|v| v.trim_start_matches("W/").trim_matches('"').to_string()))
     }
 
     /// Writes the object to `out` as it arrives, and returns its size.
@@ -420,6 +451,11 @@ fn hmac(key: &[u8], data: &[u8]) -> Vec<u8> {
     let mut mac = Hmac::<Sha256>::new_from_slice(key).expect("HMAC takes any key");
     mac.update(data);
     mac.finalize().into_bytes().to_vec()
+}
+
+/// The MD5 of `data` in hex, as an ETag of an object put in one piece.
+pub fn md5_hex(data: &[u8]) -> String {
+    hex(&md5::Md5::digest(data))
 }
 
 fn hex(bytes: &[u8]) -> String {

@@ -153,6 +153,9 @@ uc fs cp -r backups:scripts ~/restore/
 uc fs rm -r backups:2026/
 ```
 
+Copying the same directory again is quick: files that are already there
+with the same content are skipped, so only what changed goes over the wire.
+
 The web console stays private; `uc forward rustfs` brings it to
 http://localhost:9001/rustfs/console/. Need more room? `rustfs_size: 50Gi` grows the
 volume (it never shrinks).

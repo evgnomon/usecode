@@ -73,7 +73,7 @@ sudo mkdir -p /usr/share/vm/images/cloud-init
 Download and extract ZAmin cloud image:
 ```bash
 sudo wget -P /usr/share/vm/images/ \
-  https://archive.evgnomon.org/zamin/zamin-0.0.1.tar.gz
+  https://archive.usecode.dev/zamin/zamin-0.0.1.tar.gz
 sudo tar -xzf /usr/share/vm/images/zamin-0.0.1.tar.gz -C /usr/share/vm/images/
 ```
 
