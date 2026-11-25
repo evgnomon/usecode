@@ -889,6 +889,30 @@ fn script_worktree(
     v
 }
 
+/// When a new trial's `.try/seed` runs: for worktrees unless `--no-seed`, and
+/// for clones, whose seed is someone else's code, only with `--seed-clones`.
+#[derive(Clone, Copy)]
+struct Seed {
+    worktrees: bool,
+    clones: bool,
+}
+
+/// Runs `path/.try/seed`, if it's there and executable, in `path`, with
+/// `TRY_SOURCE` (where the trial came from), `TRY_DEST` (`path`),
+/// `TRY_BRANCH` (empty when detached) and `TRY_KIND` (`worktree` or `clone`)
+/// set. A seed that fails is reported, and the rest of the script goes on.
+fn script_seed(path: &Path, source: &str, branch: Option<&str>, kind: &str) -> String {
+    let seed = qp(&path.join(".try/seed"));
+    let p = qp(path);
+    format!(
+        "{{ [ ! -x {seed} ] || ( cd {p} && TRY_SOURCE={} TRY_DEST={p} TRY_BRANCH={} TRY_KIND={} {seed} ) \
+         || echo \"try: .try/seed failed (exit $?)\"; }}",
+        q(source),
+        q(branch.unwrap_or("")),
+        q(kind)
+    )
+}
+
 enum Outcome {
     Cd(PathBuf),
     Mkdir(PathBuf),
@@ -1568,6 +1592,13 @@ Settings (UC_<NAME>, or <name>: under uc: in config.yaml):
                     i.e. ~/src/github.com/$USER)
 The old TRY_PATH and TRY_PROJECTS still work.
 
+Seeding: a new worktree runs the repo's .try/seed, if it's executable, to
+start it from the checkout it came from (copy build caches, say). It runs in
+the new directory with TRY_SOURCE, TRY_DEST, TRY_BRANCH and TRY_KIND set.
+  --no-seed         Don't run it (UC_NO_SEED=1, or no_seed: true)
+  --seed-clones     Run it for git URLs too, which is the remote's code
+                    (UC_SEED_CLONES=1, or seed_clones: true)
+
 Keys:
   ↑/↓, Ctrl-P/N         Navigate
   Enter                 Select, or create new
@@ -1597,7 +1628,7 @@ fn init_function(exe: &Path, path: Option<&str>) -> String {
 }
 
 /// The script for everything but `init`: Ok(None) means cancelled.
-fn command(args: &[String], base: &Path) -> Result<Option<Vec<String>>, String> {
+fn command(args: &[String], base: &Path, seed: Seed) -> Result<Option<Vec<String>>, String> {
     // try . <name> | try ./path [name]
     if let Some(first) = args.first().filter(|a| a.starts_with('.')) {
         let custom = args[1..].join(" ");
@@ -1620,7 +1651,16 @@ fn command(args: &[String], base: &Path) -> Result<Option<Vec<String>>, String> 
             // A branch only for a name you gave, not the repo's own name.
             let why = named.then(|| branch_blocker(&repo, &name)).flatten();
             let branch = (named && why.is_none()).then_some(name.as_str());
-            script_worktree(&path, &repo, branch, why.as_deref())
+            let mut v = script_worktree(&path, &repo, branch, why.as_deref());
+            if seed.worktrees {
+                v.push(script_seed(
+                    &path,
+                    &repo.to_string_lossy(),
+                    branch,
+                    "worktree",
+                ));
+            }
+            v
         } else {
             script_mkdir_cd(&path)
         }));
@@ -1643,10 +1683,14 @@ fn command(args: &[String], base: &Path) -> Result<Option<Vec<String>>, String> 
             format!("{}-{user}-{repo}", today())
         };
         let path = base.join(name);
-        return Ok(Some(match pr {
+        let mut v = match pr {
             Some(pr) => script_clone_pr(&path, &pr),
             None => script_clone(&path, uri),
-        }));
+        };
+        if seed.clones {
+            v.push(script_seed(&path, uri, None, "clone"));
+        }
+        return Ok(Some(v));
     }
 
     if !is_tty(0) || !is_tty(2) {
@@ -1674,7 +1718,17 @@ pub fn main(args: &[String]) -> ExitCode {
         print!("{}", init_function(&exe, args.get(1).map(String::as_str)));
         return ExitCode::SUCCESS;
     }
-    match command(args, &tries_path()) {
+    let no_seed = flag::on(args, "--no-seed");
+    let seed = Seed {
+        worktrees: !no_seed,
+        clones: !no_seed && flag::on(args, "--seed-clones"),
+    };
+    let args: Vec<String> = args
+        .iter()
+        .filter(|a| !matches!(a.as_str(), "--no-seed" | "--seed-clones"))
+        .cloned()
+        .collect();
+    match command(&args, &tries_path(), seed) {
         Ok(Some(cmds)) => {
             print!("{}", emit(&cmds));
             ExitCode::SUCCESS
@@ -1927,6 +1981,48 @@ mod tests {
         let plain = tries.join("2025-01-02-main");
         run(&script_worktree(&plain, &repo, Some("main"), None), &d);
         assert!(plain.is_dir() && !plain.join(".git").exists());
+        fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn worktree_seed() {
+        let d = tmp("seed");
+        let (repo, tries) = (d.join("repo"), d.join("tries"));
+        fs::create_dir_all(&tries).unwrap();
+        // A seed that records what it was given, then fails.
+        let ok = Command::new("bash")
+            .arg("-c")
+            .arg(
+                "git init -q -b main repo && cd repo && mkdir .try && \
+                 printf '#!/bin/sh\\necho \"$PWD|$TRY_SOURCE|$TRY_DEST|$TRY_BRANCH|$TRY_KIND\" > seeded\\nexit 3\\n' > .try/seed && \
+                 chmod +x .try/seed && git add .try && \
+                 git -c user.name=t -c user.email=t@t commit -q -m seed",
+            )
+            .current_dir(&d)
+            .status()
+            .unwrap()
+            .success();
+        assert!(ok);
+        let wt = tries.join("2025-01-02-feat");
+        let mut v = script_worktree(&wt, &repo, Some("feat"), None);
+        v.push(script_seed(
+            &wt,
+            &repo.to_string_lossy(),
+            Some("feat"),
+            "worktree",
+        ));
+        run(&v, &d);
+        let (r, w) = (repo.display(), wt.display());
+        assert_eq!(
+            fs::read_to_string(wt.join("seeded")).unwrap(),
+            format!("{w}|{r}|{w}|feat|worktree\n")
+        );
+
+        // No seed, nothing to run.
+        let plain = tries.join("2025-01-02-plain");
+        fs::create_dir_all(&plain).unwrap();
+        run(&[script_seed(&plain, "x", None, "clone")], &d);
+        assert!(!plain.join("seeded").exists());
         fs::remove_dir_all(&d).unwrap();
     }
 

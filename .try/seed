@@ -1,0 +1,19 @@
+#!/bin/sh
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+#
+# Run by `try . <name>` in a new worktree of usecode: start its target/ from
+# the compiled dependencies of the checkout it came from ($TRY_SOURCE), so the
+# first build only compiles the workspace crates. Those rebuild anyway (their
+# sources are newer than what's copied), so their binaries and test
+# executables are left out, and so is incremental/: together most of target/.
+set -e
+for profile in debug fast; do
+  from="$TRY_SOURCE/target/$profile"
+  [ -d "$from/deps" ] || continue
+  to="target/$profile"
+  echo "try seed: copying the compiled dependencies in $from"
+  mkdir -p "$to/deps"
+  cp -a "$from/.fingerprint" "$from/build" "$to/"
+  find "$from/deps" -maxdepth 1 -type f -name '*.*' -exec cp -a -t "$to/deps" {} +
+done
