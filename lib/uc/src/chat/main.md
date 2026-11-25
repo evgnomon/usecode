@@ -8,6 +8,8 @@
   the working directory for everything after it. When more than one could
   be meant, ask_user with them as options.
 - When the task moves to another repository, `cd` there the same way.
+- When your turn is over, uc goes back to the directory the user's prompt
+  was sent in, and tells you so: each prompt starts there.
 
 # How commands run
 

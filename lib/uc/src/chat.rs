@@ -98,7 +98,7 @@ use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::io::{IsTerminal, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{ExitCode, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
@@ -938,6 +938,12 @@ async fn run(
         if command.is_none() && shown.as_deref() != Some(session.models().as_str()) {
             note!("{}", session.models());
         }
+        // Where the prompt was sent: the model may cd away while it works,
+        // and the user gets the prompt back where they sent it from.
+        let sent_in = command
+            .is_none()
+            .then(|| std::env::current_dir().ok())
+            .flatten();
         let shown_after = async {
             match command {
                 Some(command) => session.run_typed(command).await,
@@ -966,6 +972,9 @@ async fn run(
         }
         if let Err(err) = done {
             eprintln!("uc: {err:#}");
+        }
+        if let Some(dir) = sent_in {
+            session.back_to(&dir);
         }
         // What the line took, left on the screen once the spinner is gone.
         if command.is_none()
@@ -3972,6 +3981,23 @@ impl Session {
         self.confirm("apply it?", false)?;
         std::fs::write(path, edited).context("writing the file")?;
         Ok(format!("edited {path}"))
+    }
+
+    /// Once a turn is over: back to `dir`, the directory its prompt was sent
+    /// in, if the model left it; the model is told, so the next turn starts
+    /// from there.
+    fn back_to(&mut self, dir: &Path) {
+        if std::env::current_dir().ok().as_deref() == Some(dir) {
+            return;
+        }
+        if let Err(err) = std::env::set_current_dir(dir) {
+            note!("cd {}: {err}", dir.display());
+            return;
+        }
+        self.messages.push(json!({"role": "user",
+                   "content": format!(
+                       "[uc: the turn is over; the working directory is back at {}, \
+                        where the prompt was sent]", dir.display())}));
     }
 
     /// After Esc: the command bash was waiting on is stopped, and the model
