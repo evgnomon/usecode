@@ -79,6 +79,8 @@ alias co=copilot
 alias d='cd "$(fd --type d | sk)"'
 alias k=kubectl
 alias t='uc terminal'
+# try is `uc try`, as a function rather than an alias so it can cd your shell.
+command -v uc-try >/dev/null 2>&1 && eval "$(uc-try init)"
 # jcode can leave the tty raw after an in-place self-update (exec handoff),
 # so put back whatever state the shell had before it started.
 unalias jc 2>/dev/null
