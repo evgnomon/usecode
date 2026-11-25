@@ -763,6 +763,21 @@ group, or calls into this crate. A tool is found next to `uc` first, then on
 `PATH`, and replaces the group's process, so its exit status, signals and
 terminal are its own.
 
+## Install with mise
+
+Every release has `uc-x86_64-linux.tar.gz` and `uc-aarch64-linux.tar.gz`
+next to the .deb: uc and all its commands in `bin/`. With mise, put this in
+`~/.config/mise/config.toml` and run `mise install`:
+
+```toml
+[tools]
+"github:evgnomon/usecode" = { version = "latest", asset_pattern = 'uc-{{ arch(x64="x86_64", arm64="aarch64") }}-linux.tar.gz', bin_path = "bin" }
+```
+
+mise checks the download against the release's checksums, and `mise up`
+brings the next release. The workspace image (`lib/base`) installs uc this
+way too.
+
 ## Build
 
 ```sh

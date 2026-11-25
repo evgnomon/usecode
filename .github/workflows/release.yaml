@@ -1,10 +1,10 @@
 # License-Identifier: HGL
 # Copyright (C) The Usecode Authors (see AUTHORS)
 
-# Builds the Debian packages and usecoded-ARCH (the static usecoded uc
-# daemon install downloads) with make dist on a v* tag, on x86_64 and on
-# arm, and attaches both sets, with one SHA256SUMS, to the tag's GitHub
-# release. alacritty, python and vim aren't released.
+# Builds the Debian packages, uc-ARCH-linux.tar.gz (uc and its commands,
+# what mise installs) and usecoded-ARCH (the static usecoded uc daemon
+# install downloads) with make dist on a v* tag, on x86_64 and on arm, and
+# attaches both sets, with one SHA256SUMS, to the tag's GitHub release. alacritty, python and vim aren't released.
 name: Release
 on:
   workflow_dispatch:
@@ -44,6 +44,7 @@ jobs:
           path: |
             dist/*.deb
             dist/usecoded-*
+            dist/uc-*.tar.gz
           if-no-files-found: error
 
   release:
@@ -58,7 +59,7 @@ jobs:
           path: dist
           merge-multiple: true
       - name: Checksums
-        run: cd dist && sha256sum *.deb usecoded-* > SHA256SUMS
+        run: cd dist && sha256sum *.deb usecoded-* uc-*.tar.gz > SHA256SUMS
       - name: Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -66,4 +67,4 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --verify-tag --generate-notes
-          gh release upload "$TAG" dist/*.deb dist/usecoded-* dist/SHA256SUMS --clobber
+          gh release upload "$TAG" dist/*.deb dist/usecoded-* dist/uc-*.tar.gz dist/SHA256SUMS --clobber

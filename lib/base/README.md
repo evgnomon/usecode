@@ -9,7 +9,9 @@ A comfy Debian trixie dev box in a container, the one `uc workspace` (or
 `uc ws`) runs for you on your cluster. You SSH in as yourself, the same
 login name and uid you have on your laptop, sudo needs no password, and the usual suspects are already there: git, build-essential,
 python3, curl, jq, ripgrep, tmux, vim and friends. VS Code's Remote - SSH
-works out of the box. `forgejo-runner` is there too, so a workspace can run
+works out of the box. mise is there for your tools, and uc comes with it:
+the latest release, installed through mise for every user, so `uc` just
+works in the workspace. `forgejo-runner` is there too, so a workspace can run
 your Forgejo Actions: `forgejo-runner register` with a token from your
 Forgejo, then `forgejo-runner daemon`.
 
@@ -39,7 +41,12 @@ your config; anything with sshd on port 22 that starts the way
 
 ## What's inside
 
-* `Containerfile`: the packages and `forgejo-runner`; no users.
+* `Containerfile`: the packages, `forgejo-runner`, mise and uc; no users.
+* `mise.toml`: `/etc/mise/config.toml`, the tools installed system-wide in
+  `/usr/local/share/mise` when the image is built: uc, from its release's
+  `uc-ARCH-linux.tar.gz`. `make image` takes the newest `v*` tag;
+  `UC_VERSION=0.4.3` picks another.
+* `mise.sh`: puts mise's shims on `PATH` for login shells.
 * `entrypoint.sh`: makes the user from `USECODE_USER` and `USECODE_UID`
   (`uc ws up` sets them to you, `--user` to someone else) with sudo, fills
   its home from `/etc/skel` on a new volume, makes

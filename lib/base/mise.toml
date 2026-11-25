@@ -1,0 +1,9 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
+# /etc/mise/config.toml: the tools every user of the workspace has,
+# installed system-wide (/usr/local/share/mise) when the image is built.
+# Your own ~/.config/mise/config.toml adds to them.
+[tools]
+# uc and all its commands, from the uc-ARCH-linux.tar.gz of the release.
+"github:evgnomon/usecode" = { version = "latest", asset_pattern = 'uc-{{ arch(x64="x86_64", arm64="aarch64") }}-linux.tar.gz', bin_path = "bin" }

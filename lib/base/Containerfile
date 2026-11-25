@@ -29,6 +29,28 @@ RUN arch="${TARGETARCH:-$(dpkg --print-architecture)}" \
  && chmod 755 /usr/local/bin/forgejo-runner \
  && forgejo-runner --version
 
+# mise, from its Apt repository through extrepo (the way uc sync adds it),
+# and uc from its GitHub release through mise, installed system-wide in
+# /usr/local/share/mise so every user has it. mise checks the download
+# against the release's checksums. The shims go on PATH for login shells
+# (profile.d), ssh commands (/etc/environment, read by sshd's PAM) and
+# podman or kubectl exec (ENV). UC_VERSION is the release; make image passes
+# the newest v* tag.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends extrepo \
+ && extrepo enable mise \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends mise \
+ && rm -rf /var/lib/apt/lists/*
+ENV PATH=/usr/local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+COPY mise.toml /etc/mise/config.toml
+COPY mise.sh /etc/profile.d/mise.sh
+ARG UC_VERSION=latest
+RUN mise install --system "github:evgnomon/usecode@${UC_VERSION}" \
+ && mise reshim --system \
+ && echo 'PATH="/usr/local/share/mise/shims:/usr/local/bin:/usr/bin:/bin:/usr/games"' >>/etc/environment \
+ && uc --version
+
 # A quiet login: no uname line or Debian notice, and a UTF-8 locale for
 # every session. Your laptop's LANG and LC_* stay home, so a locale the box
 # doesn't have never warns; en_US.UTF-8 is there if you set it yourself.

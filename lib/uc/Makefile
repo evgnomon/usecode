@@ -6,6 +6,7 @@ SOURCES := $(shell find src tests -type f) Cargo.toml $(ROOT_DIR)/Cargo.lock
 include $(ROOT_DIR)/lib/profile.mk
 # The machine's own arch; TARGET=aarch64-unknown-linux-musl cross-builds for arm.
 TARGET ?= $(shell uname -m)-unknown-linux-musl
+ARCH := $(firstword $(subst -, ,$(TARGET)))
 BINS := uc uc-secret-encrypt uc-secret-decrypt uc-sync uc-kube-sync uc-image-push uc-image-pull uc-secret \
 	uc-image uc-secret-cert uc-deb uc-db uc-net uc-daemon uc-vm uc-new \
 	uc-agent uc-profile uc-terminal uc-mail uc-mail-configure uc-mail-settings uc-mail-domain uc-mail-account uc-mail-pull uc-mail-view uc-mail-send uc-dns uc-fs uc-kube-logs uc-kube-usage uc-forward uc-workspace uc-try
@@ -64,7 +65,10 @@ deb: build
 	@cd $(ROOT_DIR) && DEB_ROOT=$(DEB_ROOT) MAKE=$(MAKE) ./scripts/each_lib.sh deb-stage
 	@$(DEB_ROOT)/usr/bin/uc deb build -v "$(VERSION)" -o $(ROOT_DIR)/dist
 
+# uc-ARCH-linux.tar.gz too, the same commands in bin/, for mise
+# (github:evgnomon/usecode) and anywhere a .deb won't do.
 dist: deb
+	@tar -C $(DEB_ROOT)/usr --owner=0 --group=0 -czf $(ROOT_DIR)/dist/uc-$(ARCH)-linux.tar.gz bin
 
 publish: dist
 	@cd $(ROOT_DIR) && $(DEB_ROOT)/usr/bin/uc deb publish
