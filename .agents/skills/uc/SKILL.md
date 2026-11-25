@@ -1,6 +1,6 @@
 ---
 name: uc
-description: Using the `uc` command line tool of usecode to run machines and the things on them. Use for virtual machines (`uc vm`, local KVM/QEMU or on Hetzner, DigitalOcean, OVHcloud, UpCloud with --provider), workspaces (`uc ws`), port forwards (`uc forward`), the usecode daemon and k3s on hosts (`uc daemon`, `uc kube`), the WireGuard mesh, firewall and IPsec (`uc net`), DNS records (`uc dns`), S3 buckets (`uc fs`), mail (`uc mail`), secrets, certificates and profiles (`uc secret`, `uc secret cert`, `uc profile`), Debian packages, container images and databases (`uc deb`, `uc image`, `uc db`), configuring this machine (`uc sync`), scaffolding (`uc new`), terminal windows (`uc terminal`) and the agent's settings (`uc agent`). Triggers include "make a VM", "spin up a server on Hetzner", "ssh into the vm", "snapshot it", "start my workspace", "add a DNS record", "copy this to the bucket", "set up k3s on these hosts", "open port 443", "read my mail", "sync my machine", "publish the deb".
+description: Using the `uc` command line tool of usecode to run machines and the things on them. Use for virtual machines (`uc vm`, local KVM/QEMU or on Hetzner, DigitalOcean, OVHcloud, UpCloud with --provider), workspaces (`uc ws`), port forwards (`uc forward`), the usecode daemon and k3s on hosts (`uc daemon`, `uc kube`), the WireGuard mesh, firewall and IPsec (`uc net`), DNS records (`uc dns`), S3 buckets (`uc fs`), mail (`uc mail`), secrets, certificates and profiles (`uc secret`, `uc secret cert`, `uc profile`), Debian packages, container images and databases (`uc deb`, `uc image`, `uc db`), configuring this machine (`uc sync`), scaffolding (`uc new`), dated scratch directories, worktrees and graduating them to projects (`uc try`), terminal windows (`uc terminal`) and the agent's settings (`uc agent`). Triggers include "make a VM", "spin up a server on Hetzner", "ssh into the vm", "snapshot it", "start my workspace", "add a DNS record", "copy this to the bucket", "set up k3s on these hosts", "open port 443", "read my mail", "sync my machine", "publish the deb", "start a try", "make a worktree to try this", "graduate this try".
 ---
 
 # uc
@@ -23,6 +23,8 @@ one for the command at hand before running it.
 - `references/secret.md`: `uc secret`, `uc secret cert`, `uc profile`.
 - `references/packages.md`: `uc deb`, `uc image`, `uc db`.
 - `references/machine.md`: `uc sync`, `uc new`, `uc terminal`.
+- `references/try.md`: `uc try` and the `try` function: scratch
+  directories, clones, worktrees, the picker, graduating a try to a project.
 - `references/agent.md`: `uc agent`.
 
 The installed help is the source of truth when it and a reference disagree:
@@ -53,7 +55,8 @@ The installed help is the source of truth when it and a reference disagree:
 - Things that open an editor, a picker or ask on the terminal can't run from
   the agent: `uc secret edit`, `uc secret encrypt`/`decrypt`/`backup` with a
   password, `uc mail view` without `-n` or ids, `uc mail send` without a
-  body and `-y`, `uc agent login`, `uc image run`. Pass what makes them
+  body and `-y`, `uc agent login`, `uc image run`, the `try` picker
+  (`try`, `try <query>`; `eval "$(uc try . <name>)"` works). Pass what makes them
   non-interactive, or give the command to the user.
 - Look before you change, where there is a way: `uc sync -C`,
   `uc kube sync -C`, `uc dns sync -C`, `uc mail configure -C`,
