@@ -7,13 +7,25 @@
 # first build only compiles the workspace crates. Those rebuild anyway (their
 # sources are newer than what's copied), so their binaries and test
 # executables are left out, and so is incremental/: together most of target/.
+#
+# Every profile is seeded, cross targets too (target/<triple>/<profile>).
+# The .rlib, .rmeta and .so files, nearly all of deps/, are hard links, not
+# copies: rustc and the linker write those to a new file and rename it over
+# the old, so a rebuild on either side never changes the other's. The rest
+# (.d, .dwo, .fingerprint/, build/) is written in place, so it's copied. On
+# another filesystem, where links can't go, everything is copied.
 set -e
-for profile in debug fast; do
-  from="$TRY_SOURCE/target/$profile"
-  [ -d "$from/deps" ] || continue
-  to="target/$profile"
-  echo "try seed: copying the compiled dependencies in $from"
+for deps in "$TRY_SOURCE"/target/*/deps "$TRY_SOURCE"/target/*/*/deps; do
+  [ -d "$deps" ] || continue
+  from=${deps%/deps}
+  to=target/${from#"$TRY_SOURCE"/target/}
+  echo "try seed: linking the compiled dependencies in $from"
   mkdir -p "$to/deps"
-  cp -a "$from/.fingerprint" "$from/build" "$to/"
-  find "$from/deps" -maxdepth 1 -type f -name '*.*' -exec cp -a -t "$to/deps" {} +
+  for d in .fingerprint build; do
+    [ ! -d "$from/$d" ] || cp -a "$from/$d" "$to/"
+  done
+  find "$deps" -maxdepth 1 -type f \( -name '*.rlib' -o -name '*.rmeta' -o -name '*.so' \) \
+    -exec sh -c 'cp -al -t "$0" "$@" 2>/dev/null || cp -a -t "$0" "$@"' "$to/deps" {} +
+  find "$deps" -maxdepth 1 -type f -name '*.*' ! -name '*.rlib' ! -name '*.rmeta' ! -name '*.so' \
+    -exec cp -a -t "$to/deps" {} +
 done
