@@ -154,6 +154,7 @@ fn group(name: &str) -> &'static [&'static str] {
             "gnumeric",         // Spreadsheet application for data analysis and visualization
             "mullvad-vpn", // Mullvad VPN desktop client installed from the Mullvad Apt repository
             "amberol",     // Small, focused GNOME music player for local audio files
+            "vim-gtk3",    // Vim with the GTK GUI (gvim) and the system clipboard, the vim we use
         ],
         "debian_desktop" => &[
             "qemu-system", // Generic QEMU system emulator meta-package for all architectures

@@ -9,7 +9,9 @@ Vim built from source with huge features and Python 3. The `.vimrc`,
 `.ideavimrc` and coc settings that go with it are built into uc, in
 [lib/uc/roles/vim/files](../uc/roles/vim/files).
 
-The root `make install` leaves vim out, so install it on its own. It links
+You probably don't need this build: `uc sync` installs `vim-gtk3` from apt
+on a workstation, and the configs work with it. The root `make`, `make dist`
+and `make install` leave vim out, so build and install it on its own. It links
 against the CPython in `/usr/local`, so build and install
 [python](../python/README.md) first:
 
