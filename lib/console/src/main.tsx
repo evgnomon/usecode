@@ -20,7 +20,7 @@ const app = (
 if (root.firstElementChild) hydrateRoot(root, app);
 else createRoot(root).render(app);
 
-// Makes usecode.dev installable as an app (public/sw.js); not in `npm run dev`.
+// Makes usecode.dev installable as an app (public/sw.js); not in `pnpm run dev`.
 if (import.meta.env.PROD && "serviceWorker" in navigator) {
   addEventListener("load", () => void navigator.serviceWorker.register("/sw.js"));
 }

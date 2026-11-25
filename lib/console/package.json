@@ -5,6 +5,7 @@
   "description": "usecode.dev: the landing page, pricing, sign up and log in, on the usecode API",
   "license": "SEE LICENSE IN ../../COPYING",
   "type": "module",
+  "packageManager": "pnpm@12.23.0",
   "engines": {
     "node": ">=24"
   },

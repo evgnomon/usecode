@@ -16,22 +16,24 @@ API_URL ?= http://localhost:8000
 
 all: build
 
-node_modules: package.json package-lock.json
-	npm ci --silent --no-audit --no-fund
+# pnpm (from mise) links the packages from its one store on the machine,
+# so a new checkout or worktree installs in seconds.
+node_modules: package.json pnpm-lock.yaml
+	pnpm install --frozen-lockfile --silent
 	@touch $@
 
 build: node_modules
-	npm run --silent build
+	pnpm run --silent build
 
 test: node_modules
-	npm test
+	pnpm test
 
 serve: build
 	API_URL=$(API_URL) PORT=$(PORT) PUBLIC_URL=http://localhost:$(PORT) node dist/server/main.js
 
 # The pages with hot reload on :5173; they call the API at $(API_URL).
 dev: node_modules
-	npx vite
+	pnpm exec vite
 
 # Builds the latest push, not the working tree.
 image:

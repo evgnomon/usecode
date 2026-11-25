@@ -6,7 +6,7 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-// `npm run dev` serves the pages here; they call the API straight, on
+// `pnpm run dev` serves the pages here; they call the API straight, on
 // http://localhost:8000 (`make -C lib/api run`).
 export default defineConfig({
   plugins: [react(), tailwindcss()],

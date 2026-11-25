@@ -22,8 +22,8 @@ USECODE_AGENT_NODE_NAME=api-1 cargo run   # http://localhost:8000
 
 ```sh
 cd lib/app
-npm install
-npm run build:css
+pnpm install
+pnpm run build:css
 ```
 
 See `lib/app/README.md`, `lib/api/README.md`, and `lib/bot/README.md` for details.

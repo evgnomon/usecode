@@ -101,7 +101,7 @@ any JavaScript. The browser then picks them up and carries on as an app.
 The account and login pages stay browser-only.
 
 The look is one set of tokens in `src/index.css`, light and dark, mapped
-onto shadcn/ui's variables, so a component from `npx shadcn add <name>`
+onto shadcn/ui's variables, so a component from `pnpm dlx shadcn add <name>`
 picks the theme up as it is. Corners are square everywhere (`--radius: 0`).
 The console's pieces
 (`NodeRow`, `OptionRow`, `Activity`, ...) are in `src/components/console.tsx`
