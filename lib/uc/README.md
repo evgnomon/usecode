@@ -781,23 +781,27 @@ way too.
 ## Build
 
 ```sh
-make build    # cargo build --profile fast (RELEASE=1 for release) --target $(uname -m)-unknown-linux-musl
+make build    # cargo build --profile fast (RELEASE=1 for release), for your machine
 make check    # fmt --check, clippy -D warnings, tests
 make install  # install uc and its uc-* subcommands to /usr/local/bin
+make dist     # the static musl build in a .deb and uc-ARCH-linux.tar.gz, into dist/
 ```
 
 `make install` honours `DESTDIR` (with a trailing slash) and `PREFIX`, e.g.
 `make install PREFIX=$HOME/.local`.
 
-The default target is the musl one for your machine's arch
-(`x86_64-unknown-linux-musl` or `aarch64-unknown-linux-musl`), added with
-`rustup` on first use. The crate has no C dependencies, so the result is a static-pie executable
-with no shared libraries at all — it runs on any Linux of the same
-architecture, including a `scratch` container, and needs no `openssl` on the
-host. `TARGET=` picks another triple, e.g. a dynamically linked glibc build:
+`make build` builds for your machine, into `target/fast/` next to the rest
+of the workspace, so uc shares its compiled dependencies with the other
+crates and nothing is built twice. What ships is built by `make dist`, for
+the musl target of your machine's arch (`x86_64-unknown-linux-musl` or
+`aarch64-unknown-linux-musl`, added with `rustup` on first use). The crate
+has no C dependencies, so that one is a static-pie executable with no shared
+libraries at all — it runs on any Linux of the same architecture, including
+a `scratch` container, and needs no `openssl` on the host. `TARGET=` picks
+the triple for both, e.g. the static one while you work:
 
 ```sh
-make build TARGET=x86_64-unknown-linux-gnu
+make build TARGET=x86_64-unknown-linux-musl   # target/x86_64-unknown-linux-musl/fast/
 ```
 
 Got a Mac with Apple Silicon or a Windows on ARM laptop? uc runs there too,

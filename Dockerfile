@@ -9,7 +9,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 ENV DEV_CONTAINER=1
 
-# uc and uc-sync from a named build context, e.g.
+# uc and uc-sync from a named build context, the static ones
+# make -C lib/uc dist RELEASE=1 builds, e.g.
 #   podman build --build-context uc=target/x86_64-unknown-linux-musl/release .
 COPY --from=uc uc uc-sync /usr/local/bin/
 

@@ -16,11 +16,15 @@ CARGO_ARGS := $(addprefix --bin ,$(BIN) $(EXTRA_BINS))
 
 include ../rust.mk
 
-# The machine's own arch; USECODED_TARGET=aarch64-unknown-linux-musl
-# cross-builds for arm.
-USECODED_TARGET ?= $(shell uname -m)-unknown-linux-musl
-USECODED_ARCH := $(firstword $(subst -, ,$(USECODED_TARGET)))
-USECODED := $(ROOT_DIR)/target/$(USECODED_TARGET)/$(PROFILE)/usecoded
+# build builds usecoded for the host, without --target, so it shares
+# target/$(PROFILE) and its compiled dependencies with the other crates. dist
+# builds the static musl one that ships, for the machine's own arch;
+# USECODED_TARGET=aarch64-unknown-linux-musl cross-builds it (and build) for arm.
+USECODED_TARGET ?=
+USECODED_DIST_TARGET := $(or $(USECODED_TARGET),$(shell uname -m)-unknown-linux-musl)
+USECODED_ARCH := $(firstword $(subst -, ,$(USECODED_DIST_TARGET)))
+USECODED := $(ROOT_DIR)/target/$(USECODED_TARGET:%=%/)$(PROFILE)/usecoded
+USECODED_DIST := $(ROOT_DIR)/target/$(USECODED_DIST_TARGET)/$(PROFILE)/usecoded
 USECODED_ROOT := $(CURDIR)/pkg/debian
 DIST_DIR := $(ROOT_DIR)/dist
 # The release uc daemon install downloads usecoded from (see install.rs).
@@ -34,16 +38,17 @@ build: $(USECODED)
 usecoded: $(USECODED)
 
 $(USECODED): $(SOURCES)
-	@$(CARGO) build -p $(NAME) --bin usecoded --profile $(PROFILE) --target $(USECODED_TARGET)
+	@$(CARGO) build -p $(NAME) --bin usecoded --profile $(PROFILE) $(USECODED_TARGET:%=--target %)
 	@touch $@
 
 # usecoded-ARCH for uc daemon install, and the usecoded package for hosts
 # that would rather apt install it: usecode.service and the scripts in
 # debian/ enable and start it.
-dist: $(USECODED)
-	@install -Dm755 $(USECODED) $(DIST_DIR)/usecoded-$(USECODED_ARCH)
+dist:
+	@$(MAKE) --no-print-directory usecoded USECODED_TARGET=$(USECODED_DIST_TARGET)
+	@install -Dm755 $(USECODED_DIST) $(DIST_DIR)/usecoded-$(USECODED_ARCH)
 	@rm -rf $(USECODED_ROOT)
-	@install -Dm755 $(USECODED) $(USECODED_ROOT)/usr/local/bin/usecoded
+	@install -Dm755 $(USECODED_DIST) $(USECODED_ROOT)/usr/local/bin/usecoded
 	@install -Dm644 init/systemd/usecode.service $(USECODED_ROOT)/usr/lib/systemd/system/usecode.service
 	@install -Dm755 -t $(USECODED_ROOT)/DEBIAN debian/postinst debian/prerm debian/postrm
 	@uc deb build -v "$(VERSION)" -o $(DIST_DIR)

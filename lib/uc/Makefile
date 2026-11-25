@@ -4,14 +4,19 @@
 ROOT_DIR ?= $(abspath ../..)
 SOURCES := $(shell find src tests -type f) Cargo.toml $(ROOT_DIR)/Cargo.lock
 include $(ROOT_DIR)/lib/profile.mk
-# The machine's own arch; TARGET=aarch64-unknown-linux-musl cross-builds for arm.
-TARGET ?= $(shell uname -m)-unknown-linux-musl
-ARCH := $(firstword $(subst -, ,$(TARGET)))
+# build builds for the host, without --target, so uc shares target/$(PROFILE)
+# and its compiled dependencies with the other crates. deb and dist build the
+# static musl binaries that ship, for the machine's own arch;
+# TARGET=aarch64-unknown-linux-musl cross-builds them (and build) for arm.
+TARGET ?=
+DIST_TARGET := $(or $(TARGET),$(shell uname -m)-unknown-linux-musl)
+ARCH := $(firstword $(subst -, ,$(DIST_TARGET)))
 BINS := uc uc-secret-encrypt uc-secret-decrypt uc-sync uc-kube-sync uc-image-push uc-image-pull uc-secret \
 	uc-image uc-secret-cert uc-deb uc-db uc-net uc-daemon uc-vm uc-new \
 	uc-agent uc-profile uc-terminal uc-mail uc-mail-configure uc-mail-settings uc-mail-domain uc-mail-account uc-mail-pull uc-mail-view uc-mail-send uc-dns uc-fs uc-kube-logs uc-kube-usage uc-forward uc-workspace uc-try
-OUT_DIR := $(ROOT_DIR)/target/$(TARGET)/$(PROFILE)
+OUT_DIR := $(ROOT_DIR)/target/$(TARGET:%=%/)$(PROFILE)
 OUTPUTS := $(addprefix $(OUT_DIR)/,$(BINS))
+DIST_OUTPUTS := $(addprefix $(ROOT_DIR)/target/$(DIST_TARGET)/$(PROFILE)/,$(BINS))
 DESTDIR ?= /
 PREFIX ?= /usr/local
 BIN_DIR := $(DESTDIR)$(patsubst /%,%,$(PREFIX))/bin
@@ -29,7 +34,7 @@ all: build
 build: $(OUTPUTS)
 
 $(OUTPUTS) &: $(SOURCES)
-	@$(CARGO) build -p uc --profile $(PROFILE) --target $(TARGET)
+	@$(CARGO) build -p uc --profile $(PROFILE) $(TARGET:%=--target %)
 	@touch $(OUTPUTS)
 
 install: $(INSTALLED) $(INSTALLED_ALIASES)
@@ -58,10 +63,11 @@ fmt:
 # One package for uc and all its commands: the uc-* binaries built here and
 # by every lib/* crate (deb-stage in lib/rust.mk), packed by the uc just
 # built, so uc deb runs the uc-deb-build next to it.
-deb: build
+deb:
+	@$(MAKE) --no-print-directory build TARGET=$(DIST_TARGET)
 	@rm -rf $(DEB_ROOT)
 	@install -d $(DEB_ROOT)/usr/bin
-	@install -m 0755 $(OUTPUTS) $(DEB_ROOT)/usr/bin
+	@install -m 0755 $(DIST_OUTPUTS) $(DEB_ROOT)/usr/bin
 	@cd $(ROOT_DIR) && DEB_ROOT=$(DEB_ROOT) MAKE=$(MAKE) ./scripts/each_lib.sh deb-stage
 	@$(DEB_ROOT)/usr/bin/uc deb build -v "$(VERSION)" -o $(ROOT_DIR)/dist
 
