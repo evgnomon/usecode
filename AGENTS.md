@@ -37,6 +37,7 @@ General rules for working in the usecode project.
 
 # Git
 * Use `git commit -s` to sign your commits.
+* `origin` is https://git.usecode.dev/usecode/usecode.git; GitHub is the `github` remote. For now `origin` has both as push URLs, so `git push` goes to both: keep it that way until told otherwise.
 * Build and install after git pull, and before `git push` (see above).
 
 # Working directory
