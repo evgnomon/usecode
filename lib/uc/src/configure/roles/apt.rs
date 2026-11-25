@@ -24,9 +24,9 @@ pub const PROBE: &str = "apt/probe";
 /// debian_desktop.
 fn profile_groups(profile: Profile) -> &'static [&'static str] {
     match profile {
-        Profile::Workstation => &["build", "share", "hardware", "desktop", "virt"],
-        Profile::Wsl => &["build", "share", "virt", "wsl"],
-        Profile::Vm | Profile::DevContainer => &["build", "share"],
+        Profile::Workstation => &["build", "share", "gvim", "hardware", "desktop", "virt"],
+        Profile::Wsl => &["build", "share", "gvim", "virt", "wsl"],
+        Profile::Vm | Profile::DevContainer => &["build", "share", "vim"],
     }
 }
 
@@ -110,7 +110,6 @@ fn group(name: &str) -> &'static [&'static str] {
             "libnss3-tools", // Tools for managing NSS databases and certificates for secure communication
             "skopeo", // Tool for inspecting and copying container images between registries and local storage
             "tmux",   // Terminal multiplexer for managing multiple terminal sessions in one window
-            "vim-nox", // Vim with Python, Lua and Ruby support, the default editor
             "ffmpeg", // Command-line multimedia framework for converting and streaming audio/video files
             "wl-clipboard", // Command-line copy/paste utilities (wl-copy, wl-paste) for clipboard integration
             "xclip", // Command-line X11 clipboard utility often used by terminal/editor integrations
@@ -154,7 +153,14 @@ fn group(name: &str) -> &'static [&'static str] {
             "gnumeric",         // Spreadsheet application for data analysis and visualization
             "mullvad-vpn", // Mullvad VPN desktop client installed from the Mullvad Apt repository
             "amberol",     // Small, focused GNOME music player for local audio files
-            "vim-gtk3",    // Vim with the GTK GUI (gvim) and the system clipboard, the vim we use
+        ],
+        // The editor where there is a display (WSL has WSLg): one vim each.
+        "gvim" => &[
+            "vim-gtk3", // Vim with the GTK GUI (gvim), the system clipboard and Python, Lua and Ruby
+        ],
+        // The editor on headless machines.
+        "vim" => &[
+            "vim-nox", // Vim with Python, Lua and Ruby support, without a GUI
         ],
         "debian_desktop" => &[
             "qemu-system", // Generic QEMU system emulator meta-package for all architectures
