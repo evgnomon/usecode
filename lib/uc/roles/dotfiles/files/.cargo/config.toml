@@ -1,0 +1,9 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
+# Every build goes through sccache: cargo, rust-analyzer and agents alike.
+# A new worktree or checkout then takes its dependencies from the cache
+# instead of compiling them again. sccache has to be on the PATH (dot/mise
+# installs it); RUSTC_WRAPPER= turns it off for one build.
+[build]
+rustc-wrapper = "sccache"

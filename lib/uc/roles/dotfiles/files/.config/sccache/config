@@ -1,0 +1,7 @@
+# License-Identifier: HGL
+# Copyright (C) The Usecode Authors (see AUTHORS)
+
+# Room for the dependencies of every checkout and worktree, so they are
+# compiled once. The cache stays in ~/.cache/sccache.
+[cache.disk]
+size = 53687091200 # 50 GiB

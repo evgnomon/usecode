@@ -42,6 +42,7 @@ const DOTFILES: &[(&str, &[&str])] = &[
         ],
     ),
     ("zoxide", &[".bashrc.d/zoxide-init.sh"]),
+    ("cargo", &[".cargo/config.toml", ".config/sccache/config"]),
     ("gnupg", &[".gnupg/gpg.conf", ".gnupg/scdaemon.conf"]),
     ("ctags", &[".ctags"]),
     ("fd", &[".fdignore"]),
